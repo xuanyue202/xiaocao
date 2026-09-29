@@ -27,6 +27,9 @@ Keep the original caller-supplied initial_capital (30000 for this pilot).
 external_flow_total is cumulative ABSOLUTE deposits plus withdrawals since
 inception, excluding that seed, not a net flow that can cancel to zero. Its
 absence is unproved; any nonzero flow requires review, never a capital reset.
+The live adapter may supply unitized NAV after validating the separately
+approved capital-allocation chain; its observations then have neutralized flow
+zero, while the durable risk event retains actual flows and raw strategy NAV.
 Persist and pass previous_receipt after every evaluation, including intraday
 evaluations and blocks, to retain observed peaks and the 20% pause. There is
 no automatic release/reset API. Strict mode still requires settled history;
@@ -85,6 +88,9 @@ class AccountRiskReceipt:
     policy_id: str = POLICY_ID
     history_basis: str = "settled_history"
     tracking_epoch_started_at: str | None = None
+    risk_nav_basis: str = "cash_plus_liquidation"
+    strategy_nav: float | None = None
+    capital_flow_head_sha256: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         payload = asdict(self)

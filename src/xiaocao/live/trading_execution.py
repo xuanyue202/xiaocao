@@ -1443,6 +1443,9 @@ class TradingExecution:
                         auth_path=self.auth_path,
                         audit_path=self.audit_path,
                         env=env,
+                        capital_proof=self._dynamic_capital_proof(plan, env, previous, action="cancel"),
+                        plan_hash=plan.plan_hash,
+                        action="cancel",
                         now=self.now(),
                     )
                 except Exception as exc:
@@ -1831,6 +1834,8 @@ class TradingExecution:
                 auth_path=self.auth_path,
                 audit_path=self.audit_path,
                 env=env,
+                capital_proof=self._dynamic_capital_proof(plan, env, previous),
+                plan_hash=plan.plan_hash,
                 now=self.now(),
             )
         except CapitalRuntimeUnavailable as exc:
@@ -1858,6 +1863,29 @@ class TradingExecution:
             self._incident(plan, denied)
             return denied
         return None
+
+    def _dynamic_capital_proof(self, plan, env, previous, *, action="submit"):
+        from .safety import load_authorization
+        from .book_b_capital import POLICY, digest
+        auth, _ = load_authorization(auth_path=self.auth_path, env=env, now=self.now())
+        if auth is None or auth.get("capital_policy_id") != POLICY:
+            return None
+        port = getattr(self.broker, "capital_action_proof", None)
+        if not callable(port):
+            raise ValueError("DYNAMIC_CAPITAL_NATIVE_PROOF_REQUIRED")
+        proof = port(plan, now=self.now(), action=action, previous=previous.as_dict())
+        requested = plan.shares - previous.filled_shares if action == "submit" else plan.shares
+        if not 0 < requested <= plan.shares:
+            raise ValueError("DYNAMIC_CAPITAL_REQUESTED_QUANTITY_INVALID")
+        proof.update(shares=requested,
+            requested_notional=round(plan.limit_price * requested, 2))
+        if plan.side == "SELL" and action == "submit":
+            if self.ledger is None:
+                raise ValueError("DYNAMIC_CAPITAL_OWNERSHIP_REQUIRED")
+            proof["book_b_owned_shares"] = self.ledger.owned_shares(
+                logical_account_id=plan.logical_account_id, code=plan.code)
+        proof["proof_sha256"] = digest({k:v for k,v in proof.items() if k != "proof_sha256"})
+        return proof
 
     def _continue(self, plan: TradePlan, broker: BrokerAdapter, previous: ExecutionReceipt) -> ExecutionReceipt:
         guard_reason = plan.guard_reason(now=self.now())

@@ -129,6 +129,7 @@ class BookBLiveCapitalBasis:
     current_open_exposure: float
     source: str
     receipt_sha256: str | None = None
+    capital_flow_head_sha256: str | None = None
 
 
 def load_book_b_live_capital_basis(
@@ -140,6 +141,18 @@ def load_book_b_live_capital_basis(
     """Return the first-batch basis or require a settled post-fill receipt."""
     root = Path(state_dir)
     settlement = load_latest_book_b_live_settlement(root)
+    from .book_b_capital import POLICY, SOURCE, verify_account
+    if isinstance(current_account, BookBLiveAccountState) and current_account.capital_policy_id == POLICY:
+        if (not trade_date or current_account.trade_date != trade_date
+                or current_account.logical_account_id != "primary"
+                or current_account.ownership_head_sha256 != ownership_head_sha256(root)
+                or (settlement is None and current_account.lots)):
+            raise ValueError("LIVE_BOOK_B_CURRENT_MARK_UNPROVEN")
+        verify_account(root, current_account.as_dict())
+        return BookBLiveCapitalBasis(settled_nav=current_account.settled_nav,
+            current_open_exposure=current_account.current_open_exposure,
+            source=SOURCE, receipt_sha256=current_account.broker_snapshot_sha256,
+            capital_flow_head_sha256=current_account.capital_flow_head_sha256)
     if settlement is not None:
         open_plans = open_execution_plan_ids(root)
         current_head = ownership_head_sha256(root)
@@ -1308,12 +1321,13 @@ def _load_allocation(
         "initial_book_b_capital",
         "broker_reconciled_book_b_nav",
         "broker_reconciled_book_b_current_mark",
+        "broker_reconciled_book_b_dynamic_nav",
     }:
         raise ValueError("LIVE_ALLOCATION_CAPITAL_BASIS_UNPROVEN")
     capital_basis_receipt = str(
         payload.get("capital_basis_receipt_sha256") or ""
     ).strip().lower()
-    if capital_basis_source in {"broker_reconciled_book_b_nav", "broker_reconciled_book_b_current_mark"} and not re.fullmatch(
+    if capital_basis_source in {"broker_reconciled_book_b_nav", "broker_reconciled_book_b_current_mark", "broker_reconciled_book_b_dynamic_nav"} and not re.fullmatch(
         r"[0-9a-f]{64}", capital_basis_receipt
     ):
         raise ValueError("LIVE_ALLOCATION_CAPITAL_BASIS_RECEIPT_UNPROVEN")
@@ -1332,7 +1346,7 @@ def _load_allocation(
             != settlement.get("current_open_exposure")
         ):
             raise ValueError("LIVE_ALLOCATION_CAPITAL_BASIS_RECEIPT_MISMATCH")
-    if capital_basis_source == "broker_reconciled_book_b_current_mark":
+    if capital_basis_source in {"broker_reconciled_book_b_current_mark", "broker_reconciled_book_b_dynamic_nav"}:
         from .buy_preflight import pretrade_account
         snapshot = (payload.get("broker_receipt") or {}).get("pretrade_snapshot")
         if not isinstance(snapshot, dict):
@@ -1340,7 +1354,10 @@ def _load_allocation(
         try:
             observed = datetime.fromisoformat(str(snapshot["observed_at"]).replace("Z", "+00:00"))
             account = pretrade_account(config.state_dir, snapshot,
-                trade_date=config.trade_date, now=observed)
+                trade_date=config.trade_date, now=observed, sync_capital=False,
+                historical_capital=True,
+                capital_flow_head=payload.get("capital_flow_head_sha256"),
+                capital_policy_id=("book_b_app_available_cash_v1" if capital_basis_source == "broker_reconciled_book_b_dynamic_nav" else None))
             basis = load_book_b_live_capital_basis(config.state_dir,
                 trade_date=config.trade_date, current_account=account)
         except (KeyError, TypeError, ValueError) as exc:

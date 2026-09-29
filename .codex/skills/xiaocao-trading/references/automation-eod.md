@@ -2,6 +2,10 @@
 
 Read this file only for the daily post-close capture/evaluation branch.
 
+APP Book B cash/NAV and performance use Operating Contract §6's dynamic
+capital journal. Cite its exact funding head and keep raw strategy NAV separate
+from unitized risk NAV. Paper A/B/T and historical settlements stay independent.
+
 ## Execute
 
 Read same-day chronology first:

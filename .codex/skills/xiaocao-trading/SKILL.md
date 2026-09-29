@@ -45,10 +45,10 @@ Completion means the requested command reached a terminal state and the branch-s
   producer strategy Git SHA must be bound by the freeze manifest; its
   allocation facts must come from a complete dated live asset readback bound
   to the logical/fund account and protect the complete economic capsule with a
-  canonical hash. The live logical account is fixed to `primary`; 30,000 yuan
-  is only the pre-first-fill basis, after which a broker-reconciled EOD
-  settlement is mandatory. When later proved fills change its ownership head,
-  morning uses the §4 conservative current mark and fences a code with an
+  canonical hash. The live logical account is fixed to `primary`. Apply
+  Contract §6 for the approved account-bound dynamic APP capital policy;
+  capital allocation and unitized risk share one journal. A broker-reconciled
+  settlement is still mandatory after owned fills. Morning fences a code with an
   unresolved older SELL. Intraday live
   monitoring reads only broker-proved owned lots, reuses the production exit
   policy, and hands authorized lot-bound SELL intents to the same exact-once

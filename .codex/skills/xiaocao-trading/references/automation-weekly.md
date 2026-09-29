@@ -2,6 +2,10 @@
 
 Read this file only for the Friday weekly flywheel-consumer branch.
 
+For APP Book B performance apply Operating Contract §6: inspect the exact
+capital-flow chain, separate allocation movements from profit, and compare
+unitized risk NAV without resetting high water or pause history.
+
 ## Execute
 
 ```bash

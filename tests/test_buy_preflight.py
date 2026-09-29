@@ -174,6 +174,89 @@ def test_buying_power_capsule_binds_only_spendable_cash_and_preserves_capital(tm
         _load_allocation(config, payload)
 
 
+@pytest.mark.parametrize('initial_cash', [100000, 30000])
+def test_dynamic_allocation_replays_exact_funding_head_after_later_flow(tmp_path, initial_cash):
+    from xiaocao.live.buy_preflight import allocation_from_buy_preflight, pretrade_account
+    from xiaocao.live.book_b_live_morning import load_book_b_live_capital_basis, BookBLiveMorningConfig, _load_allocation
+    from tests.test_book_b_available_capital import activate
+    import hashlib
+    from zoneinfo import ZoneInfo
+    day = datetime.now(ZoneInfo('Asia/Shanghai')).date().isoformat()
+    activate(tmp_path, hashlib.sha256(b'123******890').hexdigest())
+    n = ScopedNative(); n.position_summary = {'可用': str(initial_cash)}
+    a = adapter(n)
+    first = a.read_buy_preflight_snapshot(trade_date=day, owned_codes=set())
+    account = pretrade_account(tmp_path, first, trade_date=day, now=datetime.now(timezone.utc))
+    basis = load_book_b_live_capital_basis(tmp_path, trade_date=day, current_account=account)
+    payload = allocation_from_buy_preflight(first, basis, now=datetime.now(timezone.utc))
+    config = BookBLiveMorningConfig(day, tmp_path/'freeze', tmp_path/'allocation', tmp_path)
+    assert _load_allocation(config, payload).cash_limit == initial_cash/2
+    n.position_summary = {'可用': '80000.00'}
+    later = a.read_buy_preflight_snapshot(trade_date=day, owned_codes=set())
+    pretrade_account(tmp_path, later, trade_date=day, now=datetime.now(timezone.utc))
+    # Verification is read-only and retains the original funding/NAV capsule.
+    assert _load_allocation(config, payload).cash_limit == initial_cash/2
+
+
+def test_batch_fees_and_remaining_cash_are_proved_without_extra_queries():
+    n = ScopedNative(); n.position_summary = {'可用': '1000.00'}
+    p = replace(_plan(), limit_price=10, basket_price=10.1, shares=100)
+    with pytest.raises(ValueError, match='CASH_RESERVATION_EXCEEDED'):
+        with adapter(n).submission_batch([p]):
+            pass
+    n = ScopedNative(); n.position_summary = {'可用': '100000.00'}
+    a = adapter(n)
+    p = replace(_plan(), code='600001.XSHG', shares=4000, limit_price=10, basket_price=10.1)
+    second = replace(p, plan_id='second', code='600002.XSHG')
+    submit = n.submit_prepared_order
+    def acknowledged(**kwargs):
+        result = submit(**kwargs)
+        result.payload['action'] = {'attempted': True, 'succeeded': True,
+            'confirm_pressed': True, 'requires_user_input': False}
+        result.payload['result_readback'] = {'kind': 'submit',
+            'status': 'submit_result_acknowledged', 'broker_order_id': '6001000',
+            'message_matched': True, 'acknowledgment_pressed': True,
+            'acknowledgment_mode': 'semantic_focused_dialog_button'}
+        return result
+    n.submit_prepared_order = acknowledged
+    with a.submission_batch([p, second]):
+        before = a.capital_action_proof(p, now=datetime.now(timezone.utc))
+        a.prepare(p)
+        # The subsequent capital recheck must not navigate away from the form.
+        a.capital_action_proof(p, now=datetime.now(timezone.utc))
+        a.submit(p, 'one-exact-claim')
+        after = a.capital_action_proof(second, now=datetime.now(timezone.utc))
+        assert before['available_cash'] == 100000
+        assert after['available_cash'] == 59996
+        assert n.query_calls == ['positions', 'today-orders']
+
+
+def test_execution_rechecks_signed_dynamic_proof_without_moving_prepared_form(tmp_path):
+    import hashlib
+    from datetime import timedelta
+    from xiaocao.live.safety import sign_payload, ENV_SIGNING_KEY
+    from xiaocao.live.trading_execution import TradingExecution, ExecutionStore, ExecutionReceipt, ExecutionState
+    from tests.test_book_b_available_capital import signed_grant
+    env, auth_path = signed_grant(tmp_path)
+    grant = json.loads(auth_path.read_text())
+    grant['expires_at'] = (datetime.now(timezone.utc)+timedelta(days=1)).isoformat()
+    grant['fund_account_binding_sha256'] = hashlib.sha256(b'123******890').hexdigest()
+    grant['signature'] = sign_payload(grant, env[ENV_SIGNING_KEY])
+    auth_path.write_text(json.dumps(grant))
+    n = ScopedNative(); n.position_summary = {'可用': '100000.00'}
+    a = adapter(n)
+    p = replace(_plan(), code='600001.XSHG', shares=4000, limit_price=10, basket_price=10.1)
+    execution = TradingExecution(store=ExecutionStore(tmp_path/'events.jsonl'), broker=a,
+        safety_env=env, auth_path=auth_path, audit_path=tmp_path/'audit.jsonl')
+    previous = ExecutionReceipt(p.plan_id, p.plan_hash, ExecutionState.VALIDATED)
+    with a.submission_batch([p]):
+        assert execution._capital_denial(p, previous) is None
+        assert a.prepare(p).status == BrokerStatus.PREPARED
+        assert execution._capital_denial(p, previous) is None
+        assert n.query_calls == ['positions', 'today-orders']
+    assert n.submit_calls == 0
+
+
 def test_wrong_date_and_locale_numbers_keep_strict_pretrade_semantics():
     n = ScopedNative()
     n.positions[1]['当前价'] = '10,0000'

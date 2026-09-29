@@ -56,16 +56,18 @@ the producer atomically writes those exact rows to
 must never be overwritten. The live consumer reads and recomputes only that
 immutable dated copy rather than defining a new digest from later-reviewed
 `signal_snapshots.jsonl`. Broker total assets and total securities market value
-are evidence only, never the mixed-account Book-B basis: the first batch uses
-the fixed 30,000 yuan Book-B capital basis on logical account `primary`; neither
-value has a live CLI override. Any submitted, acknowledged, partial, filled,
+are evidence only, never the mixed-account Book-B basis. Apply Contract §6's
+approved dynamic APP capital policy on logical account `primary`; the allocation
+capsule cites its exact capital-flow head. Routine tasks never migrate or mint
+authorization. Any submitted, acknowledged, partial, filled,
 unknown or reconciling execution evidence (including a fill followed by an
 ownership-ledger write failure) blocks reuse of the first-batch basis until a
 hash-bound EOD settled-NAV receipt exists. A settlement is reusable only when
 its ownership-chain head still equals the current broker-proved ownership
 ledger. If the head changed after a proved fill, replay the hash-bound owned
 fills and mark the current owned lots from today's account-bound APP positions;
-use the lower of settled/current NAV and higher of settled/current exposure.
+use the current proved dynamic strategy NAV and owned exposure under §6.
+Capital allocation movements preserve unitized risk history.
 An old zero-fill SELL with exact fresh order/trade/holding proof may remain
 reconcile-only while other codes proceed; block a new BUY in that SELL's code.
 The
@@ -203,8 +205,7 @@ execution seam, not another paper writer. `auto_daily.sh` remains unchanged
 and continues to call the canonical `paper_record.py` path. If the seam is
 used for a dry run, BUY rows must carry an allocation proof produced by the
 shared `strategy.mode_switch.plan_board_lot_orders` allocator, using rolling
-broker-reconciled settled NAV (the 30,000 yuan value is used only before the
-first owned fill). Missing or
+broker-reconciled strategy NAV under Contract §6. Missing or
 inconsistent proof, cash, batch, exposure, slot, or board-lot facts fail closed.
 Its market guard records `LIMIT_DOWN_BUY_BLOCKED` or
 `LIMIT_DOWN_CHECK_UNAVAILABLE`; neither is a fill.

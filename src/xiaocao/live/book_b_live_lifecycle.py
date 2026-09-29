@@ -772,6 +772,11 @@ class BookBLiveAccountState:
     broker_snapshot_sha256: str
     broker_snapshot_observed_at: str
     lots: tuple[BookBLiveOwnedLot, ...]
+    capital_policy_id: str = ""
+    capital_flow_head_sha256: str | None = None
+    net_external_flow_total: float = 0.0
+    external_flow_total: float = 0.0
+    capital_unit_factor: str = "1"
 
     def as_dict(self) -> dict[str, Any]:
         payload = asdict(self)
@@ -788,6 +793,7 @@ def project_book_b_live_account(
     monitor_context_by_lot: dict[str, dict[str, Any]] | None = None,
     initial_capital: float = BOOK_B_LIVE_INITIAL_CAPITAL,
     default_fee_rate: float = BOOK_B_LIVE_DEFAULT_FEE_RATE,
+    sync_capital: bool = True,
 ) -> BookBLiveAccountState:
     """Project owned lots and Book B NAV from proved fills plus broker marks."""
     snapshot = validate_broker_account_snapshot(
@@ -948,6 +954,9 @@ def project_book_b_live_account(
         )
     exposure = round(sum(lot.market_value for lot in lots), 2)
     liquidation = round(sum(lot.liquidation_value_after_fee for lot in lots), 2)
+    from .book_b_capital import allocate_cash
+    cash, funding = allocate_cash(state_root, base_cash=cash, liquidation=liquidation,
+        ownership_head=ownership_head, snapshot=snapshot, sync=sync_capital)
     cash = cash.quantize(Decimal("0.01"))
     if cash < Decimal("-0.10"):
         raise ValueError("LIVE_BOOK_B_SUBACCOUNT_CASH_NEGATIVE")
@@ -962,6 +971,7 @@ def project_book_b_live_account(
         realized_cash_delta=float(
             (
                 cash
+                - Decimal(str(funding["net_external_flow_total"]))
                 - _finite_decimal(
                     initial_capital,
                     reason="LIVE_BOOK_B_INITIAL_CAPITAL_INVALID",
@@ -972,6 +982,7 @@ def project_book_b_live_account(
         broker_snapshot_sha256=str(snapshot["snapshot_sha256"]),
         broker_snapshot_observed_at=str(snapshot["observed_at"]),
         lots=tuple(lots),
+        **funding,
     )
 
 
@@ -1018,6 +1029,9 @@ def write_book_b_live_settlement(
         if open_plans:
             raise ValueError("LIVE_BOOK_B_EOD_OPEN_EXECUTION_RECONCILE_REQUIRED")
         current_ownership_head = ownership_head_sha256(root)
+        from .book_b_capital import current_flow_state
+        if current_flow_state(root)["capital_flow_head_sha256"] != account.capital_flow_head_sha256:
+            raise ValueError("LIVE_BOOK_B_SETTLEMENT_CAPITAL_CHANGED")
         if current_ownership_head != account.ownership_head_sha256:
             raise ValueError("LIVE_BOOK_B_SETTLEMENT_OWNERSHIP_CHANGED")
         path = settlement_path(root, account.trade_date)
