@@ -408,6 +408,34 @@ def _capture_fixture(tmp_path: Path) -> tuple[Path, str, Path, float]:
     return ledger, armed["job_id"], media, 120.0
 
 
+@pytest.mark.parametrize("invalid", [None, "no_lineage", "stale", "known_candidate", "wrong_anchor", "wrong_task", "bad_hash"])
+def test_native_fresh_replay_accepts_known_live_only_with_exact_lineage(invalid):
+    live, app, cid = "l_original", "apporiginal", "fresh-replay"
+    anchor = {"candidate_id": cid, "app_id": app, "live_id": live,
+        "source_host": "xet.kj1team.cn", "source_path": "/_alive/v2/get_lookback_url",
+        "response_sha256": "a" * 64, "base_info_sha256": "b" * 64}
+    capture = {"status": "downloaded", "created_at": "2026-09-28T12:00:00+08:00",
+        "candidate": {"id": cid, "live_id": live, "captured": "2026-09-29 22:00:00"},
+        "candidate_key": f"live:{live}", "baseline_candidate_keys": [f"live:{live}"],
+        "expected_source": {"source_resource_id": live, "source_app_id": app,
+            "source_identity": f"xiaoetong:{app}:{live}"},
+        "native_media_lineage": {"method": "native_v2_merchant_response",
+            "media_resource_sha256": "c" * 64, "metadata_anchors": [anchor]},
+        "download_task": {"meta": {"labels": {"live_id": live, "capture_id": cid,
+            "type": "live_capture", "compress": "true", "compress_inline": "true"}}}}
+    if invalid == "no_lineage": capture.pop("native_media_lineage")
+    if invalid == "stale": capture["candidate"]["captured"] = "2026-09-27 22:00:00"
+    if invalid == "known_candidate": capture["baseline_candidate_keys"].append(f"id:{cid}")
+    if invalid == "wrong_anchor": anchor["live_id"] = "l_other"
+    if invalid == "wrong_task": capture["download_task"]["meta"]["labels"]["capture_id"] = "other"
+    if invalid == "bad_hash": anchor["response_sha256"] = "invalid"
+    if invalid:
+        with pytest.raises(EnrichmentError, match="Ticket 03 path"):
+            XiaocaoLiveService._capture_contract(capture)
+    else:
+        assert XiaocaoLiveService._capture_contract(capture)["capture_id"] == cid
+
+
 def test_recorded_capture_contract_accepts_file_bound_candidate(tmp_path):
     ledger = tmp_path / "capture.jsonl"
     store = CaptureJobStore(ledger)

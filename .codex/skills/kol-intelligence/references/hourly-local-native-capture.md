@@ -23,6 +23,12 @@ source/media/download claim, `prepare_playback` reconciles only the matching
 `awaiting_playback` manifest item back to the same awaiting capture. It preserves
 the original baseline and rejected observation; every bound claim fails closed.
 Do not reset the ledger manually or create a replacement capture.
+For a live ID already present in the original baseline, a newly observed native
+v2 replay may pass media validation only with a new candidate ID, post-arm time,
+exact task capture/live labels and the accepted same-app/live merchant response
+and base-info hashes. The original baseline is retained. A live ID, old candidate
+or unbound global observation alone still fails closed; do not redownload a
+completed artifact merely because its live key was previously seen.
 The canonical driver may reuse a manually launched relative-path executable
 only after the operating system proves its actual executable is the same
 installed binary. A matching basename or a healthy unrelated API is insufficient;

@@ -1618,6 +1618,39 @@ class XiaocaoLiveService:
         candidate_key = str(capture.get("candidate_key") or "")
         candidate_id = str((candidate or {}).get("id") or "")
         baseline = set(capture.get("baseline_candidate_keys") or [])
+        native_fresh = False
+        lineage = capture.get("native_media_lineage") or {}
+        anchors = lineage.get("metadata_anchors") or []
+        app_id = str(expected_source.get("source_app_id") or "")
+        if (
+            lineage.get("method") == "native_v2_merchant_response"
+            and candidate_id and f"id:{candidate_id}" not in baseline
+            and resource_id == live_id
+            and expected_source.get("source_identity") == f"xiaoetong:{app_id}:{live_id}"
+            and str(labels.get("capture_id") or "") == candidate_id
+            and _SHA256.fullmatch(str(lineage.get("media_resource_sha256") or ""))
+            and len(anchors) == 1
+            and isinstance(anchors[0], dict)
+        ):
+            anchor = anchors[0]
+            try:
+                captured_at = datetime.fromisoformat(str((candidate or {}).get("captured") or ""))
+                if captured_at.tzinfo is None:
+                    captured_at = captured_at.replace(tzinfo=ZoneInfo("Asia/Shanghai"))
+                armed_at = datetime.fromisoformat(str(
+                    capture.get("native_repair_armed_at") or capture.get("created_at") or ""))
+                native_fresh = bool(
+                    armed_at.tzinfo is not None and captured_at > armed_at
+                    and anchor.get("candidate_id") == candidate_id
+                    and anchor.get("app_id") == app_id
+                    and anchor.get("live_id") == live_id
+                    and anchor.get("source_host") == "xet.kj1team.cn"
+                    and anchor.get("source_path") == "/_alive/v2/get_lookback_url"
+                    and _SHA256.fullmatch(str(anchor.get("response_sha256") or ""))
+                    and _SHA256.fullmatch(str(anchor.get("base_info_sha256") or ""))
+                )
+            except (TypeError, ValueError):
+                native_fresh = False
         identity_proven = (
             recorded
             and candidate_id
@@ -1631,7 +1664,7 @@ class XiaocaoLiveService:
             not recorded
             and live_id
             and candidate_key == f"live:{live_id}"
-            and candidate_key not in baseline
+            and (candidate_key not in baseline or native_fresh)
             and str(labels.get("live_id") or "") == live_id
         )
         if (
