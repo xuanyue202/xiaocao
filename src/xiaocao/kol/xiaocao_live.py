@@ -2108,6 +2108,11 @@ class XiaocaoLiveService:
         }
         capture = self.capture_store.latest(capture_job_id) or {}
         if capture.get("source_published_at"):
+            dated_media = re.match(r"^(\d{8})\s", media_basename)
+            if dated_media:
+                media_day = datetime.strptime(dated_media.group(1), "%Y%m%d").date().isoformat()
+                if media_day != capture.get("source_event_date"):
+                    raise EnrichmentError("native video date conflicts with original message date")
             handoff.update({key: capture[key] for key in (
                 "source_published_at", "source_event_date", "source_subscription_id", "source_message_sha256")})
             handoff["source_event_date_precision"] = "day"

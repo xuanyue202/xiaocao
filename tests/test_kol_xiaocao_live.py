@@ -804,7 +804,8 @@ def test_imported_decided_handoff_reconciles_missing_daily_terminal(
     assert calls[0][1]["reconcile_daily_terminal"] is True
 
 
-def test_publish_handoff_includes_portable_cloud_ready_ledger_snapshot(tmp_path):
+@pytest.mark.parametrize("media_day", ["20260723", "20260724"])
+def test_publish_handoff_includes_portable_cloud_ready_ledger_snapshot(tmp_path, media_day):
     media_sha256 = "c" * 64
     job_id = f"kol-netdisk-{media_sha256[:16]}"
     service = XiaocaoLiveService(tmp_path / "local-live")
@@ -812,12 +813,20 @@ def test_publish_handoff_includes_portable_cloud_ready_ledger_snapshot(tmp_path)
     service.capture_store.transition(capture, "source_publication_bound",
         source_published_at="2026-07-23T17:07:00+08:00", source_event_date="2026-07-23",
         source_subscription_id="original-subscription", source_message_sha256="a" * 64)
+    if media_day == "20260724":
+        with pytest.raises(EnrichmentError, match="native video date conflicts"):
+            service._publish_handoff(capture_job_id=capture["job_id"],
+                media={"live_id":"live-test", "captured_at":"2026-08-01T19:30:00+08:00",
+                    "media_basename":f"{media_day} target-compressed.mp4", "media_sha256":media_sha256,
+                    "media_size_bytes":123456, "media_duration_seconds":1800.5},
+                netdisk={"job_id":job_id})
+        return
     published = service._publish_handoff(
         capture_job_id=capture["job_id"],
         media={
             "live_id": "live-test",
             "captured_at": "2026-08-01T19:30:00+08:00",
-            "media_basename": "target-compressed.mp4",
+            "media_basename": f"{media_day} target-compressed.mp4",
             "media_sha256": media_sha256,
             "media_size_bytes": 123456,
             "media_duration_seconds": 1800.5,
