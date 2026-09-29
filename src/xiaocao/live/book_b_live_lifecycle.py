@@ -777,6 +777,7 @@ class BookBLiveAccountState:
     net_external_flow_total: float = 0.0
     external_flow_total: float = 0.0
     capital_unit_factor: str = "1"
+    accounting: dict[str, Any] | None = None
 
     def as_dict(self) -> dict[str, Any]:
         payload = asdict(self)
@@ -800,16 +801,14 @@ def project_book_b_live_account(
         broker_snapshot, trade_date=trade_date, now=now
     )
     state_root = Path(state_dir)
-    evidence_rows, ownership_head = _validate_ownership_chain(
-        _read_jsonl_strict(state_root / "book_b_ownership_evidence.jsonl")
-    )
-    _validate_execution_fill_coverage(state_root, evidence_rows)
+    from .book_b_accounting import replay_owned, observe_account
+    owned_book = replay_owned(state_root, initial_capital=initial_capital, fee_rate=default_fee_rate)
+    evidence_rows, ownership_head = owned_book.rows, owned_book.head
     _validate_same_day_broker_fill_coverage(
         snapshot,
         evidence_rows,
         trade_date=trade_date,
     )
-    intents = _load_intent_index(state_root)
     contexts = monitor_context_by_lot or {}
 
     broker_positions: dict[str, dict[str, Any]] = {}
@@ -830,67 +829,7 @@ def project_book_b_live_account(
             ),
         }
 
-    lot_rows: dict[str, dict[str, Any]] = {}
-    cash = _finite_decimal(
-        initial_capital, reason="LIVE_BOOK_B_INITIAL_CAPITAL_INVALID"
-    )
-    for event in evidence_rows:
-        if event.get("logical_account_id") != "primary":
-            raise ValueError("LIVE_BOOK_B_OWNERSHIP_ACCOUNT_MISMATCH")
-        side = str(event["side"]).upper()
-        shares = _nonnegative_int(
-            event.get("shares"), reason="LIVE_BOOK_B_OWNERSHIP_SHARES_INVALID"
-        )
-        fill_notional = _finite_decimal(
-            event.get("fill_notional"),
-            reason="LIVE_BOOK_B_OWNERSHIP_FILL_NOTIONAL_INVALID",
-        )
-        plan_id = str(event.get("plan_id") or "")
-        intent = intents.get(plan_id)
-        if intent is None or _sha256(intent) != str(event.get("plan_hash") or ""):
-            raise ValueError("LIVE_BOOK_B_OWNERSHIP_PLAN_INTENT_UNPROVEN")
-        fee_rate = _finite_decimal(
-            intent.get("fee_rate", default_fee_rate),
-            reason="LIVE_BOOK_B_FEE_RATE_INVALID",
-        )
-        if fee_rate < 0 or fee_rate >= 1:
-            raise ValueError("LIVE_BOOK_B_FEE_RATE_INVALID")
-        if side == "BUY":
-            lot_id = plan_id
-            snapshot_ref = str(intent.get("snapshot_ref") or "")
-            if not snapshot_ref:
-                raise ValueError("LIVE_BOOK_B_BUY_SNAPSHOT_REF_UNPROVEN")
-            current = lot_rows.setdefault(
-                lot_id,
-                {
-                    "owned_lot_id": lot_id,
-                    "code": str(event.get("code") or ""),
-                    "name": str(event.get("name") or event.get("code") or ""),
-                    "entry_date": str(event.get("trade_date") or "")[:10],
-                    "cost": Decimal("0"),
-                    "shares": 0,
-                    "buy_fee_rate": fee_rate,
-                    "sell_fee_rate": fee_rate,
-                    "snapshot_ref": snapshot_ref,
-                },
-            )
-            if current["snapshot_ref"] != snapshot_ref:
-                raise ValueError("LIVE_BOOK_B_BUY_SNAPSHOT_REF_MISMATCH")
-            current["cost"] += fill_notional
-            current["shares"] += shares
-            cash -= fill_notional * (Decimal("1") + fee_rate)
-        else:
-            lot_id = str(event.get("owned_lot_id") or intent.get("owned_lot_id") or "")
-            if not lot_id or lot_id not in lot_rows:
-                raise ValueError("LIVE_BOOK_B_SELL_OWNED_LOT_UNPROVEN")
-            if lot_rows[lot_id]["shares"] < shares:
-                raise ValueError("LIVE_BOOK_B_SELL_EXCEEDS_OWNED_LOT")
-            average_cost = lot_rows[lot_id]["cost"] / int(
-                lot_rows[lot_id]["shares"]
-            )
-            lot_rows[lot_id]["cost"] -= average_cost * shares
-            lot_rows[lot_id]["shares"] -= shares
-            cash += fill_notional * (Decimal("1") - fee_rate)
+    lot_rows, cash = owned_book.lots, owned_book.cash
 
     owned_by_code: dict[str, int] = {}
     for lot in lot_rows.values():
@@ -954,13 +893,18 @@ def project_book_b_live_account(
         )
     exposure = round(sum(lot.market_value for lot in lots), 2)
     liquidation = round(sum(lot.liquidation_value_after_fee for lot in lots), 2)
-    from .book_b_capital import allocate_cash
+    from .book_b_capital import POLICY, allocate_cash, has_open_buy
     cash, funding = allocate_cash(state_root, base_cash=cash, liquidation=liquidation,
         ownership_head=ownership_head, snapshot=snapshot, sync=sync_capital)
     cash = cash.quantize(Decimal("0.01"))
     if cash < Decimal("-0.10"):
         raise ValueError("LIVE_BOOK_B_SUBACCOUNT_CASH_NEGATIVE")
     nav = cash + Decimal(str(liquidation))
+    accounting = (observe_account(state_root, cash=cash, market_value=exposure,
+        liquidation_value=liquidation, snapshot=snapshot, capital_state=funding,
+        initial_capital=initial_capital,
+        cash_basis=("app_available_cash" if funding["capital_policy_id"] == POLICY and not has_open_buy(state_root)
+                    else "owned_replay_including_buy_reserve")) if sync_capital else None)
     return BookBLiveAccountState(
         trade_date=str(trade_date)[:10],
         logical_account_id="primary",
@@ -982,6 +926,7 @@ def project_book_b_live_account(
         broker_snapshot_sha256=str(snapshot["snapshot_sha256"]),
         broker_snapshot_observed_at=str(snapshot["observed_at"]),
         lots=tuple(lots),
+        accounting=accounting,
         **funding,
     )
 
@@ -1034,6 +979,13 @@ def write_book_b_live_settlement(
             raise ValueError("LIVE_BOOK_B_SETTLEMENT_CAPITAL_CHANGED")
         if current_ownership_head != account.ownership_head_sha256:
             raise ValueError("LIVE_BOOK_B_SETTLEMENT_OWNERSHIP_CHANGED")
+        if account.accounting is not None:
+            from .book_b_accounting import verify_observation
+            from .book_b_capital import verify_account
+            verify_account(root, account.as_dict())
+            report = verify_observation(root, account.accounting, current=True)
+            if report["status"] != "reconciled":
+                raise ValueError("LIVE_BOOK_B_SETTLEMENT_CASH_RECONCILE_REQUIRED")
         path = settlement_path(root, account.trade_date)
         if path.exists():
             existing = load_latest_book_b_live_settlement(root)

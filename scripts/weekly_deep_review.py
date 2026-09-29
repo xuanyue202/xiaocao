@@ -91,6 +91,7 @@ EXECUTION_REVIEW_INPUTS = [
     "output/live/book_b_live_execution/settlements/*.json",
     "output/live/book_b_live_execution/capital_policy.json",
     "output/live/book_b_live_execution/capital_flows.jsonl",
+    "output/live/book_b_live_execution/accounting_reports/*.json",
 ]
 
 

@@ -31,8 +31,6 @@ from .book_b_live_lifecycle import (
     BookBLiveAccountState,
     _load_intent_index,
     _read_jsonl_strict,
-    _validate_execution_fill_coverage,
-    _validate_ownership_chain,
     project_book_b_live_account,
     settlement_nonterminal_plan_ids,
     proven_prior_day_zero_fill_sell_ids,
@@ -121,27 +119,9 @@ def expected_settlement_date(now: datetime, trading_dates: Iterable[str]) -> str
 
 
 def _ownership_cash(state_dir: Path) -> tuple[dict, list[dict]]:
-    rows, _head = _validate_ownership_chain(
-        _read_jsonl_strict(state_dir / "book_b_ownership_evidence.jsonl")
-    )
-    _validate_execution_fill_coverage(state_dir, rows)
-    intents = _load_intent_index(state_dir)
-    cash = Decimal("30000")
-    by_head = {None: cash}
-    for row in rows:
-        intent = intents.get(row["plan_id"])
-        if (row.get("logical_account_id") != "primary" or intent is None
-                or digest(intent) != row["plan_hash"]):
-            raise ValueError("LIVE_RISK_OWNERSHIP_ACCOUNT_OR_INTENT_MISMATCH")
-        fee = _number(intent.get("fee_rate", 0.0001))
-        if not 0 <= fee < 1:
-            raise ValueError("LIVE_RISK_FEE_INVALID")
-        # Ownership serializes exact notionals as decimal strings; its chain
-        # validator above has already checked their numeric shape and range.
-        notional = _number(Decimal(str(row["fill_notional"])))
-        cash += notional * ((1 - fee) if row["side"] == "SELL" else -(1 + fee))
-        by_head[row["event_hash"]] = cash
-    return by_head, rows
+    from .book_b_accounting import replay_owned
+    book = replay_owned(state_dir)
+    return book.cash_by_head, book.rows
 
 
 def _verify_nav(payload: dict, cash_by_head: dict, state_dir: Path | None = None) -> float:
@@ -320,6 +300,9 @@ def _evaluate_live_risk_locked(state_dir: Path, *, now: datetime,
                 if not isinstance(account, BookBLiveAccountState) or account.logical_account_id != "primary":
                     raise ValueError("LIVE_RISK_RECONCILED_CURRENT_NAV_REQUIRED")
                 cash_by_head, _ = _ownership_cash(root)
+                if account.accounting is not None:
+                    from .book_b_accounting import verify_observation
+                    verify_observation(root, account.accounting, current=True)
                 if account.ownership_head_sha256 != next(reversed(cash_by_head)):
                     raise ValueError("LIVE_RISK_CURRENT_OWNERSHIP_CHANGED")
                 normalized_nav = _verify_nav(account.as_dict(), cash_by_head, root)
@@ -336,6 +319,8 @@ def _evaluate_live_risk_locked(state_dir: Path, *, now: datetime,
                                   drawdown_pct=None, review_required=True,
                                   reasons=tuple(sorted(set(receipt.reasons) | {error})))
             warnings = {"HIGH_WATER_BASIS_SEED_VALIDATED_SETTLEMENTS_AND_OBSERVED_MARKS"}
+            if account is not None and account.accounting and account.accounting["status"] != "reconciled":
+                warnings.add("CASH_DIFFERENCE_UNCLASSIFIED_PERFORMANCE_UNPROVEN")
             if history_diagnostics.get("history_gaps"):
                 warnings.add("HISTORICAL_SETTLEMENT_GAPS:" + ",".join(history_diagnostics["history_gaps"]))
             receipt = replace(receipt, reasons=tuple(sorted(set(receipt.reasons) | warnings)))

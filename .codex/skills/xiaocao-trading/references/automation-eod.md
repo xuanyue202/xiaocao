@@ -3,8 +3,9 @@
 Read this file only for the daily post-close capture/evaluation branch.
 
 APP Book B cash/NAV and performance use Operating Contract §6's dynamic
-capital journal. Cite its exact funding head and keep raw strategy NAV separate
-from unitized risk NAV. Paper A/B/T and historical settlements stay independent.
+SQLite financial journal. Consume `account.accounting` and cite its observation,
+journal and funding heads. Apply `docs/BOOK_B_ACCOUNTING.md` for profit/cost,
+unclassified cash and estimated fees. Paper A/B/T and historical settlements stay independent.
 
 ## Execute
 
@@ -46,6 +47,10 @@ original EOD archive contains a nonterminal reconciliation receipt; report the
 remaining valid basis and exact historical gap without rewriting either file.
 Never add
 `--execute-sells` to the EOD call.
+After the original business process terminates, run
+`PYTHONPATH=src .venv/bin/python scripts/book_b_accounting.py statement` once to
+export cumulative JSON/CSV. Retain its dated mark or missing/stale status even if
+an old unresolved order blocks settlement; this export makes no APP query.
 Transient structural, freshness-evidence, asset-equation, or cross-table
 failure may trigger only the adapter's bounded whole-snapshot reread. Strict
 invariants remain unchanged, the receipt records every read-only recovery

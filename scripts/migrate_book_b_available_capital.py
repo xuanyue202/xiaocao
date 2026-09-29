@@ -61,6 +61,12 @@ def migrate(root: Path, *, snapshot: dict, env: dict, approval: str, apply: bool
             verified, _ = load_authorization(auth_path=auth_path, env=env, now=now)
             if verified != grant:
                 raise ValueError("CAPITAL_MIGRATION_SIGNED_READBACK_FAILED")
+            from xiaocao.live.book_b_capital import allocate_cash, ownership_cash
+            by_head = ownership_cash(state)
+            allocate_cash(state, base_cash=by_head[account.ownership_head_sha256],
+                liquidation=account.liquidation_value_after_fee,
+                ownership_head=account.ownership_head_sha256, snapshot=snapshot,
+                allocation_reference=approval)
             account = project_book_b_live_account(state, snapshot,
                 trade_date=account.trade_date, now=now)
         result = {"status": "applied" if apply else "preview",

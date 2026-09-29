@@ -68,6 +68,11 @@ ledger. If the head changed after a proved fill, replay the hash-bound owned
 fills and mark the current owned lots from today's account-bound APP positions;
 use the current proved dynamic strategy NAV and owned exposure under §6.
 Capital allocation movements preserve unitized risk history.
+The returned `account.accounting` is the Contract §6 financial view; retain its
+observation/journal hashes and distinguish marked NAV from exit-fee NAV. Cash
+classification and statement work reads `docs/BOOK_B_ACCOUNTING.md` after the
+time-critical runner start. Routine tasks consume proved facts without classifying
+balance differences as capital.
 An old zero-fill SELL with exact fresh order/trade/holding proof may remain
 reconcile-only while other codes proceed; block a new BUY in that SELL's code.
 The

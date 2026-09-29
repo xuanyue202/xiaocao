@@ -47,7 +47,9 @@ Completion means the requested command reached a terminal state and the branch-s
   to the logical/fund account and protect the complete economic capsule with a
   canonical hash. The live logical account is fixed to `primary`. Apply
   Contract §6 for the approved account-bound dynamic APP capital policy;
-  capital allocation and unitized risk share one journal. A broker-reconciled
+  financial postings and observations use one SQLite journal; accounting,
+  statement export or cash classification work reads `docs/BOOK_B_ACCOUNTING.md`.
+  A broker-reconciled
   settlement is still mandatory after owned fills. Morning fences a code with an
   unresolved older SELL. Intraday live
   monitoring reads only broker-proved owned lots, reuses the production exit

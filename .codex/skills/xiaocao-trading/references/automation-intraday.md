@@ -204,7 +204,8 @@ For any apparent mismatch, run `scripts/data_doctor.py` and use ledgers above sn
 ## Report and completion
 
 Reply in concise Chinese with paper and real-capital Book B explicitly separated.
-For the real branch, lead with strategy-subaccount cash, exit-fee NAV, owned lots,
+For the APP branch, consume `account.accounting` under Contract §6; lead with
+strategy cash, marked NAV, realized/unrealized PnL, separate exit-fee NAV, owned lots,
 actual handoff/reconcile state and any T+1/liquidity/UNKNOWN block. Broker mixed
 account totals are corroboration, not Book-B NAV. Opening-dense reports may add
 evidence-backed posture confirmation/rejection. Sparse reports stay quiet when
