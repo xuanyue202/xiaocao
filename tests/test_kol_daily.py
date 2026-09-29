@@ -1159,6 +1159,8 @@ def test_xiaocao_runtime_upgrades_only_latest_decided_publication(tmp_path, monk
         "capture_job_id": "kol-current",
         "netdisk_job_id": job_id,
         "published_at": "2026-08-06T16:00:00+08:00",
+        "source_published_at": "2026-07-23T08:44:00+08:00",
+        "source_event_date": "2026-07-23",
         "large_payload_local_bytes": 0,
     }
     handoff["handoff_sha256"] = _canonical_sha256(handoff)
@@ -1219,7 +1221,8 @@ def test_xiaocao_runtime_upgrades_only_latest_decided_publication(tmp_path, monk
         opencli_profile=None,
     )
     pipeline = object()
-    runtime._pipeline = lambda _context: pipeline
+    contexts = []
+    runtime._pipeline = lambda context: contexts.append(context) or pipeline
 
     result = runtime.xiaocao()
 
@@ -1228,6 +1231,7 @@ def test_xiaocao_runtime_upgrades_only_latest_decided_publication(tmp_path, monk
     assert len(calls) == 1
     assert calls[0]["pipeline"] is pipeline
     assert calls[0]["reconcile_daily_terminal"] is True
+    assert contexts[0].source_published_at == "2026-07-23T08:44:00+08:00"
 
 
 def test_xiaocao_completed_handoff_requires_hash_bound_terminal(
@@ -2537,6 +2541,9 @@ def test_xiaocao_validated_bundle_uses_message_handoff_binding(
         "media_sha256": media_sha256,
         "media_basename": "current-compressed.mp4",
         "published_at": "2026-08-07T18:00:00+08:00",
+        "source_published_at": "2026-07-23T17:07:00+08:00",
+        "source_event_date": "2026-07-23",
+        "source_event_date_precision": "day",
         "large_payload_local_bytes": 0,
     }
     handoff["handoff_sha256"] = _canonical_sha256(handoff)
@@ -2580,10 +2587,11 @@ def test_xiaocao_validated_bundle_uses_message_handoff_binding(
         return {"items": [{}]}
 
     monkeypatch.setattr(kol_daily_script, "XiaocaoLiveService", FakeService)
+    semantic_inputs = []
     monkeypatch.setattr(
         kol_daily_script,
         "_persist_semantic_request",
-        lambda *_args, **_kwargs: {"event": "daily_analysis_input_required"},
+        lambda payload, **_kwargs: semantic_inputs.append(payload) or {"event": "daily_analysis_input_required"},
     )
     monkeypatch.setattr(
         kol_daily_script,
@@ -2603,13 +2611,18 @@ def test_xiaocao_validated_bundle_uses_message_handoff_binding(
         enrichment_session="xiaocao-lv-subscription",
         opencli_profile=None,
     )
-    runtime._pipeline = lambda _context: object()
+    contexts = []
+    runtime._pipeline = lambda context: contexts.append(context) or object()
 
     result = runtime.xiaocao(handoff_id=handoff_id)
 
     assert result["status"] == "completed"
     assert validation["handoff_id"] == handoff_id
     assert validation["source_identity"] == capture_job_id
+    assert contexts[0].source_published_at == "2026-07-23T17:07:00+08:00"
+    assert semantic_inputs[0]["published_at"] == "2026-07-23T17:07:00+08:00"
+    assert semantic_inputs[0]["handoff_published_at"] == "2026-08-07T18:00:00+08:00"
+    assert semantic_inputs[0]["source_event_date_precision"] == "day"
 
 
 def test_xiaocao_resume_reuses_persisted_validated_bundle_without_stdin(

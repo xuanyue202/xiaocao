@@ -242,6 +242,23 @@ def _evidence_time(value: Any, *, field: str) -> datetime:
     return parsed
 
 
+def source_publication_time(handoff: dict[str, Any]) -> str:
+    """New capsules separate source time from their own publication time."""
+    source_time = handoff.get("source_published_at")
+    if source_time is None:
+        if handoff.get("source_event_date") is not None:
+            raise EnrichmentError("source event date lacks source publication evidence")
+        # Preserve immutable legacy capsules; corrections need independent evidence.
+        return str(handoff["published_at"])
+    parsed = _evidence_time(source_time, field="source_published_at")
+    event_date = parsed.astimezone(ZoneInfo("Asia/Shanghai")).date().isoformat()
+    if handoff.get("source_event_date") != event_date:
+        raise EnrichmentError("source event date conflicts with original publication evidence")
+    if parsed > _evidence_time(handoff["published_at"], field="published_at"):
+        raise EnrichmentError("source publication postdates handoff publication")
+    return str(source_time)
+
+
 def validate_coverage_matrix(
     item: dict[str, Any],
     *,
@@ -517,7 +534,7 @@ class XiaocaoLiveService:
             publication_version=str(state["transcript_sha256"]),
             kol_id="kol-xiaocao",
             source="小草直播",
-            source_published_at=str(handoff["published_at"]),
+            source_published_at=source_publication_time(handoff),
             media_types=("video",),
             source_parts=({
                 "identity": str(handoff["capture_job_id"]),
@@ -632,6 +649,7 @@ class XiaocaoLiveService:
             or _sha256_text(_canonical(unsigned)) != expected_handoff_sha256
         ):
             raise EnrichmentError("remote handoff capsule hash is invalid")
+        source_publication_time(capsule)
         handoff_id = str(capsule.get("handoff_id") or "")
         capture_job_id = str(capsule.get("capture_job_id") or "")
         media_sha256 = str(capsule.get("media_sha256") or "")
@@ -2088,6 +2106,13 @@ class XiaocaoLiveService:
             "netdisk_job_snapshot": snapshot,
             "netdisk_job_snapshot_sha256": _sha256_text(_canonical(snapshot)),
         }
+        capture = self.capture_store.latest(capture_job_id) or {}
+        if capture.get("source_published_at"):
+            handoff.update({key: capture[key] for key in (
+                "source_published_at", "source_event_date", "source_subscription_id", "source_message_sha256")})
+            handoff["source_event_date_precision"] = "day"
+            handoff["source_time_basis"] = "original_wechat_message"
+            source_publication_time(handoff)
         handoff["handoff_sha256"] = _sha256_text(_canonical(handoff))
         path = self.output_dir / "handoffs" / f"{capture_job_id}.json"
         _atomic_json(path, handoff)

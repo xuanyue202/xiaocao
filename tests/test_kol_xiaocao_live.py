@@ -22,11 +22,26 @@ from xiaocao.kol.xiaocao_live import (
     capture_runtime_environment,
     validate_cleanup_evidence,
     validate_coverage_matrix,
+    source_publication_time,
 )
 
 
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+@pytest.mark.parametrize("bad", [None, "date", "future", "naive"])
+def test_source_publication_time_is_separate_from_ingestion(tmp_path, bad):
+    capsule = {"published_at": "2026-09-29T09:01:27+08:00",
+        "source_published_at": "2026-09-23T08:44:00+08:00", "source_event_date": "2026-09-23"}
+    if bad == "date": capsule["source_event_date"] = "2026-09-29"
+    if bad == "future": capsule.update(source_published_at="2026-09-30T08:44:00+08:00", source_event_date="2026-09-30")
+    if bad == "naive": capsule["source_published_at"] = "2026-09-23T08:44:00"
+    if bad:
+        with pytest.raises(EnrichmentError): source_publication_time(capsule)
+    else:
+        assert source_publication_time(capsule) == "2026-09-23T08:44:00+08:00"
+        assert source_publication_time({"published_at": capsule["published_at"]}) == capsule["published_at"]
 
 
 @pytest.mark.parametrize("detached", [True, False])
@@ -793,8 +808,12 @@ def test_publish_handoff_includes_portable_cloud_ready_ledger_snapshot(tmp_path)
     media_sha256 = "c" * 64
     job_id = f"kol-netdisk-{media_sha256[:16]}"
     service = XiaocaoLiveService(tmp_path / "local-live")
+    capture = service.capture_store.arm([])
+    service.capture_store.transition(capture, "source_publication_bound",
+        source_published_at="2026-07-23T17:07:00+08:00", source_event_date="2026-07-23",
+        source_subscription_id="original-subscription", source_message_sha256="a" * 64)
     published = service._publish_handoff(
-        capture_job_id="kol-capture-test",
+        capture_job_id=capture["job_id"],
         media={
             "live_id": "live-test",
             "captured_at": "2026-08-01T19:30:00+08:00",
@@ -822,6 +841,9 @@ def test_publish_handoff_includes_portable_cloud_ready_ledger_snapshot(tmp_path)
 
     capsule = json.loads(Path(published["handoff_path"]).read_text())
     assert capsule["schema_version"] == 2
+    assert capsule["source_published_at"] == "2026-07-23T17:07:00+08:00"
+    assert capsule["source_event_date"] == "2026-07-23"
+    assert capsule["published_at"] != capsule["source_published_at"]
     assert capsule["handoff_id"] == published["handoff_claim_idempotency_key"]
     assert capsule["handoff_sha256"] == _canonical_sha256({
         key: value

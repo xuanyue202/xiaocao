@@ -378,6 +378,26 @@ force download. Keep the original task/capture/claim and narrow item PTY through
 validation/upload/Handoff; a missing or uncertain resume receipt cannot be
 retried blindly. A user pause is not itself authority to resume.
 
+For an explicit user pause, stop the retained coordinator first, then use
+`pause_capture` on the exact task. It persists `user_resume_required` before
+provider cancellation; cancellation can asynchronously change `pause` to
+`error`, which must not authorize a replacement download. Preserve the original
+capture/task lineage and partial artifact, detach only the owned capture PAC,
+and stop the singleton without claiming completed media. On an explicit user
+resume, reconcile the exact durable task and use
+`resume_interrupted_capture(..., user_resume_authorized=True)`; restarting the
+coordinator alone does not revoke the user gate or prove byte-offset resume.
+
+New original-message handoffs bind `source_published_at` to that message's
+timestamp/hash/subscription and retain `source_event_date` plus day precision
+separately from `captured_at` and handoff `published_at`. Report/viewpoint source
+time and semantic-input publication time use the source field, not the later
+capture/upload clock. The original-message time is publication evidence, not a
+guessed live start time. Verify the video/title's actual date agrees before
+acceptance. Existing signed capsules remain immutable; correcting an already
+published report/viewpoint needs exact remote readback and a separately
+authorized, history-preserving correction, not a rewritten mailbox/hash.
+
 For a falsely-running exact stream whose compressed output is nonzero but has
 not changed for at least five minutes, `resume_interrupted_capture(...,
 stalled_media_repair=True)` requires the original candidate/live/compression

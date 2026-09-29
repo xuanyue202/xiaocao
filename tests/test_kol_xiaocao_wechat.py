@@ -1944,6 +1944,30 @@ def test_pending_cloud_handoff_resumes_exact_job_after_stale_playback_state(
     assert item["mailbox_readback_status"] == "created"
 
 
+def test_live_driver_preserves_original_message_date_before_advance(tmp_path):
+    from xiaocao.kol.xiaocao_live import XiaocaoLiveService
+    original_time = "2026-09-23T17:07:00+08:00"
+    root = tmp_path / "wechat"
+    service = XiaocaoLiveService(root / "item", capture_ledger=root / "capture.jsonl")
+    capture = service.capture_store.arm([])
+    manifest = {"items": {"original": {"capture_job_id": capture["job_id"],
+        "published_at": original_time, "message_sha256": "a" * 64}}}
+    (root / "manifest.json").write_text(json.dumps(manifest))
+    observed = []
+    service.start = lambda: None
+    service.advance = lambda *a, **k: observed.append(service.capture_store.latest(capture["job_id"])) or {}
+    driver = XiaocaoLiveCaptureDriver(root, service_factory=lambda *a, **k: service)
+    driver.advance("original", capture["job_id"], opencli_session="existing", opencli_profile=None)
+    assert observed[0]["source_published_at"] == original_time
+    assert observed[0]["source_event_date"] == "2026-09-23"
+    assert observed[0]["source_message_sha256"] == "a" * 64
+    manifest["items"]["original"]["published_at"] = "2026-09-29T17:07:00+08:00"
+    (root / "manifest.json").write_text(json.dumps(manifest))
+    with pytest.raises(EnrichmentError, match="publication evidence changed"):
+        driver.advance("original", capture["job_id"], opencli_session="existing", opencli_profile=None)
+    assert len(observed) == 1
+
+
 def test_published_handoff_recovery_is_read_only_until_remote_dispatch(tmp_path):
     payload = _history(
         "[2026-08-06 16:48] 福利官小花四: 今晚见："

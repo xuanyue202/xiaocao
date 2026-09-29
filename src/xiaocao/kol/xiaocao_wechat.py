@@ -584,6 +584,21 @@ class XiaocaoLiveCaptureDriver:
         if published is not None:
             return {**published, "idempotent_replay": True}
         capture = service.capture_store.latest(capture_job_id)
+        manifest_path = self.output_dir / "manifest.json"
+        if capture is not None and manifest_path.is_file():
+            original = json.loads(manifest_path.read_text(encoding="utf-8"))["items"].get(identity)
+            if not isinstance(original, dict) or original.get("capture_job_id") != capture_job_id:
+                raise EnrichmentError("original publication is not bound to this capture")
+            timestamp = datetime.fromisoformat(str(original["published_at"]))
+            if timestamp.tzinfo is None or not _SHA256.fullmatch(str(original.get("message_sha256") or "")):
+                raise EnrichmentError("original publication timestamp/hash is invalid")
+            fields = {"source_published_at": original["published_at"],
+                "source_event_date": timestamp.astimezone(ZoneInfo("Asia/Shanghai")).date().isoformat(),
+                "source_subscription_id": identity, "source_message_sha256": original["message_sha256"]}
+            if any(capture.get(key) is not None and capture[key] != value for key, value in fields.items()):
+                raise EnrichmentError("original publication evidence changed")
+            if any(capture.get(key) != value for key, value in fields.items()):
+                capture = service.capture_store.transition(capture, "source_publication_bound", **fields)
         if capture is None or capture.get("status") != "downloaded":
             service.start()
         try:

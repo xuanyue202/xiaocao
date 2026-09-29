@@ -77,6 +77,7 @@ from xiaocao.kol.wechat_official import (
 from xiaocao.kol.xiaocao_live import (
     XiaocaoLiveService,
     capture_runtime_environment,
+    source_publication_time,
     validate_decision_bundle,
 )
 from xiaocao.kol.xiaocao_wechat import (
@@ -3964,7 +3965,7 @@ class DailyRuntime:
                     publication_version=str(state["transcript_sha256"]),
                     kol_id="kol-xiaocao",
                     source="小草直播",
-                    source_published_at=str(handoff["published_at"]),
+                    source_published_at=source_publication_time(handoff),
                     media_types=("video",),
                     source_parts=({
                         "identity": str(handoff["capture_job_id"]),
@@ -4091,7 +4092,10 @@ class DailyRuntime:
                         handoff.get("media_basename")
                         or handoff["capture_job_id"]
                     ),
-                    "published_at": handoff["published_at"],
+                    "published_at": source_publication_time(handoff),
+                    "source_event_date": handoff.get("source_event_date"),
+                    "source_event_date_precision": handoff.get("source_event_date_precision"),
+                    "handoff_published_at": handoff["published_at"],
                     "captured_at": str(
                         handoff.get("captured_at") or handoff["published_at"]
                     ),
@@ -4156,7 +4160,7 @@ class DailyRuntime:
                 publication_version=str(state["transcript_sha256"]),
                 kol_id="kol-xiaocao",
                 source="小草直播",
-                source_published_at=str(handoff["published_at"]),
+                source_published_at=source_publication_time(handoff),
                 media_types=("video",),
                 source_parts=({
                     "identity": str(handoff["capture_job_id"]),
