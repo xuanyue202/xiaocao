@@ -1664,6 +1664,16 @@ class XiaocaoWechatLiveSubscription:
             raise EnrichmentError(
                 "WeChat mini-program returned an unknown playback state"
             )
+        if page_state in {"wechat_client_login_required", "mini_program_consent_required"}:
+            self._transition(
+                manifest, item, "awaiting_playback",
+                observed_page_state=page_state,
+                playback_surface=XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM,
+                activated=False,
+                media_request_observed=response.get("media_request_observed") is True,
+                playback_window_closed=response.get("playback_window_closed") is True,
+                user_action_required=True,
+            )
         if page_state == "wechat_client_login_required":
             raise EnrichmentDiagnosticError(
                 "WeChat client login is required",
@@ -1708,12 +1718,15 @@ class XiaocaoWechatLiveSubscription:
             )
         fields: dict[str, Any] = {
             "observed_page_state": page_state,
+            "activated": activated,
             "password_used": response.get("password_used") is True,
             "playback_route": self.playback_route,
             "playback_surface": XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM,
             "media_request_observed": media_request_observed,
             "playback_window_closed": response.get("playback_window_closed") is True,
         }
+        if activated:
+            fields["user_action_required"] = False
         if response_page:
             fields["page_url"] = response_page
         if source_bound and (expected_live_id or activated):

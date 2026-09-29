@@ -1760,6 +1760,7 @@ def test_wechat_mini_program_authorization_keeps_login_and_consent_distinct(
     payload = _history(
         "[2026-08-09 16:42] 福利官小花四: 草神直播：" + page_url,
     )
+    recovered = False
 
     def browser_exchange(request: dict) -> dict:
         if request["action"] == "resolve_xiaoetong_page":
@@ -1777,9 +1778,10 @@ def test_wechat_mini_program_authorization_keeps_login_and_consent_distinct(
                 "xiaoetong:app6ums63as6516:l_6a75cf66e4b0694c5bf6d228"
             ),
             "live_id": "l_6a75cf66e4b0694c5bf6d228",
-            "page_state": page_state,
-            "activated": False,
-            "media_request_observed": False,
+            "page_state": "mini_program_media_observed" if recovered else page_state,
+            "activated": recovered,
+            "media_request_observed": recovered,
+            "playback_window_closed": recovered,
             "password_used": False,
         }
 
@@ -1798,6 +1800,22 @@ def test_wechat_mini_program_authorization_keeps_login_and_consent_distinct(
 
     assert captured.value.diagnostic_code == page_state
     assert captured.value.diagnostic_stage == diagnostic_stage
+    item = next(iter(subscription._load()["items"].values()))
+    assert item["status"] == "awaiting_playback"
+    assert item["observed_page_state"] == page_state
+    assert item["capture_job_id"]
+    assert item["activated"] is False
+    assert item["user_action_required"] is True
+    original_capture_id = item["capture_job_id"]
+
+    recovered = True
+    subscription.run_once(opencli_session="xiaocao-lv-subscription")
+    resumed = subscription._load()["items"][item["identity"]]
+    assert resumed["capture_job_id"] == original_capture_id
+    assert resumed["status"] == "playback_activated"
+    assert resumed["observed_page_state"] == "mini_program_media_observed"
+    assert resumed["activated"] is True
+    assert resumed["user_action_required"] is False
 
 
 def test_pending_cloud_handoff_resumes_exact_job_after_stale_playback_state(
