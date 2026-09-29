@@ -455,6 +455,16 @@ def test_changed_remote_current_version_blocks(tmp_path, bundle):
         publish(tmp_path, bundle)
 
 
+def test_publish_accepts_correction_precondition_omitted_from_current_envelope(tmp_path, bundle):
+    decision, review, context, _ = bundle
+    # A writer request retains its optimistic correction precondition, while
+    # get_kol_record returns the same canonical report without request metadata.
+    context["reports"][0]["report"]["expected_content_sha256"] = "a" * 64
+    rehash(context)
+    review.update(review_for(decision, context))
+    assert publish(tmp_path, bundle)["status"] == "published"
+
+
 def test_remote_error_is_credential_free(tmp_path, bundle):
     bundle[3].fail = True
     with pytest.raises(td.TradingDecisionError) as caught:
