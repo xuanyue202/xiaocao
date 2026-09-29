@@ -1,0 +1,299 @@
+{
+  "schema_version": 1,
+  "knowledge_status": "reusable_knowledge",
+  "authority": 0,
+  "author": "吕晓彤",
+  "source": "百度网盘订阅视频《9月28日》",
+  "date": "2026-09-28",
+  "date_boundary": "该日期来自提供方发布元数据，精度为日；逐字稿中的“今天”没有独立证明年份或精确录制时刻。",
+  "kind": "review",
+  "summary": "本场可复用部分是五类待检验方法：把直播间人数等非价格情绪代理只作为风险约束；检查商业模式对单一交易对手的依赖；把大额股份转让拆成真实可售供给与治理变量；比较私募AI公司的上市通道和流动性折价；研究稀缺牌照的租值与监管约束。所有结论均归属吕晓彤，authority=0，不构成系统事实、策略参数或全局姿态。",
+  "posture": {
+    "regime": "not_applied_other_author",
+    "dominant_style": "作者自述A股满仓并选择等待，同时用直播间人数阈值判断情绪周期；这只是来源姿态。",
+    "risk": "财富值阈值缺少官方历史序列，大额股份转让主体未解析，AI估值与上市通道、量化业绩和投顾牌照价格均未独立核验。",
+    "style_ranking": [
+      "先把来源观点与独立事实分开",
+      "再把情绪代理、治理供给、交易对手依赖和上市通道拆成可观测变量",
+      "只复用已有精确假设，避免近义重复",
+      "无法解析的公司和人物保留为未具名对象",
+      "任何候选进入策略前均需research_run和人工门槛"
+    ]
+  },
+  "regime_call": {
+    "horizon": "跨周期研究方法",
+    "claim": "非价格情绪代理、单一交易对手依赖、股权供给和上市通道可能影响风险收益，但只有在稳定样本外证据下才能成为组合约束。",
+    "what_would_falsify": "若历史面板显示这些变量在控制市场、规模、估值和行业后，对未来收益、回撤或盈利修正没有稳定解释力，则相应候选失效。"
+  },
+  "directions": [
+    {
+      "name": "市场情绪与仓位约束",
+      "view": "把财富值这类非价格代理作为等待或仓位上限候选，不单独触发买卖；阈值需样本外检验。",
+      "authority": 0
+    },
+    {
+      "name": "单一交易对手依赖",
+      "view": "检验客户、平台或生态伙伴集中度变化能否领先收入、利润率和估值重定价。",
+      "authority": 0
+    },
+    {
+      "name": "股权治理与潜在供给",
+      "view": "把股份转让、锁定期、减持承诺、一致行动安排和实际可售规模分别核验。",
+      "authority": 0
+    },
+    {
+      "name": "私募AI估值与上市通道",
+      "view": "比较境内外上市资格、流动性、同业锚和老股折价，来源中的DeepSeek、Kimi数字均待核。",
+      "authority": 0
+    },
+    {
+      "name": "稀缺牌照经济学",
+      "view": "研究投顾牌照供给、变更限制、合规责任和平台获客能否形成可持续租值。",
+      "authority": 0
+    }
+  ],
+  "stocks": [
+    {
+      "name": "财富值指数",
+      "role": "作者用直播间人数构造的非价格情绪代理",
+      "boundary": "不是官方市场指标；账号封禁、直播到场和会员活跃都会干扰，阈值与四五年无失效说法均未核验。"
+    },
+    {
+      "name": "未具名的华为依赖对象",
+      "role": "单一交易对手或生态依赖案例",
+      "boundary": "逐字稿没有给出可验证公司名称，不能因相邻段落出现赛力斯而合并。"
+    },
+    {
+      "name": "未具名的股份转让公司",
+      "role": "大额股份转让与潜在卖压案例",
+      "boundary": "公司、创始人、受让人、转让比例和公告条款均未独立核验；配偶性格推测不是事实。"
+    },
+    {
+      "name": "DeepSeek与Kimi",
+      "role": "私募AI公司估值、上市通道和老股折价案例",
+      "boundary": "“国家大基金大股东”“保送A股”“380亿美元”和港股可比对象均为作者说法，未核验。"
+    },
+    {
+      "name": "小智、ES topic、质谱",
+      "role": "大模型竞争和估值比较中的原始称呼",
+      "boundary": "无法可靠映射到正式公司或证券，不进入执行。"
+    },
+    {
+      "name": "英伟达",
+      "role": "作者所称回购支撑美股盘前表现的例外案例",
+      "boundary": "本轮没有公司公告或行情证据验证回购与盘前表现。"
+    },
+    {
+      "name": "投资顾问牌照",
+      "role": "稀缺监管资质与大V挂靠商业模式案例",
+      "boundary": "作者明确说未研究；约20亿元价格、不可变更和券商持牌情况均未独立核验。"
+    }
+  ],
+  "method_principles": [
+    "非价格情绪指标只作为仓位上限、等待条件或风险复核，不单独触发交易。",
+    "研究单一交易对手依赖时，分别量化客户收入占比、替代成本、合同期限、议价权和自建替代能力。",
+    "股份转让不自动等于减持；核验受让主体、锁定期、减持承诺、质押、税务安排和实际可流通数量。",
+    "一致行动安排约束表决或行动关系，不应在没有公告条款时被作者口述扩写为不会减持。",
+    "比较私募AI公司估值时，同时控制上市市场、可交易流动性、老股权利、收入质量、资本消耗和同业锚。",
+    "牌照稀缺只有在监管供给、变更审批、合规成本和商业变现均可验证时才可能形成可持续租值。",
+    "来源中的保证式口述、人格推断和未经核验的数字只作为研究线索，不转写成系统承诺。"
+  ],
+  "exit_lessons": [
+    "不要把作者交替使用的“直播人数到2000”与“超过2000”清仓口径，或“基本不会不回本”的说法机械固化成策略；阈值边界需样本外检验，回本说法不是系统保证。",
+    "无法解析的公司或人物不映射到具名证券，也不因相邻提及而合并。",
+    "大额股份转让带来的供给风险要由公告和可售结构确认，不能用配偶身份或性格故事替代证据。",
+    "AI公司估值与上市通道未经核验时，只保留条件框架，不形成买卖结论。",
+    "作者自述满仓不构成家庭仓位模板；家庭层没有账户上下文时维持等待与核验边界。"
+  ],
+  "hypotheses": [
+    {
+      "existing_id": "XH-069",
+      "claim": "非价格的订阅活跃度或类似投资者情绪指标，只有在稳定样本外阈值下才可用于约束新增仓位。",
+      "implied_rule": "情绪指标只作为仓位上限和等待条件，不单独触发买卖，且阈值必须定期做样本外漂移检验。",
+      "falsifiable_test": "重建该指标历史序列，按小于1000、1000至1500、1500至2000和大于2000分组，比较未来1日、5日、20日宽基收益、回撤与命中稳定性。",
+      "expected_effect": "若来源阈值有效，高位组未来风险收益应显著弱于低位组且跨阶段稳定。",
+      "category": "sentiment_position_constraint",
+      "relationship": "genuine_recurrence_exact_claim"
+    },
+    {
+      "claim": "对单一交易对手或生态伙伴高度依赖的公司，在对方转向自建或终止合作时会出现更深的盈利预期与估值下修。",
+      "implied_rule": "把单一客户收入占比、替代能力和伙伴自建信号列为持仓风险上限，而不是等合作终止后才反应。",
+      "falsifiable_test": "按第一大客户或生态伙伴收入依赖分组，比较合作收缩公告前后5日、20日、60日盈利预期修正、超额收益和最大回撤。",
+      "expected_effect": "高依赖且替代能力弱的样本在伙伴自建或终止合作后应有更深回撤和更慢修复。",
+      "category": "counterparty_concentration"
+    },
+    {
+      "claim": "创始人向关联自然人转让大额股份会在缺少锁定或不减持承诺时形成潜在供给折价，但一致行动安排本身不足以证明一定减持或一定不减持。",
+      "implied_rule": "先核公告条款、锁定期、实际可售数量和减持承诺，再把潜在供给纳入估值折价。",
+      "falsifiable_test": "收集创始人向配偶或关联自然人转让股份事件，按是否有锁定与不减持承诺分组，比较未来20日、60日超额收益、成交量和实际减持。",
+      "expected_effect": "无锁定或承诺组应出现更高供给折价与后续减持概率；若无差异则该规则需收窄。",
+      "category": "governance_supply_overhang"
+    },
+    {
+      "claim": "同类私募AI公司若上市通道、流动性和可比公司锚不同，老股折价与估值中枢可能系统分化。",
+      "implied_rule": "私募老股比较必须统一上市市场、权利条款、流动性折价、收入质量和资本消耗，不能直接套用headline估值。",
+      "falsifiable_test": "构建境内、香港及未明确上市通道的私募AI公司融资与老股交易样本，比较上市可见度、流动性条款和后续融资折溢价。",
+      "expected_effect": "上市通道更清晰且流动性更强的样本应有较低老股折价；控制基本面后若不成立则否定。",
+      "category": "private_ai_venue_valuation"
+    },
+    {
+      "claim": "监管牌照在新增受限且主体变更困难时可能形成租值，但该租值能否持续取决于合规责任、获客能力和政策供给。",
+      "implied_rule": "研究牌照型平台时同时核验牌照供给、变更审批、合规成本、签约大V数量、客户转化和监管处罚。",
+      "falsifiable_test": "建立投资顾问及相近牌照的历史交易、变更、处罚与收入面板，比较牌照稀缺度和持续超额利润。",
+      "expected_effect": "若牌照稀缺真实可变现，持牌主体应在控制获客投入后保持更高利润率；否则只是不可交易的账面稀缺。",
+      "category": "regulatory_license_rent"
+    }
+  ],
+  "timing_notes": [
+    "来源标题与提供方元数据给出9月28日，处理于2026年9月29日；逐字稿本身没有确认年份和精确时刻。",
+    "“今天都崩了”“今年量化跌8%”“盘前强势”等是来源相对时间表达，不能离开该来源时点执行。",
+    "官方市场材料只确认2026年9月16日联储加息25个基点至3.75%至4.00%，以及2026年9月28日美国10年期国债收益率5.24%；它们不证明作者的股市因果解释。",
+    "作者交替使用财富值“到2000”和“超过2000”的清仓口径；这是条件性来源观点，没有可验证的到达时点、持仓或账户结果。"
+  ],
+  "deduplication_review": {
+    "ledger_read": "/Users/xuanyue202/Documents/project/xiaocao/reference/experience/xiaocao_hypotheses.jsonl",
+    "candidate_records_reviewed": 184,
+    "conclusion": "XH-069与本场财富值方法是真正的精确复现，保留既有claim、implied_rule、检验和预期效果；不再新建与XH-120相邻的情绪阈值近义条目。单一交易对手、大额股份转让、私募AI上市通道和牌照租值为四条新增authority=0候选。",
+    "adjacent_hypotheses": [
+      {
+        "id": "XH-120",
+        "relationship": "adjacent_not_reused",
+        "reason": "同属口述情绪阈值，但XH-069已精确覆盖本场非价格订阅活跃度分组。"
+      },
+      {
+        "id": "XH-115",
+        "relationship": "adjacent_not_duplicate",
+        "reason": "本场涉及美债、科技和医药轮动，但没有形成该条全球资产轮动的完整条件集。"
+      },
+      {
+        "id": "XH-118",
+        "relationship": "adjacent_not_duplicate",
+        "reason": "本场大模型竞争叙事缺少中间变量和可验证公司身份，暂不复用。"
+      },
+      {
+        "id": "XH-165",
+        "relationship": "adjacent_not_duplicate",
+        "reason": "资本配置一致性与本场关联自然人受让后的潜在供给不是同一可检验命题。"
+      }
+    ],
+    "posture_update": "not_applied：吕晓彤为其他作者，本条不修改posture_current或REGIME_TIMELINE。"
+  },
+  "calibration_feedback_response": {
+    "feedback_path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_subscription_videos/artifacts/a216ca5cb361a654e06d5e4035c4dc49f4eb76030c1f5ef06eef34ffd0eb330d/knowledge_feedback_20260929.txt",
+    "feedback_sha256": "c9e761d8c2278c3e2895b7173b4ee50bb4444f260eb1602c117fdfdf054352ef",
+    "current_posture": "未应用：反馈中的小草全局posture截至2026年7月1日且已于7月3日到期，本场为吕晓彤来源。",
+    "cash_calibration": "未直接涉及：来源同时允许垃圾时间空仓或满仓，只陈述作者本人满仓等待，没有提供“现金只保留给持续性下跌状态”的可验证条件。",
+    "rotation_calibration": "未直接涉及：作者仅口述科技弱时医药强的粗略对手盘关系，没有高低位电子切换、量价或持续性证据。",
+    "self_grade_entries": "未涉及：7月26日、8月10日和8月11日的评估对象及行为与本场内容不同。",
+    "global_effect": "no_global_posture_change"
+  },
+  "typo_corrections": [
+    {
+      "raw": "小智",
+      "normalized": null,
+      "reason": "可能是公司、产品或昵称，逐字稿和现有证据不足以确认。"
+    },
+    {
+      "raw": "es topic",
+      "normalized": null,
+      "reason": "ASR表面词无法可靠映射到发行主体或证券。"
+    },
+    {
+      "raw": "质谱",
+      "normalized": null,
+      "reason": "上下文是港股AI估值可比对象，但不能确认正式公司名称。"
+    },
+    {
+      "raw": "cloud",
+      "normalized": null,
+      "reason": "作者称OpenAI工程师向其下指令，可能是模型名的ASR误差，但不可强制修正。"
+    },
+    {
+      "raw": "泡泡和小毛",
+      "normalized": null,
+      "reason": "仅为历史投资例子中的口语简称，不映射证券。"
+    },
+    {
+      "raw": "微幕",
+      "normalized": "微末（按来源其他段落用词）",
+      "reason": "上下文为作者希望打造的品牌，但不构成投资标的。"
+    }
+  ],
+  "decision_trace": [
+    {
+      "observation": "作者把直播间人数称为财富值指数，反复给出约1000的低位判断和超过2000清仓阈值。",
+      "inference": "这是非价格情绪代理及条件式风险约束，而非官方指标或收益保证。",
+      "action": "精确复用XH-069；不把阈值写成系统交易规则。",
+      "evidence": {
+        "segment_id": "148cd900f2ea6bca02429ffbbcd486934fe0b3c9bd24f6c600d52cd0244ff261",
+        "quote": "对财富指数就是我们的直播，直播间人数啊"
+      }
+    },
+    {
+      "observation": "作者认为严重依赖某一家公司的商业模式会把命运咽喉交给对方，并举未具名华为相关对象为例。",
+      "inference": "单一交易对手集中度可能放大合作终止时的盈利和估值冲击。",
+      "action": "形成可检验的交易对手集中度候选；主体保持未解析。",
+      "evidence": {
+        "segment_id": "e5c6e83487be222237b6174e26ceeddc42cbf346fd3e1a284b66a511528852e8",
+        "quote": "所有的事儿它严重依赖某一个公司，它都不是一个好模式"
+      }
+    },
+    {
+      "observation": "作者把未具名创始人向妻子转让一半股份解释为潜在卖压，并指出一致行动不等于不减持。",
+      "inference": "可复用部分是把表决关系与实际可售供给分开，配偶性格故事不能进入事实层。",
+      "action": "形成治理供给候选，要求公告、锁定与实际减持数据验证。",
+      "evidence": {
+        "segment_id": "bd98d8d7e21eb51eaf4abfcab8eef5e7f99dd0cef4ffb2bc703cd9d2681303eb",
+        "quote": "一致行动人和我不减持，这是两件事"
+      }
+    },
+    {
+      "observation": "作者比较DeepSeek和Kimi的上市通道与老股折价，并口述380亿美元等数字。",
+      "inference": "私募估值可能受上市市场与流动性影响，但具体主体、股东和数字未核验。",
+      "action": "只沉淀上市通道与流动性折价框架，不保留为已证实公司事实。",
+      "evidence": {
+        "segment_id": "901dc2467c97291492ae22ba306b49e10fed46b7f284730dcd8f48f21f5ec876",
+        "quote": "kimi现在按照现在的话，老股肯定折价了"
+      }
+    },
+    {
+      "observation": "作者称投顾牌照稀缺、变更困难并可通过签约大V收取费用，同时承认没有研究过。",
+      "inference": "牌照租值需要监管供给、合规成本和真实收入共同证明。",
+      "action": "形成监管牌照经济学候选，不接受约20亿元口述为事实。",
+      "evidence": {
+        "segment_id": "429a0c6e7fcfdfbc62d60d70aa484bd6938e6a02f3fe783154255feb532bf598",
+        "quote": "就是因为一开始就会特别松，然后呢，后面等大家想用的时候就会特别紧，而导致有牌照的人呢，就躺着可以挣钱。"
+      }
+    }
+  ],
+  "judgment_heuristics": [
+    "非价格情绪只能做约束，不能单独做触发器。",
+    "单一伙伴依赖要看收入集中度和替代能力。",
+    "股份转让、表决关系与真实可售供给分开核验。",
+    "私募估值必须加入上市通道与流动性折价。",
+    "牌照价格口述不足以证明可持续租值。",
+    "保证式口述和人格推断不进入系统事实。",
+    "未具名对象始终保持未解析。"
+  ],
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_subscription_videos/enrichment/a216ca5cb361a654e06d5e4035c4dc49f4eb76030c1f5ef06eef34ffd0eb330d/artifacts/kol-netdisk-cloud-a0de4ef4194a00df/9月28日.txt",
+      "sha256": "c1fcf8ca207a7bb51480dbd7f09973bcac50cebb337399a6e378b6251f3d144b",
+      "size": 78616
+    }
+  ],
+  "action_summary": {
+    "posture_update": "not_applied：其他作者，且反馈中的小草posture已过期；不修改全局姿态。",
+    "playbook_update": "no_deterministic_change：只形成authority=0研究方法和边界。",
+    "hypothesis_update": "one_exact_recurrence_four_new_candidates：精确复用XH-069，新增四条候选，不创建XH-120近义重复。",
+    "audit_evidence": "bound_to_complete_transcript_sha256_c1fcf8ca207a7bb51480dbd7f09973bcac50cebb337399a6e378b6251f3d144b_and_202_stable_segments",
+    "instrumentation_todo": "补齐直播活跃度历史面板、客户集中度、关联转让公告、私募老股与上市通道、牌照交易及收入面板。",
+    "routing": [
+      "authority=0候选知识",
+      "XH-069精确复现",
+      "四条新候选待research_run",
+      "不更新小草全局姿态",
+      "不修改确定性策略或参数"
+    ]
+  }
+}
