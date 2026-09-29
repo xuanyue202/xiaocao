@@ -130,6 +130,7 @@ class BookBLiveCapitalBasis:
     source: str
     receipt_sha256: str | None = None
     capital_flow_head_sha256: str | None = None
+    accounting_report: dict | None = None
 
 
 def load_book_b_live_capital_basis(
@@ -149,10 +150,14 @@ def load_book_b_live_capital_basis(
                 or (settlement is None and current_account.lots)):
             raise ValueError("LIVE_BOOK_B_CURRENT_MARK_UNPROVEN")
         verify_account(root, current_account.as_dict())
+        if current_account.accounting is not None:
+            from .book_b_accounting import verify_observation
+            verify_observation(root, current_account.accounting, current=True)
         return BookBLiveCapitalBasis(settled_nav=current_account.settled_nav,
             current_open_exposure=current_account.current_open_exposure,
             source=SOURCE, receipt_sha256=current_account.broker_snapshot_sha256,
-            capital_flow_head_sha256=current_account.capital_flow_head_sha256)
+            capital_flow_head_sha256=current_account.capital_flow_head_sha256,
+            accounting_report=current_account.accounting)
     if settlement is not None:
         open_plans = open_execution_plan_ids(root)
         current_head = ownership_head_sha256(root)
@@ -1353,13 +1358,33 @@ def _load_allocation(
             raise ValueError("LIVE_ALLOCATION_CAPITAL_BASIS_RECEIPT_MISMATCH")
         try:
             observed = datetime.fromisoformat(str(snapshot["observed_at"]).replace("Z", "+00:00"))
-            account = pretrade_account(config.state_dir, snapshot,
-                trade_date=config.trade_date, now=observed, sync_capital=False,
-                historical_capital=True,
-                capital_flow_head=payload.get("capital_flow_head_sha256"),
-                capital_policy_id=("book_b_app_available_cash_v1" if capital_basis_source == "broker_reconciled_book_b_dynamic_nav" else None))
-            basis = load_book_b_live_capital_basis(config.state_dir,
-                trade_date=config.trade_date, current_account=account)
+            if payload.get("accounting") is not None:
+                from .book_b_accounting import verify_observation, number
+                from .book_b_capital import flow_state, policy
+                from .buy_preflight import validate_buy_preflight
+                validate_buy_preflight(snapshot, config.trade_date, observed)
+                report = verify_observation(config.state_dir, payload["accounting"])
+                state = flow_state(config.state_dir, report["capital_flow_head_sha256"])
+                cfg = policy(config.state_dir)
+                if (capital_basis_source != "broker_reconciled_book_b_dynamic_nav" or cfg is None
+                        or cfg["fund_account_binding_sha256"] != report["fund_account_binding_sha256"]
+                        or snapshot["fund_account_binding_sha256"] != report["fund_account_binding_sha256"]
+                        or report["broker_snapshot_sha256"] != snapshot["snapshot_sha256"]
+                        or report["observed_at"] != snapshot["observed_at"]
+                        or report["capital_flow_head_sha256"] != payload.get("capital_flow_head_sha256")
+                        or number(report["risk_unit_factor"]) != number(state["capital_unit_factor"])):
+                    raise ValueError("LIVE_ALLOCATION_ACCOUNTING_UNPROVEN")
+                basis = BookBLiveCapitalBasis(float(report["liquidation_nav"]),
+                    float(report["owned_market_value"]), capital_basis_source,
+                    report["broker_snapshot_sha256"], report["capital_flow_head_sha256"])
+            else:
+                account = pretrade_account(config.state_dir, snapshot,
+                    trade_date=config.trade_date, now=observed, sync_capital=False,
+                    historical_capital=True,
+                    capital_flow_head=payload.get("capital_flow_head_sha256"),
+                    capital_policy_id=("book_b_app_available_cash_v1" if capital_basis_source == "broker_reconciled_book_b_dynamic_nav" else None))
+                basis = load_book_b_live_capital_basis(config.state_dir,
+                    trade_date=config.trade_date, current_account=account)
         except (KeyError, TypeError, ValueError) as exc:
             raise ValueError("LIVE_ALLOCATION_CAPITAL_BASIS_RECEIPT_MISMATCH") from exc
         if (basis.source != capital_basis_source

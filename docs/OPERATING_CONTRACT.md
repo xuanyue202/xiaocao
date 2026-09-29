@@ -1,6 +1,6 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：4.29
+**版本**：4.30
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
 **关联实现**：`src/xiaocao/live/{safety,capital_keychain,foundersc_native_ax,foundersc_native_broker,trading_execution,book_b_live_lifecycle,book_b_live_intraday}.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`native/foundersc_ax_executor/`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{book_b_live_morning,book_b_live_intraday,live_monitor,research_mode_switch_replay}.py`
@@ -108,7 +108,7 @@ LiangHui 语义投影质量、来源读回时效、当前正式决策是三个�
 | **确定性脊柱** | data / fill / stop / 记账(book A/B/T) / 安全 / 契约校验 | **否**——纯确定性代码，回测与实盘**同一份** |
 | **Agent 皮层** | 判断：每日 posture、异常分诊、强持有例外、研究方向 | 是——结构化包进、结构化决策出（入审计日志） |
 | **Benchmark / Watchlist / Research Cohort 中间层** | `reference/experience/cohorts/*.yaml`（定义）/ `output/cohorts/cohort_snapshots.jsonl`（逐日快照）/ `output/research/*.jsonl`（护栏输入）：承接 raw pool、老师点名战果、本地标杆买入与待研究观察名单 | 否——**authority=0**，只供复盘、观察、`research_run.py`，不直接进买入/卖出/记账 |
-| **复利记忆** | cache.db / decision_journal.jsonl / HYPOTHESES.jsonl / training_rows / model（注：`state.db` 可查询投影**尚未实现**——当前"查询当前状态"由 `status.build_digest` 直接装配 jsonl，非 SQL） | 否 |
+| **复利记忆** | cache.db / decision_journal.jsonl / HYPOTHESES.jsonl / training_rows / model（全局 `state.db` 投影尚未实现；APP Book B 金融分录另由 §6 的 `accounting.sqlite3` 提供） | 否 |
 | **判断先验（小草蒸馏）** | `reference/experience/distilled/*.json`（逐篇结构化提取）/ `docs/XIAOCAO_PLAYBOOK.md`（道-法-术-纪律 + 实时盘面判断模型）/ `reference/experience/REGIME_TIMELINE.md`（dated posture）/ `reference/experience/xiaocao_hypotheses.jsonl`（**candidate** 假设账本，非 verdict） | 是——**仅** agent 皮层判断/叙述先验；**无脚本读取**，不进脊柱 |
 
 **MUST NOT**：让 agent 直接计算成交价、改账本余额、决定是否真实下单。这些只能由脊柱确定性执行；agent 仅产出"判断"，落入决策日志。
@@ -447,11 +447,24 @@ APP 在用户明确批准的动态资金政策下，以账户绑定的资金划�
   总敞口仍为净资产 × 100%，单票/模式/席位/整手/风险因子沿用原规则；实际买入含
   买费不得超过新鲜可用现金。没有固定 30,000 元的仓位或订单金额上限。
 - `capital_policy.json` 绑定账户与用户批准，`capital_flows.jsonl` 在账户 writer 锁内
-  追加 hash-chain 的资金划拨；只使用已证明成交及自有 lot 重放。资金差额明确记为
-  APP 可用资金分配变动，不推断银行入金，也不列作交易利润。每次划拨按划拨前的
-  自有 NAV 增减单位数，风险按原始本金单位净值连续追踪，保留高点/暂停和历史结算。
+  保存明确批准分类的策略资金划拨证据。账户余额差额本身不是划拨：未分类差额
+  保持待对账，累计盈亏为 N/A，仍按已证明可用现金执行原有提交硬上限。
+  每次明确划拨按划拨前的自有 NAV 增减单位数，风险按原始本金单位净值连续追踪，
+  保留高点/暂停和历史结算；正向未分类差额不能抬高风险净值，负差额保守计入。
   任何未终结自有 BUY 存在时不刷新划拨：冻结预留仍是策略现金，新鲜可用只作为
   提交硬上限，精确对账后才更新。旧 SELL 未决继续独立对账，不吸收人工股票。
+- APP Book B 的金融分录 SSOT 是 `book_b_live_execution/accounting.sqlite3`：复用
+  原成交/intent/ownership/划拨验证和同账户 writer 锁，以分为单位事务提交平衡分录、
+  唯一来源键和不可变 hash-chain。JSON/JSONL 继续保存原始订单与证据，不另建成交写者。
+  期初资本基准仍是历史策略 30,000；累计净投入 = 期初基准 + 明确净划拨，盈利再投入
+  不增加本金。标记净值 = 策略现金 + 当前自有市值；现金对账闭合时，累计盈亏 =
+  标记净值 − 累计净投入 = 已实现盈亏 + 浮动盈亏。买费计入持仓成本，部分卖出按
+  平均含费成本分摊，最终卖出消耗剩余分；旧 `realized_cash_delta` 仅兼容现金变动。
+  预计退出费后净值仍供原分配/风险使用，预计未来卖费独立展示，不能提前列作已发生亏损。
+  成交费用沿用计划估算费率并标记 `estimated_plan_rate`；额外费用、分红/利息须有
+  账户绑定的明细和归属证明，不从余额推断。当前 APP port 尚未采集资金流水，缺失
+  实际费用证据如实保留。当前决策/结算要求最新来源 head，历史 allocation 继续核验
+  原引用的不可变分录前缀。查询、明细与备份见 `docs/BOOK_B_ACCOUNTING.md`。
 - 签名动态授权绑定上述账户/政策；BUY 每个提交阶段须具备 60 秒内原生账户、
   精确 plan/hash 与含费可用现金证明，SELL 须证明自有数量与当前可卖数量。
   撤单仍须原委托映射和独立原生精确撤单核验。整批现金证明扣除已消费预留，
@@ -552,6 +565,7 @@ APP 在用户明确批准的动态资金政策下，以账户绑定的资金划�
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| 4.30 | 2026-09-29 | 用户批准复用原证据与锁建立 SQLite 金融分录和累计明细；现金差额不自动成为本金，区分含费成本、已实现/浮动盈亏、标记与预计清算净值，保留原风险和订单权限。 |
 | 4.29 | 2026-09-29 | 用户批准以全部 APP 可用资金为买入硬上限，原比例按动态策略净资产计算；独立资金划拨/单位净值保留历史盈亏和回撤暂停，签名动态授权绑定账户与原生含费证明，paper 不混账。 |
 | 4.28 | 2026-09-29 | 原生批次及填单前核验账户绑定对话框，按控件与主窗口几何区分 macOS 标题栏；明确未进入密码动作的失败可修复重检，可能确认仍禁止重放。 |
 | 4.27 | 2026-09-28 | 按 EOD 用户契约恢复所有 durable plan 终态后才结算；跨日自有 SELL 不全局抑制稀疏监控，旧单与当前交易继续分别验证。 |

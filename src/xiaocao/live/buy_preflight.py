@@ -13,11 +13,9 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from .book_b_live_lifecycle import (
-    BOOK_B_LIVE_DEFAULT_FEE_RATE, BOOK_B_LIVE_INITIAL_CAPITAL,
+    BOOK_B_LIVE_INITIAL_CAPITAL,
     BookBLiveAccountState, BookBLiveOwnedLot, load_latest_book_b_live_settlement,
-    _broker_decimal, _broker_integer, _load_intent_index, _normalize_code,
-    _read_jsonl_strict, _sha256, _validate_execution_fill_coverage,
-    _validate_ownership_chain,
+    _broker_decimal, _broker_integer, _normalize_code,
 )
 
 
@@ -88,54 +86,17 @@ def allocation_from_buy_preflight(snapshot: dict, basis, *, now: datetime) -> di
         # Carry the exact funding head; verification/recovery never revalues
         # this immutable allocation using a later capital movement.
         result['capital_flow_head_sha256'] = basis.capital_flow_head_sha256
+        if basis.accounting_report is not None:
+            result['accounting'] = basis.accounting_report
     result['allocation_capsule_sha256'] = _capsule_sha256(result)
     return result
 
 
 def _replay_owned_book(state_dir: Path) -> tuple[Decimal, dict[str, dict], str | None]:
     """Replay proved Book-B fills without requiring a terminal old order."""
-    events, head = _validate_ownership_chain(
-        _read_jsonl_strict(state_dir / 'book_b_ownership_evidence.jsonl'))
-    _validate_execution_fill_coverage(state_dir, events)
-    intents = _load_intent_index(state_dir)
-    cash = Decimal(str(BOOK_B_LIVE_INITIAL_CAPITAL))
-    lots: dict[str, dict] = {}
-    for event in events:
-        if event.get('logical_account_id') != 'primary':
-            raise ValueError('BUY_PREFLIGHT_OWNERSHIP_ACCOUNT_MISMATCH')
-        plan_id = str(event['plan_id'])
-        intent = intents.get(plan_id)
-        if intent is None or _sha256(intent) != event['plan_hash']:
-            raise ValueError('BUY_PREFLIGHT_OWNERSHIP_INTENT_UNPROVEN')
-        shares = int(event['shares'])
-        notional = Decimal(str(event['fill_notional']))
-        fee = Decimal(str(intent.get('fee_rate', BOOK_B_LIVE_DEFAULT_FEE_RATE)))
-        if shares <= 0 or notional <= 0 or not 0 <= fee < 1:
-            raise ValueError('BUY_PREFLIGHT_OWNERSHIP_FILL_INVALID')
-        if event['side'] == 'BUY':
-            lot = lots.setdefault(plan_id, {
-                'code': str(event['code']),
-                'name': str(event.get('name') or event['code']),
-                'entry_date': str(event['trade_date'])[:10],
-                'snapshot_ref': str(intent.get('snapshot_ref') or ''),
-                'fee_rate': fee, 'shares': 0, 'cost': Decimal('0'),
-            })
-            if not lot['snapshot_ref'] or lot['code'] != str(event['code']):
-                raise ValueError('BUY_PREFLIGHT_OWNERSHIP_LOT_INVALID')
-            lot['shares'] += shares
-            lot['cost'] += notional
-            cash -= notional * (1 + fee)
-        elif event['side'] == 'SELL':
-            lot_id = str(event.get('owned_lot_id') or intent.get('owned_lot_id') or '')
-            lot = lots.get(lot_id)
-            if lot is None or lot['shares'] < shares or lot['code'] != str(event['code']):
-                raise ValueError('BUY_PREFLIGHT_SELL_LOT_UNPROVEN')
-            lot['cost'] -= lot['cost'] / lot['shares'] * shares
-            lot['shares'] -= shares
-            cash += notional * (1 - fee)
-        else:
-            raise ValueError('BUY_PREFLIGHT_OWNERSHIP_SIDE_INVALID')
-    cash = cash.quantize(Decimal('0.01'))
+    from .book_b_accounting import replay_owned
+    book = replay_owned(state_dir)
+    cash, lots, head = book.cash.quantize(Decimal('0.01')), book.lots, book.head
     from .book_b_capital import policy
     if cash < Decimal('-0.10') and policy(state_dir) is None:
         raise ValueError('BUY_PREFLIGHT_SUBACCOUNT_CASH_NEGATIVE')
@@ -203,7 +164,7 @@ def pretrade_account(state_dir: Path, snapshot: dict, *, trade_date: str, now: d
             snapshot_ref=row['snapshot_ref'], monitor_context=contexts.get(lot_id, {})))
     exposure = round(sum(l.market_value for l in lots), 2)
     liquidation = round(sum(l.liquidation_value_after_fee for l in lots), 2)
-    from .book_b_capital import allocate_cash
+    from .book_b_capital import POLICY, allocate_cash, has_open_buy
     cash, funding = allocate_cash(state_dir, base_cash=cash, liquidation=liquidation,
         ownership_head=head, snapshot=snapshot, sync=sync_capital,
         replay_flow_head=capital_flow_head, historical=historical_capital)
@@ -214,9 +175,15 @@ def pretrade_account(state_dir: Path, snapshot: dict, *, trade_date: str, now: d
         funding['capital_policy_id'] = POLICY
     if cash < Decimal('-0.10'):
         raise ValueError('BUY_PREFLIGHT_SUBACCOUNT_CASH_NEGATIVE')
+    from .book_b_accounting import observe_account
+    accounting = (observe_account(state_dir, cash=cash, market_value=exposure,
+        liquidation_value=liquidation, snapshot=snapshot, capital_state=funding,
+        cash_basis=("app_available_cash" if funding['capital_policy_id'] == POLICY and not has_open_buy(state_dir)
+                    else "owned_replay_including_buy_reserve"))
+        if sync_capital else None)
     return BookBLiveAccountState(trade_date=trade_date, logical_account_id='primary', cash=float(cash),
         current_open_exposure=exposure, liquidation_value_after_fee=liquidation,
         settled_nav=round(float(cash)+liquidation, 2),
         realized_cash_delta=round(float(cash)-funding['net_external_flow_total']-BOOK_B_LIVE_INITIAL_CAPITAL, 2),
         ownership_head_sha256=head, broker_snapshot_sha256=snapshot['snapshot_sha256'],
-        broker_snapshot_observed_at=snapshot['observed_at'], lots=tuple(lots), **funding)
+        broker_snapshot_observed_at=snapshot['observed_at'], lots=tuple(lots), accounting=accounting, **funding)

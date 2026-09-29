@@ -4,7 +4,10 @@ Read this file only for the Friday weekly flywheel-consumer branch.
 
 For APP Book B performance apply Operating Contract §6: inspect the exact
 capital-flow chain, separate allocation movements from profit, and compare
-unitized risk NAV without resetting high water or pause history.
+unitized risk NAV without resetting high water or pause history. Read the dated
+SQLite statement exports in `book_b_live_execution/accounting_reports` under
+`docs/BOOK_B_ACCOUNTING.md`; compare contributed capital and realized/unrealized
+PnL separately, preserving unknown actual fees and unclassified cash.
 
 ## Execute
 

@@ -773,6 +773,8 @@ def test_legacy_nonterminal_settlement_is_preserved_but_excluded_from_basis_and_
 
     account = project_book_b_live_account(tmp_path, _snapshot(observed_at=EOD_NOW),
                                         trade_date="2026-09-01", now=EOD_NOW)
+    # Reproduce the old receipt format, before immutable accounting observations.
+    account = replace(account, accounting=None)
     first = write_book_b_live_settlement(tmp_path, account, now=EOD_NOW)
     later = EOD_NOW + timedelta(days=1)
     second = write_book_b_live_settlement(tmp_path, replace(account, trade_date="2026-09-02",

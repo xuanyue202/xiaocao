@@ -38,6 +38,16 @@ def with_cash(snapshot, cash):
 
 
 def project(root, snapshot):
+    # Capital movements are explicitly classified by the fixture operator;
+    # changing a broker balance alone is no longer funding evidence.
+    from xiaocao.live.book_b_capital import allocate_cash, ownership_cash
+    cash = ownership_cash(root)
+    before = project_book_b_live_account(root, snapshot,
+        trade_date=snapshot["trade_date"], now=datetime.fromisoformat(snapshot["observed_at"]),
+        sync_capital=False)
+    allocate_cash(root, base_cash=cash[before.ownership_head_sha256],
+        liquidation=before.liquidation_value_after_fee, ownership_head=before.ownership_head_sha256,
+        snapshot=snapshot, allocation_reference="isolated-test-explicit-allocation")
     return project_book_b_live_account(root, snapshot,
         trade_date=snapshot["trade_date"], now=datetime.fromisoformat(snapshot["observed_at"]))
 

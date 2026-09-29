@@ -1,9 +1,9 @@
 """Account-bound APP cash allocation journal; never a paper or fill writer.
 
-Available cash becomes strategy capital only at a reconciled checkpoint with
-no open owned BUY. While BUY funds are reserved, replay the existing allocation
-and let fresh available cash independently cap execution. Funding creates units
-at the pre-flow owned NAV, so it cannot manufacture profit or reset drawdown.
+Only an explicitly classified allocation creates capital units. A changed
+available balance alone stays unexplained cash. While BUY funds are reserved,
+replay the existing allocation; fresh available cash independently caps orders.
+Funding cannot manufacture profit or reset drawdown.
 """
 from __future__ import annotations
 
@@ -53,27 +53,8 @@ def policy(root: Path) -> dict | None:
 
 
 def ownership_cash(root: Path) -> dict[str | None, Decimal]:
-    # Lazy import keeps this shared seam usable by the lifecycle projector.
-    from .book_b_live_lifecycle import (_read_jsonl_strict, _validate_ownership_chain,
-        _validate_execution_fill_coverage, _load_intent_index, _sha256)
-    rows, _ = _validate_ownership_chain(_read_jsonl_strict(
-        Path(root) / "book_b_ownership_evidence.jsonl"))
-    _validate_execution_fill_coverage(Path(root), rows)
-    intents = _load_intent_index(Path(root))
-    cash = Decimal("30000")
-    result = {None: cash}
-    for row in rows:
-        intent = intents.get(row["plan_id"])
-        if (row.get("logical_account_id") != "primary" or intent is None
-                or _sha256(intent) != row["plan_hash"]):
-            raise ValueError("BOOK_B_CAPITAL_OWNERSHIP_UNPROVEN")
-        fee = number(intent.get("fee_rate", .0001))
-        if not 0 <= fee < 1:
-            raise ValueError("BOOK_B_CAPITAL_FEE_INVALID")
-        notional = number(row["fill_notional"])
-        cash += notional * ((1-fee) if row["side"] == "SELL" else -(1+fee))
-        result[row["event_hash"]] = cash
-    return result
+    from .book_b_accounting import replay_owned
+    return replay_owned(root).cash_by_head
 
 
 def flows(root: Path) -> list[dict]:
@@ -114,7 +95,10 @@ def flows(root: Path) -> list[dict]:
                 or snapshot["fund_account_binding_sha256"] != row["fund_account_binding_sha256"]
                 or number(available) != number(row["cash_after"])):
             raise ValueError("BOOK_B_CAPITAL_FLOW_SNAPSHOT_MISMATCH")
-        before = (cash_by_head[owner] + net).quantize(Decimal(".01"))
+        from .book_b_accounting import cash_adjustment
+        adjustment = (cash_adjustment(root, through=row["accounting_cash_event_head_sha256"])
+                      if row.get("accounting_cash_event_head_sha256") else Decimal(0))
+        before = (cash_by_head[owner] + net + adjustment).quantize(Decimal(".01"))
         delta = number(row["amount"])
         after = before + delta
         liquidation = number(row["owned_liquidation_value_after_fee"])
@@ -157,6 +141,14 @@ def current_flow_state(root: Path) -> dict:
     return result
 
 
+def _net_cash(root: Path, state: dict, *, as_of: str | None = None) -> Decimal:
+    """Exact values stay in source facts/SQLite; float fields are compatibility views."""
+    from .book_b_accounting import cash_adjustment
+    head = state["capital_flow_head_sha256"]
+    net = next((number(r["net_external_flow_total"]) for r in flows(root) if r["event_hash"] == head), Decimal(0))
+    return net + cash_adjustment(root, as_of=as_of)
+
+
 def has_open_buy(root: Path) -> bool:
     from .book_b_live_lifecycle import _load_intent_index, open_execution_plan_ids
     intents = _load_intent_index(Path(root))
@@ -165,17 +157,20 @@ def has_open_buy(root: Path) -> bool:
 
 def allocate_cash(root: Path, *, base_cash: Decimal, liquidation: float,
                   ownership_head: str | None, snapshot: dict, sync: bool = True,
-                  replay_flow_head: str | None = None, historical: bool = False) -> tuple[Decimal, dict]:
+                  replay_flow_head: str | None = None, historical: bool = False,
+                  allocation_reference: str | None = None) -> tuple[Decimal, dict]:
     from .trading_execution import account_writer_lock
     with account_writer_lock(Path(root) / "account_writer_locks", "primary"):
         return _allocate_cash_locked(root, base_cash=base_cash, liquidation=liquidation,
             ownership_head=ownership_head, snapshot=snapshot, sync=sync,
-            replay_flow_head=replay_flow_head, historical=historical)
+            replay_flow_head=replay_flow_head, historical=historical,
+            allocation_reference=allocation_reference)
 
 
 def _allocate_cash_locked(root: Path, *, base_cash: Decimal, liquidation: float,
                   ownership_head: str | None, snapshot: dict, sync: bool,
-                  replay_flow_head: str | None, historical: bool) -> tuple[Decimal, dict]:
+                  replay_flow_head: str | None, historical: bool,
+                  allocation_reference: str | None) -> tuple[Decimal, dict]:
     cfg = policy(root)
     current = current_flow_state(root)
     if historical:
@@ -184,7 +179,7 @@ def _allocate_cash_locked(root: Path, *, base_cash: Decimal, liquidation: float,
         current = flow_state(root, replay_flow_head)
         if replay_flow_head is not None:
             current["capital_policy_id"] = POLICY
-    cash = (base_cash + number(current["net_external_flow_total"])).quantize(Decimal(".01"))
+    cash = (base_cash + _net_cash(root, current, as_of=snapshot["observed_at"])).quantize(Decimal(".01"))
     if cfg is None:
         return cash, current
     if snapshot.get("fund_account_binding_sha256") != cfg["fund_account_binding_sha256"]:
@@ -199,7 +194,7 @@ def _allocate_cash_locked(root: Path, *, base_cash: Decimal, liquidation: float,
         if next(reversed(by_head)) != ownership_head:
             raise ValueError("BOOK_B_CAPITAL_OWNERSHIP_CHANGED")
         current = current_flow_state(root)
-        cash = (base_cash + number(current["net_external_flow_total"])).quantize(Decimal(".01"))
+        cash = (base_cash + _net_cash(root, current, as_of=snapshot["observed_at"])).quantize(Decimal(".01"))
         # A frozen BUY is already part of strategy cash: never withdraw it or
         # add it a second time. Capital refresh resumes after reconciliation.
         if has_open_buy(root):
@@ -209,6 +204,10 @@ def _allocate_cash_locked(root: Path, *, base_cash: Decimal, liquidation: float,
         delta = available - cash
         if delta == 0:
             return cash, current
+        if not allocation_reference:
+            # Available cash still caps current execution. Its unexplained
+            # difference is observed by the journal, never unitized as funding.
+            return available, current
         existing = flows(root)
         if existing and datetime.fromisoformat(snapshot["observed_at"]) < datetime.fromisoformat(existing[-1]["observed_at"]):
             raise ValueError("BOOK_B_CAPITAL_SNAPSHOT_REGRESSION")
@@ -222,13 +221,19 @@ def _allocate_cash_locked(root: Path, *, base_cash: Decimal, liquidation: float,
             "broker_snapshot_sha256": snapshot["snapshot_sha256"],
             "observed_at": snapshot["observed_at"],
             "kind": "app_available_cash_allocation", "amount": str(delta),
+            "classification_basis": "operator_approved_strategy_allocation",
+            "approval_reference": allocation_reference,
             "cash_before": str(cash), "cash_after": str(available),
             "owned_liquidation_value_after_fee": str(number(liquidation)),
             "nav_before": str(nav_before), "nav_after": str(nav_after),
-            "net_external_flow_total": str(number(current["net_external_flow_total"]) + delta),
-            "absolute_external_flow_total": str(number(current["external_flow_total"]) + abs(delta)),
-            "unit_factor": str(number(current["capital_unit_factor"]) * nav_after / nav_before),
+            "net_external_flow_total": str(sum((number(r["amount"]) for r in existing), Decimal(0)) + delta),
+            "absolute_external_flow_total": str(sum((abs(number(r["amount"])) for r in existing), Decimal(0)) + abs(delta)),
+            "unit_factor": str(number(current["capital_unit_factor"]) * (nav_after / nav_before)),
             "previous_hash": current["capital_flow_head_sha256"]}
+        from .book_b_accounting import cash_event_head
+        adjustment_head = cash_event_head(root)
+        if adjustment_head is not None:
+            body["accounting_cash_event_head_sha256"] = adjustment_head
         body["event_hash"] = digest(body)
         from .book_b_live_lifecycle import _write_json_atomic
         snapshot_path = Path(root) / "capital_snapshots" / f"{snapshot['snapshot_sha256']}.json"
@@ -262,6 +267,19 @@ def verify_account(root: Path, payload: dict) -> Decimal:
         if (indexes[row["ownership_head_sha256"]] > indexes[head]
                 or datetime.fromisoformat(row["observed_at"]) > datetime.fromisoformat(payload["broker_snapshot_observed_at"])):
             raise ValueError("BOOK_B_CAPITAL_ACCOUNT_FUTURE_FLOW")
+    accounting = payload.get("accounting")
+    if accounting is not None:
+        from .book_b_accounting import verify_observation
+        report = verify_observation(root, accounting)
+        if (report["ownership_head_sha256"] != head
+                or report["capital_flow_head_sha256"] != payload.get("capital_flow_head_sha256")
+                or report["broker_snapshot_sha256"] != payload.get("broker_snapshot_sha256")
+                or report["observed_at"] != payload.get("broker_snapshot_observed_at")
+                or number(report["cash"]) != number(payload["cash"])
+                or number(report["liquidation_nav"]) != number(payload["settled_nav"])
+                or number(report["risk_unit_factor"]) != number(state["capital_unit_factor"])):
+            raise ValueError("BOOK_B_ACCOUNTING_ACCOUNT_MISMATCH")
+        return number(report["conservative_risk_nav"])
     expected = (cash_by_head[head] + number(state["net_external_flow_total"])).quantize(Decimal(".01"))
     if expected != number(payload["cash"]).quantize(Decimal(".01")):
         raise ValueError("BOOK_B_CAPITAL_ACCOUNT_CASH_MISMATCH")
