@@ -232,9 +232,10 @@ def test_official_writer_reuses_persisted_bundle_without_stdin(
 
 
 def test_transcript_audit_contract_exposes_exact_character_thirds():
-    assert _transcript_audit_contract({
+    contract = _transcript_audit_contract({
         "transcript_character_count": 4641,
-    }) == {
+    })
+    assert {key: value for key, value in contract.items() if key != "audit_template"} == {
         "character_count": 4641,
         "excerpt_rule": "exact_contiguous_substring",
         "normalization": "none",

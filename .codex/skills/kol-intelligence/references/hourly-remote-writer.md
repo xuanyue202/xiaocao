@@ -197,6 +197,13 @@ uncertainty. Do not copy the body or serialize notes as JSON; write exactly
 `{"image_notes_path":"<absolute-md-path>"}` plus a newline. The runner appends
 notes to full Markdown before analysis.
 
+For `daily_xiaocao_audit_input_required`, use `audit_contract.audit_template`:
+retain the exact video/transcript hashes and fill its three `checks` with
+`position`, an exact `excerpt` starting in that third, and `passed=true` only
+after checking the persisted transcript. Return `{"audit_path":"<absolute-json-path>"}`
+to the same stdin. The template starts with empty excerpts and false checks;
+it is not proof until reviewed. Do not use an `excerpts`/`quote` envelope.
+
 Keep stdin open. EOF persists `waiting_semantic_input`, preserving the original
 request, evidence SHA, and item claim. The next sweep reuses that exact
 request/evidence, skips completed acquisition/transcript work, never replays

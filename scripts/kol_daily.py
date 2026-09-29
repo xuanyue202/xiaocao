@@ -836,6 +836,14 @@ def _transcript_audit_contract(state: dict[str, Any]) -> dict[str, Any]:
         "character_count": character_count,
         "excerpt_rule": "exact_contiguous_substring",
         "normalization": "none",
+        "audit_template": {
+            "video_sha256": state.get("video_sha256"),
+            "transcript_sha256": state.get("transcript_sha256"),
+            "checks": [
+                {"position": position, "excerpt": "", "passed": False}
+                for position in ("opening", "middle", "ending")
+            ],
+        },
         "ranges": [
             {
                 "position": "opening",
