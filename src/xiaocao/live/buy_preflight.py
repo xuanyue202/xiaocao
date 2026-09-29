@@ -164,7 +164,7 @@ def pretrade_account(state_dir: Path, snapshot: dict, *, trade_date: str, now: d
             snapshot_ref=row['snapshot_ref'], monitor_context=contexts.get(lot_id, {})))
     exposure = round(sum(l.market_value for l in lots), 2)
     liquidation = round(sum(l.liquidation_value_after_fee for l in lots), 2)
-    from .book_b_capital import POLICY, allocate_cash, has_open_buy
+    from .book_b_capital import allocate_cash
     cash, funding = allocate_cash(state_dir, base_cash=cash, liquidation=liquidation,
         ownership_head=head, snapshot=snapshot, sync=sync_capital,
         replay_flow_head=capital_flow_head, historical=historical_capital)
@@ -177,9 +177,7 @@ def pretrade_account(state_dir: Path, snapshot: dict, *, trade_date: str, now: d
         raise ValueError('BUY_PREFLIGHT_SUBACCOUNT_CASH_NEGATIVE')
     from .book_b_accounting import observe_account
     accounting = (observe_account(state_dir, cash=cash, market_value=exposure,
-        liquidation_value=liquidation, snapshot=snapshot, capital_state=funding,
-        cash_basis=("app_available_cash" if funding['capital_policy_id'] == POLICY and not has_open_buy(state_dir)
-                    else "owned_replay_including_buy_reserve"))
+        liquidation_value=liquidation, snapshot=snapshot, capital_state=funding)
         if sync_capital else None)
     return BookBLiveAccountState(trade_date=trade_date, logical_account_id='primary', cash=float(cash),
         current_open_exposure=exposure, liquidation_value_after_fee=liquidation,

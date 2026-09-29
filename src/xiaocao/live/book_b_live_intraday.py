@@ -529,6 +529,7 @@ def _run_book_b_live_intraday_locked(
         snapshot,
         trade_date=trade_date,
         now=current,
+        allow_accounting_unavailable=normalized_phase != "eod",
     )
     if provisional.lots and normalized_phase != "eod" and freeze_dir is None:
         raise ValueError("LIVE_BOOK_B_MONITOR_FREEZE_DIR_REQUIRED")
@@ -545,6 +546,7 @@ def _run_book_b_live_intraday_locked(
         trade_date=trade_date,
         now=current,
         monitor_context_by_lot=contexts,
+        allow_accounting_unavailable=normalized_phase != "eod",
     )
     risk_receipt = None
 

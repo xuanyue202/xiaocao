@@ -5,6 +5,7 @@ import argparse
 import csv
 from datetime import datetime, timezone
 import json
+import sqlite3
 from pathlib import Path
 import sys
 
@@ -15,6 +16,8 @@ from xiaocao.live import book_b_accounting as accounting
 from xiaocao.live.book_b_capital import current_flow_state, verify_account, allocate_cash
 from xiaocao.live.book_b_live_lifecycle import validate_broker_account_snapshot, _write_json_atomic
 from xiaocao.live.trading_execution import account_writer_lock
+
+STATEMENT_SCHEMA = "book-b-statement.v1"
 
 
 def export_statement(root: Path, directory: Path, *, receipt: dict | None = None) -> dict:
@@ -43,15 +46,18 @@ def export_statement(root: Path, directory: Path, *, receipt: dict | None = None
         detail = accounting.details(root)
         current_mark = bool(report and report["journal_head_sha256"] == state["journal_head_sha256"])
         identifier = accounting.digest({"journal_head_sha256": state["journal_head_sha256"],
+            "schema_version": STATEMENT_SCHEMA,
             "observation_sha256": report["receipt_sha256"] if report else None})
         directory.mkdir(parents=True, exist_ok=True)
         report_path = directory / (identifier + ".json")
-        body = {"journal": state, "valuation": report,
+        body = {"schema_version": STATEMENT_SCHEMA, "journal": state, "valuation": report,
             "valuation_status": "dated_observation" if current_mark else "stale_or_missing_mark"}
         if report_path.exists() and json.loads(report_path.read_text()) != body:
             raise ValueError("BOOK_B_ACCOUNTING_EXPORT_IMMUTABILITY_VIOLATION")
         _write_json_atomic(report_path, body)
-        detail_path = directory / (state["journal_head_sha256"] + ".csv")
+        detail_id = accounting.digest({"journal_head_sha256": state["journal_head_sha256"],
+                                      "schema_version": STATEMENT_SCHEMA})
+        detail_path = directory / (detail_id + ".csv")
         with detail_path.open("w", encoding="utf-8-sig", newline="") as stream:
             writer = csv.DictWriter(stream, fieldnames=list(detail[0]))
             writer.writeheader()
@@ -108,7 +114,7 @@ def main(argv=None) -> int:
             if args.output_dir is None:
                 parser.error("backup requires --output-dir naming a new backup file")
             result = accounting.backup(root, args.output_dir)
-    except (KeyError, ValueError) as exc:
+    except (OSError, sqlite3.Error, KeyError, ValueError, TypeError) as exc:
         print(json.dumps({"status": "blocked", "reason": str(exc)}, ensure_ascii=False))
         return 1
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))

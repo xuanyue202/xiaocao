@@ -9,7 +9,14 @@
 早盘预检和完整生命周期投影共享同一自有成交重放，幂等导入已证明事实并保存
 账户/估值观测。返回的 `account.accounting` 含确切来源 head、净投入、含费成本、
 已实现及浮动盈亏、标记净值和预计退出费用。资金差异未分类时总盈亏为 `null`。
+未决 BUY 的现金预留尚未精确证明时标为 `cash_reserve_reconciliation_required`，
+不会用重放余额声称现金闭合。较新资金事实存在时，较早快照不得用于当前观测或划拨。
 金融分录更新后，旧观测仍供历史核验，当前决策和结算必须重新取得有效观测。
+
+保护性监控的原账户绑定、自有成交、数量、T+1 和市场/订单门仍独立严格验证。
+仅 SQLite 存储读写故障可返回 `accounting.status=unavailable`，继续合法自有 SELL；
+现金/NAV/累计收益输出为 N/A，BUY 和 EOD 结算继续失败关闭。成交后的风险刷新失败
+返回 blocked 风险证据并保留原成交/终态回执。原始证据或等式损坏不走此降级。
 
 EOD 在原交易/对账入口结束后导出一次累计明细。周报读取这份日期绑定的报告，
 保留估值时间、费用估算和 UNKNOWN/缺失结算，不把观测当成结算。
@@ -22,6 +29,9 @@ CODEX_AUTOMATION_ID=xiaocao-book-b-live-morning PYTHONPATH=src .venv/bin/python 
 仅在 ownership/funding head 仍一致时可导入。命令不调用 APP、不下单，也不补造价格。
 输出 `report_path` 与 `details_path`；无当前估值时 headline NAV/盈亏为 N/A。
 CSV 每行包含经济事件、账户现金累计余额、成本、净投入变化、盈亏和原证据 hash。
+明细另带账户/环境、lot、来源执行事件、单价/金额与确认状态；原生成交 ID 和逐笔
+发生时钟未被原证据提供时留空，保留 trade_date 和观察时钟，不伪造对应关系。
+报告和 CSV 名称绑定导出 schema 与来源 head，字段扩展不覆盖旧格式导出。
 
 ## 明细来源与异常
 
@@ -35,6 +45,10 @@ CSV 每行包含经济事件、账户现金累计余额、成本、净投入变�
 额外费用只接受 `additional_non_trade_charge`，避免把总交易佣金重复扣除；
 分红要求权益日同账户持仓与自有数量完全匹配，利息期间必须全部在现金政策批准后。
 缺证明或混合人工持仓时保持待对账。
+原生资金更正使用 `kind=REVERSAL` 与 `reverses_entry_sha256` 引用一条已证明的
+费用/分红/利息分录，金额须严格相反且来源账户一致。同一原分录只能冲正一次，
+不能冲正冲正；全部记录保留。后续正确事件仍由原 `record-cash` 入口追加。
+此入口不改自有成交、数量或委托证据；缺少原生更正证明保持阻塞。
 
 明确的新资本划拨使用 `allocate --receipt <fresh-full-snapshot> --approval-reference <exact-approval>`。
 该入口要求已有相同快照的估值且没有未决 BUY 预留；按明确划拨分类更新原资金链

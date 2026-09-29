@@ -21,6 +21,7 @@ from .trading_execution import account_writer_lock
 
 CENT = Decimal(".01")
 DATABASE = "accounting.sqlite3"
+CASH_KINDS = frozenset({"FEE", "DIVIDEND", "INTEREST", "REVERSAL"})
 
 
 def cents(value) -> int:
@@ -200,6 +201,7 @@ def _post(db, body: dict) -> str:
 
 def _entries(db, *, through: str | None = None) -> list[dict]:
     result, previous = [], None
+    by_hash, reversed_entries = {}, set()
     for seq, encoded, predecessor, head, posted in db.execute(
             "SELECT seq,body,previous_hash,entry_hash,posted FROM entries ORDER BY seq"):
         body = json.loads(encoded)
@@ -207,7 +209,16 @@ def _entries(db, *, through: str | None = None) -> list[dict]:
         if (posted != 1 or predecessor != previous or lines != body["lines"]
                 or sum(lines.values()) != 0 or digest({"body": body, "previous_hash": previous}) != head):
             raise ValueError("BOOK_B_ACCOUNTING_JOURNAL_INVALID")
+        if body["kind"] == "REVERSAL":
+            target_hash = body.get("reverses_entry_sha256")
+            target = by_hash.get(target_hash)
+            if (target is None or target["kind"] not in CASH_KINDS - {"REVERSAL"}
+                    or target_hash in reversed_entries
+                    or lines != {key: -amount for key, amount in target["lines"].items()}):
+                raise ValueError("BOOK_B_ACCOUNTING_REVERSAL_INVALID")
+            reversed_entries.add(target_hash)
         result.append({**body, "entry_hash": head})
+        by_hash[head] = body
         previous = head
         if through == head:
             return result
@@ -284,12 +295,16 @@ def sync_journal(root: Path, *, initial_capital=30000) -> dict:
 
 
 def observe_account(root: Path, *, cash, market_value, liquidation_value, snapshot: dict,
-                    capital_state: dict, initial_capital=30000, cash_basis="app_available_cash") -> dict:
+                    capital_state: dict, initial_capital=30000) -> dict:
     """Store a hash-bound valuation; unclassified cash makes total PnL N/A."""
     root = Path(root)
     with _database(root) as db:
+        cash_event_head(root, no_later_than=snapshot["observed_at"])
         book = replay_owned(root, initial_capital=initial_capital)
         entries = _sync(db, root, book, initial_capital=initial_capital)
+        from .book_b_capital import POLICY, has_open_buy
+        cash_basis = ("owned_replay_including_buy_reserve" if has_open_buy(root) else
+            "app_available_cash" if capital_state["capital_policy_id"] == POLICY else "legacy_owned_cash_replay")
         binding = snapshot["fund_account_binding_sha256"]
         previous = db.execute("SELECT value FROM metadata WHERE key='fund_account_binding_sha256'").fetchone()
         if previous and previous[0] != binding:
@@ -302,6 +317,9 @@ def observe_account(root: Path, *, cash, market_value, liquidation_value, snapsh
         contributed = -totals.get("capital", 0)
         realized, unrealized = -totals.get("pnl", 0), exposure - inventory
         nav = actual + exposure
+        reconciled = difference == 0 and cash_basis != "owned_replay_including_buy_reserve"
+        status = ("cash_reserve_reconciliation_required" if cash_basis == "owned_replay_including_buy_reserve" else
+                  "reconciled" if reconciled else "cash_reconciliation_required")
         if difference == 0 and nav - contributed != realized + unrealized:
             raise ValueError("BOOK_B_ACCOUNTING_PNL_EQUATION_INVALID")
         body = {"schema_version": "book-b-accounting.v1", "book": "B",
@@ -310,17 +328,18 @@ def observe_account(root: Path, *, cash, market_value, liquidation_value, snapsh
             "observed_at": snapshot["observed_at"], "broker_snapshot_sha256": snapshot["snapshot_sha256"],
             "ownership_head_sha256": book.head, "capital_flow_head_sha256": capital_state["capital_flow_head_sha256"],
             "journal_head_sha256": entries[-1]["entry_hash"], "entry_count": len(entries),
-            "status": "reconciled" if difference == 0 else "cash_reconciliation_required",
+            "status": status,
             "cash_basis": cash_basis, "fee_basis": "estimated_plan_rate",
             "opening_capital": money(cents(initial_capital)), "cash": money(actual),
-            "ledger_cash": money(totals.get("cash", 0)), "cash_difference": money(difference),
+            "ledger_cash": money(totals.get("cash", 0)),
+            "cash_difference": None if cash_basis == "owned_replay_including_buy_reserve" else money(difference),
             "net_contributed_capital": money(contributed), "marked_nav": money(nav),
             "owned_market_value": money(exposure),
             "liquidation_nav": money(actual + liquidation),
             "estimated_exit_fee": money(exposure - liquidation),
             "remaining_cost": money(inventory), "realized_pnl": money(realized),
             "unrealized_pnl": money(unrealized),
-            "cumulative_pnl": money(nav - contributed) if difference == 0 else None,
+            "cumulative_pnl": money(nav - contributed) if reconciled else None,
             "risk_unit_factor": capital_state["capital_unit_factor"],
             # A positive unclassified difference cannot raise the risk high
             # water. A negative difference remains a conservative loss.
@@ -362,6 +381,7 @@ def verify_observation(root: Path, report: dict, *, current: bool = False) -> di
                     or replay_owned(root).head != report["ownership_head_sha256"]
                     or current_flow_state(root)["capital_flow_head_sha256"] != report["capital_flow_head_sha256"]):
                 raise ValueError("BOOK_B_ACCOUNTING_OBSERVATION_SOURCE_CHANGED")
+            cash_event_head(root, no_later_than=report["observed_at"])
         return report
 
 
@@ -378,6 +398,15 @@ def details(root: Path) -> list[dict]:
         running += lines.get("cash", 0)
         source = event.get("source", {})
         result.append({"event_id": event["source_id"], "observed_at": event["observed_at"],
+            "trade_date": source.get("trade_date", ""), "book": "B", "logical_account_id": "primary",
+            "environment": "app_server_simulation", "owned_lot_id": event.get("lot_id", ""),
+            "source_event_id": source.get("event_id", ""),
+            "source_execution_event_id": source.get("source_execution_event_id", ""),
+            "native_trade_id": source.get("native_trade_id"),
+            "fill_price": source.get("fill_price", ""), "fill_notional": source.get("fill_notional", ""),
+            "confirmation_status": ("legacy_strategy_seed" if event["kind"] == "OPENING"
+                                    else "source_proven_posted"), "trade_time": source.get("trade_time"),
+            "reverses_entry_sha256": event.get("reverses_entry_sha256", ""),
             "kind": event["kind"], "code": event.get("code", ""),
             "order_id": source.get("broker_order_id", ""), "shares": event.get("shares", 0),
             "fee": money(event.get("fee_cents", 0)), "fee_basis": event.get("fee_basis", ""),
@@ -410,17 +439,20 @@ def cash_adjustment(root: Path, *, through: str | None = None, as_of: str | None
     with sqlite3.connect(path.as_uri() + "?mode=ro", uri=True) as db:
         rows = _entries(db, through=through)
     return Decimal(sum(e["lines"].get("cash", 0) for e in rows
-        if e["kind"] in {"FEE", "DIVIDEND", "INTEREST"}
+        if e["kind"] in CASH_KINDS
         and (as_of is None or datetime.fromisoformat(e["observed_at"]) <= datetime.fromisoformat(as_of)))) / 100
 
 
-def cash_event_head(root: Path) -> str | None:
+def cash_event_head(root: Path, *, no_later_than: str | None = None) -> str | None:
     path = (Path(root) / DATABASE).absolute()
     if not path.exists():
         return None
     with sqlite3.connect(path.as_uri() + "?mode=ro", uri=True) as db:
-        return next((e["entry_hash"] for e in reversed(_entries(db))
-                     if e["kind"] in {"FEE", "DIVIDEND", "INTEREST"}), None)
+        events = [e for e in _entries(db) if e["kind"] in CASH_KINDS]
+        if no_later_than and any(datetime.fromisoformat(e["observed_at"]) > datetime.fromisoformat(no_later_than)
+                                 for e in events):
+            raise ValueError("BOOK_B_ACCOUNTING_CASH_SNAPSHOT_REGRESSION")
+        return events[-1]["entry_hash"] if events else None
 
 
 def record_cash_event(root: Path, proof: dict, *, now: datetime | None = None) -> dict:
@@ -449,13 +481,16 @@ def record_cash_event(root: Path, proof: dict, *, now: datetime | None = None) -
             or statement.get("observed_at") != snapshot["observed_at"]
             or statement.get("receipt_sha256") != digest(body)):
         raise ValueError("BOOK_B_ACCOUNTING_CASH_STATEMENT_UNPROVEN")
-    matches = [r for r in statement["rows"] if r.get("event_id") == proof.get("event_id")]
+    rows = statement.get("rows")
+    if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+        raise ValueError("BOOK_B_ACCOUNTING_CASH_STATEMENT_UNPROVEN")
+    matches = [r for r in rows if r.get("event_id") == proof.get("event_id")]
     if len(matches) != 1:
         raise ValueError("BOOK_B_ACCOUNTING_CASH_EVENT_NOT_UNIQUE")
     event = matches[0]
     kind, amount = event.get("kind"), number(event.get("amount"))
     if (not isinstance(event.get("event_id"), str) or not event["event_id"].strip()
-            or kind not in {"FEE", "DIVIDEND", "INTEREST"} or amount == 0
+            or kind not in CASH_KINDS or amount == 0
             or amount != amount.quantize(CENT)
             or (kind == "FEE" and (amount >= 0 or event.get("fee_basis") != "additional_non_trade_charge"))
             or (kind in {"DIVIDEND", "INTEREST"} and amount <= 0)):
@@ -497,9 +532,20 @@ def record_cash_event(root: Path, proof: dict, *, now: datetime | None = None) -
             "source": proof, "event": event, "code": event.get("code", ""),
             "fee_basis": event.get("fee_basis", "native_statement"),
             "lines": {"cash": cents(amount), "pnl": -cents(amount)}}
+        if kind == "REVERSAL":
+            history = _entries(db)
+            target_hash = event.get("reverses_entry_sha256")
+            target = next((e for e in history if e["entry_hash"] == target_hash), None)
+            if (target is None or target["kind"] not in CASH_KINDS - {"REVERSAL"}
+                    or cents(amount) != -target["lines"]["cash"]
+                    or datetime.fromisoformat(target["observed_at"]) > datetime.fromisoformat(statement["observed_at"])):
+                raise ValueError("BOOK_B_ACCOUNTING_REVERSAL_UNPROVEN")
+            entry["reverses_entry_sha256"] = target_hash
         old = db.execute("SELECT body,entry_hash FROM entries WHERE source_id=?", (entry["source_id"],)).fetchone()
         if old and json.loads(old[0]).get("event") != event:
             raise ValueError("BOOK_B_ACCOUNTING_SOURCE_CONFLICT")
+        if kind == "REVERSAL" and old is None and any(e.get("reverses_entry_sha256") == target_hash for e in history):
+            raise ValueError("BOOK_B_ACCOUNTING_REVERSAL_ALREADY_POSTED")
         head = old[1] if old else _post(db, entry)
         return {"status": "cash_event_posted", "event_id": entry["source_id"],
                 "amount": money(cents(amount)), "entry_sha256": head}

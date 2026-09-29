@@ -141,6 +141,8 @@ def load_book_b_live_capital_basis(
 ) -> BookBLiveCapitalBasis:
     """Return the first-batch basis or require a settled post-fill receipt."""
     root = Path(state_dir)
+    if current_account and current_account.accounting and current_account.accounting.get("status") == "unavailable":
+        raise ValueError("LIVE_BOOK_B_CURRENT_ACCOUNTING_UNAVAILABLE")
     settlement = load_latest_book_b_live_settlement(root)
     from .book_b_capital import POLICY, SOURCE, verify_account
     if isinstance(current_account, BookBLiveAccountState) and current_account.capital_policy_id == POLICY:

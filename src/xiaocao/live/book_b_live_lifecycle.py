@@ -3,8 +3,9 @@
 This module is deliberately outside the paper account namespace.  It projects
 only fills already proved by :class:`BookBOwnershipEvidence`, checks those
 owned deltas against a fresh broker positions snapshot, and derives the Book B
-sub-account cash, lots, exposure and liquidation NAV.  It never submits an
-order and never treats the broker's mixed-account cash as Book B cash.
+sub-account cash, lots, exposure and liquidation NAV. Cash follows the approved
+account-bound policy; mixed broker assets never establish Book-B ownership.
+It never submits an order.
 """
 from __future__ import annotations
 
@@ -13,6 +14,7 @@ import hashlib
 import json
 import math
 import os
+import sqlite3
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -782,6 +784,10 @@ class BookBLiveAccountState:
     def as_dict(self) -> dict[str, Any]:
         payload = asdict(self)
         payload["lots"] = [asdict(lot) for lot in self.lots]
+        if self.accounting and self.accounting.get("status") == "unavailable":
+            for key in ("cash", "settled_nav", "realized_cash_delta", "net_external_flow_total",
+                        "external_flow_total", "capital_unit_factor"):
+                payload[key] = None
         return payload
 
 
@@ -795,6 +801,7 @@ def project_book_b_live_account(
     initial_capital: float = BOOK_B_LIVE_INITIAL_CAPITAL,
     default_fee_rate: float = BOOK_B_LIVE_DEFAULT_FEE_RATE,
     sync_capital: bool = True,
+    allow_accounting_unavailable: bool = False,
 ) -> BookBLiveAccountState:
     """Project owned lots and Book B NAV from proved fills plus broker marks."""
     snapshot = validate_broker_account_snapshot(
@@ -893,18 +900,31 @@ def project_book_b_live_account(
         )
     exposure = round(sum(lot.market_value for lot in lots), 2)
     liquidation = round(sum(lot.liquidation_value_after_fee for lot in lots), 2)
-    from .book_b_capital import POLICY, allocate_cash, has_open_buy
-    cash, funding = allocate_cash(state_root, base_cash=cash, liquidation=liquidation,
-        ownership_head=ownership_head, snapshot=snapshot, sync=sync_capital)
+    from .book_b_capital import allocate_cash, policy as capital_policy
+    cfg = capital_policy(state_root)
+    if cfg is not None and snapshot.get("fund_account_binding_sha256") != cfg["fund_account_binding_sha256"]:
+        raise ValueError("BOOK_B_CAPITAL_ACCOUNT_MISMATCH")
+    try:
+        cash, funding = allocate_cash(state_root, base_cash=cash, liquidation=liquidation,
+            ownership_head=ownership_head, snapshot=snapshot, sync=sync_capital)
+        accounting = (observe_account(state_root, cash=cash, market_value=exposure,
+            liquidation_value=liquidation, snapshot=snapshot, capital_state=funding,
+            initial_capital=initial_capital) if sync_capital else None)
+    except (sqlite3.Error, PermissionError) as exc:
+        if not allow_accounting_unavailable:
+            raise
+        # Only independently proved lots support the protective SELL. These
+        # numeric placeholders are never exported as cash/NAV or BUY authority.
+        cash = Decimal(0)
+        funding = {"capital_policy_id": "", "capital_flow_head_sha256": None,
+            "net_external_flow_total": 0., "external_flow_total": 0., "capital_unit_factor": "1"}
+        accounting = {"schema_version": "book-b-accounting-unavailable.v1", "status": "unavailable",
+            "reason": "BOOK_B_ACCOUNTING_STORAGE_UNAVAILABLE", "failure_category": type(exc).__name__,
+            "broker_snapshot_sha256": snapshot["snapshot_sha256"]}
     cash = cash.quantize(Decimal("0.01"))
     if cash < Decimal("-0.10"):
         raise ValueError("LIVE_BOOK_B_SUBACCOUNT_CASH_NEGATIVE")
     nav = cash + Decimal(str(liquidation))
-    accounting = (observe_account(state_root, cash=cash, market_value=exposure,
-        liquidation_value=liquidation, snapshot=snapshot, capital_state=funding,
-        initial_capital=initial_capital,
-        cash_basis=("app_available_cash" if funding["capital_policy_id"] == POLICY and not has_open_buy(state_root)
-                    else "owned_replay_including_buy_reserve")) if sync_capital else None)
     return BookBLiveAccountState(
         trade_date=str(trade_date)[:10],
         logical_account_id="primary",
@@ -968,6 +988,8 @@ def write_book_b_live_settlement(
     root = Path(state_dir)
     with _account_execution_ownership_snapshot_lock(root):
         observed = now or datetime.now(timezone.utc)
+        if account.accounting and account.accounting.get("status") == "unavailable":
+            raise ValueError("LIVE_BOOK_B_SETTLEMENT_ACCOUNTING_UNAVAILABLE")
         # A current-mark exception can support independent transactions, but
         # cannot attest that an unresolved historical order is terminal.
         open_plans = open_execution_plan_ids(root)

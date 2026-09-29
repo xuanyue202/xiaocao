@@ -19,6 +19,7 @@ import hashlib
 import json
 import math
 import os
+import sqlite3
 from dataclasses import replace
 from datetime import date, datetime
 from decimal import Decimal
@@ -299,6 +300,8 @@ def _evaluate_live_risk_locked(state_dir: Path, *, now: datetime,
                                 trade_date=now.astimezone(_CHINA).date().isoformat(), now=now)
                 if not isinstance(account, BookBLiveAccountState) or account.logical_account_id != "primary":
                     raise ValueError("LIVE_RISK_RECONCILED_CURRENT_NAV_REQUIRED")
+                if account.accounting and account.accounting.get("status") in {"unavailable", "cash_reserve_reconciliation_required"}:
+                    raise ValueError("LIVE_RISK_ACCOUNTING_" + account.accounting["status"].upper())
                 cash_by_head, _ = _ownership_cash(root)
                 if account.accounting is not None:
                     from .book_b_accounting import verify_observation
@@ -309,7 +312,7 @@ def _evaluate_live_risk_locked(state_dir: Path, *, now: datetime,
                 mark = NavObservation(account.trade_date, normalized_nav, "live:B", _CAPITAL,
                                       0.0, NAV_BASIS, "reconciled", account.broker_snapshot_observed_at,
                                       digest(account.as_dict()))
-            except (OSError, ValueError, TypeError, KeyError, RuntimeError) as exc:
+            except (OSError, sqlite3.Error, ValueError, TypeError, KeyError, RuntimeError) as exc:
                 error = str(exc) or type(exc).__name__
             receipt = evaluate_account_risk(history, current_nav=mark, asof=now, account_id="live:B",
                         initial_capital=_CAPITAL, expected_settlement_date=expected, previous_receipt=previous,
@@ -324,7 +327,9 @@ def _evaluate_live_risk_locked(state_dir: Path, *, now: datetime,
             if history_diagnostics.get("history_gaps"):
                 warnings.add("HISTORICAL_SETTLEMENT_GAPS:" + ",".join(history_diagnostics["history_gaps"]))
             receipt = replace(receipt, reasons=tuple(sorted(set(receipt.reasons) | warnings)))
-            if account is not None and account.capital_policy_id:
+            capital_basis_available = account is not None and not (
+                account.accounting and account.accounting.get("status") == "unavailable")
+            if capital_basis_available and account.capital_policy_id:
                 receipt = replace(receipt, risk_nav_basis="unitized_original_capital",
                     strategy_nav=account.settled_nav,
                     capital_flow_head_sha256=account.capital_flow_head_sha256)
@@ -334,7 +339,7 @@ def _evaluate_live_risk_locked(state_dir: Path, *, now: datetime,
                          "capital_flow_head_sha256": account.capital_flow_head_sha256,
                          "unit_factor": account.capital_unit_factor,
                          "external_flow_total": account.external_flow_total,
-                         "risk_nav_basis": "unitized_original_capital"} if account is not None else None)}
+                         "risk_nav_basis": "unitized_original_capital"} if capital_basis_available else None)}
             event["event_hash"] = digest(event)
             with path.open("a", encoding="utf-8") as stream:
                 stream.write(json.dumps(event, ensure_ascii=False, sort_keys=True, allow_nan=False) + "\n")

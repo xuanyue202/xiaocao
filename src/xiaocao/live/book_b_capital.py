@@ -60,8 +60,12 @@ def ownership_cash(root: Path) -> dict[str | None, Decimal]:
 def flows(root: Path) -> list[dict]:
     """Validate the whole immutable journal, not only its latest checksum."""
     from .book_b_live_lifecycle import _read_jsonl_strict
-    cfg = policy(root)
     rows = _read_jsonl_strict(Path(root) / "capital_flows.jsonl")
+    return _validate_flows(root, rows)
+
+
+def _validate_flows(root: Path, rows: list[dict]) -> list[dict]:
+    cfg = policy(root)
     if rows and cfg is None:
         raise ValueError("BOOK_B_CAPITAL_POLICY_REQUIRED")
     cash_by_head = ownership_cash(root)
@@ -231,7 +235,7 @@ def _allocate_cash_locked(root: Path, *, base_cash: Decimal, liquidation: float,
             "unit_factor": str(number(current["capital_unit_factor"]) * (nav_after / nav_before)),
             "previous_hash": current["capital_flow_head_sha256"]}
         from .book_b_accounting import cash_event_head
-        adjustment_head = cash_event_head(root)
+        adjustment_head = cash_event_head(root, no_later_than=snapshot["observed_at"])
         if adjustment_head is not None:
             body["accounting_cash_event_head_sha256"] = adjustment_head
         body["event_hash"] = digest(body)
@@ -242,6 +246,7 @@ def _allocate_cash_locked(root: Path, *, base_cash: Decimal, liquidation: float,
                 raise ValueError("BOOK_B_CAPITAL_SNAPSHOT_IMMUTABILITY_VIOLATION")
         else:
             _write_json_atomic(snapshot_path, snapshot)
+        _validate_flows(root, existing + [body])
         with path.open("a", encoding="utf-8") as stream:
             stream.write(json.dumps(body, ensure_ascii=False, sort_keys=True) + "\n")
             stream.flush()

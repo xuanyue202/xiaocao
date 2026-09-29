@@ -3,6 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import datetime, timedelta
 import json
+import csv
 from pathlib import Path
 import sqlite3
 
@@ -41,6 +42,11 @@ def test_owned_partial_sales_allocate_fee_cost_and_residual_cents(tmp_path):
     assert first["realized_pnl"] == "99.79"
     book = ledger.replay_owned(tmp_path)
     assert book.lots[buy.plan_id]["cost_cents"] == 200020
+    detail = ledger.details(tmp_path)[1]
+    assert ledger.details(tmp_path)[0]["confirmation_status"] == "legacy_strategy_seed"
+    assert detail["owned_lot_id"] == buy.plan_id and detail["source_execution_event_id"]
+    assert ledger.number(detail["fill_price"]) == 10 and ledger.number(detail["fill_notional"]) == 3000
+    assert detail["native_trade_id"] is None
     last = replace(_plan(side="SELL", lot_id=buy.plan_id), shares=200, plan_id="book-b:2026-09-01:000001.XSHE:SELL:last")
     _record_fill(tmp_path, last, price=11, event_id="sell2")
     final = ledger.sync_journal(tmp_path)
@@ -167,7 +173,139 @@ def test_statement_export_shares_journal_and_does_not_mix_stale_mark(tmp_path):
     observed(tmp_path, proof["broker_snapshot"])
     current = export_statement(tmp_path, tmp_path/"reports")
     assert current["realized_pnl"] == current["cumulative_pnl"] == "-5.00"
-    assert Path(current["details_path"]).read_text(encoding="utf-8-sig").count("cash-1") == 1
+    with Path(current["details_path"]).open(encoding="utf-8-sig") as stream:
+        rows = list(csv.DictReader(stream))
+    assert len([row for row in rows if row["kind"] == "FEE"]) == 1
+    assert rows[-1]["source_event_id"] == "cash-1"
+
+
+def test_out_of_order_cash_snapshot_cannot_poison_capital_or_create_observation(tmp_path):
+    from xiaocao.live.book_b_capital import allocate_cash
+    activate(tmp_path)
+    project(tmp_path, with_cash(_snapshot(), 100000))
+    newer = with_cash(_snapshot(observed_at=NOW+timedelta(seconds=2)), 99995)
+    ledger.record_cash_event(tmp_path, cash_proof(newer), now=NOW+timedelta(seconds=2))
+    older = with_cash(_snapshot(observed_at=NOW+timedelta(seconds=1)), 110000)
+    original = (tmp_path/"capital_flows.jsonl").read_bytes()
+    with pytest.raises(ValueError, match="CASH_SNAPSHOT_REGRESSION"):
+        observed(tmp_path, older)
+    with pytest.raises(ValueError, match="CASH_SNAPSHOT_REGRESSION"):
+        allocate_cash(tmp_path, base_cash=ledger.replay_owned(tmp_path).cash, liquidation=0,
+            ownership_head=None, snapshot=older, allocation_reference="explicit-current-capital")
+    assert (tmp_path/"capital_flows.jsonl").read_bytes() == original and len(flows(tmp_path)) == 1
+    recovered = project(tmp_path, with_cash(_snapshot(observed_at=NOW+timedelta(seconds=3)), 109995))
+    assert recovered.accounting["cumulative_pnl"] == "-5.00" and len(flows(tmp_path)) == 2
+
+
+def test_intent_only_buy_does_not_certify_cash_or_profit_reconciliation(tmp_path):
+    from tests.test_book_b_live_lifecycle import _bind_plan_intent
+    activate(tmp_path)
+    project(tmp_path, with_cash(_snapshot(), 100000))
+    _bind_plan_intent(tmp_path, _plan())
+    account = observed(tmp_path, with_cash(_snapshot(observed_at=NOW+timedelta(seconds=1)), 99995))
+    assert account.accounting["status"] == "cash_reserve_reconciliation_required"
+    assert account.accounting["cash_difference"] is None and account.accounting["cumulative_pnl"] is None
+    assert len(flows(tmp_path)) == 1
+
+
+def test_proved_cash_reversal_preserves_original_and_all_cash_consumers(tmp_path):
+    activate(tmp_path)
+    project(tmp_path, with_cash(_snapshot(), 100000))
+    paid = with_cash(_snapshot(observed_at=NOW+timedelta(seconds=1)), 99995)
+    fee = ledger.record_cash_event(tmp_path, cash_proof(paid), now=NOW+timedelta(seconds=1))
+    returned = with_cash(_snapshot(observed_at=NOW+timedelta(seconds=2)), 100000)
+    proof = cash_proof(returned, kind="REVERSAL", amount="5.00", event_id="correction")
+    proof["statement"]["rows"][0]["reverses_entry_sha256"] = fee["entry_sha256"]
+    proof["statement"].pop("receipt_sha256")
+    proof["statement"]["receipt_sha256"] = digest(proof["statement"])
+    result = ledger.record_cash_event(tmp_path, proof, now=NOW+timedelta(seconds=2))
+    assert ledger.record_cash_event(tmp_path, proof, now=NOW+timedelta(seconds=2)) == result
+    report = observed(tmp_path, returned).accounting
+    assert report["cumulative_pnl"] == report["realized_pnl"] == "0.00"
+    assert ledger.cash_adjustment(tmp_path) == 0 and len(flows(tmp_path)) == 1
+    assert ledger.details(tmp_path)[-1]["reverses_entry_sha256"] == fee["entry_sha256"]
+    invalid = cash_proof(returned, kind="REVERSAL", amount="-5.00", event_id="reverse-reversal")
+    invalid["statement"]["rows"][0]["reverses_entry_sha256"] = result["entry_sha256"]
+    invalid["statement"].pop("receipt_sha256")
+    invalid["statement"]["receipt_sha256"] = digest(invalid["statement"])
+    with pytest.raises(ValueError, match="REVERSAL_UNPROVEN"):
+        ledger.record_cash_event(tmp_path, invalid, now=NOW+timedelta(seconds=2))
+    proof["event_id"] = proof["statement"]["rows"][0]["event_id"] = "duplicate-correction"
+    proof["statement"].pop("receipt_sha256")
+    proof["statement"]["receipt_sha256"] = digest(proof["statement"])
+    with pytest.raises(ValueError, match="REVERSAL_ALREADY_POSTED"):
+        ledger.record_cash_event(tmp_path, proof, now=NOW+timedelta(seconds=2))
+
+
+@pytest.mark.parametrize("fault", ["read", "write"])
+@pytest.mark.parametrize("filled", [False, True])
+def test_accounting_storage_failure_does_not_block_protective_sell(tmp_path, monkeypatch, fault, filled):
+    from xiaocao.live.book_b_live_intraday import run_book_b_live_intraday
+    from xiaocao.live.book_b_live_morning import load_book_b_live_capital_basis
+    from xiaocao.live.trading_execution import ExecutionReceipt, ExecutionState, ExecutionStore
+    from xiaocao.live.live_decision_support import evaluate_live_risk
+    buy = _record_fill(tmp_path, _plan(trade_date="2026-08-31"), price=10, event_id="owned")
+    def unavailable(*args, **kwargs):
+        raise sqlite3.OperationalError("attempt to write a readonly database")
+    monkeypatch.setattr(ledger, "cash_adjustment" if fault == "read" else "observe_account", unavailable)
+    snapshot = _snapshot(shares=100, sellable=100, price=9.2)
+    with pytest.raises(sqlite3.OperationalError):
+        observed(tmp_path, snapshot)
+    degraded = project_book_b_live_account(tmp_path, snapshot, trade_date="2026-09-01", now=NOW,
+        allow_accounting_unavailable=True)
+    assert degraded.accounting["status"] == "unavailable" and degraded.as_dict()["cash"] is None
+    assert degraded.as_dict()["settled_nav"] is None
+    with pytest.raises(ValueError, match="CURRENT_ACCOUNTING_UNAVAILABLE"):
+        load_book_b_live_capital_basis(tmp_path, trade_date="2026-09-01", current_account=degraded)
+    with pytest.raises(ValueError, match="SETTLEMENT_ACCOUNTING_UNAVAILABLE"):
+        write_book_b_live_settlement(tmp_path, degraded, now=EOD_NOW)
+    seen = []
+    def execute(plan):
+        seen.append(plan)
+        if filled:
+            _record_fill(tmp_path, plan, price=9.19, event_id="protective")
+            return ExecutionStore(tmp_path/"events.jsonl").current(plan.plan_id)
+        return ExecutionReceipt(plan.plan_id, plan.plan_hash, ExecutionState.REJECTED,
+            reason="TEST_NO_APP_WRITE", remaining_shares=plan.shares)
+    def snapshot_provider():
+        return (_snapshot(broker_fills=(("order-protective", buy.code, "SELL", 100, 9.19),))
+                if filled and seen else snapshot)
+    result = run_book_b_live_intraday(state_dir=tmp_path, freeze_dir=tmp_path,
+        trade_date="2026-09-01", phase="precheck", account_snapshot_provider=snapshot_provider,
+        status_provider=lambda lots: [{"owned_lot_id": buy.plan_id, "triggered": True,
+            "sell_reason": "HARD_STOP", "decision_phase": "risk_floor", "latest_price": 9.2,
+            "market_guard_status": "ok", "market_guard_observed_at": NOW,
+            "market_guard_down_price": 9., "best_bid_price": 9.19, "best_bid_volume": 1000}],
+        execute=execute, now=lambda: NOW, strategy_sha="a"*40, policy_root=tmp_path/"policy",
+        trading_dates_provider=lambda _: ["2026-08-31", "2026-09-01"])
+    assert len(seen) == 1 and seen[0].side == "SELL"
+    assert result.execution_receipts and result.account["accounting"]["status"] == "unavailable"
+    assert result.risk_receipt["status"] == "BLOCKED" and result.risk_receipt["nav"] is None
+    if filled:
+        assert result.execution_receipts[0]["filled_shares"] == 100
+    risk = evaluate_live_risk(tmp_path, now=NOW, account=degraded,
+        account_snapshot_provider=lambda: snapshot, trading_dates_provider=lambda _: ["2026-08-31", "2026-09-01"])
+    assert risk.status == "BLOCKED" and risk.nav is None
+    risk_event = json.loads((tmp_path/"account_risk"/"live_B.jsonl").read_text().splitlines()[-1])
+    assert risk_event["capital_basis"] is None
+    assert risk_event["receipt"]["strategy_nav"] is None
+    # Original source corruption remains fatal even on the protective path.
+    with (tmp_path/"book_b_ownership_evidence.jsonl").open("a") as stream:
+        stream.write("{}\n")
+    with pytest.raises(ValueError):
+        project_book_b_live_account(tmp_path, snapshot, trade_date="2026-09-01", now=NOW,
+            allow_accounting_unavailable=True)
+
+
+def test_protective_accounting_fallback_cannot_hide_capital_account_mismatch(tmp_path, monkeypatch):
+    activate(tmp_path, binding="b"*64)
+    _record_fill(tmp_path, _plan(trade_date="2026-08-31"), price=10, event_id="owned")
+    def unavailable(*args, **kwargs):
+        pytest.fail("capital account binding must be checked before accounting storage")
+    monkeypatch.setattr(ledger, "cash_adjustment", unavailable)
+    with pytest.raises(ValueError, match="BOOK_B_CAPITAL_ACCOUNT_MISMATCH"):
+        project_book_b_live_account(tmp_path, _snapshot(shares=100, sellable=100),
+            trade_date="2026-09-01", now=NOW, allow_accounting_unavailable=True)
 
 
 @pytest.mark.parametrize("fault", ["binding", "hash", "duplicate", "commission_total", "manual_dividend"])
