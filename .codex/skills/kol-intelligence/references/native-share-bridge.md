@@ -14,6 +14,13 @@ replay; the same capture was compressed, validated, cleaned up and uploaded to
 `/课程/自己的课/小草`. LiangHui returned `created`; authoritative message/content/
 media-hash readback and the one-item acceptance gate passed.
 
+On 2026-09-29, Sep27 evening completed the same pipeline without user course
+clicks or closure: fresh provider entry, native course/Allow, exact native v2
+merchant response binding, compressed download, validation, capture-only cleanup,
+Netdisk `video_ready`, mailbox `created` and authoritative same-ID/content/media
+hash readback. One-item acceptance passed. The mailbox remained `pending` at
+that readback: local Handoff, not remote acknowledgement or completed backfill.
+
 The first Sep24 evening Handoff required user closure: the old File-menu action
 did not close the newer branded window, and a fresh round-close click returned
 `noWindowsAvailable`. The user closed it; the Window menu proved absence.

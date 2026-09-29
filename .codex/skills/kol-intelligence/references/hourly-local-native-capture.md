@@ -39,34 +39,13 @@ use the original message timestamp and observed course state.
 For H5 entries, retain the process for credential-free identity resolution;
 H5 is not playback proof.
 
-The HTTPS resolver below applies only to an actual HTTPS source supplied by the
-current request. It is not a conversion or fallback for a native share token.
-
-For a historical HTTPS branded source, require the merchant page to bind
-`gh_4b9150162d69`, its actual published page path, and `appsnm3rlcp3566` together.
-Native cards may use `subpkg/live-room-horizon/pages/index.html`; preserve the
-observed path rather than replacing it with the older no-suffix variant.
-Its flat query supplies the exact live identity; never change that identity or
-infer a replay from its title. With `--reuse-open-window`, the resolver returns
-`reuse_open_window=true` without a launch command. Without that option, freshly fetch and validate the original merchant page and
-use only its exact issued branded Scheme. Do not exchange a branded entry for
-Goose Live: the same app/live identity does not prove equivalent authorization
-across mini-programs (observed 2026-09-13). Never reuse a Scheme from a report or
-construct one. Reuse the user's already-open matching course first. For this
-branded window verify closure against its exact title; the older Goose File-menu
-success does not prove the updated brand's closure. No refresh or repeated
-launch. A user-authorized same-course reopen must still preserve the branded
-application and use a newly read, validated merchant response.
-Keep the existing subscription/capture/source job and baseline. A fresh same-live finite candidate
-from the existing narrow Xiaoetong sniffer is still required. If unavailable,
-continue diagnosis rather than downloading a different/live candidate.
-
-`wxmpurl.cn` entries are discovered as merchant links, not assumed to be Goose
-Live. If resolution returns `unsupported_application` / `launch_allowed=false`,
-do not launch or use the original-message fallback: preserve the entry and
-report the unsupported application. This is distinct from transient resolution
-failure. A verified Goose Live entry yields its embedded identity and then a
-fresh merchant ticket; never reuse the old ticket from the message.
+The current branded native share always follows `native-share-bridge.md`.
+Do not substitute an old merchant HTTPS link, plaintext Scheme, another app,
+or a token-to-URL conversion. Historical HTTPS items retain their emitted
+read-only identity resolver, but are not an alternative for a native share.
+Their source, application and issued entry must be validated by that resolver;
+unsupported applications preserve the item without launch. Original IDs,
+baseline, exact finite media and downstream receipt checks apply to both.
 
 Complete read-only link/application validation before touching WeChat or
 changing the capture PAC. Do not rewrite an already correct, enabled PAC.
@@ -87,37 +66,12 @@ The repair restarts the source manager and may lose its in-memory media ticket;
 if the preserved candidate is no longer usable, follow the same-job native
 activation boundary, never reconstruct credentials or replace the capture.
 
-The read-only
-`scripts/kol_xiaoetong_launch.py` follows the first-party share redirect,
-validates the app/live anchor, obtains the provider's public Web Link
-representation, ignores the page's mock branch and verifies that the real
-`weixin://dl/business/?t=...` ticket embeds that exact replay. The mobile
-User-Agent requests the provider's link representation instead of its desktop
-QR; it is not login or entitlement. Do not invent tickets, app IDs or page
-paths.
-
-Use the returned page URL for identity resolution only. After the same task is
-armed and `/proxy.pac` is healthy and applied, execute `launch_command` once via
-normal macOS URL handling. If the target mini-program is already open, reuse it.
-Regenerate the merchant ticket only for that one activation; never reuse an old
-ticket from a report. Read the Goose Live window, not the unshareable main chat
-window. Once the exact course is visible, do not resolve again, refresh, or open
-a second Scheme. Prefer accessibility controls; when the mini-program exposes
-only a window, use the fresh screenshot to click its visible controls. Never
-reuse coordinates from an earlier screenshot/run or click the main chat window.
-At the visible course-password input, enter `666` once, read it back, and confirm.
-Confirmation may automatically start playback. Once the exact finite replay
-has been captured, close that course window using the File menu's observed
-`关闭全部标签页` (`performClose:`), then verify Goose Live is absent from the
-Window menu. If it does not auto-start, click the visible Play control once.
-Do not press Space, pause, or mute: keyboard focus is unreliable. Closing the
-course window leaves the independent download running; it does not prove the
-file is complete. Keep WeChat itself running.
-No hooks, WeChat re-signing, hidden
-debugging, CDP/DOM evaluation, or protection changes are allowed. If an HTTPS
-resolver cannot prove a ticket, retain the source for entry diagnosis. Native
-brand shares use the bridge reference, not guessed URL conversion or an expired
-merchant link. A launch plan is not playback, download or upload acceptance.
+An emitted HTTPS resolver's page URL is identity-only. Execute only its fresh,
+validated `launch_command`, once after readiness/PAC; reuse a matching open
+course. All visible course/password/play/close actions use the tables below;
+the current brand uses B0–B4. No hooks, WeChat re-signing, hidden debugging,
+CDP/DOM, protection changes or repeated launch. An entry plan is not media or
+Handoff acceptance. Keep WeChat running and follow the same PTY downstream.
 
 ## Identity, activation, and download
 
