@@ -190,6 +190,15 @@ lists enrich asynchronously with an incremental cache; they cannot bind a source
    仅已验证 `xet.kj1team.cn -> appsnm3rlcp3566` 来源可走此分支；PAC 覆盖
    整域不代表整域的任意响应可绑定来源。读取的是原生抓取证据，不访问 H5 播放器。
 
+   Sep28 晚场还使用 `live-ex-speed.xiaoeknow.com` 的数字命名回放清单。
+   不以文件名或 CDN 后缀认定回放：同一 singleton 本轮保存的 HTTP200
+   清单须绑定精确候选资源、post-arm 时间，并含 VOD、末尾 ENDLIST、
+   正时长且数量一致的有限分段；商户 base_info 须为已结束状态、同 app/live，
+   lookback 响应仍须映射同资源。记录清单哈希/时长/分段数，不返回 URL 或密钥。
+   同场后端修复保留这些未下载观察和原 capture；部署后重新取同场媒体，
+   不能沿用旧内存票据。相同 URL 派生 ID 的重复观察仅在资源、来源、字段及
+   live 全部一致时使用真实最新观察时间；冲突仍拒绝。
+
 3. **一次正常唤起，再输入课程口令。** 对 HTTPS 分享入口，运行当前请求给出的
    `launch_resolver_command`；其命令形态为：
 

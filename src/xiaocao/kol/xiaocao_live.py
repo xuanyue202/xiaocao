@@ -1918,10 +1918,16 @@ class XiaocaoLiveService:
         origin = urlsplit(str(candidate.get("source_url") or ""))
         resource = urlunsplit((url.scheme, url.netloc, url.path, "", ""))
         source_resource = urlunsplit((origin.scheme, origin.netloc, origin.path, "", ""))
+        direct_eof = (resource == source_resource and candidate.get("source_path") == url.path
+            and not candidate.get("json_path") and Path(url.path).name == "playlist_eof.m3u8")
+        if not direct_eof:
+            from .xiaocao_wechat import _native_v2_merchant_lineage
+            captured_at = datetime.fromisoformat(candidate["captured"]).replace(tzinfo=ZoneInfo("Asia/Shanghai"))
+            _native_v2_merchant_lineage(candidate, app_id=match.group(1), live_id=match.group(2),
+                armed_at=datetime.fromisoformat(current["created_at"]), captured_at=captured_at,
+                debug_root=self.sniffer_binary.parent / "elive_live_debug")
         if (url.scheme != "https" or not url.hostname or url.username or url.password
-            or resource != source_resource or candidate.get("source_path") != url.path
-            or candidate.get("json_path") or candidate.get("media_type") != "m3u8"
-            or Path(url.path).name != "playlist_eof.m3u8"):
+            or candidate.get("media_type") != "m3u8"):
             raise EnrichmentError("native observation is not a directly captured replay")
         try:
             captured = datetime.fromisoformat(str(candidate.get("captured") or ""))

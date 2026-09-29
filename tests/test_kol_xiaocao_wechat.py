@@ -1124,6 +1124,47 @@ def test_native_v2_binding_reopens_actual_merchant_response_without_global_conte
         assert "private" not in json.dumps(result)
 
 
+@pytest.mark.parametrize("invalid", [None, "no_end", "not_vod", "live", "old", "wrong_resource", "outside"])
+def test_native_numeric_playlist_requires_singleton_ended_vod_receipt(tmp_path, invalid):
+    from datetime import datetime
+    from xiaocao.kol.xiaocao_wechat import _native_direct_media_lineage
+    root = tmp_path / "elive_live_debug"
+    (root / "json").mkdir(parents=True)
+    (root / "m3u8").mkdir()
+    resource = "https://live-ex-speed.xiaoeknow.com/5060_recording.m3u8"
+    candidate = {"id": "native", "url": resource, "media_type": "m3u8", "live_id": "l_target",
+        "source_url": "https://xet.kj1team.cn/_alive/v2/get_lookback_url",
+        "source_path": "/_alive/v2/get_lookback_url", "json_path": "data.miniAliveVideoUrl"}
+    base = {"code": 0, "data": {"alive_info": {"app_id": "appsnm3rlcp3566", "alive_id": "l_target", "alive_state": 3}}}
+    if invalid == "live": base["data"]["alive_info"]["alive_state"] = 1
+    replay = {"code": 0, "data": {"aliveReviewUrl": "/l_target.m3u8", "miniAliveVideoUrl": resource}}
+    events = []
+    for name, body, path, at in [("base", base, "/_alive/v3/base_info", "2026-09-05T15:01:00+08:00"),
+            ("replay", replay, "/_alive/v2/get_lookback_url", "2026-09-05T15:01:01+08:00")]:
+        file = root / "json" / (name + ".json")
+        file.write_text(json.dumps(body))
+        events.append({"kind": "response.body", "status": 200, "url": "https://xet.kj1team.cn" + path,
+                       "at": at, "file": str(file)})
+    body = "#EXTM3U\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXTINF:120,\nsegment.ts\n#EXT-X-ENDLIST\n\n"
+    if invalid == "no_end": body = body.replace("#EXT-X-ENDLIST\n", "")
+    if invalid == "not_vod": body = body.replace("VOD", "EVENT")
+    file = (tmp_path if invalid == "outside" else root / "m3u8") / "recording.m3u8"
+    file.write_text(body)
+    events.append({"kind": "response.body", "status": 200,
+        "url": resource + (".other" if invalid == "wrong_resource" else ""), "file": str(file),
+        "at": "2026-09-05T14:59:00+08:00" if invalid == "old" else "2026-09-05T15:01:03+08:00"})
+    (root / "events.jsonl").write_text("\n".join(json.dumps(e) for e in events))
+    kwargs = dict(app_id="appsnm3rlcp3566", live_id="l_target", debug_root=root,
+        armed_at=datetime.fromisoformat("2026-09-05T15:00:00+08:00"),
+        captured_at=datetime.fromisoformat("2026-09-05T15:01:01+08:00"))
+    if invalid:
+        with pytest.raises(EnrichmentError): _native_direct_media_lineage(candidate, [], **kwargs)
+    else:
+        result = _native_direct_media_lineage(candidate, [], **kwargs)
+        assert result["finite_playlist"]["ended"] is True
+        assert result["finite_playlist"]["duration_seconds"] == 120
+
+
 @pytest.mark.parametrize("invalid", [None, "missing_anchor", "changed_source", "changed_media", "stale"])
 def test_unbound_native_repair_still_requires_exact_original_identity_and_lineage(tmp_path, invalid):
     store = CaptureJobStore(tmp_path / "capture.jsonl")

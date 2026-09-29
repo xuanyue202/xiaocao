@@ -12,6 +12,7 @@ import fcntl
 from copy import deepcopy
 import hashlib
 import json
+import math
 import os
 import re
 import subprocess
@@ -110,7 +111,7 @@ def _native_v2_merchant_lineage(
         or origin.path != "/_alive/v2/get_lookback_url"
         or candidate.get("source_path") != origin.path
         or candidate.get("json_path") not in {"data.miniAliveVideoUrl", "data.aliveVideoUrl"}
-        or not resource or Path(urlsplit(resource).path).name != "playlist_eof.m3u8"):
+        or not resource):
         raise EnrichmentError("native v2 capture lacks verified merchant source")
     root = debug_root.resolve()
     try:
@@ -151,6 +152,11 @@ def _native_v2_merchant_lineage(
         or base[1] > replay[1]
         or _media_resource_key(replay[0].get(candidate["json_path"].split(".")[-1])) != resource):
         raise EnrichmentError("native v2 response conflicts with exact merchant/media identity")
+    finite = {}
+    if Path(urlsplit(resource).path).name != "playlist_eof.m3u8":
+        if info.get("alive_state") != 3:
+            raise EnrichmentError("native replay course has not ended")
+        finite = _observed_native_finite_playlist(candidate, root, armed_at, captured_at)
     return {
         "method": "native_v2_merchant_response",
         "media_resource_sha256": _sha256_text(resource),
@@ -158,7 +164,43 @@ def _native_v2_merchant_lineage(
             "source_path": origin.path, "json_path": candidate["json_path"],
             "response_sha256": replay[2], "base_info_sha256": base[2],
             "app_id": app_id, "live_id": live_id}],
+        **({"finite_playlist": finite} if finite else {}),
     }
+
+
+def _observed_native_finite_playlist(candidate, root, armed_at, captured_at):
+    """Only a singleton-saved, post-arm ended VOD response proves this format."""
+    resource = _media_resource_key(candidate.get("url"))
+    media = urlsplit(resource)
+    if media.hostname != "live-ex-speed.xiaoeknow.com" or not media.path.endswith(".m3u8"):
+        raise EnrichmentError("unreviewed native replay playlist host")
+    for line in reversed((root / "events.jsonl").read_text().splitlines()):
+        try:
+            event = json.loads(line)
+            if (event.get("kind") != "response.body" or event.get("status") != 200
+                or _media_resource_key(event.get("url")) != resource):
+                continue
+            observed = datetime.fromisoformat(event["at"])
+            if not armed_at < observed <= captured_at + timedelta(seconds=30):
+                continue
+            path = Path(event["file"]).resolve()
+            if not path.is_relative_to(root / "m3u8") or path.stat().st_size > 2 * 1024 * 1024:
+                continue
+            body = path.read_bytes()
+            lines = body.decode().strip().splitlines()
+            durations = [float(v.split(":", 1)[1].split(",", 1)[0]) for v in lines if v.startswith("#EXTINF:")]
+            segments = [v for v in lines if v.strip() and not v.startswith("#")]
+            if (lines[0] != "#EXTM3U" or lines[-1] != "#EXT-X-ENDLIST"
+                or "#EXT-X-PLAYLIST-TYPE:VOD" not in lines or not durations
+                or len(durations) != len(segments)
+                or not all(math.isfinite(v) and v > 0 for v in durations) or sum(durations) < 60):
+                continue
+            return {"candidate_id": candidate["id"], "media_resource_sha256": _sha256_text(resource),
+                "response_sha256": hashlib.sha256(body).hexdigest(), "observed_at": observed.isoformat(),
+                "ended": True, "segment_count": len(durations), "duration_seconds": sum(durations)}
+        except (OSError, ValueError, KeyError, TypeError, IndexError):
+            continue
+    raise EnrichmentError("native replay lacks an observed ended VOD playlist")
 
 
 def _native_direct_media_lineage(
@@ -679,13 +721,15 @@ class XiaocaoLiveCaptureDriver:
         if unbound_identity and unbound_identity != source_identity:
             raise EnrichmentError("native repair changed the observed source identity")
         observations = service.sniffer.candidates()
-        candidates = [
-            row for row in observations
-            if row.get("id") == candidate_id and row.get("live_id") == live_id
-        ]
-        if len(candidates) != 1:
+        candidates = [row for row in observations if row.get("id") == candidate_id]
+        signatures = {(_media_resource_key(row.get("url")), row.get("live_id"),
+            _media_resource_key(row.get("source_url")), row.get("source_path"), row.get("json_path")) for row in candidates}
+        if not candidates or len(signatures) != 1 or any(row.get("live_id") != live_id for row in candidates):
             raise EnrichmentError("native capture candidate is missing or ambiguous")
-        candidate = candidates[0]
+        # A numeric, unsigned recording may be observed again after a backend
+        # repair with the same URL-derived ID. Retain its actual latest timestamp.
+        candidate = max(candidates, key=lambda row: str(row.get("captured") or ""))
+        candidates = [candidate]
         try:
             captured_at = datetime.fromisoformat(str(candidate.get("captured") or ""))
             if captured_at.tzinfo is None:
@@ -701,8 +745,9 @@ class XiaocaoLiveCaptureDriver:
         if (
             media.scheme != "https"
             or candidate.get("media_type") != "m3u8"
-            or re.fullmatch(r"playlist(?:_eof|\.f[0-9]+)?\.m3u8", Path(media.path).name)
-            is None
+            or (re.fullmatch(r"playlist(?:_eof|\.f[0-9]+)?\.m3u8", Path(media.path).name)
+                is None and (media.hostname != "live-ex-speed.xiaoeknow.com"
+                    or urlsplit(str(candidate.get("source_url") or "")).hostname != "xet.kj1team.cn"))
         ):
             raise EnrichmentError("native capture is not a finite replay candidate")
         source_host = urlsplit(str(candidate.get("source_url") or "")).hostname
