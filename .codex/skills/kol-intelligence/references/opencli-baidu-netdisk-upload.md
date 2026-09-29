@@ -27,6 +27,10 @@ checks the original claim/folder/name without navigation or file attachment.
 Do not switch to the independently leased `browser` surface to poll its queue
 or repeatedly open the folder; an absent cloud row remains pending, never
 permission to resubmit.
+Transient transport/time-out failure in this inspect-only poll is persisted as
+`netdisk_upload_readback_pending` and follows the same claim in the retained PTY.
+It is not a failed attachment or permission to retry upload. Authentication,
+authorization, malformed or mismatched readback still fails closed.
 
 Baidu may clear `input.files` synchronously in its upload handler. The adapter
 therefore captures the attached basename during the input/change capture phase

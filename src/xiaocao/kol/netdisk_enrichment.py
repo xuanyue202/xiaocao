@@ -395,6 +395,7 @@ _TRANSIENT_FAILURE_FIELDS = {
     "error_type",
     "failure_stage",
     "reason",
+    "readback_failure",
     "rejected_operation",
     "surface",
 }
@@ -755,6 +756,11 @@ class NetdiskEnrichmentService:
                     subprocess.CompletedProcess(command, 75, stdout="", stderr=stderr),
                     target_name=target_name, directory=self.netdisk_directory, claim_id=claim_id,
                 )
+            if inspect_only:
+                raise EnrichmentDiagnosticError(
+                    "OpenCLI upload readback timed out; preserve the existing claim",
+                    category="timeout", code="upload_readback_timeout", stage="upload_readback",
+                ) from exc
             raise EnrichmentError("OpenCLI upload template timed out") from exc
 
     @staticmethod
@@ -2585,16 +2591,31 @@ class NetdiskEnrichmentService:
         if status == "upload_claimed" and self.use_opencli_upload_template:
             # Poll the page that owns the upload, not the independently leased
             # browser surface. Inspection never navigates or attaches a file.
-            result = self._opencli_upload_template_process(
-                session=session, profile=profile,
-                video_path=Path(current["video_path"]),
-                target_name=target_name, claim_id=job_id, inspect_only=True,
-            )
-            if result.returncode != 0:
-                self._validate_opencli_upload_template_receipt(
-                    result, target_name=target_name,
-                    directory=self.netdisk_directory, claim_id=job_id,
+            try:
+                result = self._opencli_upload_template_process(
+                    session=session, profile=profile,
+                    video_path=Path(current["video_path"]),
+                    target_name=target_name, claim_id=job_id, inspect_only=True,
                 )
+                if result.returncode != 0:
+                    self._validate_opencli_upload_template_receipt(
+                        result, target_name=target_name,
+                        directory=self.netdisk_directory, claim_id=job_id,
+                    )
+            except EnrichmentDiagnosticError as exc:
+                if exc.diagnostic_category not in {"transport_error", "timeout"}:
+                    raise
+                # This attempt was inspect-only. Its failure says nothing about
+                # the earlier attachment; retain that effect and only retry reads.
+                with self.store.job_lock(job_id):
+                    latest = self.store.latest(job_id)
+                    if latest.get("status") != "upload_claimed":
+                        return {**latest, "idempotent_replay": True}
+                    row = {**latest, "event": "netdisk_upload_readback_pending",
+                           "readback_failure": _opencli_diagnostic(exc),
+                           "updated_at": self._time().isoformat(timespec="microseconds")}
+                    self.store.append(row)
+                return {**row, "pending": True, "idempotent_replay": True}
             try:
                 rows = json.loads(str(result.stdout))
                 proof = rows[0] if isinstance(rows, list) and len(rows) == 1 else {}

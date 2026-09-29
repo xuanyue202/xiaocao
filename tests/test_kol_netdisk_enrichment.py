@@ -247,6 +247,40 @@ def test_claimed_template_poll_rejects_unbound_proof(tmp_path, monkeypatch, chan
     assert service.store.latest(job["job_id"]) == claimed
 
 
+@pytest.mark.parametrize("category,code,retryable", [
+    ("transport_error", "upload_folder_scan_failed", True),
+    ("timeout", "opencli_timeout", True),
+    ("authentication_error", "netdisk_login_required", False),
+    ("authorization_error", "browser_security_policy_denied", False),
+])
+def test_claimed_upload_readback_failure_preserves_effect_and_auth_boundary(
+    tmp_path, monkeypatch, category, code, retryable,
+):
+    video = tmp_path / "video-compressed.mp4"
+    video.write_bytes(b"real-video")
+    service = NetdiskEnrichmentService(tmp_path / "out", runner=_runner,
+        now=lambda: NOW, use_opencli_upload_template=True)
+    job = service.prepare(video)
+    claimed = {**job, "event": "netdisk_upload_started", "status": "upload_claimed",
+               "upload_started_at": NOW.isoformat(), "claimed_at": NOW.isoformat()}
+    service.store.append(claimed)
+    def failed(**kwargs):
+        assert kwargs["inspect_only"] is True
+        raise EnrichmentDiagnosticError("readback unavailable", category=category,
+            code=code, stage="upload_folder_scan", exit_code=77)
+    monkeypatch.setattr(service, "_opencli_upload_template_process", failed)
+    if retryable:
+        result = service.advance_opencli(job["job_id"], session="site:baidu-netdisk")
+        assert result["pending"] is True and result["status"] == "upload_claimed"
+        assert result["upload_started_at"] == claimed["upload_started_at"]
+        assert result["claimed_at"] == claimed["claimed_at"]
+        assert result["readback_failure"]["code"] == code
+    else:
+        with pytest.raises(EnrichmentDiagnosticError):
+            service.advance_opencli(job["job_id"], session="site:baidu-netdisk")
+        assert service.store.latest(job["job_id"]) == claimed
+
+
 def test_template_file_chooser_timeout_preserves_pre_attachment_diagnostic():
     result = SimpleNamespace(returncode=1, stdout="", stderr=(
         "Page.fileChooserOpened not received within 5s — the input may not have opened a file chooser"
