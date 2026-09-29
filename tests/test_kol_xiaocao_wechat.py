@@ -37,6 +37,40 @@ def _history(*messages: str) -> dict:
     }
 
 
+def test_manifest_stale_writer_preserves_other_item_download(tmp_path):
+    def sub():
+        return XiaocaoWechatLiveSubscription(tmp_path, history_reader=lambda: {},
+            browser_exchange=lambda request: pytest.fail("no native input"),
+            capture_driver=_CaptureDriver())
+    first, second = sub(), sub()
+    initial = first._load()
+    initial["items"] = {"morning": {"identity": "morning", "status": "capture_armed"},
+                        "evening": {"identity": "evening", "status": "awaiting_playback"}}
+    first._save(initial)
+    a, b = first._load(), second._load()
+    first._transition(a, a["items"]["morning"], "playback_activated",
+        capture_job_id="original", candidate_id="same", playback_window_closed=True)
+    second._transition(b, b["items"]["evening"], "awaiting_playback", checked=True)
+    saved = second._load()
+    assert saved["items"]["morning"] == a["items"]["morning"]
+    assert saved["items"]["evening"]["checked"] is True
+
+
+def test_manifest_same_item_concurrent_change_fails_closed(tmp_path):
+    def sub():
+        return XiaocaoWechatLiveSubscription(tmp_path, history_reader=lambda: {},
+            browser_exchange=lambda request: request, capture_driver=_CaptureDriver())
+    first, second = sub(), sub()
+    initial = first._load()
+    initial["items"]["same"] = {"identity": "same", "status": "capture_armed"}
+    first._save(initial)
+    a, b = first._load(), second._load()
+    first._transition(a, a["items"]["same"], "playback_activated", candidate_id="original")
+    with pytest.raises(EnrichmentError, match="changed during continuation"):
+        second._transition(b, b["items"]["same"], "playback_activated", candidate_id="other")
+    assert second._load()["items"]["same"]["candidate_id"] == "original"
+
+
 def test_wechat_history_extracts_only_xiaocao_live_links():
     payload = _history(
         "[2026-08-03 21:17] 福利官小花四: 2026/08/03文字复盘总结：https://example.com/not-live",

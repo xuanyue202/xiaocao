@@ -9,6 +9,7 @@ in the native WeChat mini-program.  All video bytes are owned by
 from __future__ import annotations
 
 import fcntl
+from copy import deepcopy
 import hashlib
 import json
 import os
@@ -873,7 +874,9 @@ class XiaocaoWechatLiveSubscription:
 
     def _load(self) -> dict[str, Any]:
         if not self.manifest_path.is_file():
-            return {"schema_version": 1, "items": {}}
+            value = {"schema_version": 1, "items": {}}
+            self._manifest_baseline = deepcopy(value)
+            return value
         try:
             value = json.loads(self.manifest_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
@@ -882,11 +885,34 @@ class XiaocaoWechatLiveSubscription:
             value.get("items"), dict
         ):
             raise EnrichmentError("Xiaocao WeChat manifest is invalid")
+        self._manifest_baseline = deepcopy(value)
         return value
 
     def _save(self, manifest: dict[str, Any]) -> None:
-        manifest["updated_at"] = self._now()
-        _atomic_json(self.manifest_path, manifest)
+        # Native/browser waits may outlive another item's transition. Atomic
+        # rename alone prevents torn JSON, not a stale whole-manifest overwrite.
+        baseline = getattr(self, "_manifest_baseline", {"schema_version": 1, "items": {}})
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        with (self.output_dir / "manifest.lock").open("a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            current = self._load()
+            merged = deepcopy(current)
+            for identity, incoming in manifest["items"].items():
+                original = baseline["items"].get(identity)
+                if incoming == original:
+                    continue
+                durable = current["items"].get(identity)
+                if durable != original and durable != incoming:
+                    raise EnrichmentError("Xiaocao WeChat item changed during continuation")
+                merged["items"][identity] = deepcopy(incoming)
+            for key, value in manifest.items():
+                if key not in {"items", "updated_at"} and value != baseline.get(key):
+                    merged[key] = deepcopy(value)
+            merged["updated_at"] = self._now()
+            _atomic_json(self.manifest_path, merged)
+            manifest.clear()
+            manifest.update(merged)
+            self._manifest_baseline = deepcopy(merged)
 
     def _transition(
         self,
