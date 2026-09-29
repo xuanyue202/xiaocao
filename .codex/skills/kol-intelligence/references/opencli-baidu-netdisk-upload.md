@@ -21,6 +21,13 @@ folder scan returns exactly one matching basename. A target already present is
 an idempotent success. More than one match, an incomplete scan, a wrong folder,
 source mutation, or receipt identity mismatch fails closed.
 
+After an adapter upload claim, ordinary `advance_opencli` polling uses that
+same adapter with `--inspect-only true`. It retains the exact uploader and
+checks the original claim/folder/name without navigation or file attachment.
+Do not switch to the independently leased `browser` surface to poll its queue
+or repeatedly open the folder; an absent cloud row remains pending, never
+permission to resubmit.
+
 Baidu may clear `input.files` synchronously in its upload handler. The adapter
 therefore captures the attached basename during the input/change capture phase
 before the page consumes it; do not require a later non-empty `input.files`.

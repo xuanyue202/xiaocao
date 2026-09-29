@@ -185,6 +185,68 @@ def test_template_recovery_stays_on_adapter_and_clears_only_current_error(tmp_pa
     assert "netdisk_upload_failed" in (tmp_path / "out/events.jsonl").read_text()
 
 
+@pytest.mark.parametrize("present", [False, True])
+def test_claimed_template_poll_retains_uploader_and_never_reattaches(tmp_path, present):
+    video = tmp_path / "video-compressed.mp4"
+    video.write_bytes(b"real-video")
+    commands = []
+
+    def runner(command, **kwargs):
+        if command[0] == "ffprobe":
+            return _runner(command, **kwargs)
+        commands.append(command)
+        if "browser" in command:
+            raise AssertionError("poll switched away from the retained uploader")
+        assert "--inspect-only" in command
+        assert command[command.index("--inspect-only") + 1] == "true"
+        claim_id = command[command.index("--claim-id") + 1]
+        return SimpleNamespace(returncode=0, stderr="", stdout=json.dumps([{
+            "status": "already_present" if present else "ready_to_upload",
+            "directory": "/课程/自己的课/小草", "targetName": video.name,
+            "claimId": claim_id, "uploaded": False, "uploadTarget": "",
+            "exactCountBefore": int(present), "url": "https://pan.baidu.com/disk/main",
+        }]))
+
+    service = NetdiskEnrichmentService(tmp_path / "out", runner=runner,
+        now=lambda: NOW, opencli_command=("opencli",), use_opencli_upload_template=True)
+    prepared = service.prepare(video)
+    original = {**prepared, "event": "netdisk_upload_started", "status": "upload_claimed",
+                "claimed_at": NOW.isoformat(), "upload_started_at": NOW.isoformat()}
+    service.store.append(original)
+    result = service.advance_opencli(prepared["job_id"], session="site:baidu-netdisk")
+    assert result["status"] == ("video_ready" if present else "upload_claimed")
+    assert result["upload_started_at"] == original["upload_started_at"]
+    assert len(commands) == 1
+    assert not any(r["event"] == "netdisk_upload_failed" for r in service.store.read())
+
+
+@pytest.mark.parametrize("change", [
+    {"claimId": "wrong-job"}, {"directory": "/wrong"},
+    {"targetName": "wrong.mp4"}, {"url": "https://other.test/disk/main"},
+    {"exactCountBefore": True}, {"exactCountBefore": "1"}, {"exactCountBefore": 2},
+    {"uploaded": True}, {"uploadTarget": "input[file]"},
+    {"status": "upload_submitted"}, {"status": "ready_to_upload"},
+])
+def test_claimed_template_poll_rejects_unbound_proof(tmp_path, monkeypatch, change):
+    video = tmp_path / "video-compressed.mp4"
+    video.write_bytes(b"real-video")
+    service = NetdiskEnrichmentService(tmp_path / "out", runner=_runner,
+        now=lambda: NOW, use_opencli_upload_template=True)
+    job = service.prepare(video)
+    claimed = {**job, "event": "netdisk_upload_started", "status": "upload_claimed",
+               "upload_started_at": NOW.isoformat()}
+    service.store.append(claimed)
+    proof = {"status": "already_present", "directory": service.netdisk_directory,
+             "targetName": video.name, "claimId": job["job_id"], "uploaded": False,
+             "uploadTarget": "", "exactCountBefore": 1, "url": "https://pan.baidu.com/disk/main"}
+    proof.update(change)
+    monkeypatch.setattr(service, "_opencli_upload_template_process", lambda **kwargs:
+        SimpleNamespace(returncode=0, stdout=json.dumps([proof]), stderr=""))
+    with pytest.raises(EnrichmentError, match="readback is not exact"):
+        service.advance_opencli(job["job_id"], session="site:baidu-netdisk")
+    assert service.store.latest(job["job_id"]) == claimed
+
+
 def test_template_file_chooser_timeout_preserves_pre_attachment_diagnostic():
     result = SimpleNamespace(returncode=1, stdout="", stderr=(
         "Page.fileChooserOpened not received within 5s — the input may not have opened a file chooser"
@@ -861,6 +923,14 @@ def test_opencli_template_upload_reuses_site_session_and_validates_receipt(
         assert claim_id.startswith("kol-netdisk-")
         assert kwargs["timeout"] == 300
         assert kwargs["env"]["OPENCLI_BROWSER_COMMAND_TIMEOUT"] == "290"
+        if "--inspect-only" in command:
+            assert target_present
+            return SimpleNamespace(returncode=0, stderr="", stdout=json.dumps([{
+                "status": "already_present", "directory": "/课程/自己的课/小草",
+                "targetName": video.name, "exactCountBefore": 1,
+                "uploaded": False, "uploadTarget": "", "claimId": claim_id,
+                "url": "https://pan.baidu.com/disk/main",
+            }]))
         target_present = True
         payload = [{
             "status": "upload_submitted",

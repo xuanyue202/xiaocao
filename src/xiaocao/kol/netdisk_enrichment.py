@@ -2582,11 +2582,47 @@ class NetdiskEnrichmentService:
         if status not in {"prepared", "upload_claimed"}:
             raise EnrichmentError(f"OpenCLI advance does not support state {status} yet")
         target_name = str(current["video_basename"])
-        inspection = self._inspect_opencli_target(
-            session=session,
-            profile=profile,
-            target_name=target_name,
-        )
+        if status == "upload_claimed" and self.use_opencli_upload_template:
+            # Poll the page that owns the upload, not the independently leased
+            # browser surface. Inspection never navigates or attaches a file.
+            result = self._opencli_upload_template_process(
+                session=session, profile=profile,
+                video_path=Path(current["video_path"]),
+                target_name=target_name, claim_id=job_id, inspect_only=True,
+            )
+            if result.returncode != 0:
+                self._validate_opencli_upload_template_receipt(
+                    result, target_name=target_name,
+                    directory=self.netdisk_directory, claim_id=job_id,
+                )
+            try:
+                rows = json.loads(str(result.stdout))
+                proof = rows[0] if isinstance(rows, list) and len(rows) == 1 else {}
+                count = proof.get("exactCountBefore")
+                valid = (
+                    isinstance(proof, dict)
+                    and proof.get("claimId") == job_id
+                    and proof.get("directory") == self.netdisk_directory
+                    and proof.get("targetName") == target_name
+                    and proof.get("url") == "https://pan.baidu.com/disk/main"
+                    and proof.get("uploaded") is False
+                    and proof.get("uploadTarget") == ""
+                    and type(count) is int and count in {0, 1}
+                    and proof.get("status") == (
+                        "already_present" if count == 1 else "ready_to_upload"
+                    )
+                )
+            except (ValueError, TypeError, AttributeError):
+                valid = False
+            if not valid:
+                raise EnrichmentError("claimed upload adapter readback is not exact")
+            inspection = {"exact_count": count, "observed_at": self._time()}
+        else:
+            inspection = self._inspect_opencli_target(
+                session=session,
+                profile=profile,
+                target_name=target_name,
+            )
         present = inspection["exact_count"] == 1
         observed_at = inspection["observed_at"]
         if status == "prepared":
