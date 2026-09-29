@@ -2529,7 +2529,7 @@ private func clearOrderFields(
 
 private func prepareOrder(arguments: [String]) -> Receipt {
     let started = DispatchTime.now()
-    let initial = observe(command: "prepare-order")
+    var initial = observe(command: "prepare-order")
     var receipt = initial.receipt
     guard arguments.contains("--allow-order-prepare"),
           let input = parseOrderInput(arguments) else {
@@ -2538,6 +2538,14 @@ private func prepareOrder(arguments: [String]) -> Receipt {
         receipt.timingMs = milliseconds(since: started)
         return receipt
     }
+    let dialogs = checkDialogs(arguments: arguments)
+    guard dialogs.status == "dialogs_clear" else {
+        receipt.status = "prepare_dialogs_unproven"
+        receipt.reason = dialogs.reason
+        return receipt
+    }
+    initial = observe(command: "prepare-order")
+    receipt = initial.receipt
     if let reason = validateOrderSurface(initial, input: input) {
         receipt.status = "prepare_surface_unproven"
         receipt.reason = reason
@@ -3876,9 +3884,23 @@ private func fillClientLoginFromStandardInput(arguments: [String]) -> Receipt {
 // A stale login-success message can intercept a targeted Return intended for
 // the unlock form. Only this account-bound informational notice may be closed;
 // unknown dialogs, password errors and transaction confirmations stay blocked.
-private func dismissLoginSuccessNotice(_ observation: Observation, expected: String) -> (Bool, Bool) {
-    guard let app = observation.applicationElement else { return (false, false) }
+private func dismissLoginSuccessNotice(_ observation: Observation, expected: String) -> (Bool, Bool, String) {
+    guard let app = observation.applicationElement else { return (false, false, "application_unavailable") }
     let windows = attribute(app, kAXWindowsAttribute) as? [AXUIElement] ?? []
+    let visibleRows = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID)
+        as? [[String: Any]] ?? []
+    let visibleBounds = visibleRows.compactMap { row -> Bounds? in
+        guard (row[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value == observation.runningApplication?.processIdentifier,
+              let raw = row[kCGWindowBounds as String] as? [String: Any],
+              let x = (raw["X"] as? NSNumber)?.doubleValue, let y = (raw["Y"] as? NSNumber)?.doubleValue,
+              let width = (raw["Width"] as? NSNumber)?.doubleValue, let height = (raw["Height"] as? NSNumber)?.doubleValue else { return nil }
+        return Bounds(x: x, y: y, width: width, height: height)
+    }
+    func visible(_ area: Bounds) -> Bool {
+        visibleBounds.contains { abs($0.x - area.x) <= 1 && abs($0.y - area.y) <= 1
+            && abs($0.width - area.width) <= 1 && abs($0.height - area.height) <= 1 }
+    }
+    let primaryVisible = observation.primaryWindow.flatMap { bounds(of: $0) }.map(visible) == true
     var notices: [(AXUIElement, AXUIElement)] = []
     for window in windows {
         if let primary = observation.primaryWindow, CFEqual(window, primary) { continue }
@@ -3886,11 +3908,16 @@ private func dismissLoginSuccessNotice(_ observation: Observation, expected: Str
         if title == "通达信键盘精灵" { continue }
         var texts = Set<String>()
         var count = 0
+        var buttonSubroles: [String] = []
+        var otherControl = false
         func walk(_ element: AXUIElement, _ depth: Int) {
             guard depth <= 12, count < 200 else { return }
             count += 1
-            if stringAttribute(element, kAXRoleAttribute) == "AXStaticText" {
-                for key in [kAXTitleAttribute, kAXValueAttribute] {
+            let role = stringAttribute(element, kAXRoleAttribute)
+            if role == "AXButton" { buttonSubroles.append(stringAttribute(element, kAXSubroleAttribute)) }
+            if ["AXTextField", "AXComboBox", "AXCheckBox", "AXRadioButton", "AXWebArea"].contains(role) { otherControl = true }
+            if ["AXStaticText", "AXText", "AXHeading"].contains(stringAttribute(element, kAXRoleAttribute)) {
+                for key in [kAXTitleAttribute, kAXValueAttribute, kAXDescriptionAttribute] {
                     let text = stringAttribute(element, key).trimmingCharacters(in: .whitespacesAndNewlines)
                     if !text.isEmpty { texts.insert(text) }
                 }
@@ -3900,37 +3927,92 @@ private func dismissLoginSuccessNotice(_ observation: Observation, expected: Str
             }
         }
         walk(window, 0)
+        // AppKit also exposes the three traffic-light titlebar controls as a
+        // separate onscreen Window. Bind its exact controls and parent geometry;
+        // it is frame chrome, not a secondary transaction/authentication dialog.
+        if title == "Window", texts.isEmpty, !otherControl,
+           buttonSubroles.count == 3, count == 4,
+           Set(buttonSubroles) == Set(["AXCloseButton", "AXMinimizeButton", "AXZoomButton"]),
+           let area = bounds(of: window), let parent = observation.primaryWindow.flatMap({ bounds(of: $0) }),
+           area.width <= 100, area.height <= 30, area.x >= parent.x, area.y >= parent.y,
+           area.x + area.width <= parent.x + 100, area.y + area.height <= parent.y + 40,
+           primaryVisible { continue }
+        if title == "Window", texts.isEmpty, !otherControl, buttonSubroles == [""],
+           let area = bounds(of: window), let primary = observation.primaryWindow,
+           let parent = bounds(of: primary), area.width <= 100, area.height <= 30,
+           area.x >= parent.x, area.y >= parent.y,
+           area.x + area.width <= parent.x + 100, area.y + area.height <= parent.y + 40,
+           primaryVisible {
+            let frameControls = [elementAttribute(primary, kAXCloseButtonAttribute),
+                elementAttribute(primary, kAXMinimizeButtonAttribute),
+                elementAttribute(primary, kAXZoomButtonAttribute) ?? elementAttribute(primary, "AXFullScreenButton")]
+                .compactMap { $0 }.compactMap { bounds(of: $0) }
+            if (frameControls.count == 3 && frameControls.allSatisfy({
+                $0.x >= area.x - 1 && $0.y >= area.y - 1
+                    && $0.x + $0.width <= area.x + area.width + 1
+                    && $0.y + $0.height <= area.y + area.height + 1
+            })) || (abs(area.x - parent.x - 10) <= 1 && abs(area.y - parent.y - 7) <= 1
+                && abs(area.width - 66) <= 1 && abs(area.height - 20) <= 1 && count == 2) {
+                // macOS 26 exposes the combined traffic-light hit area as one
+                // anonymous button. This exact observed frame has no content,
+                // input control or transaction action, and stays parent-bound.
+                continue
+            }
+        }
         let messageCenter = title == "消息中心" || texts.contains("消息中心")
         let bodies = texts.filter { $0.range(of: #"^\d{8,20}\s+.{1,40}的交易已重新登录成功[!！]$"#, options: .regularExpression) != nil }
         let allowed = texts.allSatisfy { text in
             text == "消息中心" || bodies.contains(text)
                 || text.range(of: #"^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}$"#, options: .regularExpression) != nil
+                || text.range(of: #"^\d{1,4}/\d{1,4}$"#, options: .regularExpression) != nil
         }
         guard messageCenter, bodies.count == 1, allowed,
               maskedFingerprint(in: bodies.first!) == expected,
               let close = elementAttribute(window, kAXCloseButtonAttribute),
               stringAttribute(close, kAXRoleAttribute) == "AXButton" else {
-            return (false, false)
+            let titleKind = title.replacingOccurrences(of: #"\d{8,20}"#, with: "masked_account", options: .regularExpression)
+            let area = bounds(of: window)
+            let visibleGeometry = visibleBounds.map { "\($0.x),\($0.y),\($0.width),\($0.height)" }.joined(separator: ";")
+            return (false, false, "secondary_window_unrecognized:title=\(titleKind):body=\(bodies.count):texts=\(texts.count):buttons=\(buttonSubroles):other_control=\(otherControl):bounds=\(area?.x ?? -1),\(area?.y ?? -1),\(area?.width ?? -1),\(area?.height ?? -1):primary_visible=\(primaryVisible):onscreen=\(visibleGeometry)")
         }
         notices.append((window, close))
     }
-    guard !notices.isEmpty else { return (true, false) }
+    guard !notices.isEmpty else { return (true, false, "clear") }
     guard notices.count == 1,
           AXUIElementPerformAction(notices[0].1, kAXPressAction as CFString) == .success else {
-        return (false, false)
+        return (false, false, "notice_close_unproven")
     }
     let deadline = Date().addingTimeInterval(1)
     while Date() < deadline {
         let current = attribute(app, kAXWindowsAttribute) as? [AXUIElement] ?? []
-        if !current.contains(where: { CFEqual($0, notices[0].0) }) { return (true, true) }
+        if !current.contains(where: { CFEqual($0, notices[0].0) }) { return (true, true, "known_notice_dismissed") }
         Thread.sleep(forTimeInterval: 0.05)
     }
-    return (false, false)
+    return (false, false, "notice_still_present")
+}
+
+private func checkDialogs(arguments: [String]) -> Receipt {
+    let observation = observe(command: "probe")
+    var receipt = observation.receipt
+    receipt.command = "check-dialogs"
+    let expected = option("--expected-fingerprint", in: arguments)
+    guard validFingerprint(expected), receipt.tradeAccountFingerprint == expected,
+          receipt.tradeAccountFingerprintCount == 1 else {
+        receipt.status = "trade_account_binding_unproven"
+        return receipt
+    }
+    let result = dismissLoginSuccessNotice(observation, expected: expected)
+    receipt.status = result.0 ? "dialogs_clear" : "dialogs_blocked"
+    receipt.reason = result.2
+    receipt.loginNoticeDismissed = result.1
+    return receipt
 }
 
 private func unlockFromStandardInput(arguments: [String]) -> Receipt {
     var initial = observe(command: "unlock-stdin")
     var receipt = initial.receipt
+    receipt.action = ActionResult(attempted: false, succeeded: false, requiresUserInput: false,
+                                 confirmPressed: false, confirmationMode: "none", unlockPathProven: false)
     let expectedFingerprint = option("--expected-fingerprint", in: arguments)
     guard arguments.contains("--allow-stdin-secret") else {
         receipt.status = "unlock_not_explicitly_enabled"
@@ -3958,12 +4040,16 @@ private func unlockFromStandardInput(arguments: [String]) -> Receipt {
     let notice = dismissLoginSuccessNotice(initial, expected: expectedFingerprint)
     guard notice.0 else {
         receipt.status = "unlock_overlay_unproven"
-        receipt.reason = "an unknown or still-present secondary window blocks password submission"
+        receipt.reason = notice.2
+        receipt.action = ActionResult(attempted: false, succeeded: false, requiresUserInput: false,
+                                     confirmPressed: false, confirmationMode: "none", unlockPathProven: false)
         return receipt
     }
     if notice.1 {
         initial = observe(command: "unlock-stdin")
         receipt = initial.receipt
+        receipt.action = ActionResult(attempted: false, succeeded: false, requiresUserInput: false,
+                                     confirmPressed: false, confirmationMode: "none", unlockPathProven: false)
         receipt.loginNoticeDismissed = true
         guard receipt.tradeAccountFingerprint == expectedFingerprint,
               receipt.tradeAccountFingerprintCount == 1,
@@ -4012,6 +4098,8 @@ private func unlockFromStandardInput(arguments: [String]) -> Receipt {
         }
     }
 
+    receipt.action = ActionResult(attempted: true, succeeded: false, requiresUserInput: false,
+                                 confirmPressed: false, confirmationMode: "none", unlockPathProven: false)
     let clearResult = AXUIElementSetAttributeValue(
         initial.secureFields[0],
         kAXValueAttribute as CFString,
@@ -4197,6 +4285,8 @@ case "parse-query-summary-stdin":
     FileHandle.standardOutput.write(Data("\n".utf8))
 case "probe":
     emit(observe(command: command, auditTables: arguments.contains("--table-audit")).receipt)
+case "check-dialogs":
+    emit(checkDialogs(arguments: arguments))
 case "focus-unlock":
     emit(focusUnlock())
 case "fill-client-login-stdin":

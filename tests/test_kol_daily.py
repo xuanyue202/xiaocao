@@ -893,6 +893,39 @@ def test_filtered_image_repair_uses_read_only_preview_surface():
     assert result["writer_progress"]["status"] == "terminal"
 
 
+def test_source_cli_narrow_runner_supports_subscription_video_absence_repair():
+    progress = WriterProgress.reconcile_required(
+        item_identity="video-1", stage="cloud_transfer_reconciliation",
+        effect_kind="cloud_transfer", claim_identity="lv_transfer:version-1:claim-1",
+        readback_operation="read_lv_transfer_claim_receipt",
+        claim_receipt_summary={"claim_count": 1, "receipt_count": 0,
+                               "uncertain_effect_count": 1},
+    )
+    blocked = WriterProgress.user_action_required(
+        item_identity="video-1", stage="cloud_transfer_confirmation",
+        action="等待可核验转存结果", blocker_identity="lv-cloud-transfer-not-materialized",
+        dedup_key="lv-cloud-transfer-not-materialized:video-1",
+        claim_receipt_summary={"claim_count": 1, "receipt_count": 0,
+                               "uncertain_effect_count": 1},
+    )
+    calls = []
+    runtime = SimpleNamespace(
+        videos_narrow_resume=lambda _surface: pytest.fail("absence repair must not retry acquisition"),
+        videos_blocked_reconciliation_progress=lambda identity: (
+            calls.append(identity) or progress
+        ),
+        videos_reconcile=lambda bound: kol_daily_script._reconciliation_result(
+            bound, {"status": "waiting", "writer_progress": blocked.to_dict()},
+        ),
+    )
+    result = kol_daily_script._resume_source_repair_outcome(
+        runtime, "subscription_video", "subscription_video:video-1",
+        failure_code="cloud_transfer_unobserved_reconciled_absent",
+    )
+    assert calls == ["video-1"]
+    assert result["writer_progress"] == blocked.to_dict()
+
+
 def test_rollout_verification_uses_local_git_config_state_and_peer_gate(
     tmp_path,
     monkeypatch,

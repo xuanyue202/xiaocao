@@ -4780,6 +4780,21 @@ def _resume_source_repair_outcome(
     *,
     failure_code: str | None = None,
 ) -> dict[str, Any]:
+    if (
+        adapter == "subscription_video"
+        and failure_code == "cloud_transfer_unobserved_reconciled_absent"
+    ):
+        identity = _exact_progress_surface(adapter, surface)
+        progress = runtime.videos_blocked_reconciliation_progress(identity)
+        outcome, receipt = DailyCoordinator._reconciliation_result(
+            progress, runtime.videos_reconcile(progress),
+        )
+        # Closing the obsolete repair must consume the exact claim readback,
+        # not reenter acquisition or replenish the exhausted transfer budget.
+        return _classified_narrow_source(
+            adapter,
+            lambda _surface: {**outcome, "reconciliation_receipt": receipt},
+        )(surface)
     narrow_runner = (
         runtime.lv_filtered_image_reconcile
         if (

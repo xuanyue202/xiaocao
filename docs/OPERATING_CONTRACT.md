@@ -1,6 +1,6 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：4.27
+**版本**：4.28
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
 **关联实现**：`src/xiaocao/live/{safety,capital_keychain,foundersc_native_ax,foundersc_native_broker,trading_execution,book_b_live_lifecycle,book_b_live_intraday}.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`native/foundersc_ax_executor/`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{book_b_live_morning,book_b_live_intraday,live_monitor,research_mode_switch_replay}.py`
@@ -72,6 +72,8 @@ Book B live morning 仍提前至交易日09:00启动，09:23推荐和09:25本地
 原进程的 APP/helper 预检或冻结前保活依赖失败时，先持久化 `dependency_recovery_wait` 请求、真实任务身份和脱敏失败证据并发企微问题通知，保留原调用栈等待修复。请求所属任务修复后通过 `morning_preflight_recovery.py --request <精确路径>` 请求一次重新核验；信号本身不证明 ready。09:24 还有一次自动边界核验，此前没有修复信号就不重复读 APP。依赖恢复与冻结等待共用启动时的2100秒总预算，不因信号或失败重置；不可修复的凭据/授权缺口、预算耗尽或经济/策略门仍产生真实终态。Python 运行时修复不假定已被原进程热加载；原生 helper 可在重新核验时采用新源码哈希构建。
 
 密码动作先持久化账户绑定的尝试 claim，再执行唯一动作；未获证明或中断的尝试跨进程保持禁止自动再试，只有精确账户就绪回读解除该保护。解锁前仅可关闭账户匹配的已知“消息中心/交易已重新登录成功”通知，并证明其消失后重新绑定解锁控件；未知弹窗保持受阻。解锁尝试终止不等于整个晨间任务自动终止。企微启动、问题、ready、09:30未决和最终结果分别持久化并即时发出配送回执，不等待交易进程结束才披露通知状态。
+
+每次原生操作批次开头先通过账户绑定端口检查对话框，每笔填单前再次检查；仅处理已知且账户匹配的登录成功通知。macOS 标题栏控制辅助窗口须有精确控件及主窗口几何证据，不能仅按窗口数量判断弹窗。helper 明确证明 `attempted=false` 且 `confirm_pressed=false` 的密码动作前失败记为 `not_attempted`，修复本地依赖后沿原任务重新核验；缺失证据、中断或可能确认仍跨进程禁止重放。不得仅凭失败状态名称推断未操作。
 
 09:00是故障恢复余量，不是策略选股时点：行情使用`market_data_preflight.py --scope authentication`的一次认证读取，不要求当天尚未发布的核心指标；来源检查用`--history-fresh-through <today>T11:30:00+08:00`补验即将在开盘窗口失效的历史清单，保持24小时有效期及真实as-of不变。完成后sleep，不重复完整分析；09:22核验最新来源增量；来源就绪后立即预热 Sol 判断与独立主审，不能等到冻结才启动语义分析。冻结后以同一次请求提供当前账户、风险回执、候选及行情适用条件，预算从完整输入就绪开始。09:24之前允许APP自然锁定，09:24通过既有会话恢复流程重新确认；恢复失败沿原失败路径处理。09:24之后的保活仍有AX查询和必要解锁成本，提交窗口及执行前的新鲜账户/行情门保持不变。
 
@@ -527,6 +529,7 @@ KOL 断言、候选假设或报告升级为策略真值，也不替代永久参�
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| 4.28 | 2026-09-29 | 原生批次及填单前核验账户绑定对话框，按控件与主窗口几何区分 macOS 标题栏；明确未进入密码动作的失败可修复重检，可能确认仍禁止重放。 |
 | 4.27 | 2026-09-28 | 按 EOD 用户契约恢复所有 durable plan 终态后才结算；跨日自有 SELL 不全局抑制稀疏监控，旧单与当前交易继续分别验证。 |
 | 4.26 | 2026-09-28 | 可修复晨间依赖在原进程事件等待、09:24边界核验并共用原准备预算；解锁不明跨进程保护，已知登录通知前置处理，企微配送证据即时输出。 |
 | 4.25 | 2026-09-27 | 早盘新 BUY 可用已证明自有成交重放和当日 APP 持仓形成保守当前基准；前日零成交旧 SELL 在原 lot 后续独立清空时不全局阻断其他代码，同股新 BUY 仍阻断，旧单维持精确对账。 |

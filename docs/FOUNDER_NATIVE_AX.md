@@ -46,6 +46,15 @@ single click.
   a sanitized account-bound attempt claim and failure/confirmation evidence;
   process restart cannot repeat an unproved password attempt. Only proved
   account readiness clears this fence.
+- Every submission batch and native order preparation starts with an
+  account-bound dialog check. Only the exact login-success notice may be
+  closed; unknown dialogs remain blocked. macOS titlebar chrome is recognized
+  by its control structure, exact parent geometry and independent onscreen
+  binding, never by a blanket window-count exception.
+- The helper records whether it reached the secure-field action. A proved
+  pre-secret failure is `not_attempted` and may recover after its dependency
+  is fixed. Missing action proof, a transport interruption or any possible
+  password confirmation remains fenced until account-bound readiness.
 - Buy/sell page navigation and exact mapping of code, price and quantity
   controls.
 - Millisecond-scale field set, AX readback and optional clear without submit.

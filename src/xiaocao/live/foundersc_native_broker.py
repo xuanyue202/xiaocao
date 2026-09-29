@@ -387,6 +387,11 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                     or len({p.plan_id for p in plans}) != len(plans)
                     or len({(p.code, p.side, p.shares, p.limit_price) for p in plans}) != len(plans)):
                 raise ValueError("NATIVE_BATCH_SCOPE_INVALID")
+            dialogs = self.native.check_dialogs(
+                expected_fingerprint=self.expected_fund_account_fingerprint
+            ).as_dict()
+            if dialogs.get("status") != "dialogs_clear":
+                raise FounderscNativeAXError("NATIVE_BATCH_DIALOGS_UNPROVEN")
             capability = (self.probe(plans[0], buy_codes={p.code.split(".")[0] for p in plans})
                           if self.scoped_buy_preflight else self.probe(plans[0]))
             if not capability.ready or not capability.supports_submit:
@@ -596,7 +601,14 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                 )
                 action = unlocked.get("action")
                 action = action if isinstance(action, dict) else {}
-                self._save_credential_health({**credential_health, "state": "unproven_no_retry",
+                helper_status = str(unlocked.get("status") or "unknown")
+                not_attempted = (helper_status in {"unlock_overlay_unproven", "unlock_surface_unproven",
+                    "unlock_confirmation_unproven", "trade_password_input_invalid", "unlock_keyboard_or_focus_busy"}
+                    and action.get("attempted") is False and action.get("confirm_pressed") is False
+                    and category == "unclassified")
+                self._save_credential_health({**credential_health, "state": "not_attempted" if not_attempted else "unproven_no_retry",
+                    "helper_status": helper_status,
+                    "password_action_attempted": action.get("attempted") if type(action.get("attempted")) is bool else None,
                     "failure_category": category,
                     "remaining_attempts": remaining if remaining_text != "unknown" else None,
                     "secure_field_cleared_before_set": cleared == "true",
@@ -605,7 +617,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                         {"none", "semantic", "guarded_ax_button", "secure_field_targeted_return"} else "unknown",
                     "login_notice_dismissed": unlocked.get("login_notice_dismissed") is True})
                 raise FounderscNativeAXError(
-                    "NATIVE_AX_UNLOCK_UNPROVEN_NO_RETRY:"
+                    ("NATIVE_AX_UNLOCK_NOT_ATTEMPTED:" if not_attempted else "NATIVE_AX_UNLOCK_UNPROVEN_NO_RETRY:") +
                     f"{category.upper()}:remaining={remaining_text}:"
                     f"field_cleared={cleared}"
                 )

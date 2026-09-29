@@ -348,7 +348,9 @@ def publish_trading_decision(root: Path, decision: dict, review: dict, context: 
                 trading_context._validate_publication(publication, {
                     **row, "publication_id": row["report"]["source_binding"]["publication_id"],
                 })
-                _require(publication["report"] == row["report"]
+                # Compare the canonical source identity, not writer-request
+                # metadata such as a correction's expected_content_sha256.
+                _require(record_content_sha256(publication["report"]) == row["content_sha256"]
                          and publication["manifest_sha256"] == row["manifest_sha256"], "remote_current_report_changed")
                 _require(trading_context._eligible(publication, row, _time(decision["as_of"])),
                          "remote_publication_not_observed_as_of")
