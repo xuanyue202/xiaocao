@@ -1396,7 +1396,7 @@ class XiaocaoLiveService:
             )
         return current
 
-    def resume_interrupted_capture(self, capture_job_id: str) -> dict[str, Any]:
+    def resume_interrupted_capture(self, capture_job_id: str, *, stalled_media_repair: bool = False) -> dict[str, Any]:
         """One diagnosed continuation of the same durable paused stream task."""
         current = self.capture_store.latest(capture_job_id)
         if current is None or current.get("status") != "downloading":
@@ -1406,13 +1406,14 @@ class XiaocaoLiveService:
         if not task_id or len(matches) != 1:
             raise EnrichmentError("exact interrupted task is unavailable")
         task = matches[0]
-        if current.get("interrupted_resume_claim"):
+        claim_key = "stalled_resume_claim" if stalled_media_repair else "interrupted_resume_claim"
+        if current.get(claim_key):
             return {**current, "idempotent_replay": True}
         meta = task.get("meta") or {}
         labels = (meta.get("req") or {}).get("labels") or meta.get("labels") or {}
         candidate = current.get("candidate") or {}
         if (
-            task.get("status") != "pause" or task.get("protocol") != "stream"
+            task.get("status") != ("running" if stalled_media_repair else "pause") or task.get("protocol") != "stream"
             or not candidate.get("id") or not candidate.get("live_id")
             or labels.get("capture_id") != candidate["id"]
             or labels.get("live_id") != candidate["live_id"]
@@ -1421,13 +1422,32 @@ class XiaocaoLiveService:
             or str(labels.get("compress_inline")).lower() != "true"
         ):
             raise EnrichmentError("paused task does not bind the original compressed capture")
+        proof = {"task_id": task_id, "candidate_id": candidate["id"]}
+        if stalled_media_repair:
+            opts = meta.get("opts") or {}
+            name = str(task.get("name") or opts.get("name") or "")
+            directory = str(opts.get("path") or "")
+            if not directory or Path(name).name != name or not name.endswith("-compressed.mp4"):
+                raise EnrichmentError("stalled task lacks an exact compressed target")
+            media = Path(directory).expanduser() / name
+            stamp = media.stat()
+            age = datetime.now().timestamp() - stamp.st_mtime
+            if stamp.st_size <= 0 or age < 300:
+                raise EnrichmentError("compressed output is not proven stalled")
+            proof.update({"media_size_bytes": stamp.st_size, "media_mtime": stamp.st_mtime,
+                          "stale_seconds": round(age, 1)})
         claimed = self.capture_store.transition(current, "interrupted_task_resume_claimed",
-            interrupted_resume_claim={"task_id": task_id, "candidate_id": candidate["id"]})
+            **{claim_key: proof})
+        if stalled_media_repair:
+            self.sniffer.pause_task(task_id)
+            paused = [t for t in self.sniffer.tasks() if str(t.get("id") or "") == task_id]
+            if len(paused) != 1 or paused[0].get("status") != "pause":
+                raise EnrichmentError("same-task pause is not verified")
         response = self.sniffer.resume_task(task_id)
         if response.get("id") != task_id:
             raise EnrichmentError("task resume changed the original identity")
         return self.capture_store.transition(claimed, "interrupted_task_resumed",
-            interrupted_resume_receipt=response)
+            **{"stalled_resume_receipt" if stalled_media_repair else "interrupted_resume_receipt": response})
 
     def reconcile_completed_capture(self, capture_job_id: str) -> dict[str, Any]:
         """Recover a complete compressed artifact after a sniffer interruption."""

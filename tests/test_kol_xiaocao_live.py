@@ -2124,6 +2124,41 @@ def test_interrupted_capture_resumes_only_original_task_once(tmp_path, changed):
         assert calls == ["same-task"]
 
 
+@pytest.mark.parametrize("stale", [False, True])
+def test_stalled_same_task_repair_requires_old_partial_output(tmp_path, stale):
+    import os
+    import time
+    target = tmp_path / "same-compressed.mp4"
+    target.write_bytes(b"partial")
+    if stale:
+        os.utime(target, (time.time() - 600, time.time() - 600))
+    task = {"id": "same-task", "name": target.name, "status": "running", "protocol": "stream",
+        "meta": {"opts": {"path": str(tmp_path)}, "labels": {
+        "capture_id": "same-candidate", "live_id": "l_same", "type": "live_capture",
+        "compress": "true", "compress_inline": "true"}}}
+    calls = []
+    class Sniffer:
+        def tasks(self): return [task]
+        def pause_task(self, task_id):
+            calls.append(("pause", task_id)); task["status"] = "pause"; return {"id": task_id}
+        def resume_task(self, task_id):
+            calls.append(("resume", task_id)); task["status"] = "running"; return {"id": task_id}
+    service = XiaocaoLiveService(tmp_path / "live", capture_ledger=tmp_path / "capture.jsonl",
+        sniffer_client=Sniffer())
+    armed = service.capture_store.arm([])
+    service.capture_store.transition(armed, "download_started", status="downloading",
+        candidate={"id": "same-candidate", "live_id": "l_same"}, download_task_id="same-task")
+    if not stale:
+        with pytest.raises(EnrichmentError, match="not proven stalled"):
+            service.resume_interrupted_capture(armed["job_id"], stalled_media_repair=True)
+        assert calls == []
+    else:
+        result = service.resume_interrupted_capture(armed["job_id"], stalled_media_repair=True)
+        assert result["stalled_resume_claim"]["media_size_bytes"] == 7
+        service.resume_interrupted_capture(armed["job_id"], stalled_media_repair=True)
+        assert calls == [("pause", "same-task"), ("resume", "same-task")]
+
+
 def test_reconcile_completed_capture_requires_exact_paused_compressed_task(tmp_path):
     ledger = tmp_path / "capture.jsonl"
     store = CaptureJobStore(ledger)

@@ -531,6 +531,12 @@ class SnifferClient:
             raise SnifferError("sniffer task resume changed the original identity")
         return {"id": task_id}
 
+    def pause_task(self, task_id: str) -> dict[str, Any]:
+        data = self._json("/api/task/pause", method="POST", payload={"id": task_id}).get("data") or {}
+        if data.get("id") != task_id:
+            raise SnifferError("sniffer task pause changed the original identity")
+        return {"id": task_id}
+
     def arm_xiaoetong_source(self, page_url: str) -> dict[str, str]:
         source = canonical_xiaoetong_source(page_url)
         data = self._json(
