@@ -53,6 +53,16 @@ hot-load into the original interpreter. An unproved unlock remains fenced
 across processes until account-bound readiness is observed. Keep the runner
 waiting while resolving the dependency, rather than starting another runner.
 
+Before a native action batch, check all APP windows through the account-bound
+dialog port. Clear only a uniquely matched known login-success notice and
+prove it gone; classify unknown dialogs before continuing. A macOS titlebar
+control window is not a dialog when its exact control/parent geometry is
+proved. Preserve helper status and explicit action evidence: a pre-secret
+failure with `attempted=false` and `confirm_pressed=false` is `not_attempted`,
+not a consumed password attempt. Repair that dependency and recheck the same
+runner. Missing evidence, interrupted claims and possible confirmations stay
+fenced; never use the status name alone to infer no action.
+
 Classify the observed state before changing anything:
 
 - `terminal_safe`: a deterministic time, market, strategy, capital, or safety

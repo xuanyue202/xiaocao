@@ -41,6 +41,31 @@ def adapter(native):
         scoped_buy_preflight=True, snapshot_read_delays=(0,))
 
 
+def test_batch_dialog_check_precedes_account_reads_and_order_actions():
+    n = ScopedNative()
+    calls = []
+    check = n.check_dialogs
+    def checked(**kwargs):
+        assert n.query_calls == []
+        assert n.prepare_calls == n.submit_calls == n.unlock_calls == 0
+        calls.append(kwargs)
+        return check(**kwargs)
+    n.check_dialogs = checked
+    with adapter(n).submission_batch([_plan()]):
+        pass
+    assert len(calls) == 1
+
+
+def test_unknown_dialog_blocks_batch_without_password_or_order_action():
+    n = ScopedNative()
+    n.check_dialogs = lambda **kwargs: n._receipt(status='dialogs_blocked')
+    with pytest.raises(RuntimeError, match='NATIVE_BATCH_DIALOGS_UNPROVEN'):
+        with adapter(n).submission_batch([_plan()]):
+            pass
+    assert n.query_calls == []
+    assert n.prepare_calls == n.submit_calls == n.unlock_calls == 0
+
+
 def test_unrelated_orders_and_valuation_do_not_block_new_buy():
     n = ScopedNative()
     # The old order is deliberately for the same security, but its historical

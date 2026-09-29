@@ -143,6 +143,10 @@ class FakeNative:
         caps = {"prepare": self.surface == "trade_ready", "submit": self.surface == "trade_ready"}
         return self._receipt(status=self.surface, capabilities=caps)
 
+    def check_dialogs(self, *, expected_fingerprint: str) -> NativeAXReceipt:
+        assert expected_fingerprint == self.payload['trade_account_fingerprint']
+        return self._receipt(status='dialogs_clear')
+
     def unlock_from_keychain(self, *, explicitly_enabled: bool) -> NativeAXReceipt:
         assert explicitly_enabled is True
         self.unlock_calls += 1
@@ -795,6 +799,49 @@ def test_crashed_unlock_claim_never_retries_password(tmp_path) -> None:
     with pytest.raises(FounderscNativeAXError, match="PRIOR_ATTEMPT"):
         adapter().ensure_native_ready(unlock_once=True)
     assert native.unlock_calls == 1
+
+
+@pytest.mark.app_simulation
+def test_proved_presecret_overlay_failure_allows_recovery_after_restart(tmp_path):
+    class OverlayNative(FakeNative):
+        def __init__(self):
+            super().__init__(surface_state="authentication_required")
+        def unlock_from_keychain(self, *, explicitly_enabled):
+            self.unlock_calls += 1
+            if self.unlock_calls == 1:
+                return self._receipt(status="unlock_overlay_unproven",
+                    action={"attempted": False, "confirm_pressed": False, "confirmation_mode": "none"})
+            self.surface = "trade_ready"
+            return self._receipt(status="unlocked", secure_field_cleared_before_set=True)
+    n = OverlayNative()
+    def adapter():
+        return FounderscNativeAXBrokerAdapter(native=n, expected_fund_account_fingerprint="123******890",
+            credential_health_path=tmp_path / "health.json")
+    first = adapter()
+    with pytest.raises(FounderscNativeAXError, match="NATIVE_AX_UNLOCK_NOT_ATTEMPTED"):
+        first.ensure_native_ready(unlock_once=True)
+    assert first.credential_health['state'] == 'not_attempted'
+    adapter().ensure_native_ready(unlock_once=True)
+    assert n.unlock_calls == 2
+
+
+@pytest.mark.app_simulation
+def test_overlay_status_without_explicit_no_action_proof_stays_fenced(tmp_path):
+    class MissingActionNative(FakeNative):
+        def __init__(self):
+            super().__init__(surface_state="authentication_required")
+        def unlock_from_keychain(self, *, explicitly_enabled):
+            self.unlock_calls += 1
+            return self._receipt(status="unlock_overlay_unproven")
+    n = MissingActionNative()
+    def adapter():
+        return FounderscNativeAXBrokerAdapter(native=n, expected_fund_account_fingerprint="123******890",
+            credential_health_path=tmp_path / "health.json")
+    with pytest.raises(FounderscNativeAXError, match="NO_RETRY"):
+        adapter().ensure_native_ready(unlock_once=True)
+    with pytest.raises(FounderscNativeAXError, match="PRIOR_ATTEMPT"):
+        adapter().ensure_native_ready(unlock_once=True)
+    assert n.unlock_calls == 1
 
 
 def test_query_uses_one_targeted_reread_only_after_invalid_first_parse() -> None:

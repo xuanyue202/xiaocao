@@ -450,6 +450,10 @@ class FounderscNativeAXClient:
     def probe(self, *, table_audit: bool = False) -> NativeAXReceipt:
         return self._run("probe", ["--table-audit"] if table_audit else [])
 
+    def check_dialogs(self, *, expected_fingerprint: str) -> NativeAXReceipt:
+        """Clear only an exact account-bound login notice; never enter secrets."""
+        return self._run("check-dialogs", ["--expected-fingerprint", expected_fingerprint])
+
     def read_query(
         self,
         *,
