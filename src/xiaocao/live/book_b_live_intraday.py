@@ -567,7 +567,24 @@ def _run_book_b_live_intraday_locked(
             _snapshot_observed_at(snapshot), trade_date
         ):
             raise ValueError("LIVE_BOOK_B_EOD_BROKER_SNAPSHOT_PRE_CLOSE")
-        settlement = write_book_b_live_settlement(state_root, account, now=current)
+        try:
+            settlement = write_book_b_live_settlement(state_root, account, now=current)
+        except ValueError as exc:
+            if str(exc) != "LIVE_BOOK_B_EOD_OPEN_EXECUTION_RECONCILE_REQUIRED":
+                raise
+            # The strict writer still refuses settlement. Preserve the fresh
+            # projection and exact reconciliation already proved by this run.
+            return BookBLiveIntradayReceipt(
+                trade_date=trade_date,
+                phase=normalized_phase,
+                status="blocked",
+                reason=str(exc),
+                account=account.as_dict(),
+                decisions=(),
+                execution_receipts=(),
+                reconciliation_receipts=tuple(reconciled),
+                deferred_buy_plan_ids=deferred_buys,
+            )
         risk_receipt = record_risk()
         return BookBLiveIntradayReceipt(
             trade_date=trade_date,
