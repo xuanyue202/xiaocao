@@ -2728,11 +2728,12 @@ class NetdiskEnrichmentService:
                     and inputs and all(i.get("targetAttached") is False for i in inputs)
                 )
                 if current.get("failure_stage") == "upload_folder_scan":
+                    # The original bound stage already proves no attachment.
+                    # A collapsed queue must not be confused with uncertain
+                    # submission, but conflicting target rows still stop us.
                     queue = surface.get("transferQueue") or {}
                     absent = (
-                        absent and queue.get("complete") is True
-                        and queue.get("targetCount") == 0
-                        and int(queue.get("successfulCount") or 0) >= 1
+                        absent and queue.get("targetCount") == 0
                     )
             except (ValueError, TypeError, AttributeError):
                 present = absent = False

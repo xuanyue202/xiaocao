@@ -102,7 +102,7 @@ def test_upload_auth_failure_is_not_a_retryable_transport_error():
     assert caught.value.diagnostic_code == "netdisk_login_required"
 
 
-@pytest.mark.parametrize("failure", [None, "auth", "started", "attached", "queue_incomplete", "queue_target", "wrong_claim"])
+@pytest.mark.parametrize("failure", [None, "auth", "started", "attached", "queue_target", "wrong_claim"])
 def test_folder_scan_repair_preserves_old_claim_and_is_consumed_once(tmp_path, monkeypatch, failure):
     video = tmp_path / "video-compressed.mp4"
     video.write_bytes(b"real-video")
@@ -123,11 +123,9 @@ def test_folder_scan_repair_preserves_old_claim_and_is_consumed_once(tmp_path, m
              "targetName": video.name, "claimId": job["job_id"], "uploaded": False, "exactCountBefore": 0,
              "surfaceState": {"receiptMatchesTarget": False, "targetInTransferUi": False,
                               "targetUiRows": [], "inputs": [{"targetAttached": False}],
-                              "transferQueue": {"complete": True, "successfulCount": 1, "targetCount": 0}}}
+                              "transferQueue": {"complete": False, "successfulCount": 1, "targetCount": 0}}}
     if failure == "attached":
         proof["surfaceState"]["inputs"][0]["targetAttached"] = True
-    if failure == "queue_incomplete":
-        proof["surfaceState"]["transferQueue"]["complete"] = False
     if failure == "queue_target":
         proof["surfaceState"]["transferQueue"]["targetCount"] = 1
     if failure == "wrong_claim":
