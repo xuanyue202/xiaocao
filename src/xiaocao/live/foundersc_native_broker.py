@@ -38,6 +38,7 @@ NATIVE_ORDER_ROUTE_NOT_PROMOTED = "NATIVE_AX_ORDER_ROUTE_NOT_PROMOTED"
 NATIVE_ORDER_ADAPTER_PROMOTED = True
 NATIVE_HELPER_MIN_VERSION = 8
 NATIVE_CANCEL_HELPER_MIN_VERSION = 8
+NATIVE_BUY_FEE_RATE = Decimal(".0001")
 _ACCOUNT_FINGERPRINT_PATTERN = re.compile(r"\d{3}\*{6}\d{3}")
 _ORDER_WORKING_STATUSES = frozenset(
     {"未报", "待报", "正报", "已报", "未成交", "已确认", "已申报"}
@@ -399,13 +400,16 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             positions = self.last_query_readbacks["positions"]
             orders = self.last_query_readbacks["today-orders"]
             available = _decimal(positions["summary_values"]["可用"], field="AVAILABLE_CASH")
-            if sum(Decimal(str(p.limit_price)) * p.shares for p in plans) > available:
+            if sum(Decimal(str(p.limit_price)) * p.shares *
+                   (1+NATIVE_BUY_FEE_RATE) for p in plans) > available:
                 raise ValueError("NATIVE_BATCH_CASH_RESERVATION_EXCEEDED")
             self._submission_batch = {
                 "plans": {p.plan_id: p.plan_hash for p in plans},
                 "capability": capability, "positions": positions, "orders": orders,
                 "order_ids": {str(row["委托编号"]).strip() for row in orders["rows"]},
                 "used": set(), "expires": time.monotonic() + 60.0,
+                "available_cash": available,
+                "plan_objects": tuple(plans),
             }
             try:
                 yield
@@ -422,6 +426,52 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
         ):
             raise FounderscNativeAXError("NATIVE_BATCH_SCOPE_EXPIRED_OR_MISMATCH")
         return batch
+
+    @serialized_app_operation
+    def capital_action_proof(self, plan: TradePlan, *, now: datetime,
+                             action: str = "submit", previous: dict | None = None) -> dict:
+        """Fresh account proof reused only within this exact plan/batch stack.
+
+        A prepare has already filled the native form: never navigate away from
+        it to refresh cash. Expired evidence denies that submit instead.
+        """
+        from .book_b_capital import digest
+        batch = self._batch_for(plan) if action == "submit" else None
+        cached = getattr(self, "_capital_snapshots", {})
+        if batch is not None:
+            positions = batch["positions"]
+            available = batch["available_cash"] - sum(
+                Decimal(str(p.limit_price)) * p.shares * (1+NATIVE_BUY_FEE_RATE)
+                for p in batch["plan_objects"] if p.plan_id in batch["used"])
+        else:
+            snapshot = cached.get(plan.plan_hash)
+            if snapshot is None:
+                if plan.plan_id in self._prepared:
+                    raise ValueError("DYNAMIC_CAPITAL_PREPARED_PROOF_MISSING")
+                snapshot = self.read_buy_preflight_snapshot(trade_date=plan.trade_date,
+                    owned_codes={plan.code.split(".")[0]})
+                cached[plan.plan_hash] = snapshot
+                self._capital_snapshots = cached
+            positions = snapshot["positions"]
+            available = Decimal(str(snapshot["available_cash"]))
+        observed = datetime.fromisoformat(positions["observed_at"])
+        if observed.tzinfo is None or not -30 <= (now-observed).total_seconds() <= 60:
+            raise ValueError("DYNAMIC_CAPITAL_PROOF_EXPIRED")
+        row = self._position_for(plan, positions["rows"])
+        proof = {"source": "foundersc_native_app", "account_binding": "proven",
+            "logical_account_id": plan.logical_account_id,
+            "fund_account_binding_sha256": hashlib.sha256(self.expected_fund_account_fingerprint.encode()).hexdigest(),
+            "plan_hash": plan.plan_hash, "side": plan.side, "code": plan.code,
+            "action": action, "notional": plan.notional, "shares": plan.shares,
+            "fee_rate": float(NATIVE_BUY_FEE_RATE), "available_cash": float(available),
+            "sellable_shares": _integer(row["可卖数量"], field="SELLABLE_QUANTITY") if row else 0,
+            "observed_at": positions["observed_at"]}
+        if action == "cancel":
+            proof.update(order_mapping_proven=bool(previous and previous.get("receipt_mapping") is True
+                and previous.get("account_binding") == "proven"),
+                broker_order_id=(previous or {}).get("broker_order_id"))
+        proof["proof_sha256"] = digest(proof)
+        return proof
 
     @staticmethod
     def _read_error_code(exc: FounderscNativeAXError) -> str:

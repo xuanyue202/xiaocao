@@ -85,7 +85,8 @@ order was terminal. If the full read path fails in the legal window, repair
 the true prerequisite and use the sell-only emergency capability described
 in `book-b-live-repair.md`; do not invent BUY, NAV or EOD facts from it.
 
-This second command reads no paper positions/account/trades. It first
+This second command reads no paper positions/account/trades. Cash, NAV and
+risk use Contract §6's account-bound dynamic capital journal. It first
 reconciles existing live intents, then consumes the native Founder
 positions/orders/trades row tables plus the funds summary embedded in the same
 positions capture, and monitors only broker-proved Book-B

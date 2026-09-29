@@ -89,6 +89,8 @@ EXECUTION_REVIEW_INPUTS = [
     "output/live/book_b_live_execution/events.jsonl",
     "output/live/book_b_live_execution/runs/intraday/archive/*.json",
     "output/live/book_b_live_execution/settlements/*.json",
+    "output/live/book_b_live_execution/capital_policy.json",
+    "output/live/book_b_live_execution/capital_flows.jsonl",
 ]
 
 
@@ -315,6 +317,9 @@ def _kol_item(kind: str, row: dict, reference: dict) -> dict:
                     nav_observed_at=nav_time, nav_evidence_usable=nav_usable,
                     risk_status=receipt["status"], history_basis=receipt.get("history_basis", "missing"),
                     evidence_digest=receipt["evidence_digest"])
+        if kind == "live_risk" and row.get("capital_basis"):
+            item.update(capital_basis=row["capital_basis"],
+                nav_basis="unitized_original_capital")
     elif kind == "paper_consumption":
         _kol_hash_bound(row, "receipt_sha256")
         if row.get("book") != "B" or row.get("runtime") != "paper":

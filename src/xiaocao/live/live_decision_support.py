@@ -2,8 +2,9 @@
 
 No paper state, broker actions, capital keys or settlement writer live here.
 Missing inception evidence blocks buys; it never synthesizes a seed settlement.
-The fixed-capital ownership replay proves zero external flow. A cash difference
-is an unproved flow requiring review, never an inferred deposit/new seed.
+APP capital allocation is a separate account-bound journal. It preserves the
+original fill replay and unitizes approved flows before risk evaluation; raw
+strategy NAV and the funding head remain explicit alongside normalized NAV.
 The historical writer did not guarantee daily settlements. Validate every
 existing file and require the calendar's latest completed day, except when a
 freshly reconciled prior-day own SELL proves zero fill and explains the first
@@ -143,12 +144,19 @@ def _ownership_cash(state_dir: Path) -> tuple[dict, list[dict]]:
     return by_head, rows
 
 
-def _verify_nav(payload: dict, cash_by_head: dict) -> None:
+def _verify_nav(payload: dict, cash_by_head: dict, state_dir: Path | None = None) -> float:
     head = payload.get("ownership_head_sha256")
     cash = _number(payload["cash"])
-    if head not in cash_by_head or cash.quantize(Decimal("0.01")) != cash_by_head[head].quantize(Decimal("0.01")):
+    normalized_nav = float(payload["settled_nav"])
+    if state_dir is not None:
+        from .book_b_capital import verify_account
+        try:
+            normalized_nav = float(verify_account(state_dir, payload))
+        except ValueError as exc:
+            raise ValueError("LIVE_RISK_" + str(exc)) from exc
+    elif head not in cash_by_head or cash.quantize(Decimal("0.01")) != cash_by_head[head].quantize(Decimal("0.01")):
         raise ValueError("LIVE_RISK_EXTERNAL_FLOW_OR_OWNERSHIP_UNPROVEN")
-    if "external_flow_total" in payload and _number(payload["external_flow_total"]) != 0:
+    if state_dir is None and "external_flow_total" in payload and _number(payload["external_flow_total"]) != 0:
         raise ValueError("LIVE_RISK_EXTERNAL_FLOW_REVIEW_REQUIRED")
     if "initial_capital" in payload and _number(payload["initial_capital"]) != 30000:
         raise ValueError("LIVE_RISK_INITIAL_CAPITAL_MISMATCH")
@@ -161,6 +169,7 @@ def _verify_nav(payload: dict, cash_by_head: dict) -> None:
         raise ValueError("LIVE_RISK_LOTS_UNPROVEN")
     if abs(sum((_number(lot["liquidation_value_after_fee"]) for lot in lots), Decimal(0)) - liquidation) > Decimal("0.01"):
         raise ValueError("LIVE_RISK_NAV_LOTS_MISMATCH")
+    return normalized_nav
 
 
 def load_live_nav_history(state_dir: Path, *, asof: datetime,
@@ -205,14 +214,14 @@ def load_live_nav_history(state_dir: Path, *, asof: datetime,
         prefix = [row for row in ownership if row["trade_date"] <= day]
         if payload.get("ownership_head_sha256") != (prefix[-1]["event_hash"] if prefix else None):
             raise ValueError("LIVE_RISK_SETTLEMENT_OWNERSHIP_DATE_MISMATCH")
-        _verify_nav(payload, cash_by_head)
+        normalized_nav = _verify_nav(payload, cash_by_head, root)
         if any(lot["entry_date"] > day for lot in payload["lots"]):
             raise ValueError("LIVE_RISK_FUTURE_OWNED_LOT")
         unresolved = settlement_nonterminal_plan_ids(root, {**payload, "settlement_sha256": claimed})
         if unresolved:
             excluded[day] = list(unresolved)
             continue
-        history.append(NavObservation(day, float(payload["settled_nav"]), "live:B", _CAPITAL,
+        history.append(NavObservation(day, normalized_nav, "live:B", _CAPITAL,
                                       0.0, NAV_BASIS, "settled", settled.isoformat(), claimed))
     if not history:
         raise ValueError("LIVE_RISK_HISTORY_OR_EXPLICIT_SEED_PROOF_REQUIRED")
@@ -238,6 +247,18 @@ def evaluate_live_risk(state_dir: Path, *, now: datetime,
                        account_snapshot_provider: Callable[[], dict] | None = None,
                        receipt_root: Path | None = None,
                        now_provider: Callable[[], datetime] | None = None) -> AccountRiskReceipt:
+    from .trading_execution import account_writer_lock
+    with account_writer_lock(Path(state_dir) / "account_writer_locks", "primary"):
+        return _evaluate_live_risk_locked(state_dir, now=now,
+            trading_dates_provider=trading_dates_provider, account=account,
+            account_snapshot_provider=account_snapshot_provider,
+            receipt_root=receipt_root, now_provider=now_provider)
+
+
+def _evaluate_live_risk_locked(state_dir: Path, *, now: datetime,
+                       trading_dates_provider=None, account=None,
+                       account_snapshot_provider=None, receipt_root=None,
+                       now_provider=None) -> AccountRiskReceipt:
     """Persist every result under a lock so intraday peaks/pause survive restart.
 
     ``account`` must be the just-completed lifecycle projection. Alternatively
@@ -301,8 +322,8 @@ def evaluate_live_risk(state_dir: Path, *, now: datetime,
                 cash_by_head, _ = _ownership_cash(root)
                 if account.ownership_head_sha256 != next(reversed(cash_by_head)):
                     raise ValueError("LIVE_RISK_CURRENT_OWNERSHIP_CHANGED")
-                _verify_nav(account.as_dict(), cash_by_head)
-                mark = NavObservation(account.trade_date, account.settled_nav, "live:B", _CAPITAL,
+                normalized_nav = _verify_nav(account.as_dict(), cash_by_head, root)
+                mark = NavObservation(account.trade_date, normalized_nav, "live:B", _CAPITAL,
                                       0.0, NAV_BASIS, "reconciled", account.broker_snapshot_observed_at,
                                       digest(account.as_dict()))
             except (OSError, ValueError, TypeError, KeyError, RuntimeError) as exc:
@@ -318,8 +339,17 @@ def evaluate_live_risk(state_dir: Path, *, now: datetime,
             if history_diagnostics.get("history_gaps"):
                 warnings.add("HISTORICAL_SETTLEMENT_GAPS:" + ",".join(history_diagnostics["history_gaps"]))
             receipt = replace(receipt, reasons=tuple(sorted(set(receipt.reasons) | warnings)))
+            if account is not None and account.capital_policy_id:
+                receipt = replace(receipt, risk_nav_basis="unitized_original_capital",
+                    strategy_nav=account.settled_nav,
+                    capital_flow_head_sha256=account.capital_flow_head_sha256)
             event = {"receipt": receipt.as_dict(), "previous_hash": head,
-                     "history_coverage": history_diagnostics}
+                     "history_coverage": history_diagnostics,
+                     "capital_basis": ({"raw_strategy_nav": account.settled_nav,
+                         "capital_flow_head_sha256": account.capital_flow_head_sha256,
+                         "unit_factor": account.capital_unit_factor,
+                         "external_flow_total": account.external_flow_total,
+                         "risk_nav_basis": "unitized_original_capital"} if account is not None else None)}
             event["event_hash"] = digest(event)
             with path.open("a", encoding="utf-8") as stream:
                 stream.write(json.dumps(event, ensure_ascii=False, sort_keys=True, allow_nan=False) + "\n")

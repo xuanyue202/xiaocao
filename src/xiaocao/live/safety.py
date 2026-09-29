@@ -81,6 +81,10 @@ class Decision:
 # --------------------------------------------------------------------------- #
 def _canonical_payload(auth: dict[str, Any]) -> bytes:
     body = {k: auth.get(k) for k in SIGNED_FIELDS}
+    # Optional v2 scope is signed when present; legacy grants remain valid.
+    for key in ("capital_policy_id", "fund_account_binding_sha256"):
+        if key in auth:
+            body[key] = auth[key]
     return json.dumps(body, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
 
@@ -203,6 +207,9 @@ def authorize_capital_action(
     audit_path: Path | None = DEFAULT_AUDIT_PATH,
     env: dict[str, str] | None = None,
     now: datetime | None = None,
+    capital_proof: dict[str, Any] | None = None,
+    plan_hash: str | None = None,
+    action: str = "submit",
 ) -> Decision:
     """The gate. Returns a Decision; ALWAYS writes an audit row (unless
     audit_path is None). Does not raise — callers wanting fail-closed semantics
@@ -248,6 +255,49 @@ def authorize_capital_action(
         return decision
 
     max_notional = float(auth["max_notional"])
+    if "capital_policy_id" in auth or "fund_account_binding_sha256" in auth:
+        from .book_b_capital import POLICY, digest, number
+        try:
+            proof = capital_proof or {}
+            observed = _parse_iso(proof.get("observed_at"))
+            clock = now or _utcnow()
+            if (auth.get("capital_policy_id") != POLICY
+                    or len(auth.get("fund_account_binding_sha256", "")) != 64
+                    or proof.get("fund_account_binding_sha256") != auth["fund_account_binding_sha256"]
+                    or proof.get("account_binding") != "proven"
+                    or proof.get("logical_account_id") != "primary"
+                    or proof.get("source") != "foundersc_native_app"
+                    or not plan_hash or proof.get("plan_hash") != plan_hash
+                    or proof.get("code") != code or proof.get("side") != side
+                    or proof.get("action") != action or action not in {"submit", "cancel"}
+                    or number(proof.get("notional")) != number(notional)
+                    or proof.get("proof_sha256") != digest({k:v for k,v in proof.items() if k != "proof_sha256"})
+                    or observed is None or not 0 <= (clock-observed).total_seconds() <= 60):
+                raise ValueError
+            if action == "cancel":
+                if proof.get("order_mapping_proven") is not True or not proof.get("broker_order_id"):
+                    raise ValueError
+                max_notional = float(notional)
+            elif side == "BUY":
+                fee = number(proof.get("fee_rate"))
+                if not 0 <= fee < 1:
+                    raise ValueError
+                requested = number(proof.get("requested_notional", notional))
+                if not 0 < requested <= number(notional) or requested * (1+fee) > number(proof["available_cash"]):
+                    raise ValueError
+                max_notional = float(notional)
+            elif side == "SELL":
+                shares = number(proof["shares"])
+                if shares <= 0 or shares != int(shares) or shares > min(
+                        number(proof["book_b_owned_shares"]), number(proof["sellable_shares"])):
+                    raise ValueError
+                max_notional = float(notional)
+            else:
+                raise ValueError
+        except (ValueError, TypeError, KeyError, AttributeError, ArithmeticError):
+            decision = Decision(False, kind, "dynamic capital proof unproved", code, side, notional)
+            _audit(decision, audit_path)
+            return decision
     try:
         normalized_notional = float(notional) if notional is not None else None
     except (TypeError, ValueError):
@@ -273,7 +323,12 @@ def authorize_capital_action(
     decision = Decision(
         True, kind, "keychain-backed capital gate authorized",
         code, side, notional,
-        details={"scope": auth.get("scope"), "expires_at": auth.get("expires_at")},
+        details={"scope": auth.get("scope"), "expires_at": auth.get("expires_at"),
+            **({"capital_policy_id": auth["capital_policy_id"],
+                "capital_proof_sha256": capital_proof["proof_sha256"],
+                "plan_hash": plan_hash, "action": action,
+                "observed_at": capital_proof["observed_at"]}
+                if auth.get("capital_policy_id") else {})},
     )
     # A real-capital ALLOW MUST be durably audited (OPERATING_CONTRACT §9). If the
     # audit cannot be written, fail closed rather than place an un-auditable order.

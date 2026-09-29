@@ -83,6 +83,11 @@ def allocation_from_buy_preflight(snapshot: dict, basis, *, now: datetime) -> di
         'broker_observed_at': snapshot['observed_at'],
         'broker_receipt': receipt, 'broker_receipt_sha256': _capsule_sha256(receipt),
     }
+    from .book_b_capital import SOURCE
+    if basis.source == SOURCE:
+        # Carry the exact funding head; verification/recovery never revalues
+        # this immutable allocation using a later capital movement.
+        result['capital_flow_head_sha256'] = basis.capital_flow_head_sha256
     result['allocation_capsule_sha256'] = _capsule_sha256(result)
     return result
 
@@ -131,7 +136,8 @@ def _replay_owned_book(state_dir: Path) -> tuple[Decimal, dict[str, dict], str |
         else:
             raise ValueError('BUY_PREFLIGHT_OWNERSHIP_SIDE_INVALID')
     cash = cash.quantize(Decimal('0.01'))
-    if cash < Decimal('-0.10'):
+    from .book_b_capital import policy
+    if cash < Decimal('-0.10') and policy(state_dir) is None:
         raise ValueError('BUY_PREFLIGHT_SUBACCOUNT_CASH_NEGATIVE')
     return cash, lots, head
 
@@ -142,7 +148,10 @@ def current_owned_book_b_codes(state_dir: Path) -> set[str]:
     return {str(lot['code']) for lot in lots.values() if lot['shares'] > 0}
 
 
-def pretrade_account(state_dir: Path, snapshot: dict, *, trade_date: str, now: datetime) -> BookBLiveAccountState:
+def pretrade_account(state_dir: Path, snapshot: dict, *, trade_date: str, now: datetime,
+                     sync_capital: bool = True, historical_capital: bool = False,
+                     capital_flow_head: str | None = None,
+                     capital_policy_id: str | None = None) -> BookBLiveAccountState:
     """Mark current proved Book-B lots; preserve old orders for reconciliation."""
     validate_buy_preflight(snapshot, trade_date, now)
     state_dir = Path(state_dir)
@@ -194,9 +203,20 @@ def pretrade_account(state_dir: Path, snapshot: dict, *, trade_date: str, now: d
             snapshot_ref=row['snapshot_ref'], monitor_context=contexts.get(lot_id, {})))
     exposure = round(sum(l.market_value for l in lots), 2)
     liquidation = round(sum(l.liquidation_value_after_fee for l in lots), 2)
+    from .book_b_capital import allocate_cash
+    cash, funding = allocate_cash(state_dir, base_cash=cash, liquidation=liquidation,
+        ownership_head=head, snapshot=snapshot, sync=sync_capital,
+        replay_flow_head=capital_flow_head, historical=historical_capital)
+    if capital_policy_id is not None:
+        from .book_b_capital import POLICY, policy
+        if capital_policy_id != POLICY or policy(state_dir) is None:
+            raise ValueError('BUY_PREFLIGHT_CAPITAL_POLICY_UNPROVEN')
+        funding['capital_policy_id'] = POLICY
+    if cash < Decimal('-0.10'):
+        raise ValueError('BUY_PREFLIGHT_SUBACCOUNT_CASH_NEGATIVE')
     return BookBLiveAccountState(trade_date=trade_date, logical_account_id='primary', cash=float(cash),
         current_open_exposure=exposure, liquidation_value_after_fee=liquidation,
         settled_nav=round(float(cash)+liquidation, 2),
-        realized_cash_delta=round(float(cash)-BOOK_B_LIVE_INITIAL_CAPITAL, 2),
+        realized_cash_delta=round(float(cash)-funding['net_external_flow_total']-BOOK_B_LIVE_INITIAL_CAPITAL, 2),
         ownership_head_sha256=head, broker_snapshot_sha256=snapshot['snapshot_sha256'],
-        broker_snapshot_observed_at=snapshot['observed_at'], lots=tuple(lots))
+        broker_snapshot_observed_at=snapshot['observed_at'], lots=tuple(lots), **funding)
