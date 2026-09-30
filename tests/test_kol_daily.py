@@ -259,6 +259,27 @@ def test_transcript_audit_contract_exposes_exact_character_thirds():
     }
 
 
+def test_transcript_audit_ranges_use_persisted_text_with_trailing_newline(tmp_path):
+    text = "文" * 5094 + "\n"
+    path = tmp_path / "transcript.txt"
+    path.write_text(text, encoding="utf-8")
+    contract = _transcript_audit_contract({
+        "transcript_character_count": 5094,
+        "transcript_path": str(path),
+        "transcript_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+    })
+    assert contract["character_count"] == len(text)
+    for index, row in enumerate(contract["ranges"]):
+        assert len(text) * index / 3 <= row["start_char_inclusive"] < len(text) * (index + 1) / 3
+
+    path.write_text(text + "changed", encoding="utf-8")
+    with pytest.raises(DailyError, match="hash mismatch"):
+        _transcript_audit_contract({
+            "transcript_path": str(path),
+            "transcript_sha256": hashlib.sha256(text.encode()).hexdigest(),
+        })
+
+
 def _close_validated_repair(
     coordinator: DailyCoordinator,
     progress: WriterProgress,

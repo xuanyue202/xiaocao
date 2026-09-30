@@ -828,7 +828,16 @@ def _lv_pdf_dependency_progress(
 def _transcript_audit_contract(state: dict[str, Any]) -> dict[str, Any]:
     """Describe the exact character thirds consumed by transcript audit."""
 
-    character_count = int(state.get("transcript_character_count") or 0)
+    transcript_path = state.get("transcript_path")
+    if transcript_path:
+        # The provider count excludes the newline added by persistence. Audit
+        # verification reads the persisted file without normalization.
+        transcript_bytes = Path(transcript_path).read_bytes()
+        if hashlib.sha256(transcript_bytes).hexdigest() != state.get("transcript_sha256"):
+            raise DailyError("transcript audit evidence hash mismatch")
+        character_count = len(transcript_bytes.decode("utf-8"))
+    else:
+        character_count = int(state.get("transcript_character_count") or 0)
     if character_count < 3:
         raise DailyError("transcript audit requires a nontrivial character count")
     first_boundary = (character_count + 2) // 3
