@@ -38,6 +38,9 @@ from xiaocao.live.instrument_contract import (
 CHINA = ZoneInfo("Asia/Shanghai")
 _CODE = re.compile(r"\d{6}\.(?:XSHG|XSHE|BJSE)")
 _ACCOUNT_FIELDS = ("initial_capital", "cash", "realized_pnl", "fee_rate")
+_LEGACY_PAPER_RISK_FIELDS = frozenset({
+    "risk_nav_basis", "strategy_nav", "capital_flow_head_sha256",
+})
 
 
 def support_directory(root: Path) -> Path:
@@ -302,7 +305,13 @@ def evaluate_paper_risk(root: Path, account: dict, positions: list[dict], *, now
         try:
             if head.exists():
                 prior = _read_bound(head)
-                previous = AccountRiskReceipt(**{field.name: prior[field.name] for field in fields(AccountRiskReceipt)})
+                missing = {field.name for field in fields(AccountRiskReceipt)} - prior.keys()
+                if missing - _LEGACY_PAPER_RISK_FIELDS:
+                    raise ValueError("PAPER_RISK_HEAD_FIELDS_MISSING")
+                previous = AccountRiskReceipt(**{
+                    field.name: prior[field.name]
+                    for field in fields(AccountRiskReceipt) if field.name in prior
+                })
             elif (directory / "risk_receipts").exists() and any((directory / "risk_receipts").iterdir()):
                 raise ValueError("PAPER_RISK_HEAD_MISSING")
         except (OSError, ValueError, KeyError, TypeError):

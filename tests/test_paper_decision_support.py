@@ -158,6 +158,40 @@ def test_corrupt_receipt_never_reinitializes_epoch(tmp_path):
         assert head.read_bytes() == before
 
 
+def test_hash_valid_legacy_head_keeps_peak_and_epoch(tmp_path):
+    peak = evaluate(tmp_path, account(120000))
+    head = support.risk_directory(tmp_path) / "risk_latest.json"
+    legacy = json.loads(head.read_text())
+    for key in ("risk_nav_basis", "strategy_nav", "capital_flow_head_sha256"):
+        legacy.pop(key)
+    legacy.pop("receipt_sha256")
+    legacy["receipt_sha256"] = support._digest(legacy)
+    head.write_text(json.dumps(legacy), encoding="utf-8")
+
+    current = evaluate(tmp_path, account(110000), now=NOW + timedelta(minutes=1))
+    assert current["status"] == "NORMAL"
+    assert current["high_water_mark"] == peak["high_water_mark"] == 120000
+    assert current["tracking_epoch_started_at"] == peak["tracking_epoch_started_at"]
+    assert current["previous_receipt_sha256"] == legacy["receipt_sha256"]
+    assert "PREVIOUS_RECEIPT_INVALID" not in current["reasons"]
+
+
+def test_hash_valid_head_missing_existing_policy_field_stays_blocked(tmp_path):
+    evaluate(tmp_path, account(120000))
+    head = support.risk_directory(tmp_path) / "risk_latest.json"
+    malformed = json.loads(head.read_text())
+    malformed.pop("policy_id")
+    malformed.pop("receipt_sha256")
+    malformed["receipt_sha256"] = support._digest(malformed)
+    head.write_text(json.dumps(malformed), encoding="utf-8")
+    before = head.read_bytes()
+
+    current = evaluate(tmp_path, account(110000), now=NOW + timedelta(minutes=1))
+    assert current["status"] == "BLOCKED"
+    assert "PREVIOUS_RECEIPT_INVALID" in current["reasons"]
+    assert head.read_bytes() == before
+
+
 def test_capital_change_cannot_reset_peak(tmp_path):
     evaluate(tmp_path, account(120000))
     before = (support.risk_directory(tmp_path) / "risk_latest.json").read_bytes()
