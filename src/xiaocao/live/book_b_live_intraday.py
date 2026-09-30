@@ -503,7 +503,9 @@ def _run_book_b_live_intraday_locked(
     )
     deferred_buys = check_monitor_pending_plans(
         state_root, trade_date=trade_date, asof=current,
-        allow_open_sells=normalized_phase != "eod",
+        # Pending SELLs must not suppress a read-only post-close observation.
+        # The settlement writer below independently requires every plan terminal.
+        allow_open_sells=True,
     )
     phase_now = now()
     if phase_now.tzinfo is None:
@@ -519,7 +521,7 @@ def _run_book_b_live_intraday_locked(
     snapshot = account_snapshot_provider()
     deferred_buys = check_monitor_pending_plans(
         state_root, trade_date=trade_date, asof=now(),
-        allow_open_sells=normalized_phase != "eod",
+        allow_open_sells=True,
     )
     current = now()
     if current.tzinfo is None:

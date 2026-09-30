@@ -1592,6 +1592,51 @@ def test_blocked_eod_retains_fresh_account_and_exact_reconciliation(tmp_path: Pa
     assert not (tmp_path / "settlements/2026-09-04.json").exists()
 
 
+@pytest.mark.parametrize("state", [ExecutionState.ACKNOWLEDGED, ExecutionState.UNKNOWN])
+@pytest.mark.parametrize("sell_date", ["2026-08-31", "2026-09-01"])
+def test_eod_observes_owned_lot_while_sell_remains_unresolved(
+    tmp_path: Path, state: ExecutionState, sell_date: str,
+) -> None:
+    buy = _record_fill(tmp_path, _plan(trade_date="2026-08-30"),
+                       price=10, event_id="owned-buy")
+    sell = _bind_plan_intent(tmp_path, _plan(side="SELL", lot_id=buy.plan_id,
+                                           trade_date=sell_date))
+    store = ExecutionStore(tmp_path / "events.jsonl")
+    unresolved = store.append(plan=sell,
+        receipt=ExecutionReceipt(sell.plan_id, sell.plan_hash, state,
+            filled_shares=0, remaining_shares=100, broker_order_id="6004811",
+            next_action="reconcile", observed_at=EOD_NOW))
+    snapshot = _snapshot(shares=100, sellable=0, observed_at=EOD_NOW)
+    reads, reconciliations = [], []
+
+    def read_account():
+        reads.append(True)
+        return snapshot
+
+    def reconcile(plan):
+        reconciliations.append(plan.plan_id)
+        assert plan.plan_hash == sell.plan_hash
+        return unresolved
+
+    receipt = run_book_b_live_intraday(
+        state_dir=tmp_path, trade_date="2026-09-01", phase="eod",
+        account_snapshot_provider=read_account,
+        status_provider=lambda lots: pytest.fail("EOD cannot create an exit"),
+        execute=reconcile, now=lambda: EOD_NOW, execute_sells=False,
+    )
+
+    assert receipt.status == "blocked"
+    assert receipt.reason == "LIVE_BOOK_B_EOD_OPEN_EXECUTION_RECONCILE_REQUIRED"
+    assert receipt.account["broker_snapshot_sha256"] == snapshot["snapshot_sha256"]
+    assert receipt.account["lots"][0]["shares"] == 100
+    assert receipt.reconciliation_receipts == (unresolved.as_dict(),)
+    assert reads == [True] and reconciliations == [sell.plan_id]
+    assert receipt.decisions == receipt.execution_receipts == ()
+    assert receipt.settlement is None
+    assert store.current(sell.plan_id).state == state
+    assert not (tmp_path / "settlements/2026-09-01.json").exists()
+
+
 def test_intraday_rejects_eod_settlement_before_market_close(
     tmp_path: Path,
 ) -> None:
