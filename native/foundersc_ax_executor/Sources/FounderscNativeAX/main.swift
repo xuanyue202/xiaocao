@@ -3938,24 +3938,30 @@ private func dismissLoginSuccessNotice(_ observation: Observation, expected: Str
            area.x + area.width <= parent.x + 100, area.y + area.height <= parent.y + 40,
            primaryVisible { continue }
         if title == "Window", texts.isEmpty, !otherControl, buttonSubroles == [""],
-           let area = bounds(of: window), let primary = observation.primaryWindow,
-           let parent = bounds(of: primary), area.width <= 100, area.height <= 30,
-           area.x >= parent.x, area.y >= parent.y,
-           area.x + area.width <= parent.x + 100, area.y + area.height <= parent.y + 40,
-           primaryVisible {
-            let frameControls = [elementAttribute(primary, kAXCloseButtonAttribute),
-                elementAttribute(primary, kAXMinimizeButtonAttribute),
-                elementAttribute(primary, kAXZoomButtonAttribute) ?? elementAttribute(primary, "AXFullScreenButton")]
+           let area = bounds(of: window), area.width <= 100, area.height <= 30 {
+            let primary = observation.primaryWindow
+            let frameControls = [primary.flatMap { elementAttribute($0, kAXCloseButtonAttribute) },
+                primary.flatMap { elementAttribute($0, kAXMinimizeButtonAttribute) },
+                primary.flatMap { elementAttribute($0, kAXZoomButtonAttribute)
+                    ?? elementAttribute($0, "AXFullScreenButton") }]
                 .compactMap { $0 }.compactMap { bounds(of: $0) }
-            if (frameControls.count == 3 && frameControls.allSatisfy({
+            let frameParents = windows.compactMap { candidate -> Bounds? in
+                guard !CFEqual(candidate, window), let parent = bounds(of: candidate),
+                      visible(parent), abs(area.x - parent.x - 10) <= 1,
+                      ([4.0, 7.0] as [Double]).contains(where: { abs(area.y - parent.y - $0) <= 1 }),
+                      abs(area.width - 66) <= 1, abs(area.height - 20) <= 1,
+                      area.x + area.width <= parent.x + 100,
+                      area.y + area.height <= parent.y + 40 else { return nil }
+                return parent
+            }
+            if (primaryVisible && frameControls.count == 3 && frameControls.allSatisfy({
                 $0.x >= area.x - 1 && $0.y >= area.y - 1
                     && $0.x + $0.width <= area.x + area.width + 1
                     && $0.y + $0.height <= area.y + area.height + 1
-            })) || (abs(area.x - parent.x - 10) <= 1 && abs(area.y - parent.y - 7) <= 1
-                && abs(area.width - 66) <= 1 && abs(area.height - 20) <= 1 && count == 2) {
-                // macOS 26 exposes the combined traffic-light hit area as one
-                // anonymous button. This exact observed frame has no content,
-                // input control or transaction action, and stays parent-bound.
+            })) || (count == 2 && frameParents.count == 1) {
+                // The anonymous traffic-light frame can belong to the visible
+                // account-bound message center, not only the primary window.
+                // Other windows are still inspected and must match separately.
                 continue
             }
         }
@@ -3973,7 +3979,7 @@ private func dismissLoginSuccessNotice(_ observation: Observation, expected: Str
             let titleKind = title.replacingOccurrences(of: #"\d{8,20}"#, with: "masked_account", options: .regularExpression)
             let area = bounds(of: window)
             let visibleGeometry = visibleBounds.map { "\($0.x),\($0.y),\($0.width),\($0.height)" }.joined(separator: ";")
-            return (false, false, "secondary_window_unrecognized:title=\(titleKind):body=\(bodies.count):texts=\(texts.count):buttons=\(buttonSubroles):other_control=\(otherControl):bounds=\(area?.x ?? -1),\(area?.y ?? -1),\(area?.width ?? -1),\(area?.height ?? -1):primary_visible=\(primaryVisible):onscreen=\(visibleGeometry)")
+            return (false, false, "secondary_window_unrecognized:title=\(titleKind):body=\(bodies.count):texts=\(texts.count):nodes=\(count):buttons=\(buttonSubroles):other_control=\(otherControl):bounds=\(area?.x ?? -1),\(area?.y ?? -1),\(area?.width ?? -1),\(area?.height ?? -1):primary_visible=\(primaryVisible):onscreen=\(visibleGeometry)")
         }
         notices.append((window, close))
     }
