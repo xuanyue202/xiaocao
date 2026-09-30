@@ -38,6 +38,16 @@ Never promote a partial sell-only observation to BUY/NAV/EOD authority.
 
 ## Ownership and outcome classes
 
+For `morning_bundle_repair_required`, inspect only its exact request and original
+checkpoint binding. The shared consumer already attempts one bounded exact-byte
+repair under a separate file lock. Fix local serialization/IO/adapter code and
+run `PYTHONPATH=src .venv/bin/python scripts/morning_bundle_recovery.py --request <path>`
+once. Read the recovered/next dependency event, then adopt the actual immutable
+copy while retaining original date/run/hash and durable plans. Missing original
+checkpoint cannot authorize new capture, changed expected hashes or a second
+producer. Continue necessary owner repair; source evidence still absent is a
+reported gap. Trade claims and historical UNKNOWN remain separate reconciliation.
+
 Run the full live-morning command exactly once. The started task owns repair;
 do not defer a recoverable problem to the next Automation.
 

@@ -14,6 +14,8 @@ def isolate_morning_notices(monkeypatch):
     """Mocked APP dispatch must never send real historical notifications."""
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "scripts"))
     cli = importlib.import_module("scripts.book_b_live_morning")
+    monkeypatch.setenv("CODEX_AUTOMATION_ID", cli.AUTOMATION_ID)
+    monkeypatch.setenv("CODEX_THREAD_ID", "scheduled-owner")
     class Notices:
         def __init__(self, *args, **kwargs):
             pass
@@ -24,6 +26,31 @@ def isolate_morning_notices(monkeypatch):
         def close(self):
             return []
     monkeypatch.setattr(cli, "MorningNotifications", Notices)
+
+
+def test_recovery_rejects_foreign_automation_before_lock_or_notices(monkeypatch, capsys):
+    cli = importlib.import_module("scripts.book_b_live_morning")
+    monkeypatch.setenv("CODEX_AUTOMATION_ID", "remote-writer")
+    monkeypatch.setattr(cli, "automation_run", lambda *a, **k: pytest.fail("foreign task took runner lock"))
+    monkeypatch.setattr(cli, "MorningNotifications", lambda *a, **k: pytest.fail("foreign task queued a notice"))
+
+    assert cli.main(["--date", "2026-09-30", "--resume-plan-id", "same-plan",
+                     "--recovery-action", "reconcile"]) == 2
+    result = json.loads(capsys.readouterr().out.strip())
+    assert result["status"] == "blocked"
+    assert result["reason"] == "AUTOMATION_ENTRYPOINT_ID_MISMATCH"
+
+
+@pytest.mark.parametrize("missing", ["CODEX_AUTOMATION_ID", "CODEX_THREAD_ID"])
+def test_morning_rejects_unbound_task_before_lock_or_notices(monkeypatch, capsys, missing):
+    cli = importlib.import_module("scripts.book_b_live_morning")
+    monkeypatch.delenv(missing)
+    monkeypatch.setattr(cli, "automation_run", lambda *a, **k: pytest.fail("unbound task took runner lock"))
+    monkeypatch.setattr(cli, "MorningNotifications", lambda *a, **k: pytest.fail("unbound task queued a notice"))
+
+    assert cli.main(["--date", "2026-09-30"]) == 2
+    result = json.loads(capsys.readouterr().out.strip())
+    assert result["reason"] == "AUTOMATION_RUNTIME_IDENTITY_UNPROVEN"
 
 
 @pytest.mark.parametrize("action", [None, "preflight_repair", "resume", "reconcile", "close", "capital_unavailable"])

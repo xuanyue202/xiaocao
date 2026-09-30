@@ -1474,7 +1474,10 @@ def test_live_morning_refreshes_stale_unclaimed_intent_once_after_readonly_prepa
     )
     assert first.reason == "LIVE_PREPARE_ONLY_FORM_NOT_CLOSED"
 
-    resumed_at = initial + timedelta(minutes=16)
+    # A four-minute delay was still admitted by the generic 15-minute quote
+    # horizon, letting a recovery submit against an opening price from before
+    # continuous trading. Recovery must refresh before touching the counter.
+    resumed_at = initial + timedelta(minutes=4)
     refresh_calls = 0
     executed: list[TradePlan] = []
 

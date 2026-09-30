@@ -281,14 +281,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--automation-id", default=AUTOMATION_ID,
                         help="Task-local deduplication identity; never use a remote writer's identity")
     args = parser.parse_args(argv)
-    if args.resume_plan_id and os.environ.get("CODEX_AUTOMATION_ID"):
-        # A separately authorized checkpoint may reconcile the exact existing
-        # plan. Bind it to its real task, without impersonating morning.
-        if args.automation_id == AUTOMATION_ID:
-            args.automation_id = os.environ["CODEX_AUTOMATION_ID"]
     try:
-        validate_automation_identity(args.automation_id if args.resume_plan_id else AUTOMATION_ID,
-                                     args.automation_id)
+        validate_automation_identity(AUTOMATION_ID, args.automation_id)
+        if not os.environ.get("CODEX_AUTOMATION_ID") or not os.environ.get("CODEX_THREAD_ID"):
+            raise ValueError("AUTOMATION_RUNTIME_IDENTITY_UNPROVEN")
     except ValueError as exc:
         _emit_json({"status": "blocked", "reason": str(exc),
                     **runner_identity(AUTOMATION_ID, "scripts/book_b_live_morning.py")})
@@ -544,6 +540,7 @@ def _run(args, notices):
             poll_sec=args.poll_seconds,
             snapshot_path=freeze_path,
             heartbeat=live_heartbeat,
+            dependency_notice=_emit_json,
         ),
         prepare_only=(lambda plan: broker.prepare_readonly(
             plan,

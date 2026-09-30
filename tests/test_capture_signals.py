@@ -21,6 +21,30 @@ class FakeAuctionClient:
         return [row] if row else []
 
 
+def test_capture_checkpoint_receives_only_current_rows_before_mutable_replace(tmp_path):
+    path = tmp_path / "signal_snapshots.jsonl"
+    old = {"date": "2026-06-12", "book": "B", "is_live": False, "code": "000002.XSHE"}
+    path.write_text(json.dumps(old) + "\n")
+    proof = []
+    def checkpoint(raw):
+        assert json.loads(path.read_text())["is_live"] is False
+        proof.extend(json.loads(line) for line in raw.decode().splitlines())
+    capture([_cand("000001.XSHE", 1.0, True)], FakeAuctionClient({}), "2026-06-12",
+        is_live=True, out=path, on_captured=checkpoint)
+    assert len(proof) == 1 and proof[0]["code"] == "000001.XSHE" and proof[0]["is_live"]
+    assert len(path.read_text().splitlines()) == 2
+
+
+def test_failed_capture_checkpoint_does_not_publish_false_empty(tmp_path):
+    path = tmp_path / "signal_snapshots.jsonl"
+    path.write_text('original\n')
+    def failed(_):
+        raise OSError("capture checkpoint failed")
+    with pytest.raises(OSError, match="checkpoint failed"):
+        capture([], FakeAuctionClient({}), "2026-06-12", is_live=True, out=path, on_captured=failed)
+    assert path.read_text() == 'original\n'
+
+
 def _auction_row(pct: float, buy_residual: float, vol: float = 1000.0) -> dict:
     return {
         "tradeTimestamp": "092500",

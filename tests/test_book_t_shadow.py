@@ -406,6 +406,29 @@ def test_matured_events_feed_metrics_only_after_explicit_lifecycle_events() -> N
     assert after["sample"]["valid_theme_decisions"] == 1
 
 
+def test_valid_older_global_event_is_deferred_and_same_day_foreign_is_blocked():
+    prior = _bound_lifecycle_day(1)
+    current = _bound_lifecycle_day(2)
+    event = build_daily_mark_event(prior["evidence_lifecycle"],
+        observed_at=prior["as_of"][:10] + "T09:00:00Z", marks=[])
+    result = evaluate_book_t_shadow([run_book_t_shadow(current)], lifecycle_events=[event])
+    assert len(result["deferred_lifecycle_events"]) == 1
+    assert result["sample"]["outcome_matured"] == 0
+    included = evaluate_book_t_shadow([run_book_t_shadow(prior), run_book_t_shadow(current)],
+        lifecycle_events=[event])
+    assert included["deferred_lifecycle_events"] == []
+    foreign = copy.deepcopy(event)
+    foreign["decision_id"] = "foreign-same-day"
+    foreign["data"]["as_of"] = current["as_of"][:10]
+    unsigned = {k: v for k, v in foreign.items() if k != "event_id"}
+    foreign["event_id"] = canonical_sha256(unsigned)
+    with pytest.raises(BookTShadowError, match="not bound"):
+        evaluate_book_t_shadow([run_book_t_shadow(current)], lifecycle_events=[foreign])
+    event["data"]["as_of"] = "invalid"
+    with pytest.raises(BookTShadowError, match="integrity"):
+        evaluate_book_t_shadow([run_book_t_shadow(current)], lifecycle_events=[event])
+
+
 def test_shadow_run_fails_closed_on_mixed_market_input() -> None:
     frozen = _bound_day(1)
     frozen["shadow"]["fills"][0]["market_input_sha256"] = "wrong-market"

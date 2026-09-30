@@ -4,6 +4,23 @@ Read this file only for the daily morning recommendation/paper-book branch.
 
 ## Execute
 
+For producer or consumer handoff faults, apply Operating Contract §1c and
+[book-b-live-repair.md](book-b-live-repair.md). The original 09:23 capture commits
+one execution bundle before optional news/report work. Both consumers verify
+its exact checkpoint and consume the proved original or recovered copy.
+Read `morning_bundle_repair_required.request_path`, repair the local dependency,
+then run `morning_bundle_recovery.py --request <exact-path>` once; accept only
+the revalidated original batch. Keep the original wait/budget alive. A missing
+original remains unproved, with failure notification and bounded owner repair.
+Formal paper passes the dated immutable snapshot and consumer receipt; its
+legacy mutable experiment flag is forbidden in Automation. Explicit intelligence
+`on` also requires the completed same-batch support artifact and current veto.
+An orphan checkpoint before the commit is a request for the exact original
+producer owner; only that runtime identity can finish its interrupted commit.
+Consumers cannot create a commitment. A zero-row proven capture needs no support
+artifact. Missing shadow support/review queue is explicit degradation. Empty
+new support cannot withdraw an earlier valid event; the typed policy owns expiry.
+
 For the bounded KOL overlay, also read
 [kol-trading-judgment.md](kol-trading-judgment.md). Keep the original runner and
 model. The remote writer owns full reading and independent source-level review
@@ -20,18 +37,18 @@ Scheduled delivery is split across two Automations because the recommendation
 is ready before opening-window execution can finish:
 
 ```bash
-# 09:23 task: produce the dated recommendation and frozen review queue, then exit
-bash scripts/auto_daily.sh morning-prerecommend
+# 09:23 task: commit execution bundle, then deliver derived report/review queue
+CODEX_AUTOMATION_ID=xiaocao-daily-morning bash scripts/auto_daily.sh morning-prerecommend
 
 # 09:25 task: wait for those frozen artifacts, review, and paper-record
-bash scripts/auto_daily.sh morning-execute
+CODEX_AUTOMATION_ID=xiaocao-daily-morning-execution bash scripts/auto_daily.sh morning-execute
 ```
 
 Book-B real-capital execution is a third, deliberately independent
 09:00 Automation and process:
 
 ```bash
-PYTHONPATH=src .venv/bin/python scripts/book_b_live_morning.py --date today --route native-app
+CODEX_AUTOMATION_ID=xiaocao-book-b-live-morning PYTHONPATH=src .venv/bin/python scripts/book_b_live_morning.py --date today --route native-app
 ```
 
 It may start before the dated freeze exists and wait only for that freeze. It
@@ -269,6 +286,24 @@ Normal bounded states: no raw candidates, no executable mode, no Book-T slot, re
 Escalate: script failure/traceback, missing recommendation or paper-record stage, torn/corrupt snapshots, missing mode evidence, AI hard veto, insufficient cash, suspicious fill metadata, ledger inconsistency, or a run-flow/log disagreement.
 
 ## Early preparation and urgent continuation
+
+### Invocation ownership
+
+The fresh scheduler-created task for today's 09:00 slot owns the runner and
+its stdout, review rendezvous, orders, receipts, and notices. A human follow-up
+in an older Automation task is a repair/inspection task, even when it has the
+same Automation ID and is active at 09:00. It works in an isolated checkout and
+returns an exact repair; only an explicit transfer from the user plus readback
+of the dated owner changes that role. Do not infer ownership from the clock,
+task title, checkout, or shared Automation ID.
+
+When a new scheduled task receives `SAME_AUTOMATION_RUNNING`, report the exact
+dated lock owner and stop that duplicate task's business path. The current
+owner alone completes preflight, KOL projection/review, execution, and notice
+readback. A live unified-exec session is scoped to its task, so sending its
+session ID to another task is not a handoff. During 09:25–09:30, coordinate
+only a concrete `dependency_recovery_wait` or exact failure needing one bounded
+repair; the runner owner consumes its own next stage event.
 
 Start at 09:00 with the default 2100-second freeze wait and a short initial
 command yield. Runner stage JSON is the event source. Do not model-poll,

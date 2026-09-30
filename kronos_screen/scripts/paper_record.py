@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse, json
 import hashlib
 import math
+import os
 import sys
 import time
 from datetime import datetime, timedelta
@@ -897,6 +898,9 @@ def _audit_intelligence_vetoes(
 def _main_locked():
     ap = argparse.ArgumentParser()
     ap.add_argument("--date", default=datetime.now().strftime("%Y-%m-%d"))
+    ap.add_argument("--morning-freeze-receipt", type=Path)
+    ap.add_argument("--allow-legacy-snapshots", action="store_true",
+                    help="explicit isolated experiment only; forbidden in formal morning automation")
     ap.add_argument(
         "--pick",
         choices=["mode_exec_star", "vb_star", "kp_star", "mode_star"],
@@ -961,6 +965,8 @@ def _main_locked():
         ),
     )
     a = ap.parse_args()
+    if a.allow_legacy_snapshots and os.environ.get("CODEX_AUTOMATION_ID"):
+        raise ValueError("LEGACY_SNAPSHOTS_FORBIDDEN_IN_AUTOMATION")
     _parse_hhmm(a.fill_window_start)
     _parse_hhmm(a.fill_window_end)
     _validate_fill_window(a.fill_window_start, a.fill_window_end)
@@ -990,8 +996,32 @@ def _main_locked():
         account = {}
     paper_positions = paper_support.read_paper_positions(POS)
     dated_freeze = Path(f"output/live/book_b_live_freeze_{a.date}.jsonl")
-    selection_source = dated_freeze if a.pick == "mode_exec_star" and dated_freeze.exists() else SNAP
-    snapshot_sha256 = hashlib.sha256(selection_source.read_bytes()).hexdigest() if selection_source.exists() else ""
+    frozen_receipt = None
+    if a.pick == "mode_exec_star" and not a.allow_legacy_snapshots:
+        from xiaocao.live.morning_bundle import acquire_bundle, bundle_required, has_bundle_evidence, read_consumed_rows, resolve_receipt, validate_components
+        live_dir = dated_freeze.parent
+        if a.morning_freeze_receipt:
+            frozen_receipt = json.loads(a.morning_freeze_receipt.read_bytes())
+        elif has_bundle_evidence(live_dir, a.date) or bundle_required(a.date):
+            frozen_receipt = acquire_bundle(live_dir, a.date)
+        else:
+            # Compatibility with already published immutable historical runs;
+            # a missing component is repair_required, never a mutable fallback.
+            report = live_dir / f"recommend_{a.date}.md"
+            queue = live_dir / f"intelligence_review_queue_{a.date}.json"
+            frozen_receipt = {"status": "ready", "snapshot_path": str(dated_freeze),
+                **validate_components(a.date, dated_freeze.read_bytes(), report.read_bytes(), queue.read_bytes())}
+        if frozen_receipt.get("status") != "ready":
+            raise ValueError("MORNING_BUNDLE_REPAIR_REQUIRED:" + str(frozen_receipt.get("reason")))
+        frozen_receipt = resolve_receipt(frozen_receipt, a.date, live_dir=live_dir)
+        snaps = read_consumed_rows(frozen_receipt, a.date, live_dir=live_dir)
+        selection_source = Path(frozen_receipt["snapshot_path"])
+        snapshot_sha256 = frozen_receipt["snapshot_raw_sha256"]
+    else:
+        selection_source = dated_freeze if a.pick == "mode_exec_star" and dated_freeze.exists() else SNAP
+        raw = selection_source.read_bytes() if selection_source.exists() else b""
+        snapshot_sha256 = hashlib.sha256(raw).hexdigest() if raw else ""
+        snaps = [json.loads(line) for line in raw.decode().splitlines() if line.strip()]
 
     def no_buy_support(reason: str, *, context=None) -> None:
         if a.pick != "mode_exec_star":
@@ -1001,13 +1031,12 @@ def _main_locked():
         paper_support.complete_consumption(ROOT, a.date, a.pick, entries=[])
         print(f"{a.date}: paper policy no-buy receipt: {reason}; risk={risk['status']}; KOL={decision['status']}")
 
-    if not selection_source.exists():
+    if frozen_receipt is None and not selection_source.exists():
         no_buy_support("NO_SNAPSHOTS")
         print("no snapshots; run live_recommend first"); return
-    snaps = [json.loads(l) for l in open(selection_source, encoding="utf-8") if l.strip()]
     day_live = [r for r in snaps if r.get("date") == a.date and r.get("is_live")
                 and r.get("book", "B") == "B"]
-    if selection_source == dated_freeze:
+    if frozen_receipt is not None or selection_source == dated_freeze:
         latest_rows = day_live
     else:
         latest_capture = max((str(r.get("captured_at") or "") for r in day_live), default="")
@@ -1015,6 +1044,16 @@ def _main_locked():
             r for r in day_live
             if str(r.get("captured_at") or "") == latest_capture
         ]
+    intelligence_config = _intelligence_config_from_args(a)
+    if latest_rows and frozen_receipt and frozen_receipt.get("checkpoint_sha256") and intelligence_config.mode != "off":
+        from xiaocao.live.morning_bundle import apply_support
+        try:
+            latest_rows = apply_support(live_dir, a.date, frozen_receipt, latest_rows)
+        except (OSError, ValueError, KeyError, TypeError):
+            if intelligence_config.mode == "on":
+                raise
+            latest_rows = [{**r, "intelligence_support_status": "degraded_unavailable"} for r in latest_rows]
+            print("supporting_health=degraded: original picks preserved; derived intelligence unavailable")
     if a.pick == "mode_exec_star":
         if selection_source == SNAP:
             # Legacy/test fallback: derive ★E only when the immutable dated
@@ -1029,7 +1068,6 @@ def _main_locked():
         latest_rows = kol_policy.prioritize_xiaocao_modes(
             latest_rows, decision_for_selection,
         )
-    intelligence_config = _intelligence_config_from_args(a)
     selection = _select_intelligence_picks(
         latest_rows,
         pick=a.pick,

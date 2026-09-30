@@ -35,7 +35,8 @@ if args[0].endswith('paper_record.py') and '--trend-only' in args and os.environ
     sys.exit(1)
 ''')
     python.chmod(0o755)
-    env = {**os.environ, 'XIAOCAO_ROOT': str(tmp_path), 'FAIL_STAGE': failure}
+    env = {**os.environ, 'XIAOCAO_ROOT': str(tmp_path), 'FAIL_STAGE': failure,
+        'CODEX_AUTOMATION_ID': 'xiaocao-daily-morning-execution', 'CODEX_THREAD_ID': 'fixture-paper'}
     completed = subprocess.run(['bash', str(ROOT / 'scripts/auto_daily.sh'), 'morning-execute'], env=env, capture_output=True, text=True, timeout=10)
     calls = (tmp_path / 'calls.txt').read_text().splitlines()
     log = next((tmp_path / 'output/live/auto').glob('*_morning-execute.log'))

@@ -22,7 +22,11 @@ from pathlib import Path
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
-from .foundersc_native_ax import FounderscNativeAXClient, FounderscNativeAXError
+from .foundersc_native_ax import (
+    FounderscNativeAXClient,
+    FounderscNativeAXError,
+    FounderscNativePreSecretError,
+)
 from .foundersc_session import app_session, serialized_app_operation
 from .trading_execution import (
     BrokerAdapter,
@@ -623,6 +627,16 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             self._save_credential_health({**credential_health, "state": "attempt_claimed"})
             try:
                 unlocked = self.native.unlock_from_keychain(explicitly_enabled=True).as_dict()
+            except FounderscNativePreSecretError:
+                # This typed failure is raised only before the native helper is
+                # invoked. The durable claim can safely become not_attempted.
+                self._save_credential_health({**credential_health,
+                    "state": "not_attempted", "helper_status": "not_invoked",
+                    "password_action_attempted": False,
+                    "confirmation_pressed": False,
+                    "failure_category": "keychain_pre_action",
+                    "remaining_attempts": None})
+                raise
             except (OSError, ValueError, RuntimeError):
                 self._save_credential_health({**self.credential_health, "state": "unproven_no_retry",
                                              "failure_category": "transport_unproven"})

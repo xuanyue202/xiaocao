@@ -491,6 +491,10 @@ class TradePlan:
                 },
                 require_authoritative=True,
                 now=now,
+                # APP submission must use the current continuous-auction
+                # observation. A plan can wait behind account/AX preparation;
+                # the research-oriented default (15 minutes) is too old here.
+                max_age_seconds=60 if self.environment == "live" else 900,
             )
             if not allowed:
                 return reason or "LIMIT_DOWN_CHECK_UNAVAILABLE"
@@ -2159,6 +2163,15 @@ class TradingExecution:
             if plan.environment == "live":
                 self._incident(plan, blocked)
             return blocked
+        if plan.environment == "live" and plan.side.upper() == "BUY":
+            guard_reason = plan.guard_reason(now=self.now())
+            if guard_reason:
+                return self._record(
+                    plan,
+                    replace(previous, state=ExecutionState.SKIPPED,
+                            reason=guard_reason, next_action="stop"),
+                    kind="claim_boundary_market_guard",
+                )
         claim_id = f"{plan.plan_id}:{previous.attempt + 1}:{uuid.uuid4().hex}"
         claimed = self._record(
             plan,

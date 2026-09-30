@@ -159,6 +159,38 @@ def has_open_buy(root: Path) -> bool:
     return any(intents[p].get("side") == "BUY" for p in open_execution_plan_ids(Path(root)))
 
 
+def has_open_buy_with_possible_effect(root: Path) -> bool:
+    """Distinguish a bare reserved intent from an execution with possible effects.
+
+    A materialized intent reserves buying power, but it cannot change APP cash
+    before the execution port records a durable submit claim. Preclaim plan,
+    validation and preparation events are still side-effect free. Any other
+    event or incomplete receipt stays conservative.
+    """
+    from .book_b_live_lifecycle import _load_intent_index, _read_jsonl_strict, open_execution_plan_ids
+
+    root = Path(root)
+    intents = _load_intent_index(root)
+    open_buys = {p for p in open_execution_plan_ids(root) if intents[p].get("side") == "BUY"}
+    for event in _read_jsonl_strict(root / "events.jsonl"):
+        if event.get("plan_id") not in open_buys:
+            continue
+        receipt = event.get("receipt")
+        if not isinstance(receipt, dict):
+            return True
+        if (event.get("kind") not in {"plan_created", "transition"}
+                or str(receipt.get("state") or "").lower() not in {"planned", "validated", "prepared"}
+                or event.get("state") != receipt.get("state")
+                or receipt.get("submit_claim_id") is not None
+                or receipt.get("broker_order_id") is not None
+                or receipt.get("cancel_claim_id") is not None
+                or receipt.get("submit_chain_uncertain")
+                or receipt.get("cancel_chain_uncertain")
+                or receipt.get("filled_shares") != 0):
+            return True
+    return False
+
+
 def allocate_cash(root: Path, *, base_cash: Decimal, liquidation: float,
                   ownership_head: str | None, snapshot: dict, sync: bool = True,
                   replay_flow_head: str | None = None, historical: bool = False,

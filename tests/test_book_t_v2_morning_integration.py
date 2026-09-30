@@ -166,6 +166,7 @@ PYTHONPATH="{REPO / "src"}" exec "{real_python}" "$@"
     (venv_bin / "python").chmod(0o755)
 
     env = os.environ.copy()
+    env.update(CODEX_AUTOMATION_ID="xiaocao-daily-morning-execution", CODEX_THREAD_ID="fixture-paper")
     env.update(
         {
             "XIAOCAO_ROOT": str(tmp_path),

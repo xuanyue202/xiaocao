@@ -1248,7 +1248,13 @@ def _read_completed_freeze(
     dated_freeze_receipt: dict,
 ) -> list[dict]:
     try:
-        rows = read_frozen_rows(config.freeze_path, date=config.trade_date)
+        if dated_freeze_receipt.get("snapshot_raw_sha256"):
+            from .morning_bundle import read_consumed_rows, resolve_receipt
+            effective = resolve_receipt(dated_freeze_receipt, config.trade_date, live_dir=config.freeze_path.parent)
+            dated_freeze_receipt["consumed_snapshot_path"] = effective["snapshot_path"]
+            rows = read_consumed_rows(dated_freeze_receipt, config.trade_date, live_dir=config.freeze_path.parent)
+        else:
+            rows = read_frozen_rows(config.freeze_path, date=config.trade_date)
     except (FileNotFoundError, ValueError) as exc:
         raise ValueError(f"FROZEN_EVIDENCE_UNAVAILABLE:{exc}") from exc
     expected_count = dated_freeze_receipt.get("snapshot_row_count")
@@ -1260,12 +1266,14 @@ def _read_completed_freeze(
     if str(dated_freeze_receipt.get("snapshot_sha256") or "") != digest:
         raise ValueError("FROZEN_SNAPSHOT_DIGEST_MISMATCH")
     strategy_run_id = str(dated_freeze_receipt["strategy_run_id"])
+    reference = (config.freeze_path.parent / f"morning_bundle_commit_{config.trade_date}.json"
+        if dated_freeze_receipt.get("checkpoint_sha256") else config.freeze_path)
     return [
         {
             **row,
             "strategy_run_id": strategy_run_id,
             "snapshot_ref": (
-                f"{config.freeze_path}:{config.trade_date}:"
+                f"{reference}:{config.trade_date}:"
                 f"sha256:{digest}:{row.get('code') or 'unknown'}"
             ),
         }
@@ -1983,7 +1991,7 @@ def run_book_b_live_morning(
                         request = {
                             "schema_version": "book-b-live-review-request.v1",
                             "book": "B", "runtime": "live", "trade_date": config.trade_date,
-                            "freeze_path": str(config.freeze_path),
+                            "freeze_path": str(dated_freeze_receipt.get("consumed_snapshot_path") or config.freeze_path),
                             "freeze_sha256": dated_freeze_receipt["snapshot_sha256"],
                             "strategy_sha": dated_freeze_receipt["strategy_sha"],
                             "policy_root": str(config.policy_root),

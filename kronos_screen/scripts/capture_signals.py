@@ -25,6 +25,7 @@ from pathlib import Path
 from scipy.stats import rankdata
 import numpy as np
 
+from xiaocao.utils.atomic_files import atomic_write
 from xiaocao.strategy.mode_switch import select_executable_candidates
 
 SCRIPTS = Path(__file__).resolve().parent
@@ -136,14 +137,11 @@ def _replace_day_rows(out: Path, date_iso, is_live, new_lines, *, book: str = "B
                 ):
                     continue  # replaced by this run
                 kept.append(line)
-    tmp = out.with_suffix(out.suffix + ".tmp")
-    with tmp.open("w", encoding="utf-8") as fh:
-        for line in kept + new_lines:
-            fh.write(line + "\n")
-    tmp.replace(out)
+    lines = kept + new_lines
+    atomic_write(out, ("\n".join(lines) + ("\n" if lines else "")).encode())
 
 
-def capture(candidates, client, date_iso, is_live, top_n=3, out=OUT, book="B"):
+def capture(candidates, client, date_iso, is_live, top_n=3, out=OUT, book="B", on_captured=None):
     """Attach auction features + A/B variant flags to candidates; write snapshot.
     Variant A = existing kp_star (pure K->P top-N by P).
     Variant B = FORCED CONTRAST: among K-survivors, compute a continuous
@@ -154,6 +152,9 @@ def capture(candidates, client, date_iso, is_live, top_n=3, out=OUT, book="B"):
     informative contrast (the old W=0.25 rank tiebreak never changed a pick).
     Idempotent per (date, is_live)."""
     if not candidates:
+        if on_captured:
+            on_captured(b"")
+        _replace_day_rows(out, date_iso, is_live, [], book=str(book or "B"))
         return candidates
     for c in candidates:
         c.update(ensure_quality_fields(c))
@@ -296,5 +297,7 @@ def capture(candidates, client, date_iso, is_live, top_n=3, out=OUT, book="B"):
                                       "auc_residual_imb", "auc_buy_residual_ratio", "auc_status")},
         }
         new_lines.append(json.dumps(rec, ensure_ascii=False, default=str))
+    if on_captured:
+        on_captured(("\n".join(new_lines) + "\n").encode())
     _replace_day_rows(out, date_iso, is_live, new_lines, book=str(book or "B"))
     return candidates

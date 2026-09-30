@@ -1534,6 +1534,8 @@ def test_bound_market_guard_refresh_preserves_intent_hash_and_abandon_line() -> 
         market_guard_down_price=9.0,
     )
     original_hash = base.plan_hash
+    assert base.guard_reason(now=observed + timedelta(seconds=59)) is None
+    assert base.guard_reason(now=observed + timedelta(seconds=61)) == "LIMIT_DOWN_CHECK_UNAVAILABLE"
     refreshed_at = observed + timedelta(minutes=16)
     refresh = MarketGuardRefresh(
         plan_id=base.plan_id,
@@ -1556,6 +1558,26 @@ def test_bound_market_guard_refresh_preserves_intent_hash_and_abandon_line() -> 
     )
     assert above_basket.plan_hash == original_hash
     assert above_basket.guard_reason(now=refreshed_at) == "REALTIME_ABOVE_BASKET"
+
+
+def test_live_buy_quote_expiring_after_prepare_never_creates_submit_claim(tmp_path: Path) -> None:
+    observed = datetime(2026, 8, 15, 1, 30, tzinfo=timezone.utc)
+    plan = replace(_plan(environment="live", deadline=observed + timedelta(hours=5)),
+        market_guard_required=True, market_guard_observed_at=observed,
+        market_guard_latest_price=10.0, market_guard_down_price=9.0)
+    prepared = ExecutionReceipt(plan.plan_id, plan.plan_hash, ExecutionState.PREPARED,
+        remaining_shares=plan.shares)
+    store = InMemoryExecutionStore(tmp_path / "events.jsonl")
+    store.append(plan=plan, receipt=prepared)
+    broker = FakeBroker()
+    engine = TradingExecution(store=store, now=lambda: observed + timedelta(seconds=61))
+
+    result = engine._submit_claimed(plan, broker, prepared, requested_shares=plan.shares)
+
+    assert result.state == ExecutionState.SKIPPED
+    assert result.reason == "LIMIT_DOWN_CHECK_UNAVAILABLE"
+    assert result.submit_claim_id is None
+    assert broker.submit_calls == 0
 
 
 def test_live_sell_guard_is_rechecked_after_validated_recovery(
@@ -1884,7 +1906,7 @@ def test_frozen_row_builder_normalizes_realtime_trade_status() -> None:
 
 
 def test_live_plan_normalizes_sse_trading_status_and_vendor_clock() -> None:
-    now = datetime(2026, 8, 24, 1, 30, tzinfo=timezone.utc)
+    now = datetime(2026, 8, 24, 1, 25, 30, tzinfo=timezone.utc)
     plan = trade_plan_from_frozen_row(
         {
             "date": "2026-08-24",

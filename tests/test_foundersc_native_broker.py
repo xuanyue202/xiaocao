@@ -9,7 +9,11 @@ from pathlib import Path
 
 import pytest
 
-from xiaocao.live.foundersc_native_ax import FounderscNativeAXError, NativeAXReceipt
+from xiaocao.live.foundersc_native_ax import (
+    FounderscNativeAXError,
+    FounderscNativePreSecretError,
+    NativeAXReceipt,
+)
 from xiaocao.live.foundersc_native_broker import (
     FounderscNativeAXBrokerAdapter,
     _decimal,
@@ -799,6 +803,37 @@ def test_crashed_unlock_claim_never_retries_password(tmp_path) -> None:
     with pytest.raises(FounderscNativeAXError, match="PRIOR_ATTEMPT"):
         adapter().ensure_native_ready(unlock_once=True)
     assert native.unlock_calls == 1
+
+
+@pytest.mark.app_simulation
+def test_keychain_failure_before_helper_does_not_consume_password_attempt(tmp_path) -> None:
+    class PreSecretNative(FakeNative):
+        def __init__(self):
+            super().__init__(surface_state="authentication_required")
+
+        def unlock_from_keychain(self, *, explicitly_enabled):
+            self.unlock_calls += 1
+            if self.unlock_calls == 1:
+                raise FounderscNativePreSecretError("NATIVE_AX_KEYCHAIN_READ_DENIED")
+            self.surface = "trade_ready"
+            return self._receipt(status="unlocked", secure_field_cleared_before_set=True)
+
+    native = PreSecretNative()
+    def adapter():
+        return FounderscNativeAXBrokerAdapter(native=native,
+            expected_fund_account_fingerprint="123******890",
+            credential_health_path=tmp_path / "health.json")
+
+    with pytest.raises(FounderscNativePreSecretError, match="KEYCHAIN_READ_DENIED"):
+        adapter().ensure_native_ready(unlock_once=True)
+    health = json.loads((tmp_path / "health.json").read_text())
+    assert health["state"] == "not_attempted"
+    assert health["helper_status"] == "not_invoked"
+    assert health["password_action_attempted"] is False
+    assert health["confirmation_pressed"] is False
+    assert health["remaining_attempts"] is None
+    assert adapter().ensure_native_ready(unlock_once=True)["account_binding"] == "proven"
+    assert native.unlock_calls == 2
 
 
 @pytest.mark.app_simulation

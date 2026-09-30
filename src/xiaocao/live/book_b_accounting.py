@@ -302,7 +302,7 @@ def observe_account(root: Path, *, cash, market_value, liquidation_value, snapsh
         cash_event_head(root, no_later_than=snapshot["observed_at"])
         book = replay_owned(root, initial_capital=initial_capital)
         entries = _sync(db, root, book, initial_capital=initial_capital)
-        from .book_b_capital import POLICY, has_open_buy
+        from .book_b_capital import POLICY, has_open_buy, has_open_buy_with_possible_effect
         cash_basis = ("owned_replay_including_buy_reserve" if has_open_buy(root) else
             "app_available_cash" if capital_state["capital_policy_id"] == POLICY else "legacy_owned_cash_replay")
         binding = snapshot["fund_account_binding_sha256"]
@@ -313,6 +313,15 @@ def observe_account(root: Path, *, cash, market_value, liquidation_value, snapsh
         totals = _balances(entries)
         inventory = sum(v for k, v in totals.items() if k.startswith("inventory:"))
         actual, exposure, liquidation = cents(cash), cents(market_value), cents(liquidation_value)
+        broker_available = cents(
+            snapshot["available_cash"] if snapshot.get("schema_version") == "book-b-buy-preflight.v1"
+            else snapshot["funds_summary"]["available_cash"]
+        )
+        risk_cash = min(actual, totals.get("cash", 0))
+        if cash_basis == "owned_replay_including_buy_reserve" and not has_open_buy_with_possible_effect(root):
+            # A bare intent has no APP reserve; a lower fresh available cash
+            # is a real conservative loss until its economic source is known.
+            risk_cash = min(risk_cash, broker_available)
         difference = actual - totals.get("cash", 0)
         contributed = -totals.get("capital", 0)
         realized, unrealized = -totals.get("pnl", 0), exposure - inventory
@@ -330,6 +339,7 @@ def observe_account(root: Path, *, cash, market_value, liquidation_value, snapsh
             "journal_head_sha256": entries[-1]["entry_hash"], "entry_count": len(entries),
             "status": status,
             "cash_basis": cash_basis, "fee_basis": "estimated_plan_rate",
+            "broker_available_cash": money(broker_available),
             "opening_capital": money(cents(initial_capital)), "cash": money(actual),
             "ledger_cash": money(totals.get("cash", 0)),
             "cash_difference": None if cash_basis == "owned_replay_including_buy_reserve" else money(difference),
@@ -343,7 +353,7 @@ def observe_account(root: Path, *, cash, market_value, liquidation_value, snapsh
             "risk_unit_factor": capital_state["capital_unit_factor"],
             # A positive unclassified difference cannot raise the risk high
             # water. A negative difference remains a conservative loss.
-            "conservative_risk_nav": str((Decimal(min(actual, totals.get("cash", 0)) + liquidation)
+            "conservative_risk_nav": str((Decimal(risk_cash + liquidation)
                 / 100 / number(capital_state["capital_unit_factor"])).quantize(Decimal(".000001"))),
             "lots": [{"owned_lot_id": k, "code": v["code"], "shares": v["shares"],
                       "remaining_cost": money(v["cost_cents"])} for k, v in book.lots.items() if v["shares"] > 0]}

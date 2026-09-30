@@ -259,12 +259,17 @@ def build_review_queue(
         _read_jsonl(live_dir / "signal_snapshots.jsonl"),
         market_date,
     )
-    live_freeze_path = _materialize_book_b_live_freeze(
-        live_dir=live_dir,
-        market_date=market_date,
-        rows=snapshot_rows,
-    )
-    frozen_snapshot_rows = read_frozen_rows(live_freeze_path, date=market_date)
+    if (live_dir / f"morning_bundle_commit_{market_date}.json").exists():
+        from .morning_bundle import acquire_bundle, read_consumed_rows
+        receipt = acquire_bundle(live_dir, market_date)
+        if receipt.get("status") != "ready":
+            raise ValueError("MORNING_BUNDLE_ORIGINAL_UNPROVEN")
+        frozen_snapshot_rows = read_consumed_rows(receipt, market_date, live_dir=live_dir)
+        live_freeze_path = Path(receipt["snapshot_path"])
+    else:
+        live_freeze_path = _materialize_book_b_live_freeze(
+            live_dir=live_dir, market_date=market_date, rows=snapshot_rows)
+        frozen_snapshot_rows = read_frozen_rows(live_freeze_path, date=market_date)
     snapshot_sha256 = frozen_rows_digest(frozen_snapshot_rows)
     report = live_dir / f"recommend_{market_date}.md"
     report_sha256 = hashlib.sha256(report.read_bytes()).hexdigest() if report.is_file() else ""
@@ -297,5 +302,5 @@ def build_review_queue(
 
 
 def write_review_queue(path: Path, queue: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(queue, ensure_ascii=False, indent=2, default=str) + "\n", encoding="utf-8")
+    from .morning_bundle import atomic_write
+    atomic_write(path, (json.dumps(queue, ensure_ascii=False, indent=2, default=str) + "\n").encode())

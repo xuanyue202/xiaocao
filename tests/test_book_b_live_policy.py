@@ -756,6 +756,8 @@ def test_risk_asof_uses_native_read_completion_clock(tmp_path):
 def _morning_cli(monkeypatch):
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "scripts"))
     cli = importlib.import_module("scripts.book_b_live_morning")
+    monkeypatch.setenv("CODEX_AUTOMATION_ID", cli.AUTOMATION_ID)
+    monkeypatch.setenv("CODEX_THREAD_ID", "scheduled-owner")
     # Wiring tests must never reach the production notification transport.
     notices = SimpleNamespace(arm_golden_window=lambda: None,
                               publish=lambda *args, **kwargs: None, close=lambda: None)

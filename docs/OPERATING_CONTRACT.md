@@ -1,6 +1,6 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：4.31
+**版本**：4.32
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
 **关联实现**：`src/xiaocao/live/{safety,capital_keychain,foundersc_native_ax,foundersc_native_broker,trading_execution,book_b_live_lifecycle,book_b_live_intraday}.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`native/foundersc_ax_executor/`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{book_b_live_morning,book_b_live_intraday,live_monitor,research_mode_switch_replay}.py`
@@ -92,6 +92,42 @@ remote writer 对新报告只做一次完整语义工作：同一经校验的 se
 来源的日期、观察时点、行数、hash、缺失/空响应和有界确认窗口继续保留；不把稳定结果冒充数据齐全。remote writer 的语义输入仍完整读取正文；交易消费者的 `projection` 只含已发布观点、评估、关系、必要历史端点与覆盖质量，不含正文。正式决策发布仍绑定当前完整context/hash，并仅对被引用报告精确补读和远端验证，不以投影代替来源证明。
 
 ### 1c. 开盘准备与上下文预算（2026-09-17）
+
+**原批次交接（2026-09-30）**：09:23 唯一生产者在当前 capture 的序列化回调中
+先提交 `morning_bundle_commit_<date>.json` 引用的完整不可变 checkpoint，再发布
+不可变 snapshot/执行 manifest/机器报告，最后原子发布 ready。checkpoint 保存
+当前批次原始字节、日期、run、策略 SHA、canonical/raw SHA/count、真实生产者
+Automation/Thread ID 和来源覆盖状态；捕获失败或空响应未证明不能生成真正 NONE。
+缓存否决富化须另外保存 capture 原始字节/hash，并证明资格、顺序、行情和经济
+字段不变。checkpoint 已写而 commit 尚未写的中断产生原 owner 修复请求；只有
+精确匹配原生产者运行身份的恢复命令可从该原件完成提交，消费者不能补签。
+同 ID 的不同 Thread 不可重新发布既有批次。平台尚未提供可信 scheduler run token，
+环境身份与文件 hash 不构成调度器身份认证，此缺口须明确报告。
+
+APP 与正式纸面消费者通过共享 `morning_bundle` 验证相同批次，使用前回查原
+checkpoint 并固定实际消费副本；正式纸面不回退可变 `signal_snapshots.jsonl`。
+旧不可变交接须完整核验 date/run/strategy/hash/count/report/queue。
+历史格式只适用于 2026-10-01 上线日期之前的原证据；上线日期起只接受原生产者
+commit，不因三个旧式文件自洽而授予当天执行权。执行 manifest 逐项验证有序
+代码、Book、模式和资格。活跃候选全部缺价是未证明捕获，不能发布零行 NONE。
+临时读取或文件损坏产生精确 `morning_bundle_repair_required` 请求；单独文件锁和唯一 repair
+claim 从原 checkpoint 恢复原字节到新的不可变副本，保留冲突原件。单轮锁等待
+最多10秒；失败保留 request，由 owner 做必要代码修复并运行
+`morning_bundle_recovery.py --request <exact-path>`。原件不可证明时暂停相关新增
+风险，不重选、不改期望 hash、不重跑已经失败的生产者。恢复不重置原等待预算，
+不改变 durable intent 或重放 terminal paper/no-buy/UNKNOWN。
+
+执行包先于可选新闻和人类报告交付；它包含当前资格、行情字段及有效缓存否决。
+后续情报按原 snapshot/checkpoint SHA 和完整代码身份写独立 support 证据，不能
+改变候选或经济字段。显式 `intelligence-trade on` 必须消费已完成且验证通过的
+同批次 support，保持新有效高风险 veto；缺失/损坏不能静默当成无否决。
+空支持不能撤回原已证明的事件；合并后仍由现有类型和真实事件时效判定。
+零行成功捕获不要求无用支持；shadow 缺失支持和缺失评审队列须明确降级，
+保持基线，不能称为已完成评审。
+默认 shadow、KOL §2a 来源与独立复核、当前账户/市场门继续按原权限执行。
+后续 review queue 绑定原提交快照，富化共享研究行不产生第二份交易 freeze。
+记录配置槽位、真实脚本入口、capture/commit 和消费者阶段时刻；拿不到的
+scheduler dispatch/task-start 填 unavailable，不能由文件 mtime 推断。
 
 LiangHui 语义投影质量、来源读回时效、当前正式决策是三个独立状态。相同hash的已发布观点不会因为过了十分钟而重新提炼；历史TTL仍24小时，09:00补验应覆盖11:30恢复窗口，保持真实as-of并只按准确ID刷新。`projection`的ready/degraded只描述已登记纵向记录是否完整，不称为交易ready。
 
@@ -203,9 +239,10 @@ APP 在用户明确批准的动态资金政策下，以账户绑定的资金划�
   namespace，完成或失败后必须记录
   `native_environment_restore_not_applicable`，不得伪造恢复 mock。非空 freeze 还必须绑定实际同日 snapshot 的 canonical
   SHA-256 与行数，且 digest/run id/producer strategy Git SHA 必须由 queue producer 在冻结时写入 manifest。
-  queue producer 必须在任何 agent review 写回前把这些行原子物化为
-  `book_b_live_freeze_<date>.jsonl`；该 dated artifact 已存在但 hash 不同时禁止覆盖。
-  live consumer 只读并重新核对这份不可变副本，不能用稍后追加或情报富化后的
+  当前 producer 按§1c先提交原 capture checkpoint 与执行包；历史 queue producer
+  在任何 agent review 写回前原子物化 `book_b_live_freeze_<date>.jsonl`。dated
+  artifact 已存在但 hash 不同时禁止覆盖。两个 consumer 重新核对原不可变副本
+  或有原 checkpoint 证明的同内容恢复引用，不能用稍后追加或情报富化后的
   `signal_snapshots.jsonl` rows 重定义 freeze。资金账号只在
   进程内将页面掩码与 Keychain trade-account 元数据比对，持久化绑定 hash；资产
   回读必须是当日且不超过 5 分钟。allocation capsule 必须将结算基数来源、NAV、
@@ -467,6 +504,10 @@ APP 在用户明确批准的动态资金政策下，以账户绑定的资金划�
   原引用的不可变分录前缀。查询、明细与备份见 `docs/BOOK_B_ACCOUNTING.md`。
 - 当前观测和明确划拨必须不早于已入账资金事实的证明时点，拒绝须发生在追加划拨前。
   未决 BUY 的现金预留未证明时不能用重放余额声称现金已闭合，累计收益保持 N/A。
+  仅存在无 submit/broker/cancel claim、无链不确定性且零成交的 planned/validated/
+  prepared 意图时，仍可取 APP 可用与已证明账本现金的较小者形成保守风险标记；
+  会计状态继续 pending，总盈亏 N/A。可能已有效果的预留不能当损失扣除，也
+  不因此刷新本金。缺当前标记不再产生无关的 proven-sell-gap 级联错误。
   资金分录更正以同账户原生证明追加唯一、等额反向冲正，保留原记录；不反写成交证据。
   仅保护性监控可将 SQLite 存储故障降级为会计不可用，现金/NAV/收益为 N/A，
   仍凭独立账户、自有成交、当前数量、T+1、市场/策略和 exact-once 证明执行合法 SELL；
@@ -522,8 +563,11 @@ APP 在用户明确批准的动态资金政策下，以账户绑定的资金划�
   才能 ACK，歧义一律 UNKNOWN/no-retry；
   底层执行器允许 BUY 在
   `09:25–11:30` 或 `13:00–14:57` 提交（09:25–09:30为柜台排队），SELL仍须连续竞价，午休、收盘集合竞价和盘后继续硬阻断；每个
-  新 plan 在持久化 intent 前必须从专有 API 刷新并绑定同日、15 分钟内的交易状态、
-  现价、跌停价和时间戳。同一冻结计划的恢复按§1b持续推进，09:30不再是准备截止。不得改变冻结选股、allocation、初始限价、
+  新 plan 在持久化 intent 前必须从专有 API 刷新并绑定同日交易状态、现价、跌停价
+  和时间戳；普通 live
+  BUY 报价不超过60秒，SELL沿用原15分钟上限。BUY在提交 claim 前再次核验
+  报价时效，超时没有 claim 则停止，不能沿用盘前报价。
+  同一冻结计划的恢复按§1b持续推进，09:30不再是准备截止。不得改变冻结选股、allocation、初始限价、
   资金门或 exact-once；恢复已有 intent 仍只对账，不重新刷新经济字段或提交。
   exact-order 撤单已实现并实盘验收；自动补单仍禁用；App 重启后的 CAPTCHA 按独立慢恢复证据判定。
 
@@ -572,6 +616,7 @@ APP 在用户明确批准的动态资金政策下，以账户绑定的资金划�
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| 4.32 | 2026-09-30 | 晨间原 capture 完整 checkpoint、原子执行包、APP/纸面共享验证与唯一同内容恢复；情报支持层后置并保留显式 on 的新 veto；限定运行身份、无副作用 BUY 意图保守风险标记和提交前60秒行情复核。 |
 | 4.31 | 2026-09-29 | 生产审查修复较新资金事实/较早快照混用与会计存储阻断保护性 SELL；预留现金待证、补齐明细来源并允许有证明的唯一资金冲正，保留成交权限与原始事实门。 |
 | 4.30 | 2026-09-29 | 用户批准复用原证据与锁建立 SQLite 金融分录和累计明细；现金差额不自动成为本金，区分含费成本、已实现/浮动盈亏、标记与预计清算净值，保留原风险和订单权限。 |
 | 4.29 | 2026-09-29 | 用户批准以全部 APP 可用资金为买入硬上限，原比例按动态策略净资产计算；独立资金划拨/单位净值保留历史盈亏和回撤暂停，签名动态授权绑定账户与原生含费证明，paper 不混账。 |

@@ -205,7 +205,81 @@ def test_intent_only_buy_does_not_certify_cash_or_profit_reconciliation(tmp_path
     account = observed(tmp_path, with_cash(_snapshot(observed_at=NOW+timedelta(seconds=1)), 99995))
     assert account.accounting["status"] == "cash_reserve_reconciliation_required"
     assert account.accounting["cash_difference"] is None and account.accounting["cumulative_pnl"] is None
+    assert account.accounting["broker_available_cash"] == "99995.00"
+    # A bare intent has no broker effect, but another negative cash difference
+    # must still reduce risk NAV even while PnL classification stays pending.
+    assert str(verify_account(tmp_path, account.as_dict())) == "29998.500000"
     assert len(flows(tmp_path)) == 1
+
+
+def test_claimed_buy_reserve_is_not_counted_as_cash_loss(tmp_path):
+    from tests.test_book_b_live_lifecycle import _bind_plan_intent
+    from xiaocao.live.trading_execution import ExecutionReceipt, ExecutionState, ExecutionStore
+
+    activate(tmp_path)
+    project(tmp_path, with_cash(_snapshot(), 100000))
+    plan = _plan()
+    plan = _bind_plan_intent(tmp_path, plan)
+    ExecutionStore(tmp_path / "events.jsonl").append(plan=plan,
+        receipt=ExecutionReceipt(plan.plan_id, plan.plan_hash, ExecutionState.CLAIMED,
+            remaining_shares=plan.shares, submit_claim_id="claim-1"), kind="durable_claim")
+    account = observed(tmp_path, with_cash(_snapshot(observed_at=NOW+timedelta(seconds=1)), 99995))
+    assert account.accounting["status"] == "cash_reserve_reconciliation_required"
+    assert account.accounting["broker_available_cash"] == "99995.00"
+    assert account.accounting["cumulative_pnl"] is None
+    assert str(verify_account(tmp_path, account.as_dict())) == "30000.000000"
+
+
+def test_intent_only_buy_allows_conservative_risk_mark_until_execution_event(tmp_path, monkeypatch):
+    from xiaocao.live.account_risk import NavObservation
+    from xiaocao.live.book_b_capital import has_open_buy_with_possible_effect
+    from xiaocao.live.live_decision_support import evaluate_live_risk
+    from xiaocao.live.trading_execution import ExecutionReceipt, ExecutionState, ExecutionStore
+    import xiaocao.live.live_decision_support as support
+    from tests.test_book_b_live_lifecycle import _bind_plan_intent
+
+    activate(tmp_path)
+    project(tmp_path, with_cash(_snapshot(), 100000))
+    plan = _plan()
+    plan = _bind_plan_intent(tmp_path, plan)
+    stamp = NOW + timedelta(seconds=1)
+    snapshot = with_cash(_snapshot(observed_at=stamp), 100000)
+    account = observed(tmp_path, snapshot)
+    assert account.accounting["status"] == "cash_reserve_reconciliation_required"
+    assert account.accounting["cumulative_pnl"] is None
+    assert has_open_buy_with_possible_effect(tmp_path) is False
+
+    settled = NavObservation("2026-08-31", 30000, "live:B", 30000, 0,
+        "book_b_cash_plus_liquidation_after_exit_fee", "settled",
+        "2026-08-31T15:05:00+08:00", "a" * 64)
+    monkeypatch.setattr(support, "expected_settlement_date", lambda *_: "2026-08-31")
+    monkeypatch.setattr(support, "load_live_nav_history", lambda *_args, **_kwargs: [settled])
+    allowed = evaluate_live_risk(tmp_path, now=stamp, account=account,
+        trading_dates_provider=lambda _: ["2026-08-31", "2026-09-01"])
+    assert allowed.status == "NORMAL" and allowed.nav is not None
+    assert account.accounting["cumulative_pnl"] is None
+
+    store = ExecutionStore(tmp_path / "events.jsonl")
+    store.append(plan=plan,
+        receipt=ExecutionReceipt(plan.plan_id, plan.plan_hash, ExecutionState.PLANNED,
+            remaining_shares=plan.shares), kind="plan_created")
+    store.append(plan=plan,
+        receipt=ExecutionReceipt(plan.plan_id, plan.plan_hash, ExecutionState.PREPARED,
+            remaining_shares=plan.shares), kind="transition")
+    assert has_open_buy_with_possible_effect(tmp_path) is False
+    prepared_risk = evaluate_live_risk(tmp_path, now=stamp, account=account,
+        trading_dates_provider=lambda _: ["2026-08-31", "2026-09-01"])
+    assert prepared_risk.status == "NORMAL" and prepared_risk.nav is not None
+
+    store.append(plan=plan,
+        receipt=ExecutionReceipt(plan.plan_id, plan.plan_hash, ExecutionState.UNKNOWN,
+            reason="possible_submit", remaining_shares=plan.shares,
+            submit_claim_id="claim-1", next_action="reconcile_only"),
+        kind="possible_submit")
+    assert has_open_buy_with_possible_effect(tmp_path) is True
+    blocked = evaluate_live_risk(tmp_path, now=stamp, account=account,
+        trading_dates_provider=lambda _: ["2026-08-31", "2026-09-01"])
+    assert blocked.status == "BLOCKED" and blocked.nav is None
 
 
 def test_proved_cash_reversal_preserves_original_and_all_cash_consumers(tmp_path):

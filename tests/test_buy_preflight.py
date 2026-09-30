@@ -167,6 +167,7 @@ def test_buying_power_capsule_binds_only_spendable_cash_and_preserves_capital(tm
     assert facts.settled_nav == 30000
     account = pretrade_account(tmp_path, snapshot, trade_date=day, now=datetime.now(timezone.utc))
     assert account.cash == account.settled_nav == 30000
+    assert account.accounting['broker_available_cash'] == '20000.00'
     assert account.lots == ()
     assert 'broker_total_assets' not in payload
     payload['available_cash'] = 50000

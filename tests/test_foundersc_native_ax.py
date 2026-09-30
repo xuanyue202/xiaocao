@@ -13,6 +13,7 @@ from xiaocao.live.foundersc_native_ax import (
     SCHEMA_VERSION,
     FounderscNativeAXClient,
     FounderscNativeAXError,
+    FounderscNativePreSecretError,
     expected_helper_path,
     native_runtime_ready,
     remote_bootstrap_guidance,
@@ -192,6 +193,25 @@ def test_keychain_unlock_requires_explicit_enablement(tmp_path: Path) -> None:
         client.unlock_from_keychain(keychain_runner=runner)
 
     assert runner.calls == []
+
+
+@pytest.mark.app_simulation
+def test_denied_keychain_read_never_invokes_native_helper(tmp_path: Path) -> None:
+    class DeniedKeychainRunner(KeychainAndHelperRunner):
+        def __call__(self, command, **kwargs):
+            argv = list(command)
+            if argv[0] == SECURITY_COMMAND and "-w" in argv:
+                self.calls.append((argv, dict(kwargs)))
+                return subprocess.CompletedProcess(argv, 1, stdout=b"", stderr=b"")
+            return super().__call__(command, **kwargs)
+
+    runner = DeniedKeychainRunner()
+    client = FounderscNativeAXClient(helper_path=_helper(tmp_path), runner=runner)
+
+    with pytest.raises(FounderscNativePreSecretError, match="NATIVE_AX_KEYCHAIN_READ_DENIED"):
+        client.unlock_from_keychain(explicitly_enabled=True, keychain_runner=runner)
+
+    assert all(argv[0] == SECURITY_COMMAND for argv, _ in runner.calls)
 
 
 def test_client_login_fill_uses_stdin_and_never_requests_login_press(
