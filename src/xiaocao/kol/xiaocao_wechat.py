@@ -193,7 +193,7 @@ def _observed_native_finite_playlist(candidate, root, armed_at, captured_at):
     """Only a singleton-saved, post-arm ended VOD response proves this format."""
     resource = _media_resource_key(candidate.get("url"))
     media = urlsplit(resource)
-    if media.hostname != "live-ex-speed.xiaoeknow.com" or not media.path.endswith(".m3u8"):
+    if media.hostname not in {"live-ex-speed.xiaoeknow.com", "encrypt-k-vod.xet.tech"} or not media.path.endswith(".m3u8"):
         raise EnrichmentError("unreviewed native replay playlist host")
     for line in reversed((root / "events.jsonl").read_text().splitlines()):
         try:
@@ -212,7 +212,8 @@ def _observed_native_finite_playlist(candidate, root, armed_at, captured_at):
             durations = [float(v.split(":", 1)[1].split(",", 1)[0]) for v in lines if v.startswith("#EXTINF:")]
             segments = [v for v in lines if v.strip() and not v.startswith("#")]
             if (lines[0] != "#EXTM3U" or lines[-1] != "#EXT-X-ENDLIST"
-                or "#EXT-X-PLAYLIST-TYPE:VOD" not in lines or not durations
+                or any(v.startswith("#EXT-X-PLAYLIST-TYPE:") and v != "#EXT-X-PLAYLIST-TYPE:VOD" for v in lines)
+                or not durations
                 or len(durations) != len(segments)
                 or not all(math.isfinite(v) and v > 0 for v in durations) or sum(durations) < 60):
                 continue

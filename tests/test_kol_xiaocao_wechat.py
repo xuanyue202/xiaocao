@@ -1124,14 +1124,14 @@ def test_native_v2_binding_reopens_actual_merchant_response_without_global_conte
         assert "private" not in json.dumps(result)
 
 
-@pytest.mark.parametrize("invalid", [None, "cached_probe", "signed_probe", "no_end", "not_vod", "live", "old", "wrong_resource", "outside"])
-def test_native_numeric_playlist_requires_singleton_ended_vod_receipt(tmp_path, invalid, monkeypatch):
+@pytest.mark.parametrize("resource", ["https://live-ex-speed.xiaoeknow.com/5060_recording.m3u8", "https://encrypt-k-vod.xet.tech/vod/playlist.f3.m3u8"])
+@pytest.mark.parametrize("invalid", [None, "cached_probe", "signed_probe", "no_end", "not_vod", "live", "old", "wrong_resource", "outside", "implicit_vod"])
+def test_native_numeric_playlist_requires_singleton_ended_vod_receipt(tmp_path, invalid, monkeypatch, resource):
     from datetime import datetime
     from xiaocao.kol.xiaocao_wechat import _native_direct_media_lineage, _native_v2_merchant_lineage
     root = tmp_path / "elive_live_debug"
     (root / "json").mkdir(parents=True)
     (root / "m3u8").mkdir()
-    resource = "https://live-ex-speed.xiaoeknow.com/5060_recording.m3u8"
     candidate = {"id": "native", "url": resource, "media_type": "m3u8", "live_id": "l_target",
         "source_url": "https://xet.kj1team.cn/_alive/v2/get_lookback_url",
         "source_path": "/_alive/v2/get_lookback_url", "json_path": "data.miniAliveVideoUrl"}
@@ -1149,6 +1149,7 @@ def test_native_numeric_playlist_requires_singleton_ended_vod_receipt(tmp_path, 
     body = "#EXTM3U\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXTINF:120,\nsegment.ts\n#EXT-X-ENDLIST\n\n"
     if invalid == "no_end": body = body.replace("#EXT-X-ENDLIST\n", "")
     if invalid == "not_vod": body = body.replace("VOD", "EVENT")
+    if invalid == "implicit_vod": body = body.replace("#EXT-X-PLAYLIST-TYPE:VOD\n", "")
     file = (tmp_path if invalid == "outside" else root / "m3u8") / "recording.m3u8"
     file.write_text(body)
     if invalid in {"cached_probe", "signed_probe"}: file.write_text("")
@@ -1167,14 +1168,14 @@ def test_native_numeric_playlist_requires_singleton_ended_vod_receipt(tmp_path, 
         return SimpleNamespace(returncode=0, stdout=body.encode())
     monkeypatch.setattr("xiaocao.kol.xiaocao_wechat.subprocess.run", probe)
     if invalid in {"cached_probe", "signed_probe"}:
-        if invalid == "signed_probe":
+        if invalid == "signed_probe" or "encrypt-k-vod" in resource:
             with pytest.raises(EnrichmentError): _native_v2_merchant_lineage(candidate, public_probe=True, **kwargs)
             assert not calls
         else:
             assert _native_v2_merchant_lineage(candidate, public_probe=True, **kwargs)["finite_playlist"]["ended"]
             assert len(calls) == 1
         return
-    if invalid:
+    if invalid and invalid != "implicit_vod":
         with pytest.raises(EnrichmentError): _native_direct_media_lineage(candidate, [], **kwargs)
     else:
         result = _native_direct_media_lineage(candidate, [], **kwargs)
