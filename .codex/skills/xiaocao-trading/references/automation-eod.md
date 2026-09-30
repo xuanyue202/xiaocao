@@ -37,7 +37,10 @@ summary embedded in the same positions capture, projects
 only broker-proved Book-B owned fills, and writes the immutable settled NAV only
 when every durable live plan is terminal. Fresh zero-fill evidence supports
 independent current transactions; it does not make an old SELL terminal or
-permit EOD settlement. If the strict settlement writer blocks after a valid
+permit EOD settlement. An unresolved current or prior-day SELL must not stop
+the read-only post-close snapshot and owned-lot projection; its validated
+intent/event chain stays open and the strict settlement writer still blocks.
+If the strict settlement writer blocks after a valid
 post-close projection, the blocked receipt retains that account and exact
 reconciliation receipts; these are current observations, not settled NAV.
 Preserve any older settlement written through that
