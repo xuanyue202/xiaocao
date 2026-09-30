@@ -65,6 +65,13 @@ baseline, exact finite media and downstream receipt checks apply to both.
 
 Complete read-only link/application validation before touching WeChat or
 changing the capture PAC. Do not rewrite an already correct, enabled PAC.
+Before native activation, read back the current network service's exact capture
+PAC URL and enabled state; singleton health alone does not prove traffic routing.
+Visible playback with no observations is a capture-path diagnosis, not evidence
+that the user has not started playback. If that course opened before PAC takeover,
+its existing connection may bypass capture: preserve the original IDs, close only
+the exact course using the reviewed menu/readback sequence, then use one fresh
+merchant-issued entry after verified readiness/PAC. Do not loop launches or clicks.
 Reuse fresh UI evidence within one action/readback pair; avoid redundant
 state-only probes. These reduce unnecessary operations, not a proven guarantee
 against WeChat protection. Do not add arbitrary sleeps or evasion behavior.
@@ -192,9 +199,14 @@ lists enrich asynchronously with an incremental cache; they cannot bind a source
 
    Sep28 晚场还使用 `live-ex-speed.xiaoeknow.com` 的数字命名回放清单。
    不以文件名或 CDN 后缀认定回放：同一 singleton 本轮保存的 HTTP200
-   清单须绑定精确候选资源、post-arm 时间，并含 VOD、末尾 ENDLIST、
+   清单须绑定精确候选资源、post-arm 时间，并含末尾 ENDLIST、
    正时长且数量一致的有限分段；商户 base_info 须为已结束状态、同 app/live，
    lookback 响应仍须映射同资源。记录清单哈希/时长/分段数，不返回 URL 或密钥。
+   Sep30 同场商户也实测 `encrypt-k-vod.xet.tech` 的 `playlist.f3.m3u8`：
+   `PLAYLIST-TYPE` 可以省略；若存在则须为 VOD，不接受 EVENT。文件名和可选
+   VOD 标签不是完整性的必要条件，已结束商户状态、精确来源与资源、singleton
+   实际清单正文、ENDLIST 和有限正时长分段才是验收条件。未知域名仍先核验，
+   不猜测签名、不使用直播流、不放宽同 app/live/capture 及下载上传 claim。
    同场后端修复保留这些未下载观察和原 capture；部署后重新取同场媒体，
    不能沿用旧内存票据。相同 URL 派生 ID 的重复观察仅在资源、来源、字段及
    live 全部一致时使用真实最新观察时间；冲突仍拒绝。
