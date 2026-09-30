@@ -123,7 +123,7 @@ def main() -> None:
         dependency_notice=lambda event: print(json.dumps(event, ensure_ascii=False, sort_keys=True), flush=True),
     )
     if args.receipt_path and result["status"] == "ready":
-        from xiaocao.live.morning_bundle import atomic_write
+        from xiaocao.utils.atomic_files import atomic_write
         atomic_write(args.receipt_path, (json.dumps(result, sort_keys=True) + "\n").encode(), immutable=True)
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))
     raise SystemExit(0 if result["status"] == "ready" else 1)

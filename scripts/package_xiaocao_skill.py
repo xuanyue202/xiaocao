@@ -66,6 +66,8 @@ def _ignore_runtime_noise(_: str, names: list[str]) -> set[str]:
     for name in names:
         if (
             name == "__pycache__"
+            or name == ".build"
+            or name == ".pytest_cache"
             or name == ".DS_Store"
             or name.endswith(".pyc")
             or name.endswith(".pyo")

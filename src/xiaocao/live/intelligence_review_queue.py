@@ -302,5 +302,5 @@ def build_review_queue(
 
 
 def write_review_queue(path: Path, queue: dict[str, Any]) -> None:
-    from .morning_bundle import atomic_write
+    from xiaocao.utils.atomic_files import atomic_write
     atomic_write(path, (json.dumps(queue, ensure_ascii=False, indent=2, default=str) + "\n").encode())

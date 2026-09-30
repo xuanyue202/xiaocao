@@ -42,7 +42,8 @@ from xiaocao.api.client import XiaocaoClient  # noqa: E402
 from xiaocao.config import load_settings  # noqa: E402
 from xiaocao.datasource.api_source import ApiDataSource  # noqa: E402
 from xiaocao.live import agent_signals, intelligence, intelligence_evidence, intelligence_policy  # noqa: E402
-from xiaocao.live.morning_bundle import atomic_write, publish_captured_batch  # noqa: E402
+from xiaocao.live.morning_bundle import publish_captured_batch  # noqa: E402
+from xiaocao.utils.atomic_files import atomic_write  # noqa: E402
 from xiaocao.strategy import run_strategy  # noqa: E402
 from xiaocao.strategy.mode_switch import (  # noqa: E402
     annotate_candidates as annotate_mode_candidates,
