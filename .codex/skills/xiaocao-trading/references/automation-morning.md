@@ -270,6 +270,24 @@ Escalate: script failure/traceback, missing recommendation or paper-record stage
 
 ## Early preparation and urgent continuation
 
+### Invocation ownership
+
+The fresh scheduler-created task for today's 09:00 slot owns the runner and
+its stdout, review rendezvous, orders, receipts, and notices. A human follow-up
+in an older Automation task is a repair/inspection task, even when it has the
+same Automation ID and is active at 09:00. It works in an isolated checkout and
+returns an exact repair; only an explicit transfer from the user plus readback
+of the dated owner changes that role. Do not infer ownership from the clock,
+task title, checkout, or shared Automation ID.
+
+When a new scheduled task receives `SAME_AUTOMATION_RUNNING`, report the exact
+dated lock owner and stop that duplicate task's business path. The current
+owner alone completes preflight, KOL projection/review, execution, and notice
+readback. A live unified-exec session is scoped to its task, so sending its
+session ID to another task is not a handoff. During 09:25–09:30, coordinate
+only a concrete `dependency_recovery_wait` or exact failure needing one bounded
+repair; the runner owner consumes its own next stage event.
+
 Start at 09:00 with the default 2100-second freeze wait and a short initial
 command yield. Runner stage JSON is the event source. Do not model-poll,
 repeatedly call `write_stdin`, or emit unchanged status before a stage event or
