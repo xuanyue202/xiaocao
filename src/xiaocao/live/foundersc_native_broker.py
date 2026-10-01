@@ -14,6 +14,7 @@ import os
 import re
 import tempfile
 import time
+import uuid
 from contextlib import contextmanager
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
@@ -347,6 +348,15 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
         if self.credential_health_path is None:
             return
         path = self.credential_health_path
+        self._write_credential_health(path, health)
+        attempt_id = health.get("attempt_id")
+        if isinstance(attempt_id, str) and re.fullmatch(r"[0-9a-f]{32}", attempt_id):
+            # One bounded receipt per attempt; stage updates do not produce a
+            # polling log storm. Keep earlier attempts when latest is replaced.
+            self._write_credential_health(path.parent / (path.stem + "-attempts") / (attempt_id + ".json"), health)
+
+    @staticmethod
+    def _write_credential_health(path: Path, health: dict[str, Any]) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         fd, temporary = tempfile.mkstemp(dir=path.parent)
         try:
@@ -362,6 +372,47 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                 os.close(directory)
         finally:
             Path(temporary).unlink(missing_ok=True)
+
+    @staticmethod
+    def _sanitized_unlock_evidence(payload: dict[str, Any]) -> dict[str, Any]:
+        evidence = payload.get("unlock_evidence")
+        if not isinstance(evidence, dict):
+            return {}
+        safe: dict[str, Any] = {}
+        identifier = evidence.get("attempt_id")
+        if isinstance(identifier, str) and re.fullmatch(r"[0-9a-f-]{36}", identifier):
+            safe["helper_attempt_id"] = identifier
+        phases = {"preflight", "overlay_check", "focus_target", "stdin_receive", "keyboard_guard",
+            "clear_field", "set_field", "preconfirm_readback", "confirm_once", "readiness_readback",
+            "target_changed_field_erased", "target_changed_erasure_unproven", "ready", "readiness_unproven"}
+        if evidence.get("stage") in phases:
+            safe["stage"] = evidence["stage"]
+        for key in ("focus_polls", "readiness_polls", "total_ms"):
+            value = evidence.get(key)
+            if type(value) in (int, float) and math.isfinite(value) and 0 <= value <= 1_000_000:
+                safe[key] = value
+        safe["snapshots"] = []
+        snapshots = evidence.get("snapshots")
+        for row in (snapshots if isinstance(snapshots, list) else [])[:4]:
+            if not isinstance(row, dict) or row.get("phase") not in {"preflight", "preconfirm", "readiness"}:
+                continue
+            snapshot: dict[str, Any] = {"phase": row["phase"]}
+            for key in ("app_active", "secure_field_focused", "account_bound"):
+                if type(row.get(key)) is bool:
+                    snapshot[key] = row[key]
+            if row.get("surface_state") in {"authentication_required", "query_only", "trade_ready", "incomplete"}:
+                snapshot["surface_state"] = row["surface_state"]
+            for key in ("elapsed_ms", "window_count"):
+                value = row.get(key)
+                if type(value) in (int, float) and math.isfinite(value) and 0 <= value <= 1_000_000:
+                    snapshot[key] = value
+            for key in ("window_bounds", "secure_field_bounds"):
+                box = row.get(key)
+                if isinstance(box, dict) and set(box) == {"x", "y", "width", "height"} and all(
+                    type(v) in (int, float) and math.isfinite(v) and abs(v) <= 100_000 for v in box.values()):
+                    snapshot[key] = box
+            safe["snapshots"].append(snapshot)
+        return safe
 
     def _previous_credential_health(self) -> dict[str, Any]:
         if self.credential_health_path is not None and self.credential_health_path.exists():
@@ -603,6 +654,13 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             == self.expected_fund_account_fingerprint
         )
 
+    def _unlock_readiness_proven(self, payload: dict[str, Any]) -> bool:
+        return (self._account_bound(payload)
+            and payload.get("surface_state") in {"trade_ready", "query_only"}
+            and type(payload.get("secure_field_count")) is int
+            and payload["secure_field_count"] == 0
+            and payload.get("unlock_failure_category") is None)
+
     @serialized_app_operation
     def ensure_native_ready(
         self,
@@ -624,7 +682,9 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                 raise FounderscNativeAXError("NATIVE_AX_UNLOCK_UNPROVEN_NO_RETRY:PRIOR_ATTEMPT")
             # Persist before the helper or Keychain boundary. A crash or transport
             # timeout cannot turn an uncertain password action into another try.
+            credential_health.update(attempt_id=uuid.uuid4().hex, stage="helper_call")
             self._save_credential_health({**credential_health, "state": "attempt_claimed"})
+            started = time.monotonic()
             try:
                 unlocked = self.native.unlock_from_keychain(explicitly_enabled=True).as_dict()
             except FounderscNativePreSecretError:
@@ -641,7 +701,19 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                 self._save_credential_health({**self.credential_health, "state": "unproven_no_retry",
                                              "failure_category": "transport_unproven"})
                 raise
-            if str(unlocked.get("status") or "") != "unlocked":
+            credential_health["helper_seconds"] = round(time.monotonic() - started, 4)
+            credential_health["unlock_evidence"] = self._sanitized_unlock_evidence(unlocked)
+            action = unlocked.get("action")
+            action = action if isinstance(action, dict) else {}
+            # A confirmed but slowly refreshed page may be recovered by reads
+            # only. Neither this path nor a failed success readback repeats a
+            # password, Return or confirmation.
+            readback_candidate = str(unlocked.get("status") or "") == "unlocked" or (
+                unlocked.get("status") == "unlock_unproven"
+                and action.get("confirm_pressed") is True
+                and unlocked.get("unlock_failure_category") in (None, "unclassified")
+            )
+            if not readback_candidate:
                 category = str(
                     unlocked.get("unlock_failure_category") or "unclassified"
                 ).strip().lower()
@@ -667,7 +739,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                 action = action if isinstance(action, dict) else {}
                 helper_status = str(unlocked.get("status") or "unknown")
                 not_attempted = (helper_status in {"unlock_overlay_unproven", "unlock_surface_unproven",
-                    "unlock_confirmation_unproven", "trade_password_input_invalid", "unlock_keyboard_or_focus_busy"}
+                    "unlock_confirmation_unproven", "trade_password_input_invalid", "unlock_keyboard_or_focus_busy", "unlock_focus_unproven"}
                     and action.get("attempted") is False and action.get("confirm_pressed") is False
                     and category == "unclassified")
                 self._save_credential_health({**credential_health, "state": "not_attempted" if not_attempted else "unproven_no_retry",
@@ -685,26 +757,62 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                     f"{category.upper()}:remaining={remaining_text}:"
                     f"field_cleared={cleared}"
                 )
-            credential_health = {
-                "trade_account_fingerprint": self.expected_fund_account_fingerprint,
-                "state": "verified_by_single_unlock",
-                "verified_at": datetime.now(timezone.utc).isoformat(),
-                "secure_field_cleared_before_set": (
-                    unlocked.get("secure_field_cleared_before_set") is True
-                ),
-                "remaining_attempts": unlocked.get("unlock_remaining_attempts"),
-                "login_notice_dismissed": unlocked.get("login_notice_dismissed") is True,
-            }
+            credential_health.update(state="unproven_no_retry", stage="independent_readback",
+                helper_status=str(unlocked.get("status") or "unknown"),
+                password_action_attempted=action.get("attempted") if type(action.get("attempted")) is bool else None,
+                confirmation_pressed=action.get("confirm_pressed") if type(action.get("confirm_pressed")) is bool else None,
+                confirmation_mode=action.get("confirmation_mode") if action.get("confirmation_mode") in
+                    {"none", "semantic", "guarded_ax_button", "secure_field_targeted_return"} else "unknown",
+                remaining_attempts=None,
+                secure_field_cleared_before_set=unlocked.get("secure_field_cleared_before_set") is True,
+                login_notice_dismissed=unlocked.get("login_notice_dismissed") is True)
             self._save_credential_health(credential_health)
-            payload = self.native.probe(table_audit=True).as_dict()
-            surface = str(payload.get("surface_state") or payload.get("status") or "")
+            read_started = time.monotonic()
+            for index, delay in enumerate((0.0, 0.25, 0.75), start=1):
+                if delay:
+                    time.sleep(delay)
+                try:
+                    payload = self.native.probe(table_audit=True).as_dict()
+                except (OSError, ValueError, RuntimeError):
+                    credential_health.update(stage="readback_transport_unproven", readback_attempts=index)
+                    self._save_credential_health(credential_health)
+                    raise
+                surface = str(payload.get("surface_state") or payload.get("status") or "")
+                credential_health.update(readback_attempts=index, final_surface=surface if surface in
+                    {"trade_ready", "query_only", "authentication_required", "incomplete", "screen_locked"} else "unknown",
+                    readback_seconds=round(time.monotonic() - read_started, 4))
+                if self._unlock_readiness_proven(payload):
+                    credential_health.update(state="verified_by_single_unlock", stage="ready",
+                        verified_at=datetime.now(timezone.utc).isoformat())
+                    self._save_credential_health(credential_health)
+                    break
+                # A mismatched or ambiguous identity is not a refresh race.
+                observed_account = str(payload.get("trade_account_fingerprint") or "")
+                if (observed_account and observed_account != self.expected_fund_account_fingerprint
+                        or payload.get("trade_account_fingerprint_count") not in (0, 1)
+                        or payload.get("app_running") is not True
+                        or payload.get("accessibility_trusted") is not True
+                        or payload.get("screen_locked") is not False
+                        or payload.get("unlock_failure_category") is not None):
+                    break
+            else:
+                self._save_credential_health(credential_health)
+            if credential_health["state"] != "verified_by_single_unlock":
+                self._save_credential_health(credential_health)
+                raise FounderscNativeAXError(
+                    "NATIVE_AX_UNLOCK_UNPROVEN_NO_RETRY:READBACK:"
+                    + credential_health.get("final_surface", "unknown")
+                )
         if not self._account_bound(payload) or surface not in {"trade_ready", "query_only"}:
             raise FounderscNativeAXError(
                 f"NATIVE_AX_ACCOUNT_SURFACE_NOT_READY:{surface or 'unknown'}"
             )
         if self._previous_credential_health().get("state") in {"attempt_claimed", "unproven_no_retry"}:
             # Only actual account-bound readiness clears the attempt fence.
-            credential_health["state"] = "verified_by_account_bound_readback"
+            if not self._unlock_readiness_proven(payload):
+                raise FounderscNativeAXError("NATIVE_AX_UNLOCK_UNPROVEN_NO_RETRY:READBACK_GATES")
+            credential_health = {**self.credential_health, "state": "verified_by_account_bound_readback",
+                "stage": "ready", "verified_at": datetime.now(timezone.utc).isoformat()}
             self._save_credential_health(credential_health)
         elif not self.credential_health:
             self._save_credential_health(credential_health)

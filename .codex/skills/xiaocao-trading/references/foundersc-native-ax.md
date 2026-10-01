@@ -193,8 +193,14 @@ Programmed waits total 400–900 ms, with a three-second polling budget includin
 AX calls; an in-flight native call may finish after that budget. A nil/locked
 read or malformed numeric residual never proves neutralization. Persist raw
 values, read/write success and quiet samples. Unlock readiness also polls for
-at most three seconds and returns immediately when ready; an unproved unlock
-does not authorize a second confirmation. Transport/build timeouts are process
+at most three seconds and requires the original process, unique observed account,
+no secure field and no broker error. The adapter then independently reads readiness
+at most three times (0/0.25/0.75-second delays); these reads may recover a slow
+refresh after the single confirmation, never send another password or Return.
+The durable attempt fence clears only after that fresh account-bound readback.
+Each attempt has a UUID, stage, bounded structural window/focus snapshots and
+timing; no field contents or window titles are recorded. A failed or interrupted
+confirmation never authorizes a second confirmation. Transport/build timeouts are process
 watchdogs, not fixed UI waits.
 Normalize broker numeric cells by field and locale: a Vision decimal comma
 such as `17,3900` is 17.3900, while grouping commas such as `54,528.94` must

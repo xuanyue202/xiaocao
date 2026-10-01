@@ -75,6 +75,7 @@ class FakeNative:
             "app_running": True,
             "accessibility_trusted": True,
             "screen_locked": False,
+            "secure_field_count": 0,
             "side": "buy",
             "trade_account_fingerprint": "123******890",
             "trade_account_fingerprint_count": 1,
