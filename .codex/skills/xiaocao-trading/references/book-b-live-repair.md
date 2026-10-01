@@ -134,6 +134,16 @@ cannot establish order correctness is a remaining blocker, not a passed repair.
 
 ## Root-cause repair: after the terminal outcome
 
+Apply the repository's mandatory post-change `code-review` rule in `AGENTS.md`:
+independent Standards and Spec reviews of the scoped repair diff, fix actionable
+findings from first principles, repair them in the owning task and re-review
+before closeout; do not leave an actionable review list for the user. Escalate
+only an irreducible permission, external-evidence gap or user decision.
+During the golden five minutes, necessary
+repair, minimum order-correctness validation and original-plan continuation come
+first; review starts after terminal or exact unresolved-order readback. Preserve
+any APP test-window deferral as a separate validation limitation.
+
 In the same task, add regression coverage for a demonstrated failure when useful;
 investigate competing causes only when causality remains uncertain. Replace a tactical
 patch with a durable root fix if needed, then test the affected behavior.
@@ -182,9 +192,10 @@ next-owner note is not an accepted handoff.
 For an early morning preflight failure, use the exact terminal receipt with
 `scripts/morning_preflight_alert.py --date today --kind book-b --receipt <path>`
 as soon as the blocked receipt is durable, while bounded local repair continues.
-This is a separate dated urgent WeCom
-incident from an order's existing notification. Read back whether it was
-delivered; absence of a new order does not suppress the preflight alert.
+This reuses the runner's consolidated result claim; it does not send a second
+message for the same receipt. Read back delivery; absence of a new order does
+not suppress an actionable failure result. Routine non-trading-day wakes stop
+before this flow and do not initiate historical reconciliation or alerts.
 
 Historical reconciliation refreshes both query tables before capture. This does
 not set or prove the UI date range; exact row date and order identity remain

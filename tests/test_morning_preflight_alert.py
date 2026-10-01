@@ -132,3 +132,24 @@ def test_broken_market_probe_still_escalates_without_exposing_exception(monkeypa
     ]) == 2
     assert captured[0]["reason"] == "MARKET_PREFLIGHT_PROBE_ERROR"
     assert "secret remote response" not in capsys.readouterr().out
+
+
+def test_receipt_alert_reuses_runner_delivery_instead_of_sending_second_message(monkeypatch, tmp_path):
+    from xiaocao.live.morning_notifications import MorningNotifications
+    from xiaocao.live.morning_observability import terminal_notice
+    path = tmp_path / "receipt.json"
+    payload = {"trade_date": "2026-09-30", "run_id": "same-owner",
+               "status": "blocked", "reason": "LIVE_BOOK_B_OPEN_EXECUTION_RECONCILE_REQUIRED",
+               "failed_stage": "preflight"}
+    path.write_text(json.dumps(payload))
+    sent = []
+    def notices(day):
+        return MorningNotifications(day, root=tmp_path / "notices",
+            sender=lambda *args: sent.append(args) or {"status": "ok"}, recipients=lambda: ("user",))
+    runner = notices(payload["trade_date"])
+    runner.publish("result", terminal_notice(payload, path))
+    runner.close()
+    monkeypatch.setattr(alert, "MorningNotifications", notices)
+    monkeypatch.setattr(alert, "deliver_blocker", lambda *a, **k: pytest.fail("duplicate incident alert"))
+    assert alert.main(["--date", "2026-09-30", "--kind", "book-b", "--receipt", str(path)]) == 2
+    assert len(sent) == 1

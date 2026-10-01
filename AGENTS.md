@@ -6,6 +6,8 @@ Xiaocao is a Python CLI and automation toolkit for A-share data, strategy screen
 
 For trading faults, follow `.codex/skills/xiaocao-trading/references/book-b-live-repair.md`: urgent AX/code repair and minimum necessary validation precede same-plan continuation; root-cause analysis and affected-behavior verification follow the terminal outcome.
 
+Every repository change must receive a post-change `code-review` using independent Standards and Spec reviews of an explicit baseline and scoped diff. In the 09:25–09:30 golden window and other legal urgent trading windows, first repair the necessary dependency, validate order correctness and continue the original trade; perform code review after terminal or exact unresolved-order readback, before declaring the change complete. The implementing agent owns the quality loop: assess each finding from first principles, fix demonstrated problems, re-review the affected diff and record findings and validation limits. Do not hand an actionable review backlog back to the user; escalate only an irreducible permission, external-evidence gap or user decision. Deferred APP tests remain deferred under the test-window rules; a review does not substitute for them.
+
 ## Xiaocao Knowledge Base (read when working on strategy/posture/exit judgment)
 
 `reference/experience/README.md` is the single entry point to the distilled 小草 knowledge: the judgment playbook (`docs/XIAOCAO_PLAYBOOK.md`), the dated posture timeline (`reference/experience/REGIME_TIMELINE.md`), the falsifiable hypothesis backlog (`reference/experience/xiaocao_hypotheses.jsonl`), the verdict ledger (`kronos_screen/HYPOTHESES.jsonl`), and the **flywheel findings log**. One command for current state: `PYTHONPATH=src python3 scripts/xiaocao_knowledge.py`.

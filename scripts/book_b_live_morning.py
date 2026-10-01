@@ -42,7 +42,7 @@ from xiaocao.live.live_decision_support import calendar_provider, digest, read_p
 from wait_for_morning_freeze import wait_for_morning_freeze  # noqa: E402
 
 
-from xiaocao.live.morning_observability import review_brief, review_notice, terminal_notice
+from xiaocao.live.morning_observability import review_brief, review_notice, terminal_notice, dependency_user_action
 from xiaocao.automation_run import automation_run, current_automation_id, runner_identity, validate_automation_identity
 from xiaocao.live.morning_notifications import AUTOMATION_ID, MorningNotifications
 from xiaocao.runner_recovery import DependencyRecovery
@@ -58,6 +58,21 @@ def _emit_json(payload: dict) -> None:
 
 def _china_date() -> str:
     return datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat()
+
+
+def _morning_calendar_check(trade_date: str) -> dict:
+    """Prove today's exchange session before any native or notification work."""
+    settings = load_settings(None)
+    client = XiaocaoClient(base_url=settings.base_url, timeout=8, retries=0, cache=None)
+    clock = datetime.combine(date.fromisoformat(trade_date), datetime.min.time(),
+                             tzinfo=ZoneInfo("Asia/Shanghai"))
+    days = calendar_provider(client)(clock)
+    latest = max(days)
+    if latest > trade_date:
+        raise ValueError("MORNING_CALENDAR_FUTURE_DATE")
+    return {"source": "xiaocao:/stock/trade_cal", "exchange": "SSE",
+            "trade_date": trade_date, "latest_trading_date": latest,
+            "status": "trading_day" if latest == trade_date else "non_trading_day"}
 
 
 def _emit_stage(stage: str, observed_at: datetime) -> None:
@@ -298,6 +313,26 @@ def main(argv: list[str] | None = None) -> int:
         if lock["status"] == "busy":
             _emit_json({**lock, "status": "no_op", "reason": "SAME_AUTOMATION_RUNNING"})
             return 0
+        if not args.resume_plan_id:
+            # An exact recovery is a separate explicit instruction; routine
+            # holiday wakes must not touch the APP or historical orders.
+            try:
+                calendar = _morning_calendar_check(trade_date)
+            except Exception as exc:
+                calendar = {"status": "unproven", "trade_date": trade_date,
+                            "failure_category": getattr(exc, "failure_category", None)
+                            or type(exc).__name__}
+            if calendar["status"] != "trading_day":
+                blocked = calendar["status"] == "unproven"
+                result = {"status": "blocked" if blocked else "no_action",
+                          "reason": "MORNING_CALENDAR_UNPROVEN" if blocked else "NON_TRADING_DAY",
+                          "trade_date": trade_date, "calendar": calendar,
+                          "observed_at": datetime.now(ZoneInfo("Asia/Shanghai")).isoformat(),
+                          "runner_identity": runner_identity(args.automation_id, "scripts/book_b_live_morning.py")}
+                path = Path(args.state_dir) / "runs" / "calendar" / (digest(result) + ".json")
+                _write_review_immutable(path, result)
+                _emit_json({**result, "receipt_path": str(path.resolve())})
+                return 2 if blocked else 0
         notices = MorningNotifications(trade_date, automation_id=args.automation_id,
             on_delivery=lambda result: _emit_json({"event": "book_b_wecom_delivery", **result}))
         try:
@@ -309,7 +344,9 @@ def main(argv: list[str] | None = None) -> int:
             # Early configuration faults also need a result; never send raw
             # exception text from a credential-bearing setup boundary.
             notices.publish("result", {"status": "blocked", "failed_stage": "preflight",
-                                       "reason": "MORNING_SETUP_FAILED:" + type(exc).__name__})
+                                       "reason": "MORNING_SETUP_FAILED:" + type(exc).__name__,
+                                       "user_action": dependency_user_action(str(exc)),
+                                       "user_action_required": dependency_user_action(str(exc))["required"]})
             raise
         finally:
             try:
@@ -362,7 +399,10 @@ def _run(args, notices):
         return build_foundersc_native_execution(args.state_dir,
             scoped_buy_preflight=not bool(args.resume_plan_id),
             expected_fund_account_fingerprint=trade_account_fingerprint,
-            safety_env_provider=capital_runtime.safety_env)
+            safety_env_provider=capital_runtime.safety_env,
+            # Preserve each incident/takeover locally; the morning result
+            # owns the single external summary, including pending orders.
+            notifier=lambda title, body: {"wecom": "deferred_to_morning_result"})
     # Initial helper/build faults belong to the original durable preflight,
     # with its repair budget, rather than an early setup exit.
     execution, broker = build_native() if args.resume_plan_id else (None, None)
@@ -502,8 +542,12 @@ def _run(args, notices):
         on_event=recovery_event,
         on_failure=lambda record: notices.publish("preflight-problem", {
             "run_id": record["binding"]["request_id"] + ":" + record["failures"][-1]["code"],
-            "reason": record["failures"][-1]["code"], "request_path": record["request_path"]}),
+            "reason": record["failures"][-1]["code"], "request_path": record["request_path"],
+            "user_action": record["failures"][-1]["evidence"]["user_action"],
+            "user_action_required": record["failures"][-1]["evidence"]["user_action"]["required"]}),
         evidence=lambda: getattr(broker, "credential_health", {}),
+        failure_evidence=lambda exc: {**getattr(broker, "credential_health", {}),
+            "user_action": dependency_user_action(str(exc), getattr(broker, "credential_health", {}))},
     )
     def live_heartbeat():
         return read_live_heartbeat() if args.resume_plan_id else recovery.run(read_live_heartbeat)

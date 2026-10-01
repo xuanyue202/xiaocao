@@ -15,6 +15,8 @@ from xiaocao.api.preflight import authentication_preflight
 from xiaocao.config import load_settings
 from xiaocao.live.notify import notify, wecom_transport_readiness
 from xiaocao.live.trading_execution import TradingIncidentOutbox
+from xiaocao.live.morning_notifications import MorningNotifications
+from xiaocao.live.morning_observability import terminal_notice
 
 
 DEFAULT_OUTBOX = Path("output/live/morning_preflight_incidents.jsonl")
@@ -101,12 +103,16 @@ def deliver_blocker(
     result["incident_id"] = incident_id
     if outbox.delivered(incident_id):
         return {**result, "delivery": "already_delivered"}
-    title = "小草早盘预检加急"
+    title = {"market-auth": "小草早盘：行情认证受阻",
+             "producer": "小草早盘：推荐生成失败"}.get(assessment["kind"], "小草早盘：执行受阻")
+    explanation = {"market-auth": "行情认证未通过，暂不能取得当日交易数据。",
+                   "producer": "当日推荐未成功生成，不能进入开盘买入。"}.get(
+                       assessment["kind"], "执行证据未通过，尚未进入开盘交易。")
     body = (
-        f"日期={assessment['trade_date']} 检查={assessment['kind']} "
-        f"故障={assessment['reason']}\n"
-        f"证据={assessment['evidence']}\n"
-        "请加急处理；原交易和冻结安全门保持有效，不补造订单或推荐。"
+        f"{assessment['trade_date']} APP 仿真\n"
+        f"结果：早盘流程受阻。\n原因：{explanation}\n"
+        "系统负责恢复；若需要你完成登录、授权或提供信息，Codex 会给出具体请求。\n"
+        "详细诊断保存在 Codex 本次任务中。"
     )
     if not outbox.enqueue(incident_id=incident_id, title=title, body=body):
         return {**result, "delivery": "already_delivered"}
@@ -141,6 +147,7 @@ def main(argv: list[str] | None = None) -> int:
                           **readiness},
                          ensure_ascii=False, sort_keys=True))
         return 0 if readiness["status"] == "configured" else 2
+    receipt_valid = False
     if args.kind == "market-auth":
         if args.receipt is not None:
             parser.error("--receipt is not used for market-auth")
@@ -157,11 +164,22 @@ def main(argv: list[str] | None = None) -> int:
             parser.error("--receipt is required for book-b and producer")
         try:
             assessment = assess_receipt(args.kind, trade_date, args.receipt)
+            receipt_valid = True
         except ValueError as error:
             assessment = {"kind": args.kind, "trade_date": trade_date,
                           "status": "blocked", "reason": _safe_code(str(error), "PREFLIGHT_EVIDENCE_INVALID"),
                           "evidence": f"receipt={args.receipt.resolve()}"}
-    result = deliver_blocker(assessment, outbox=TradingIncidentOutbox(args.outbox))
+    if args.kind == "book-b" and assessment["status"] == "blocked" and receipt_valid:
+        # Use the runner's exact recipient-bound result claim. An urgent
+        # receipt alert must not create a second message for the same result.
+        payload = _read_receipt(args.receipt)
+        notices = MorningNotifications(trade_date)
+        notices.publish("result", terminal_notice(payload, args.receipt))
+        deliveries = notices.close()
+        result = {**assessment, "delivery": "delivered" if deliveries and all(
+            item["status"] == "delivered" for item in deliveries) else "unproven"}
+    else:
+        result = deliver_blocker(assessment, outbox=TradingIncidentOutbox(args.outbox))
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))
     return 0 if result["status"] != "blocked" else 2
 
