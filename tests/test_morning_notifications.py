@@ -1,5 +1,28 @@
 import json
+import pytest
 from xiaocao.live.morning_notifications import MorningNotifications, message
+
+
+@pytest.mark.parametrize("original", [b'{broken', b'[]', b'null'])
+def test_corrupt_prior_claim_preserves_business_result_and_never_sends(tmp_path, original):
+    path = tmp_path / 'old.json'
+    path.write_bytes(original)
+    sent, observed = [], []
+    def build():
+        return MorningNotifications('2026-10-01', root=tmp_path,
+            sender=lambda *a: sent.append(a) or {'status': 'ok'},
+            recipients=lambda: ('user',), on_delivery=observed.append)
+    first = build()
+    assert first.publish('result', {'status': 'completed', 'run_id': 'first'}) is None
+    assert first.terminal.is_set()
+    assert first.close()[0]['status'] == 'pending_reconcile'
+    later = build()
+    later.retry_pending()
+    assert later.publish('result', {'status': 'completed', 'run_id': 'recovery'}) is None
+    assert all(r['status'] == 'pending_reconcile' for r in later.close())
+    assert observed and not sent
+    assert path.read_bytes() == original
+    assert list(tmp_path.glob('*.json')) == [path]
 
 
 def test_routine_milestones_stay_local_and_result_delivers_once(tmp_path):

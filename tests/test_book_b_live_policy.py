@@ -911,6 +911,8 @@ def test_entry_deadline_after_rendezvous_creates_no_intent(tmp_path):
 
 def test_production_morning_cli_passes_real_rendezvous_callback(tmp_path, monkeypatch):
     cli = _morning_cli(monkeypatch)
+    monkeypatch.setattr(cli, "_morning_calendar_check", lambda day: {
+        "status": "trading_day", "trade_date": day, "latest_trading_date": day})
     from xiaocao.live.book_b_live_morning import BookBLiveMorningReceipt
 
     monkeypatch.setattr(cli, "KeychainCapitalRuntime", lambda: SimpleNamespace(

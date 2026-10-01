@@ -151,10 +151,13 @@ def append_event(path: Path, row: dict[str, Any]) -> None:
 def stream_process(args: list[str], *, cwd: Path, env: dict[str, str], output_path: Path | None = None) -> int:
     """Forward sanitized streams; detailed output is retained separately."""
     with output_path.open('a', encoding='utf-8') if output_path else open(os.devnull, 'w') as evidence:
-        process = subprocess.Popen(args, cwd=cwd, env=env, stdout=subprocess.PIPE,
-                                   stderr=subprocess.PIPE, text=True, errors='replace', start_new_session=True)
+        process = None
+        pending_signals: list[int] = []
         previous_handlers: dict[int, Any] = {}
         def forward_signal(signum: int, frame: Any) -> None:
+            if process is None:
+                pending_signals.append(signum)
+                return
             try:
                 os.killpg(process.pid, signum)
             except ProcessLookupError:
@@ -162,6 +165,17 @@ def stream_process(args: list[str], *, cwd: Path, env: dict[str, str], output_pa
         if threading.current_thread() is threading.main_thread():
             for signum in (signal.SIGTERM, signal.SIGINT):
                 previous_handlers[signum] = signal.signal(signum, forward_signal)
+        try:
+            # Install before spawn: a fast child can become runnable before
+            # Popen returns, so a stop at that boundary must not orphan it.
+            process = subprocess.Popen(args, cwd=cwd, env=env, stdout=subprocess.PIPE,
+                                       stderr=subprocess.PIPE, text=True, errors='replace', start_new_session=True)
+        except BaseException:
+            for signum, previous in previous_handlers.items():
+                signal.signal(signum, previous)
+            raise
+        for signum in pending_signals:
+            forward_signal(signum, None)
         lock = threading.Lock()
         def forward(source: Any, target: Any) -> None:
             redactor = StreamRedactor()

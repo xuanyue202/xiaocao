@@ -187,6 +187,13 @@ def test_dynamic_allocation_replays_exact_funding_head_after_later_flow(tmp_path
     n = ScopedNative(); n.position_summary = {'可用': str(initial_cash)}
     a = adapter(n)
     first = a.read_buy_preflight_snapshot(trade_date=day, owned_codes=set())
+    # A balance increase is not funding authorization. Prove the allocation
+    # explicitly in this isolated fixture, then verify its immutable head.
+    from decimal import Decimal
+    from xiaocao.live.book_b_capital import allocate_cash
+    allocate_cash(tmp_path, base_cash=Decimal('30000'), liquidation=0,
+        ownership_head=None, snapshot=first,
+        allocation_reference='isolated-test-explicit-allocation')
     account = pretrade_account(tmp_path, first, trade_date=day, now=datetime.now(timezone.utc))
     basis = load_book_b_live_capital_basis(tmp_path, trade_date=day, current_account=account)
     payload = allocation_from_buy_preflight(first, basis, now=datetime.now(timezone.utc))

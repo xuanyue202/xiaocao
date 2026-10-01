@@ -193,6 +193,14 @@ class MorningNotifications:
             if self.on_delivery:
                 self.on_delivery(self.failures[-1])
             return None
+        except (ValueError, TypeError, KeyError, AttributeError):
+            # A malformed old claim cannot prove a new send is safe. Keep the
+            # original bytes and isolate notice readback from the business exit.
+            self.failures.append({"kind": kind, "status": "pending_reconcile",
+                                  "reason": "MORNING_NOTICE_READBACK_UNPROVEN"})
+            if self.on_delivery:
+                self.on_delivery(self.failures[-1])
+            return None
 
     def _publish(self, kind: str, facts: dict | None = None):
         facts = facts or {}
@@ -317,7 +325,15 @@ class MorningNotifications:
 
     def retry_pending(self):
         for path in self.root.glob("*.json"):
-            record = json.loads(path.read_text())
+            try:
+                record = json.loads(path.read_text())
+                if not isinstance(record, dict):
+                    raise ValueError("MORNING_NOTICE_RECORD_NOT_OBJECT")
+            except (OSError, ValueError):
+                self.failures.append({"status": "pending_reconcile",
+                                      "reason": "MORNING_NOTICE_READBACK_UNPROVEN",
+                                      "receipt_path": str(path.resolve())})
+                continue
             if (record.get("automation_id") == self.automation_id
                 and record.get("status") != "delivered"
                 and not local_only(record)

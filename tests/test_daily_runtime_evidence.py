@@ -196,6 +196,29 @@ def test_redaction_handles_spaced_values_split_json_and_private_key_lines() -> N
     assert 'order_id=one' in clean
 
 
+def test_supervisor_stop_during_spawn_is_forwarded_and_handler_restored(tmp_path, monkeypatch):
+    import signal
+    from xiaocao.live import runtime_evidence
+    original_popen = subprocess.Popen
+    original_signal = signal.signal
+    previous = signal.getsignal(signal.SIGTERM)
+    handlers = {}
+    def register(signum, handler):
+        handlers[signum] = handler
+        return original_signal(signum, handler)
+    def spawn(*args, **kwargs):
+        # Deterministically emulate a stop during Popen, before its process
+        # handle is returned; invoke only the installed handler, not pytest.
+        assert callable(handlers.get(signal.SIGTERM))
+        handlers[signal.SIGTERM](signal.SIGTERM, None)
+        return original_popen(*args, **kwargs)
+    monkeypatch.setattr(runtime_evidence.signal, 'signal', register)
+    monkeypatch.setattr(runtime_evidence.subprocess, 'Popen', spawn)
+    assert runtime_evidence.stream_process(['bash', '-c', 'sleep 30'],
+        cwd=tmp_path, env=dict(os.environ)) == 143
+    assert signal.getsignal(signal.SIGTERM) == previous
+
+
 def test_supervisor_sigterm_forwards_to_child_and_writes_terminal(tmp_path: Path) -> None:
     import signal
     import time
