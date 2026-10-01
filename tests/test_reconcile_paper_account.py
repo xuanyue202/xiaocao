@@ -8,8 +8,8 @@ import scripts.reconcile_paper_account as recon
 def test_rebuild_account_from_book_b_positions():
     account = {"initial_capital": 100000.0, "cash": 10.0, "realized_pnl": 1.0, "fee_rate": 0.0001}
     positions = [
-        valid_position(status="closed", realized_pnl=-100.0, entry_fee=1.0, exit_fee=1.2, exit_cash_in=900.0, exit_date="2026-06-02"),
-        valid_position(code="600001.XSHG", entry_cash_out=20000.0, entry_fee=2.0),
+        valid_position(status="closed", realized_pnl=-100.0, entry_fee=1.0, exit_price=9.012, exit_fee=1.2, exit_cash_in=900.0, exit_date="2026-06-02"),
+        valid_position(code="600001.XSHG", entry_price=199.98, gross_notional=19998, entry_cash_out=20000.0, entry_fee=2.0),
         {"book": "A", "status": "closed", "realized_pnl": 999.0, "entry_fee": 9.0, "exit_fee": 9.0},
     ]
 
@@ -27,6 +27,7 @@ def test_write_reconcile_uses_recoverable_ledger_path(tmp_path, monkeypatch):
     positions.write_text(json.dumps({
         "book": "B", "status": "open", "entry_cash_out": 10000.0, "entry_fee": 1.0,
         "code": "600000.XSHG", "entry_date": "2026-06-01", "shares": 100,
+        "entry_price": 99.99, "gross_notional": 9999,
     }) + "\n", encoding="utf-8")
     account.write_text(json.dumps({
         "initial_capital": 100000.0, "cash": 1.0, "realized_pnl": 0.0,
@@ -44,7 +45,8 @@ def test_write_reconcile_uses_recoverable_ledger_path(tmp_path, monkeypatch):
 
 def valid_position(**changes):
     row = {"book": "B", "code": "600000.XSHG", "entry_date": "2026-06-01",
-           "shares": 100, "status": "open", "entry_cash_out": 1000.0, "entry_fee": 1.0}
+           "shares": 100, "status": "open", "entry_price": 9.99, "gross_notional": 999,
+           "entry_cash_out": 1000.0, "entry_fee": 1.0}
     return {**row, **changes}
 
 
@@ -125,7 +127,8 @@ def test_dry_run_does_not_recover_or_create_lock_and_write_is_idempotent(tmp_pat
 def test_reconcile_exact_cents_and_closed_cash_conservation():
     import pytest
     lot = valid_position(status="closed", exit_date="2026-06-02", exit_cash_in=1001.01,
-                         exit_fee=0.01, realized_pnl=1.01, entry_fee=0.01)
+                         exit_fee=0.01, exit_price=10.0102, realized_pnl=1.01,
+                         entry_fee=0.01, gross_notional=999.99, entry_price=9.9999)
     rebuilt, _ = recon.rebuild_account([lot], valid_account())
     assert rebuilt["cash"] == 100001.01
     assert rebuilt["total_fees"] == 0.02
@@ -144,3 +147,64 @@ def test_write_reconcile_rejects_sources_outside_shared_ledger_lock(tmp_path, mo
     monkeypatch.setattr("sys.argv", ["reconcile", "--positions", str(positions), "--account", str(account), "--write"])
     assert recon.main() == 2
     assert account.read_bytes() == before
+
+
+def test_rebuild_rejects_contradictory_price_quantity_cash_without_mutating_input():
+    import copy
+    import pytest
+    bad_lots = [
+        valid_position(entry_price=10, gross_notional=10000, entry_fee=1, entry_cash_out=10001),
+        valid_position(status="closed", entry_price=9.99, gross_notional=999,
+                       exit_price=10, exit_fee=1, exit_cash_in=9999,
+                       realized_pnl=8999, exit_date="2026-06-02"),
+        valid_position(original_shares=200, remaining_shares=100, entry_price=10,
+                       gross_notional=2000, entry_fee=1, entry_cash_out=2001),
+    ]
+    for lot in bad_lots:
+        account = valid_account(cash=98999.90)
+        before = copy.deepcopy((lot, account))
+        with pytest.raises(ValueError):
+            recon.rebuild_account([lot], account)
+        assert (lot, account) == before
+
+
+def test_rebuild_refuses_missing_economic_price_evidence():
+    import pytest
+    lot = valid_position()
+    lot.pop("entry_price", None)
+    with pytest.raises(ValueError):
+        recon.rebuild_account([lot], valid_account())
+    lot = valid_position(status="closed", exit_date="2026-06-02", exit_cash_in=1001.01,
+                         exit_fee=0.01, realized_pnl=1.01)
+    lot.pop("exit_price", None)
+    with pytest.raises(ValueError):
+        recon.rebuild_account([lot], valid_account())
+
+
+def test_rebuild_preserves_producer_price_rounding_and_original_shares_after_full_clear():
+    # Original production semantics: entry gross from 10.123456, stored price
+    # 10.123; exit gross from 10.234567, stored price 10.2346. All 1000 shares
+    # remain on the closed row. This is not a remaining-inventory projection.
+    lot = valid_position(shares=1000, entry_price=10.123, gross_notional=10123.46,
+                         entry_fee=1.01, entry_cash_out=10124.47)
+    rebuilt, _ = recon.rebuild_account([lot], valid_account())
+    assert rebuilt["cash"] == 89875.53
+    lot.update(status="closed", exit_date="2026-06-02", exit_price=10.2346,
+               exit_cash_in=10233.55, exit_fee=1.02, realized_pnl=109.08)
+    rebuilt, _ = recon.rebuild_account([lot], valid_account())
+    assert rebuilt["cash"] == 100109.08
+    assert rebuilt["realized_pnl"] == 109.08
+    assert lot["shares"] == 1000
+
+
+def test_rebuild_accepts_actual_filled_quantity_but_rejects_unproved_partial_sale():
+    import pytest
+    # An incomplete BUY fill may be less than the planned request; shares and
+    # money still describe the actual filled lot. Planned size is not inventory.
+    lot = valid_position(planned_shares=200)
+    rebuilt, _ = recon.rebuild_account([lot], valid_account())
+    assert rebuilt["cash"] == 99000
+    for changes in ({"remaining_shares": 50}, {"realized_pnl": 100},
+                    {"exit_fee": 1}, {"partial_exits": []}):
+        with pytest.raises(ValueError):
+            recon.rebuild_account([valid_position(**changes)], valid_account())

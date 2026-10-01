@@ -63,9 +63,12 @@ def _date(value: Any) -> str | None:
         return None
 
 
-def _time(value: Any) -> dt.datetime:
+def _proof_time(value: Any) -> dt.datetime:
+    """Comparison proof requires a real offset; legacy naive clocks stay observations."""
     result = dt.datetime.fromisoformat(str(value).replace('Z', '+00:00'))
-    return result.replace(tzinfo=ZoneInfo('Asia/Shanghai')) if result.tzinfo is None else result
+    if result.tzinfo is None or result.utcoffset() is None:
+        raise ValueError('explicit timezone required for point-in-time proof')
+    return result
 
 
 def _rows(data: bytes, path: str) -> list[dict]:
@@ -94,6 +97,10 @@ def _capture(root: Path, snapshot_dir: Path | None) -> tuple[dict, dict[str, byt
             try:
                 value = json.loads(path.read_bytes())
                 refs = [row.get('frozen_candidates_path') for row in value.get('rows', [])]
+                for row in value.get('rows', []):
+                    for reference in (row.get('source_refs') or {}).values():
+                        if isinstance(reference, dict):
+                            refs.append(reference.get('path'))
                 refs += list(value.get('artifacts', {}).values())
                 for ref in refs:
                     if isinstance(ref, str) and ref.startswith('output/research/'):
@@ -226,6 +233,128 @@ def _fill_audit(contents: dict[str, bytes], as_of: dt.date) -> dict:
                      'paper audit is not a no-KOL counterfactual or an alpha estimate'])
 
 
+def _comparison_source_errors(row: dict, freeze: dict, contents: dict[str, bytes], *, as_of: dt.date) -> list[str]:
+    """Verify separate persisted facts, never trust the comparison's summaries.
+
+    These explicit research-export schemas are only understood for local paper
+    simulation. Native production receipts have no such adapter here; absence of
+    an adapter is insufficient evidence, never inferred broker confirmation.
+    """
+    errors, sources = [], {}
+    refs = row.get('source_refs')
+    if not isinstance(refs, dict):
+        refs = {}
+    for kind in ('decision', 'execution', 'market', 'fees'):
+        ref = refs.get(kind)
+        raw = contents.get(ref.get('path')) if isinstance(ref, dict) and isinstance(ref.get('path'), str) else None
+        if raw is None or _hash(raw) != ref.get('sha256'):
+            errors.append(f'{kind}_original_missing_or_checksum_mismatch')
+            continue
+        try:
+            source = json.loads(raw)
+            if not isinstance(source, dict) or source.get('schema_version') != f'weekly-{kind}-facts.v1':
+                errors.append(f'{kind}_source_schema_not_adapted')
+                continue
+            sources[kind] = source
+            observed = _proof_time(source['observed_at'])
+            expected_clock = row.get('selection_as_of') if kind == 'decision' else row.get('outcome_as_of')
+            if observed != _proof_time(expected_clock) or observed.astimezone(ZoneInfo('Asia/Shanghai')).date() > as_of:
+                errors.append(f'{kind}_source_observation_clock_unproven')
+            for field in ('sample_id', 'option', 'code', 'book', 'runtime', 'day'):
+                if source.get(field) != row.get(field) or source.get(field) in (None, ''):
+                    errors.append(f'{kind}_source_identity_mismatch')
+        except (ValueError, UnicodeError, KeyError, TypeError):
+            errors.append(f'{kind}_original_invalid')
+    if len({ref.get('path') for ref in refs.values() if isinstance(ref, dict)}) < 4:
+        errors.append('independent_fact_originals_required')
+    if len(sources) != 4:
+        return errors
+    if row.get('runtime') != 'paper':
+        return errors + ['native_broker_source_schema_not_adapted']
+    decision, execution, market, fees = (sources[kind] for kind in ('decision', 'execution', 'market', 'fees'))
+    try:
+        if row.get('code') not in {candidate.get('code') for candidate in freeze.get('candidates', [])}:
+            errors.append('decision_code_not_in_frozen_candidates')
+        if (decision.get('frozen_candidates_sha256') != row.get('frozen_candidates_sha256')
+                or execution.get('decision_sha256') != refs['decision']['sha256']
+                or execution.get('market_sha256') != refs['market']['sha256']
+                or fees.get('execution_sha256') != refs['execution']['sha256']):
+            errors.append('source_fact_chain_checksum_mismatch')
+        selected = _proof_time(decision['selected_at'])
+        requested = _proof_time(decision['requested_at'])
+        entry, exit_fill = execution['entry'], execution['exit']
+        entry_clock, exit_clock = _proof_time(entry['filled_at']), _proof_time(exit_fill['filled_at'])
+        if (selected != _proof_time(row['selection_as_of']) or requested > selected
+                or not selected <= _proof_time(entry['submitted_at']) <= entry_clock < exit_clock
+                or exit_clock != _proof_time(row['outcome_as_of'])
+                or _date(entry['filled_at']) != row['day']
+                or _date(exit_fill['filled_at']) != row['outcome_date']
+                or _date(exit_fill['filled_at']) > as_of.isoformat()
+                or _date(entry['filled_at']) >= _date(exit_fill['filled_at'])):
+            errors.append('source_decision_fill_chronology_unproven')
+        if decision.get('net_cash_flow') != 0 or _number(decision.get('capital_base')) != _number(row.get('capital_base')):
+            errors.append('source_budget_or_cashflow_mismatch')
+        prices, quantities = [], []
+        for leg, fill in (('entry', entry), ('exit', exit_fill)):
+            quote = market[leg]
+            price, shares = _number(fill['price']), _number(fill['shares'])
+            if price is None or price <= 0 or shares is None or shares <= 0 or int(shares) != shares:
+                errors.append('source_price_or_quantity_invalid')
+                return errors
+            if (fill.get('side') != ('BUY' if leg == 'entry' else 'SELL') or fill.get('status') != 'filled'
+                    or fill.get('code') != row['code'] or quote.get('code') != row['code']
+                    or quote.get('source') != 'xiaocao_proprietary' or quote.get('trade_status') != 'trading'
+                    or _number(quote.get('volume')) is None or _number(quote['volume']) <= 0
+                    or _proof_time(quote['observed_at']) != _proof_time(fill['filled_at'])
+                    or _proof_time(fill['observed_at']) < _proof_time(fill['filled_at'])
+                    or _proof_time(fill['observed_at']).astimezone(ZoneInfo('Asia/Shanghai')).date() > as_of):
+                errors.append('source_fill_market_identity_or_clock_unproven')
+            if leg == 'entry':
+                if int(shares) % 100 or _number(decision.get('shares')) != shares:
+                    errors.append('source_buy_lot_or_decision_quantity_mismatch')
+                basis = fill.get('fill_basis')
+                if basis not in WINDOW_BASES or basis != row.get('fill_basis') or fill.get('fill_fallback'):
+                    errors.append('source_proxy_or_unknown_fill')
+                low, high, vwap = (_number(quote.get(field)) for field in ('low', 'high', 'vwap'))
+                limit = _number(decision.get('limit_price'))
+                if None in (low, high, vwap, limit) or not 0 < low <= vwap <= high or low > limit:
+                    errors.append('source_opening_window_or_limit_unproven')
+                else:
+                    expected = min(vwap, limit) if basis.endswith('capped_by_limit') else vwap
+                    if abs(price-expected) > 1e-9 or price > limit:
+                        errors.append('source_paper_fill_price_mismatch')
+            elif fill.get('fill_basis') != 'paper_exit_proprietary_quote' or _number(quote.get('trade')) != price:
+                errors.append('source_exit_quote_or_fill_unproven')
+            prices.append(price)
+            quantities.append(shares)
+        if quantities[0] != quantities[1]:
+            errors.append('source_roundtrip_quantity_mismatch')
+        entry_gross, exit_gross = prices[0]*quantities[0], prices[1]*quantities[1]
+        entry_fee, exit_fee = _number(fees.get('entry_fee')), _number(fees.get('exit_fee'))
+        if fees.get('fee_basis') != 'paper_model_rate' or None in (entry_fee, exit_fee) or min(entry_fee, exit_fee) < 0:
+            return errors + ['source_fee_amount_or_basis_unproven']
+        for leg, gross, fee in (('entry', entry_gross, entry_fee), ('exit', exit_gross, exit_fee)):
+            rate = _number(fees.get(leg+'_fee_rate'))
+            if rate is None or rate < 0 or abs(gross*rate-fee) > 0.011:
+                errors.append('source_fee_rate_amount_mismatch')
+        capital = _number(decision.get('capital_base'))
+        if capital is None or capital <= 0:
+            return errors + ['source_capital_base_unproven']
+        actual = dict(gross_ret=(exit_gross-entry_gross)/entry_gross,
+                      cost_ret=(entry_fee+exit_fee)/entry_gross,
+                      net_ret=(exit_gross-entry_gross-entry_fee-exit_fee)/entry_gross,
+                      exposure=entry_gross/capital, turnover=(entry_gross+exit_gross)/(2*capital),
+                      decision_latency_seconds=(selected-requested).total_seconds(),
+                      execution_latency_seconds=(entry_clock-_proof_time(entry['submitted_at'])).total_seconds())
+        for field, value in actual.items():
+            recorded = _number(row.get(field))
+            if recorded is None or abs(recorded-value) > 1e-9:
+                errors.append(f'{field}_does_not_match_source_facts')
+    except (KeyError, TypeError, ValueError, AttributeError, ZeroDivisionError):
+        errors.append('source_fact_economics_or_clocks_incomplete')
+    return errors
+
+
 def _comparison(data: dict, *, as_of: dt.date, evidence: dict, contents: dict[str, bytes]) -> dict:
     errors = []
     rows = data.get('rows', [])
@@ -272,9 +401,9 @@ def _comparison(data: dict, *, as_of: dt.date, evidence: dict, contents: dict[st
             errors.append('duplicate_option_sample')
         indexed[key] = row
         try:
-            selection = _time(row.get('selection_as_of'))
-            outcome = _time(row.get('outcome_as_of'))
-            declaration = _time(data.get('split_declared_at'))
+            selection = _proof_time(row.get('selection_as_of'))
+            outcome = _proof_time(row.get('outcome_as_of'))
+            declaration = _proof_time(data.get('split_declared_at'))
             if selection.astimezone(ZoneInfo('Asia/Shanghai')).date().isoformat() != day:
                 errors.append('selection_after_signal_day')
             if selection >= outcome or declaration >= selection:
@@ -288,13 +417,14 @@ def _comparison(data: dict, *, as_of: dt.date, evidence: dict, contents: dict[st
             errors.append('frozen_candidate_checksum_missing')
         freeze_path = row.get('frozen_candidates_path')
         freeze_data = contents.get(freeze_path) if isinstance(freeze_path, str) else None
+        freeze = {}
         if freeze_data is None or _hash(freeze_data) != digest:
             errors.append('frozen_candidate_original_missing_or_checksum_mismatch')
         else:
             try:
                 freeze = json.loads(freeze_data)
                 if (freeze.get('day') != day or str(freeze.get('sample_id')) != sample
-                        or _time(freeze.get('captured_at')) > _time(row.get('selection_as_of'))):
+                        or _proof_time(freeze.get('captured_at')) > _proof_time(row.get('selection_as_of'))):
                     errors.append('frozen_candidate_identity_or_chronology_mismatch')
                 if not isinstance(freeze.get('candidates'), list) or not freeze['candidates']:
                     errors.append('frozen_candidate_inventory_missing')
@@ -307,6 +437,7 @@ def _comparison(data: dict, *, as_of: dt.date, evidence: dict, contents: dict[st
                     errors.append('outcome_fields_in_selection_freeze')
             except (ValueError, TypeError, AttributeError):
                 errors.append('invalid_frozen_candidate_original')
+        errors.extend(_comparison_source_errors(row, freeze, contents, as_of=as_of))
         for field in ('capital_base', 'net_cash_flow', 'exposure', 'turnover', 'gross_ret', 'cost_ret',
                       'net_ret', 'decision_latency_seconds', 'execution_latency_seconds'):
             if _number(row.get(field)) is None:

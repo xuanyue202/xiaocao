@@ -185,6 +185,26 @@ def stream_process(args: list[str], *, cwd: Path, env: dict[str, str], output_pa
     return 128 - result if result < 0 else result
 
 
+def business_environment(env: dict[str, str], root: Path) -> dict[str, str]:
+    """Observer imports its frozen package; business imports the complete source."""
+    clean = dict(env)
+    helper = Path(env['XIAOCAO_DAILY_HELPER']).resolve() if env.get('XIAOCAO_DAILY_HELPER') else None
+    paths = [str(root / 'src')]
+    seen = {(root / 'src').resolve()}
+    for entry in env.get('PYTHONPATH', '').split(os.pathsep):
+        if not entry:
+            continue
+        path = Path(entry)
+        resolved = (path if path.is_absolute() else root / path).resolve()
+        if helper is not None and (resolved == helper or helper in resolved.parents):
+            continue
+        if resolved not in seen:
+            paths.append(str(resolved))
+            seen.add(resolved)
+    clean['PYTHONPATH'] = os.pathsep.join(paths)
+    return clean
+
+
 def command(args: list[str]) -> int:
     run_dir = Path(os.environ['XIAOCAO_DAILY_RUN_DIR'])
     root = Path(os.environ['XIAOCAO_ROOT'])
@@ -217,7 +237,7 @@ def command(args: list[str]) -> int:
     output.parent.mkdir(exist_ok=True)
     try:
         result = stream_process([os.environ['XIAOCAO_DAILY_PYTHON'], *args], cwd=root,
-                                env=dict(os.environ), output_path=output)
+                                env=business_environment(dict(os.environ), root), output_path=output)
         reason = 'process_exit' if result else 'completed'
     except OSError as exc:
         result, reason = 127, f'process_start_{type(exc).__name__}'
@@ -280,7 +300,7 @@ def launch(script: Path, root: Path, args: list[str]) -> int:
         try:
             context_exit = stream_process([str(root / '.venv/bin/python'), 'scripts/build_context_pack.py',
                                            '--date', market_date, '--phase', automation],
-                                          cwd=root, env=env, output_path=run_dir / 'finalization.log')
+                                          cwd=root, env=business_environment(env, root), output_path=run_dir / 'finalization.log')
         except OSError:
             context_exit = 127
     finalization_error: str | None = None
@@ -291,6 +311,8 @@ def launch(script: Path, root: Path, args: list[str]) -> int:
         parsed = run_flow.events_from_log(automation=automation, market_date=market_date, log_path=log_path)
         required = {'scripts/live_recommend.py', 'kronos_screen/scripts/paper_record.py',
                     'kronos_screen/scripts/eod_capture.py', 'kronos_screen/scripts/forward_eval.py',
+                    'scripts/live_monitor.py', 'kronos_screen/scripts/settle_book_a.py',
+                    'kronos_screen/scripts/settle_book_t.py',
                     'scripts/weekly_deep_review.py'}
         command_events = []
         for row in rows:

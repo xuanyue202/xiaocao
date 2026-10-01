@@ -5,13 +5,15 @@ import os
 import shutil
 import subprocess
 import sys
+
+import pytest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 PYTHON = Path(sys.executable)
 
 
-def isolated_daily(tmp_path: Path, *, mutate: bool = False, tail: str = '', context_exit: int = 0):
+def isolated_daily(tmp_path: Path, *, mutate: bool = False, tail: str = '', context_exit: int = 0, fail_program: str = ''):
     (tmp_path / 'scripts').mkdir()
     script = tmp_path / 'scripts/auto_daily.sh'
     script.write_text((REPO / 'scripts/auto_daily.sh').read_text() + tail)
@@ -26,6 +28,10 @@ if [ "$1" = "-m" ] && [ "$2" = "xiaocao" ]; then
   if [ "${{MUTATE_SOURCE:-0}}" = 1 ]; then printf '\\nif true; then\\n' >> "$XIAOCAO_ROOT/scripts/auto_daily.sh"; fi
   date +%F
   exit 0
+fi
+if [ "$1" = "{fail_program}" ]; then
+  printf 'Traceback (most recent call last):\\nRuntimeError: failed stage\\n' >&2
+  exit 9
 fi
 if [ "$1" = "scripts/build_context_pack.py" ]; then exit {context_exit}; fi
 exit 0
@@ -223,3 +229,72 @@ def test_supervisor_sigterm_forwards_to_child_and_writes_terminal(tmp_path: Path
         if process.poll() is None:
             process.kill()
             process.wait(timeout=5)
+
+
+def test_frozen_observer_runs_real_cli_with_business_package(tmp_path: Path) -> None:
+    """A real --help module load catches observer-package shadowing; no API call."""
+    from xiaocao.live import runtime_evidence
+    (tmp_path / 'src').symlink_to(REPO / 'src', target_is_directory=True)
+    run_dir = tmp_path / 'run'
+    package = run_dir / 'observer/xiaocao/live'
+    package.mkdir(parents=True)
+    for init in (package.parent / '__init__.py', package / '__init__.py'):
+        init.write_text('')
+    shutil.copy(REPO / 'src/xiaocao/live/runtime_evidence.py', package / 'runtime_evidence.py')
+    shutil.copy(REPO / 'src/xiaocao/live/run_flow.py', package / 'run_flow.py')
+    runtime_evidence.write_json(run_dir / 'manifest.json', {'run_id': 'real-cli-help',
+        'market_date': '2026-10-01', 'source_hashes': runtime_evidence.source_manifest(tmp_path)})
+    (run_dir / 'events.jsonl').touch()
+    helper_root = run_dir / 'observer'
+    env = {**os.environ, 'XIAOCAO_ROOT': str(tmp_path), 'XIAOCAO_DAILY_RUN_DIR': str(run_dir),
+           'XIAOCAO_DAILY_HELPER': str(helper_root), 'XIAOCAO_DAILY_PYTHON': str(PYTHON),
+           'PYTHONPATH': f'{helper_root}{os.pathsep}{tmp_path / "src"}', 'PYTHONDONTWRITEBYTECODE': '1'}
+    completed = subprocess.run([str(PYTHON), '-m', 'xiaocao.live.runtime_evidence', 'command',
+                                '--', '-m', 'xiaocao', '--help'], cwd=tmp_path, env=env,
+                               capture_output=True, text=True, timeout=15)
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert 'usage:' in completed.stdout.lower()
+    assert 'cannot be directly executed' not in completed.stderr
+    finished = json.loads((run_dir / 'events.jsonl').read_text().splitlines()[-1])
+    assert finished['program'] == 'xiaocao'
+    assert finished['exit_code'] == 0
+
+
+@pytest.mark.parametrize('program', ['scripts/live_monitor.py', 'kronos_screen/scripts/settle_book_a.py',
+                                     'kronos_screen/scripts/settle_book_t.py'])
+def test_monitor_or_settlement_failure_is_deterministic_even_when_shell_continues(tmp_path: Path, program: str) -> None:
+    completed, receipts = isolated_daily(tmp_path, fail_program=program)
+    assert completed.returncode == 0
+    receipt = receipts[0]
+    assert receipt['process_exit_code'] == 0
+    assert receipt['deterministic_status'] == 'failed'
+    assert receipt['status'] == 'failed'
+    failures = [step for step in receipt['steps'] if step['detail'].get('program') == program]
+    assert failures
+    assert all(step['status'] == 'failed' and step['detail']['exit_code'] == 9 for step in failures)
+    assert all(step['detail']['layer'] == 'deterministic' for step in failures)
+
+
+def test_finalizer_imports_complete_business_package_with_observer_path_present(tmp_path: Path, monkeypatch) -> None:
+    from xiaocao.live import runtime_evidence
+    (tmp_path / 'src').symlink_to(REPO / 'src', target_is_directory=True)
+    (tmp_path / '.venv/bin').mkdir(parents=True)
+    finalizer_python = tmp_path / '.venv/bin/python'
+    finalizer_python.write_text(f'#!/usr/bin/env bash\nexec "{PYTHON}" "$@"\n')
+    finalizer_python.chmod(0o755)
+    (tmp_path / 'scripts').mkdir()
+    (tmp_path / 'scripts/build_context_pack.py').write_text(
+        'from xiaocao.live import context_pack\nprint("finalizer-import-ready")\n')
+    # Deliberately reproduce a leaked partial observer package in the caller's
+    # path. Finalization must choose the complete source package before it.
+    partial = tmp_path / 'partial-observer/xiaocao'
+    partial.mkdir(parents=True)
+    (partial / '__init__.py').write_text('')
+    monkeypatch.setenv('PYTHONPATH', f'{partial.parent}{os.pathsep}{REPO / "src"}')
+    script = tmp_path / 'daily.sh'
+    script.write_text('echo "[2026-10-01 16:00:00] eod done" | tee "$XIAOCAO_DAILY_LOG"\n')
+    assert runtime_evidence.launch(script, tmp_path, ['eod']) == 0
+    receipt = json.loads(next((tmp_path / 'output/live/auto/runs').glob('*/terminal.json')).read_text())
+    assert receipt['finalization']['context_pack_exit_code'] == 0
+    log = Path(receipt['evidence']['manifest_path']).parent / 'finalization.log'
+    assert 'finalizer-import-ready' in log.read_text()

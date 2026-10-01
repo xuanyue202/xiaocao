@@ -4,6 +4,7 @@ import datetime as dt
 import hashlib
 import json
 from pathlib import Path
+import pytest
 
 from xiaocao.research.weekly_evidence import build_weekly_evidence, verify_snapshots
 
@@ -17,32 +18,80 @@ def write(root: Path, relative: str, value, *, jsonl=False):
     return path
 
 
-def comparison(root, *, bad_field=None):
+def attach_source_facts(root, row):
+    identity = {field: row[field] for field in ('sample_id', 'option', 'code', 'book', 'runtime', 'day')}
+    prefix = f"output/research/inputs/{row['sample_id']}_{row['option']}"
+    def save(kind, fields):
+        observed = row['selection_as_of'] if kind == 'decision' else row['outcome_as_of']
+        path = write(root, prefix+'_'+kind+'.json', dict(schema_version=f'weekly-{kind}-facts.v1',
+            observed_at=observed, **identity, **fields))
+        return dict(path=path.relative_to(root).as_posix(), sha256=hashlib.sha256(path.read_bytes()).hexdigest())
+    entry_price, shares = 10, 1500
+    exit_price = entry_price*(1+row['gross_ret'])
+    entry_gross, exit_gross = entry_price*shares, exit_price*shares
+    entry_clock = row['day']+'T09:30:00+08:00'
+    decision = save('decision', dict(frozen_candidates_sha256=row['frozen_candidates_sha256'],
+        selected_at=row['selection_as_of'], requested_at=row['day']+'T09:24:48+08:00',
+        capital_base=row['capital_base'], net_cash_flow=0, shares=shares, limit_price=10.01))
+    market = save('market', dict(entry=dict(code=row['code'], observed_at=entry_clock,
+        source='xiaocao_proprietary', trade_status='trading', volume=10000, low=9.98, high=10.02, vwap=entry_price),
+        exit=dict(code=row['code'], observed_at=row['outcome_as_of'], source='xiaocao_proprietary',
+                  trade_status='trading', volume=10000, trade=exit_price)))
+    execution = save('execution', dict(decision_sha256=decision['sha256'], market_sha256=market['sha256'],
+        entry=dict(code=row['code'], side='BUY', status='filled', price=entry_price, shares=shares,
+            filled_at=entry_clock, observed_at=entry_clock, submitted_at=row['day']+'T09:29:57+08:00',
+            fill_basis=row['fill_basis']),
+        exit=dict(code=row['code'], side='SELL', status='filled', price=exit_price, shares=shares,
+            filled_at=row['outcome_as_of'], observed_at=row['outcome_as_of'], fill_basis='paper_exit_proprietary_quote')))
+    fees = save('fees', dict(execution_sha256=execution['sha256'], fee_basis='paper_model_rate',
+        entry_fee=entry_gross*.0001, exit_fee=exit_gross*.0001, entry_fee_rate=.0001, exit_fee_rate=.0001))
+    row.update(source_refs=dict(decision=decision, market=market, execution=execution, fees=fees),
+        cost_ret=(entry_gross+exit_gross)*.0001/entry_gross,
+        net_ret=row['gross_ret']-(entry_gross+exit_gross)*.0001/entry_gross,
+        turnover=(entry_gross+exit_gross)/(2*row['capital_base']))
+
+
+def comparison(root, *, bad_field=None, facts=True):
     rows = []
+    days = []
+    candidate_day = dt.date(2026, 8, 25)
+    while len(days) < 16:
+        if candidate_day.weekday() < 5:
+            days.append(candidate_day)
+        candidate_day += dt.timedelta(days=1)
     for i in range(16):
-        day = (dt.date(2026, 9, 1) + dt.timedelta(days=i)).isoformat()
+        day = days[i].isoformat()
         freeze = write(root, f'output/research/inputs/frozen_{i}.json', dict(day=day,
-            sample_id=str(i), captured_at=day+'T09:23:00+08:00', candidates=[dict(code='000001.XSHE')]))
+            sample_id=str(i), captured_at=day+'T09:23:00+08:00',
+            candidates=[dict(code=code) for code in ('000001.XSHE', '000002.XSHE', '000003.XSHE')]))
         digest = hashlib.sha256(freeze.read_bytes()).hexdigest()
         for option, edge in [('baseline_no_kol', 0), ('current_bounded', .01), ('kol_challenger', -.01)]:
             cost = .0002
             net = .002 + edge + (i % 3) * .001 * (1 if edge > 0 else -1)
-            row = dict(sample_id=str(i), option=option, day=day, outcome_date=day,
-                       selection_as_of=day+'T09:25:00+08:00', outcome_as_of=day+'T15:00:00+08:00',
+            outcome = dt.date.fromisoformat(day)+dt.timedelta(days=1)
+            while outcome.weekday() >= 5:
+                outcome += dt.timedelta(days=1)
+            outcome_day = outcome.isoformat()
+            code = {'baseline_no_kol': '000001.XSHE', 'current_bounded': '000002.XSHE',
+                    'kol_challenger': '000003.XSHE'}[option]
+            row = dict(sample_id=str(i), option=option, code=code, day=day, outcome_date=outcome_day,
+                       selection_as_of=day+'T09:25:00+08:00', outcome_as_of=outcome_day+'T14:55:00+08:00',
                        frozen_candidates_sha256=digest,
                        frozen_candidates_path=freeze.relative_to(root).as_posix(), runtime='paper', book='B',
                        capital_base=30000, net_cash_flow=0, exposure=.5, turnover=.1,
                        decision_latency_seconds=12, execution_latency_seconds=3,
                        fill_basis='opening_window_vwap', return_basis='per_trade_net',
                        gross_ret=net+cost, cost_ret=cost, net_ret=net)
+            if facts:
+                attach_source_facts(root, row)
             rows.append(row)
     if bad_field:
         rows[-1].pop(bad_field)
     return write(root, 'output/research/weekly_comparison_demo.json', dict(
         schema_version=1, comparison_id='demo', return_unit='fraction', n_tried=2,
         expected_sample_ids=[str(i) for i in range(16)],
-        split_declared_at='2026-08-31T12:00:00+08:00', train_end='2026-09-08',
-        test_start='2026-09-09', rows=rows))
+        split_declared_at='2026-08-24T12:00:00+08:00', train_end=days[7].isoformat(),
+        test_start=days[8].isoformat(), rows=rows))
 
 
 def test_empty_inputs_are_unknown_and_do_not_create_zero_returns(tmp_path):
@@ -73,7 +122,7 @@ def test_three_options_produce_verified_support_rejection_and_cost_time_metrics(
     assert options['current_bounded']['conclusion'] == 'supported'
     assert options['kol_challenger']['conclusion'] == 'rejected'
     assert options['current_bounded']['guard_result']['walk_forward']['test_days'] == 8
-    assert options['current_bounded']['mean_cost_ret'] == .0002
+    assert .0002 < options['current_bounded']['mean_cost_ret'] < .000202
     assert options['current_bounded']['mean_decision_latency_seconds'] == 12
     assert report['promotion']['auto_promote'] is False
 
@@ -165,3 +214,77 @@ def test_native_statement_nested_valuation_is_retained_and_undated_is_explicit(t
     assert observed['valuation']['cumulative_pnl'] is None
     assert observed['profit_attribution'] == 'not_established'
     assert any('accounting_report_undated' in missing for missing in report['missing_evidence'])
+
+
+def test_self_reported_comparison_without_fact_originals_is_insufficient(tmp_path):
+    comparison(tmp_path, facts=False)
+    report = build_weekly_evidence(tmp_path, as_of=AS_OF)
+    group = report['option_comparison']['comparisons'][0]
+    assert group['conclusion'] == 'insufficient_evidence'
+    assert all(row['conclusion'] == 'insufficient_evidence' for row in group['options'])
+    assert 'decision_original_missing_or_checksum_mismatch' in group['missing_evidence']
+
+
+@pytest.mark.parametrize('kind,field,value,expected', [
+    ('decision', 'code', '000099.XSHE', 'decision_source_identity_mismatch'),
+    ('execution', 'entry.price', 10.5, 'source_paper_fill_price_mismatch'),
+    ('market', 'entry.observed_at', '2026-09-20T09:30:00+08:00', 'source_fill_market_identity_or_clock_unproven'),
+    ('fees', 'entry_fee', 20, 'source_fee_rate_amount_mismatch'),
+    ('fees', 'observed_at', '2026-09-20T14:55:00+08:00', 'fees_source_observation_clock_unproven'),
+    ('decision', 'selected_at', '2026-09-16T09:25:00', 'source_fact_economics_or_clocks_incomplete'),
+    ('market', 'entry.vwap', float('nan'), 'source_opening_window_or_limit_unproven'),
+])
+def test_rebound_source_hash_cannot_hide_wrong_identity_fill_future_quote_or_fee(tmp_path, kind, field, value, expected):
+    path = comparison(tmp_path)
+    data = json.loads(path.read_text())
+    row = data['rows'][-1]
+    ref = row['source_refs'][kind]
+    source_path = tmp_path / ref['path']
+    source = json.loads(source_path.read_text())
+    target = source
+    parts = field.split('.')
+    for key in parts[:-1]:
+        target = target[key]
+    target[parts[-1]] = value
+    source_path.write_text(json.dumps(source))
+    ref['sha256'] = hashlib.sha256(source_path.read_bytes()).hexdigest()
+    path.write_text(json.dumps(data))
+    report = build_weekly_evidence(tmp_path, as_of=AS_OF)
+    group = report['option_comparison']['comparisons'][0]
+    assert group['conclusion'] == 'insufficient_evidence'
+    assert expected in group['missing_evidence']
+
+
+def test_missing_or_tampered_actual_source_and_membership_cannot_pass(tmp_path):
+    path = comparison(tmp_path)
+    data = json.loads(path.read_text())
+    row = data['rows'][-1]
+    market_path = tmp_path / row['source_refs']['market']['path']
+    market_path.write_text('{}')
+    report = build_weekly_evidence(tmp_path, as_of=AS_OF)
+    assert 'market_original_missing_or_checksum_mismatch' in report['option_comparison']['comparisons'][0]['missing_evidence']
+    market_path.unlink()
+    report = build_weekly_evidence(tmp_path, as_of=AS_OF)
+    assert report['option_comparison']['comparisons'][0]['conclusion'] == 'insufficient_evidence'
+    # Restore sources, then change selection membership with a self-consistent freeze digest.
+    attach_source_facts(tmp_path, row)
+    freeze_path = tmp_path / row['frozen_candidates_path']
+    freeze = json.loads(freeze_path.read_text())
+    freeze['candidates'] = [dict(code='000999.XSHE')]
+    freeze_path.write_text(json.dumps(freeze))
+    for option in data['rows'][-3:]:
+        option['frozen_candidates_sha256'] = hashlib.sha256(freeze_path.read_bytes()).hexdigest()
+        attach_source_facts(tmp_path, option)
+    path.write_text(json.dumps(data))
+    report = build_weekly_evidence(tmp_path, as_of=AS_OF)
+    assert 'decision_code_not_in_frozen_candidates' in report['option_comparison']['comparisons'][0]['missing_evidence']
+
+
+def test_naive_comparison_clocks_are_observations_without_point_in_time_authority(tmp_path):
+    path = comparison(tmp_path)
+    data = json.loads(path.read_text())
+    data['rows'][-1]['selection_as_of'] = '2026-09-16T09:25:00'
+    path.write_text(json.dumps(data))
+    report = build_weekly_evidence(tmp_path, as_of=AS_OF)
+    assert 'point_in_time_clocks_missing' in report['option_comparison']['comparisons'][0]['missing_evidence']
+    assert report['option_comparison']['comparisons'][0]['conclusion'] == 'insufficient_evidence'

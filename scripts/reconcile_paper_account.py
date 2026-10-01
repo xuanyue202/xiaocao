@@ -13,6 +13,7 @@ import hashlib
 import sys
 from contextlib import nullcontext
 from datetime import datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -65,6 +66,12 @@ def rebuild_account(
         if identity in seen:
             raise ValueError(f"duplicate lot: {identity}")
         seen.add(identity)
+        # Canonical paper writers retain original filled shares through a
+        # whole-lot exit. APP order remainders/partial-cost projections have
+        # different semantics and cannot prove this paper reconstruction.
+        if any(key in position for key in ("original_shares", "remaining_shares", "sold_shares",
+                                            "cumulative_sold_shares", "partial_exits", "exit_fills", "sell_fills")):
+            raise ValueError("partial-lot accounting requires its dedicated cumulative fill evidence")
         shares = number(position.get("shares"), "shares")
         if shares <= 0 or shares != shares.to_integral_value():
             raise ValueError("shares must be a positive integer")
@@ -72,10 +79,17 @@ def rebuild_account(
         fee = money(position.get("entry_fee"), "entry_fee", nonnegative=True)
         if cost <= 0 or fee >= cost:
             raise ValueError("invalid entry cost/fee")
-        if "gross_notional" in position:
-            gross = money(position["gross_notional"], "gross_notional", nonnegative=True)
-            if gross + fee != cost:
-                raise ValueError("entry cash does not match gross plus fee")
+        gross = money(position.get("gross_notional"), "gross_notional", nonnegative=True)
+        if gross <= 0 or gross + fee != cost:
+            raise ValueError("entry cash does not match gross plus fee")
+        entry_price = number(position.get("entry_price"), "entry_price")
+        if entry_price <= 0:
+            raise ValueError("invalid entry_price")
+        # paper_record saves entry_price to 3 dp after calculating gross from
+        # the raw modeled price; cash remains exact cents. Respect only that
+        # published rounding interval, never an arbitrary relative tolerance.
+        if abs(gross - entry_price * shares) > shares * Decimal("0.0005") + Decimal("0.005"):
+            raise ValueError("entry notional contradicts price and filled shares")
         for price_key in ("entry_price", "exit_price"):
             if price_key in position and position[price_key] is not None:
                 if number(position[price_key], price_key) <= 0:
@@ -85,7 +99,11 @@ def rebuild_account(
         if status == "open":
             open_count += 1
             open_cash_out += cost
-            if position.get("exit_date") or position.get("exit_cash_in") is not None:
+            if "realized_pnl" in position and money(position["realized_pnl"], "open realized_pnl") != 0:
+                raise ValueError("open lot has unproved partial realized accounting")
+            if "exit_fee" in position and money(position["exit_fee"], "open exit_fee") != 0:
+                raise ValueError("open lot has unproved partial exit fees")
+            if position.get("exit_date") or position.get("exit_cash_in") is not None or position.get("exit_price") is not None:
                 raise ValueError("open lot contains exit accounting")
         elif status == "closed":
             exit_date = day(position.get("exit_date"))
@@ -94,6 +112,16 @@ def rebuild_account(
             pnl = money(position.get("realized_pnl"), "position realized_pnl")
             cash_in = money(position.get("exit_cash_in"), "exit_cash_in", nonnegative=True)
             exit_fee = money(position.get("exit_fee"), "exit_fee", nonnegative=True)
+            exit_price = number(position.get("exit_price"), "exit_price")
+            if exit_price <= 0:
+                raise ValueError("invalid exit_price")
+            exit_gross = cash_in + exit_fee
+            if "exit_gross_notional" in position and money(position["exit_gross_notional"], "exit gross") != exit_gross:
+                raise ValueError("exit gross does not match exit cash plus fee")
+            # paper_exit saves the modeled exit price to 4 dp after using the
+            # raw price for gross. Closed shares still mean all original shares.
+            if abs(exit_gross - exit_price * shares) > shares * Decimal("0.00005") + Decimal("0.005"):
+                raise ValueError("exit cash/fee contradict price and original filled shares")
             if cash_in - cost != pnl:
                 raise ValueError("closed PnL does not match exit cash minus entry cost")
             realized += pnl
@@ -116,6 +144,7 @@ def rebuild_account(
         "total_fees": float(total_fees), "old_cash": float(old_cash),
         "old_realized_pnl": float(old_realized), "cash_delta": float(cash - old_cash),
         "realized_delta": float(realized - old_realized),
+        "price_evidence_basis": "paper producer rounding intervals: entry 3dp, exit 4dp; exact cash cents",
     }
     return rebuilt, summary
 
@@ -154,6 +183,7 @@ def main() -> int:
                 "positions_sha256": hashlib.sha256(positions_bytes).hexdigest(),
                 "account_path": str(account_path.resolve()),
                 "account_before_sha256": hashlib.sha256(account_bytes).hexdigest(),
+                "price_evidence_basis": summary["price_evidence_basis"],
                 "verified_accounting_sha256": fingerprint({k: rebuilt[k] for k in
                     ("initial_capital", "cash", "realized_pnl", "total_fees")}),
             }
