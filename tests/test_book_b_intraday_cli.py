@@ -42,7 +42,7 @@ def entry(tmp_path, monkeypatch):
     monkeypatch.setattr(cli.monitor, "_load_signal_snapshot_map", lambda: {})
     monkeypatch.setattr(cli.monitor, "_compute_status", lambda *a, **k: {"code": "000001.XSHE"})
     monkeypatch.setattr(cli, "read_policy", lambda *a: {})
-    monkeypatch.setattr(cli, "calendar_provider", lambda _: object())
+    monkeypatch.setattr(cli, "calendar_provider", lambda _: lambda clock: ["2026-09-11"])
     return cli, calls, tmp_path
 
 
@@ -86,4 +86,45 @@ def test_failed_checkpoint_archives_error_and_preserves_running_owner(entry, mon
     assert payload["reason"] == reason
     assert json.loads(Path(payload["run_receipt_path"]).read_text()) == payload
     assert json.loads(latest.read_text()) == ({"owner": "running"} if reason.endswith("ALREADY_RUNNING") else payload)
+    assert calls == []
+
+
+@pytest.mark.app_simulation
+@pytest.mark.parametrize("phase", ["opening", "sparse", "precheck", "closing", "eod"])
+@pytest.mark.parametrize("requested_date", ["today", "2026-09-30"])
+def test_holiday_stops_before_secrets_app_and_pending_order_recovery(entry, monkeypatch, capsys, phase, requested_date):
+    cli, calls, root = entry
+    monkeypatch.setattr(cli, "_china_now", lambda: datetime(2026, 10, 1, 14, 45, tzinfo=ZoneInfo("Asia/Shanghai")))
+    monkeypatch.setattr(cli, "calendar_provider", lambda _: lambda clock: ["2026-09-30"])
+    def forbidden(*args, **kwargs):
+        pytest.fail("holiday reached a native/credential/order dependency")
+    monkeypatch.setattr(cli, "FounderscKeychainPreflight", forbidden)
+    monkeypatch.setattr(cli, "build_foundersc_native_execution", forbidden)
+    monkeypatch.setattr(cli, "run_book_b_live_intraday", forbidden)
+    assert cli.main(["--date", requested_date, "--phase", phase, "--state-dir", str(root), "--execute-sells"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "no_action" and payload["reason"] == "NON_TRADING_DAY"
+    assert payload["calendar"]["latest_trading_date"] == "2026-09-30"
+    assert payload["calendar"]["query_date"] == "2026-10-01"
+    assert json.loads(Path(payload["run_receipt_path"]).read_text()) == payload
+    assert calls == []
+
+
+@pytest.mark.app_simulation
+@pytest.mark.parametrize("calendar_result", [[], ["2026-09-12"], None])
+def test_unproved_calendar_blocks_before_secrets_or_app(entry, monkeypatch, capsys, calendar_result):
+    cli, calls, root = entry
+    def calendar(clock):
+        if calendar_result is None:
+            raise RuntimeError("provider unavailable")
+        return calendar_result
+    monkeypatch.setattr(cli, "calendar_provider", lambda _: calendar)
+    def forbidden(*args, **kwargs):
+        pytest.fail("unproved calendar reached a native/credential/order dependency")
+    monkeypatch.setattr(cli, "FounderscKeychainPreflight", forbidden)
+    monkeypatch.setattr(cli, "run_book_b_live_intraday", forbidden)
+    assert cli.main(["--phase", "closing", "--state-dir", str(root), "--execute-sells"]) == 2
+    payload = json.loads(capsys.readouterr().err)
+    assert payload["reason"] == "LIVE_BOOK_B_CALENDAR_UNPROVEN"
+    assert json.loads(Path(payload["run_receipt_path"]).read_text()) == payload
     assert calls == []
