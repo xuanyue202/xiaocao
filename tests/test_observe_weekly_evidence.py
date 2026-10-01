@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+import pytest
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts/observe_weekly_evidence.py"
@@ -49,3 +50,23 @@ def test_observe_refuses_non_json_output_before_capture(tmp_path):
     completed = run(source, output)
     assert completed.returncode == 2
     assert not output.exists()
+
+
+@pytest.mark.parametrize("artifact", ["markdown", "inputs"])
+def test_observe_refuses_derived_symlink_into_source_before_capture(tmp_path, artifact):
+    source = tmp_path / "source"
+    source.mkdir()
+    sentinel = source / "sentinel.txt"
+    sentinel.write_bytes(b"original source")
+    output = tmp_path / "observations/current.json"
+    output.parent.mkdir()
+    if artifact == "markdown":
+        output.with_suffix(".md").symlink_to(sentinel)
+    else:
+        output.with_name("current_inputs").symlink_to(source, target_is_directory=True)
+    before = {p.relative_to(source): p.read_bytes() for p in source.rglob("*") if p.is_file()}
+    completed = run(source, output)
+    assert completed.returncode == 2, completed.stderr
+    assert not output.exists()
+    after = {p.relative_to(source): p.read_bytes() for p in source.rglob("*") if p.is_file()}
+    assert before == after

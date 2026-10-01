@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 import pytest
 
-from xiaocao.research.weekly_evidence import build_weekly_evidence, verify_snapshots
+from xiaocao.research.weekly_evidence import build_weekly_evidence, render_weekly_evidence, verify_snapshots
 
 AS_OF = dt.date(2026, 9, 18)
 
@@ -153,7 +153,12 @@ def test_proxy_fill_audit_counts_unique_entries_and_excludes_unknown(tmp_path):
     assert audit['fallback_count'] == 1
     assert audit['proxy_count'] == 2
     assert audit['unknown_count'] == 1
-    assert audit['confirmed_window_count'] == 1
+    assert audit['confirmed_window_count'] == 0
+    assert audit['reported_window_count'] == 1
+    assert audit['excluded_from_confirmed_count'] == 4
+    rendered = '\n'.join(render_weekly_evidence(report))
+    assert '记录窗口标签 1（原窗口待证）' in rendered
+    assert '窗口证据 1' not in rendered
     assert audit['fallback_proportion'] == .25
 
 

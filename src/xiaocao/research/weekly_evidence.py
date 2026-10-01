@@ -183,7 +183,7 @@ def _fill_class(row: dict) -> str:
     if row.get('fill_fallback') or 'fallback' in basis:
         return 'fallback'
     if basis in WINDOW_BASES:
-        return 'confirmed_window'
+        return 'reported_window'
     if 'retry' in basis or 'proxy' in basis:
         return 'proxy'
     return 'unknown'
@@ -217,23 +217,24 @@ def _fill_audit(contents: dict[str, bytes], as_of: dt.date) -> dict:
                 continue
             classes = {_fill_class(row) for row in rows}
             # Missing duplicate metadata does not erase known provenance; conflicting
-            # concrete metadata cannot upgrade an estimate to a confirmed window.
+            # concrete metadata cannot upgrade an estimate to a window label.
             category = ('fallback' if 'fallback' in classes else 'proxy' if 'proxy' in classes
-                        else 'confirmed_window' if 'confirmed_window' in classes else 'unknown')
+                        else 'reported_window' if 'reported_window' in classes else 'unknown')
             counts[category] += 1
             books[key[0]][category] += 1
         total = sum(counts.values())
         windows[f'{weeks}w'] = dict(start=start, end=as_of.isoformat(), entry_count=total,
             fallback_count=counts['fallback'], proxy_count=counts['fallback']+counts['proxy'],
-            unknown_count=counts['unknown'], confirmed_window_count=counts['confirmed_window'],
+            unknown_count=counts['unknown'], reported_window_count=counts['reported_window'],
+            confirmed_window_count=0,
             fallback_proportion=counts['fallback']/total if total else None,
             proxy_proportion=(counts['fallback']+counts['proxy'])/total if total else None,
-            excluded_from_confirmed_count=total-counts['confirmed_window'],
+            excluded_from_confirmed_count=total,
             by_book={book: dict(value) for book, value in sorted(books.items())})
     return dict(windows=windows, invalid_identity_count=invalid,
         count_semantics='unique book/code/entry_date/shares/price entries; positions and BUY duplicates merged',
-        limitations=['confirmed_window denotes evidence-backed local simulation, never APP/broker fill',
-                     'fallback, realtime retry proxy and unknown fills excluded from executable confirmation',
+        limitations=['reported_window is a saved label without original window/hash/clock verification',
+                     'all legacy labels remain excluded from executable confirmation; comparison originals are verified separately',
                      'paper audit is not a no-KOL counterfactual or an alpha estimate'])
 
 
@@ -451,7 +452,7 @@ def _comparison(data: dict, *, as_of: dt.date, evidence: dict, contents: dict[st
             errors.append('invalid_capital_base')
         if row.get('runtime') not in ('paper', 'live') or row.get('book') != 'B':
             errors.append('book_runtime_identity_missing')
-        if _fill_class(row) != 'confirmed_window' and row.get('fill_basis') != 'broker_confirmed':
+        if _fill_class(row) != 'reported_window' and row.get('fill_basis') != 'broker_confirmed':
             errors.append('proxy_or_unknown_fill')
         if row.get('runtime') == 'live' and row.get('fill_basis') != 'broker_confirmed':
             errors.append('app_cannot_consume_paper_fill')
@@ -689,7 +690,8 @@ def render_weekly_evidence(report: dict) -> list[str]:
     for window, audit in report['paper_fill_audit']['windows'].items():
         proportion = audit['fallback_proportion']
         fraction = 'N/A' if proportion is None else f'{proportion:.1%}'
-        lines.append(f"- {window}：独立入场 {audit['entry_count']}，窗口证据 {audit['confirmed_window_count']}，fallback {audit['fallback_count']}（{fraction}），全部代理 {audit['proxy_count']}，未知 {audit['unknown_count']}；代理/未知不进入已确认可执行收益。")
+        reported = audit.get('reported_window_count', audit.get('confirmed_window_count', 0))
+        lines.append(f"- {window}：独立入场 {audit['entry_count']}，记录窗口标签 {reported}（原窗口待证），fallback {audit['fallback_count']}（{fraction}），全部代理 {audit['proxy_count']}，未知 {audit['unknown_count']}；本表标签均不进入可执行确认，对照实验原件另行验证。")
     lines.append(f"- APP 已保存会计观测 {len(report['accounting_observations'])} 份；资金划拨不计利润，缺完整净值/现金流/实际费用时不计算账户收益。")
     for observation in report['accounting_observations']:
         value = observation['valuation']
