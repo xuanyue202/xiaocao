@@ -265,7 +265,8 @@ def _comparison_source_errors(row: dict, freeze: dict, contents: dict[str, bytes
                     errors.append(f'{kind}_source_identity_mismatch')
         except (ValueError, UnicodeError, KeyError, TypeError):
             errors.append(f'{kind}_original_invalid')
-    if len({ref.get('path') for ref in refs.values() if isinstance(ref, dict)}) < 4:
+    if len({ref['path'] for ref in refs.values()
+            if isinstance(ref, dict) and isinstance(ref.get('path'), str)}) < 4:
         errors.append('independent_fact_originals_required')
     if len(sources) != 4:
         return errors

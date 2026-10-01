@@ -288,3 +288,28 @@ def test_naive_comparison_clocks_are_observations_without_point_in_time_authorit
     report = build_weekly_evidence(tmp_path, as_of=AS_OF)
     assert 'point_in_time_clocks_missing' in report['option_comparison']['comparisons'][0]['missing_evidence']
     assert report['option_comparison']['comparisons'][0]['conclusion'] == 'insufficient_evidence'
+
+
+@pytest.mark.parametrize('bad_path', [None, [], {}])
+def test_malformed_original_path_returns_insufficient_instead_of_crashing(tmp_path, bad_path):
+    path = comparison(tmp_path)
+    data = json.loads(path.read_text())
+    data['rows'][-1]['source_refs']['execution']['path'] = bad_path
+    path.write_text(json.dumps(data))
+    report = build_weekly_evidence(tmp_path, as_of=AS_OF)
+    group = report['option_comparison']['comparisons'][0]
+    assert group['conclusion'] == 'insufficient_evidence'
+    assert 'execution_original_missing_or_checksum_mismatch' in group['missing_evidence']
+    assert 'independent_fact_originals_required' in group['missing_evidence']
+
+
+@pytest.mark.parametrize('bad_refs', [None, [], 7])
+def test_non_mapping_source_refs_returns_insufficient(tmp_path, bad_refs):
+    path = comparison(tmp_path)
+    data = json.loads(path.read_text())
+    data['rows'][-1]['source_refs'] = bad_refs
+    path.write_text(json.dumps(data))
+    report = build_weekly_evidence(tmp_path, as_of=AS_OF)
+    group = report['option_comparison']['comparisons'][0]
+    assert group['conclusion'] == 'insufficient_evidence'
+    assert 'decision_original_missing_or_checksum_mismatch' in group['missing_evidence']
