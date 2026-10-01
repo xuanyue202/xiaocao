@@ -86,7 +86,7 @@ def source_changes(root: Path, baseline: dict[str, str]) -> list[str]:
                   if baseline.get(key) != current.get(key))
 
 
-def input_identity(args: list[str], root: Path) -> dict[str, Any]:
+def input_identity(args: list[str], root: Path, *, digest_only: bool = False) -> dict[str, Any]:
     """Digest explicitly supplied files, and retain only known linkage fields."""
     inputs: dict[str, str] = {}
     correlations: dict[str, list[str]] = {}
@@ -119,7 +119,7 @@ def input_identity(args: list[str], root: Path) -> dict[str, Any]:
             if re.search(r'password|token|secret|credential|xiaocao\.ya?ml', key, re.I):
                 continue
             inputs[key] = sha256(resolved)
-            if resolved.suffix == '.json' and resolved.stat().st_size <= 2_000_000:
+            if not digest_only and resolved.suffix == '.json' and resolved.stat().st_size <= 2_000_000:
                 collect(json.loads(resolved.read_text(encoding='utf-8')))
         except (OSError, ValueError, json.JSONDecodeError):
             continue
@@ -133,9 +133,14 @@ def operational_inputs(root: Path, market_date: str) -> dict[str, Any]:
              f'output/live/intelligence_review_queue_{market_date}.json',
              f'output/live/book_b_live_freeze_{market_date}.jsonl',
              f'output/live/book_t_v2_shadow_input_{market_date}.json',
-             'output/live/positions.jsonl', 'output/live/paper_trades.jsonl',
-             'output/live/paper_account_B.json', 'output/live/paper_account_T.json']
-    return input_identity(paths, root)
+             'output/live/positions.jsonl', 'output/live/paper_trades.jsonl']
+    identity = input_identity(paths, root)
+    # Canonical account files are digest-only inputs, never parsed log/summary
+    # projections or sources of order/decision correlation.
+    accounts = input_identity(['output/live/paper_account.json', 'output/live/paper_account_A.json',
+                               'output/live/paper_account_T.json'], root, digest_only=True)
+    identity['input_hashes'].update(accounts['input_hashes'])
+    return identity
 
 
 def append_event(path: Path, row: dict[str, Any]) -> None:

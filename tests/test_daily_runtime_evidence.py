@@ -298,3 +298,30 @@ def test_finalizer_imports_complete_business_package_with_observer_path_present(
     assert receipt['finalization']['context_pack_exit_code'] == 0
     log = Path(receipt['evidence']['manifest_path']).parent / 'finalization.log'
     assert 'finalizer-import-ready' in log.read_text()
+
+
+def test_operational_inputs_hash_canonical_b_a_t_accounts_without_log_projection(tmp_path: Path) -> None:
+    import hashlib
+    from xiaocao.live.runtime_evidence import operational_inputs
+    live = tmp_path / 'output/live'
+    live.mkdir(parents=True)
+    before = {}
+    for name in ('paper_account.json', 'paper_account_A.json', 'paper_account_T.json'):
+        path = live / name
+        # Account evidence is digest-only; log-looking fields are not provenance.
+        path.write_text(json.dumps({'cash': 100, 'log': {'order_id': 'poison-log-reference'}}))
+        before[path] = path.read_bytes()
+    (live / 'paper_account_B.json').write_text('{"order_id": "wrong-file"}')
+    (live / 'auto').mkdir()
+    (live / 'auto/2026-10-01_eod.log').write_text('paper_account=999 order_id=log-projection')
+    source = tmp_path / 'src/xiaocao/sentinel.py'
+    source.parent.mkdir(parents=True)
+    source.write_text('SOURCE_SENTINEL = 1\n')
+    source_before = source.read_bytes()
+    identity = operational_inputs(tmp_path, '2026-10-01')
+    expected = {str(path.relative_to(tmp_path)): hashlib.sha256(content).hexdigest()
+                for path, content in before.items()}
+    assert identity['input_hashes'] == expected
+    assert identity['correlation'] == {}
+    assert source.read_bytes() == source_before
+    assert all(path.read_bytes() == content for path, content in before.items())
