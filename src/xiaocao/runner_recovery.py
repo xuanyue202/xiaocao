@@ -58,12 +58,13 @@ def signal_recheck(path: Path) -> dict:
 
 class DependencyRecovery:
     def __init__(self, *, root, identity, deadline, boundary, recoverable,
-                 on_event, on_failure=None, evidence=lambda: {},
+                 on_event, on_failure=None, evidence=lambda: {}, failure_evidence=None,
                  clock=lambda: datetime.now(timezone.utc), monotonic=time.monotonic, sleep=time.sleep):
         self.root, self.identity = Path(root), identity
         self.deadline, self.boundary = deadline, boundary
         self.recoverable, self.on_event, self.on_failure = recoverable, on_event, on_failure
         self.evidence, self.clock, self.monotonic, self.sleep = evidence, clock, monotonic, sleep
+        self.failure_evidence = failure_evidence
         self.requests = []
 
     def run(self, check):
@@ -85,8 +86,9 @@ class DependencyRecovery:
             if not re.fullmatch(r"[A-Z0-9_]{1,100}", code):
                 code = type(exc).__name__
             record["sequence"] += 1
+            details = self.failure_evidence(exc) if self.failure_evidence else self.evidence()
             record["failures"].append({"code": code, "observed_at": self.clock().isoformat(),
-                                        "evidence": self.evidence()})
+                                        "evidence": details})
             _write(path, record)
             self.on_event({"event": "dependency_recovery_wait", **record})
             if self.on_failure:

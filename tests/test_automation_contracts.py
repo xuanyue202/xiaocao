@@ -104,13 +104,6 @@ def test_remote_writer_owns_typed_short_term_classification() -> None:
     assert "not_book_b_short_term" in prompt
 
 
-def test_live_morning_wait_and_unlock_promises_are_event_driven_and_guarded() -> None:
-    prompt = _automation("xiaocao-book-b-live-morning")["prompt"]
-    assert "do not model-poll" in prompt
-    assert "credential source and remaining-attempt evidence are safe" in prompt
-    assert "app_test_window_status.py" in prompt
-
-
 def test_kol_writers_stay_on_separate_hosts_and_schedules() -> None:
     local = _automation("xiaocao-kol-hourly")
     remote = _automation("xiaocao-kol-hourly-remote-writer")

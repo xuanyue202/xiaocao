@@ -34,7 +34,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from xiaocao.live import flywheel  # noqa: E402
-from xiaocao.research import protocols  # noqa: E402
+from xiaocao.research import protocols, weekly_evidence  # noqa: E402
 from xiaocao.kol import trading_decision  # noqa: E402
 from xiaocao.kol.publication import canonical_sha256  # noqa: E402
 from xiaocao.live import kol_policy  # noqa: E402
@@ -1124,6 +1124,12 @@ def build_plan(*, as_of: dt.date | None = None, output: Path | None = None) -> d
     fw = flywheel.check_flywheel(root=ROOT, env={})
     sweep = _load_sweep_json()
     action_rows = _recent_action_rows(as_of)
+    if output is None:
+        output = WEEKLY_DIR / f"weekly_plan_{as_of.isoformat()}.json"
+    data_review = weekly_evidence.build_weekly_evidence(
+        ROOT, as_of=as_of,
+        snapshot_dir=output.parent / (output.stem + "_inputs"),
+    )
 
     proposals: list[dict] = []
     auto_apply_candidates: list[dict] = []
@@ -1182,6 +1188,7 @@ def build_plan(*, as_of: dt.date | None = None, output: Path | None = None) -> d
         "fixed_execution_inputs": EXECUTION_REVIEW_INPUTS,
         "kol_system_review": build_kol_system_review(ROOT, as_of=as_of),
         "execution_repair_watch": build_execution_repair_watch(ROOT, as_of=as_of),
+        "data_evidence_review": data_review,
         "pre_existing_dirty": pre_dirty,
         "flywheel": fw,
         "sweep": sweep,
@@ -1199,8 +1206,6 @@ def build_plan(*, as_of: dt.date | None = None, output: Path | None = None) -> d
             "dirty_file_boundary": "pre-existing dirty files are not auto-edited; emit NEEDS_HUMAN_CONFIRMATION",
         },
     }
-    if output is None:
-        output = WEEKLY_DIR / f"weekly_plan_{as_of.isoformat()}.json"
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(plan, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(f"weekly plan: wrote {_display_path(output)} ({len(proposals)} proposal(s), "
@@ -1329,6 +1334,7 @@ def _render_report(plan: dict, *, mode: str, validation: list[str], created_issu
     ]
     lines.extend(_render_execution_repair_watch(plan))
     lines.extend(_render_kol_system_review(plan))
+    lines += ["", *weekly_evidence.render_weekly_evidence(plan.get("data_evidence_review") or {})]
     lines += [
         "",
         "## 需要你看/确认的事项",
@@ -1423,6 +1429,7 @@ def _render_report(plan: dict, *, mode: str, validation: list[str], created_issu
             "kol_audit_feedback": review.get("inventory", {}).get("audit_feedback", {}),
             "kol_audit_snapshot_binding": review.get("inventory", {}).get("audit_feedback_snapshot_binding", {}),
             "kol_experiment_slots": review.get("experiment_slots", []),
+            "data_evidence_review": plan.get("data_evidence_review", {}),
         }, ensure_ascii=False, indent=2),
         "```",
         "",
@@ -1495,6 +1502,10 @@ def finalize_plan(*, plan_path: Path, mode: str | None, validation: list[str],
                   auto_apply_candidate_paths: list[Path] | None = None,
                   allow_commit: bool) -> dict:
     plan = json.loads(plan_path.read_text(encoding="utf-8"))
+    if plan.get("data_evidence_review"):
+        snapshot_errors = weekly_evidence.verify_snapshots(plan["data_evidence_review"])
+        if snapshot_errors:
+            raise SystemExit("weekly frozen input snapshot validation failed: " + "; ".join(snapshot_errors))
     _kol_review_state(plan)  # Validate rollback/slot limit before any report or ledger writes.
     extra_candidates = _load_auto_apply_candidates(auto_apply_candidate_paths)
     if extra_candidates:

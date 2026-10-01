@@ -26,6 +26,27 @@ def isolate_morning_notices(monkeypatch):
         def close(self):
             return []
     monkeypatch.setattr(cli, "MorningNotifications", Notices)
+    monkeypatch.setattr(cli, "_morning_calendar_check", lambda day: {
+        "status": "trading_day", "trade_date": day, "latest_trading_date": day})
+
+
+@pytest.mark.app_simulation
+@pytest.mark.parametrize("calendar_status,expected_code,reason", [
+    ("non_trading_day", 0, "NON_TRADING_DAY"),
+    ("unproven", 2, "MORNING_CALENDAR_UNPROVEN"),
+])
+def test_calendar_stops_before_app_notices_or_order_recovery(
+    tmp_path, monkeypatch, capsys, calendar_status, expected_code, reason,
+):
+    cli = importlib.import_module("scripts.book_b_live_morning")
+    monkeypatch.setattr(cli, "_morning_calendar_check", lambda day: {
+        "status": calendar_status, "trade_date": day, "latest_trading_date": "2026-09-30"})
+    monkeypatch.setattr(cli, "MorningNotifications", lambda *a, **k: pytest.fail("holiday notification"))
+    monkeypatch.setattr(cli, "_run", lambda *a, **k: pytest.fail("holiday APP execution"))
+    assert cli.main(["--date", "2026-10-01", "--state-dir", str(tmp_path)]) == expected_code
+    result = json.loads(capsys.readouterr().out)
+    assert result["reason"] == reason
+    assert json.loads(Path(result["receipt_path"]).read_text())["calendar"]["status"] == calendar_status
 
 
 def test_recovery_rejects_foreign_automation_before_lock_or_notices(monkeypatch, capsys):

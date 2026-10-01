@@ -25,6 +25,22 @@ Before applying any change, read `docs/OPERATING_CONTRACT.md` completely, especi
 
 The first phase must produce `output/live/weekly_plan_<date>.json`. Inspect its fixed-input evidence before choosing exactly one route:
 
+For a cache-only observation of a different existing checkout, use
+`scripts/observe_weekly_evidence.py --root <source> --date YYYY-MM-DD --output <outside-source>/weekly.json`.
+It captures existing bytes and renders a report without running the weekly
+business shell or finalizer. The output and snapshots stay outside the source.
+The normal weekly plan consumes the same legacy paper observations, including
+cost inconsistencies, mature/censored lots and the dated identical-entry A/B
+exit comparison. These observations are distinct from a KOL option experiment.
+
+Inspect the content-addressed weekly evidence snapshot and its input manifest.
+Use the captured bytes, coverage and dated verdicts throughout finalization;
+changed or missing snapshot evidence cannot support a completed comparison.
+The no-KOL/current/challenger comparison needs paired, point-in-time, cost-aware
+OOS evidence. Report absent runs and proxy/fallback fills as insufficient
+evidence, and retain their counts and next falsifier. An exit B-A comparison or
+an old hypothesis PASS is not proof of KOL alpha.
+
 Inspect `execution_repair_watch` before the research route. It is a read-only
 weekly rollup of current open APP Book-B plans, blocked closing/EOD receipts,
 missing settlements and hash-bound daily execution reviews. For every flagged

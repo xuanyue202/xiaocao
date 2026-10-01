@@ -289,6 +289,8 @@ Escalate: script failure/traceback, missing recommendation or paper-record stage
 
 ### Invocation ownership
 
+Before any morning business command, query `PYTHONPATH=src .venv/bin/python -m xiaocao calendar latest --date today`. A latest date different from today ends the task as `NON_TRADING_DAY`: no APP/KOL work, freeze wait, historical reconciliation, notification retry or trading alert. An unproved calendar stops before APP work. Weekday scheduling alone is not trading-day evidence. The standalone APP runner independently checks `/stock/trade_cal` before native preflight and notices.
+
 The fresh scheduler-created task for today's 09:00 slot owns the runner and
 its stdout, review rendezvous, orders, receipts, and notices. A human follow-up
 in an older Automation task is a repair/inspection task, even when it has the
@@ -323,9 +325,13 @@ receipts bind the automation ID, actual `CODEX_THREAD_ID`, PID and entrypoint.
 A separately authorized exact-plan recovery uses its actual automation ID;
 it cannot generate a second morning candidate batch.
 
-The runner durably queues trading WeCom notices for preflight start, APP
-preflight ready, and the opening result regardless of success, no action or
-failure. `ready` means native session/account preflight passed, not future
+The runner records preflight start, APP ready and recoverable dependency problems
+locally. Trading WeCom sends one consolidated opening result; an explicit
+user-only dependency may notify immediately. Per-order incidents remain durable
+locally and are included in the same result. Unchanged same-day recovery results
+are deduplicated; `morning_preflight_alert.py --kind book-b --receipt ...` reuses
+the runner result claim. Messages explain result, cause and required user action
+in plain Chinese, with exact order IDs; hashes, paths and diagnostics stay in Codex. `ready` means native session/account preflight passed, not future
 quote/capital permission. A preflight failure reports that opening execution
 was not reached. If the original runner is still active at 09:30 without a
 terminal receipt, its deterministic notification timer sends an explicit

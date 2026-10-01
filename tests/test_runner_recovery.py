@@ -140,3 +140,21 @@ def test_hard_failure_after_recheck_ends_wait(tmp_path):
         wait.run(check)
     assert calls == [0, 10]
     assert json.loads(Path(events[0]["request_path"]).read_text())["status"] == "terminal"
+
+
+def test_typed_failure_context_is_persisted_and_available_to_notifier(tmp_path):
+    from xiaocao.live.morning_observability import dependency_user_action
+    clock, events, observed = Clock(), [], []
+    wait = DependencyRecovery(root=tmp_path, identity={'automation_id': 'job'}, deadline=1,
+        boundary=clock.now() + timedelta(seconds=10), recoverable=lambda _: True,
+        on_event=events.append, on_failure=lambda row: observed.append(row['failures'][-1]['evidence']),
+        failure_evidence=lambda exc: {'user_action': dependency_user_action(str(exc))},
+        clock=clock.now, monotonic=lambda: clock.elapsed, sleep=clock.sleep)
+    def check():
+        raise RuntimeError('NATIVE_AX_ACCOUNT_SURFACE_NOT_READY:screen_locked:private diagnostic')
+    with pytest.raises(RuntimeError, match='BUDGET_EXHAUSTED'):
+        wait.run(check)
+    record = Path(events[0]['request_path']).read_text()
+    assert 'private diagnostic' not in record
+    assert observed[0]['user_action']['required']
+    assert '解锁 macOS' in observed[0]['user_action']['request']

@@ -32,6 +32,26 @@ def money(value: int) -> str:
     return format(Decimal(value) / 100, ".2f")
 
 
+def cash_observation_policy(observed_cents: int, ledger_cents: int, *,
+                            evidence_complete: bool = False,
+                            reserve_pending: bool = False) -> dict:
+    """Classify the total observation delta without changing its baseline.
+
+    The caller proves evidence integrity separately. Tolerance never posts a
+    fee or flow, and an unexplained surplus cannot become deployable cash.
+    """
+    if type(observed_cents) is not int or type(ledger_cents) is not int:
+        raise ValueError("BOOK_B_ACCOUNTING_CASH_CENTS_INVALID")
+    difference = observed_cents - ledger_cents
+    status = ("cash_reserve_reconciliation_required" if reserve_pending else
+              "reconciled" if difference == 0 else
+              "cash_discrepancy_tolerated" if evidence_complete and abs(difference) < 1000 else
+              "cash_reconciliation_required")
+    return {"status": status,
+            "difference_cents": None if reserve_pending else difference,
+            "deployable_cash_cents": min(observed_cents, ledger_cents)}
+
+
 @dataclass
 class OwnedBook:
     rows: list[dict]
@@ -294,13 +314,77 @@ def sync_journal(root: Path, *, initial_capital=30000) -> dict:
             "realized_pnl": money(-totals.get("pnl", 0))}
 
 
+def _cash_snapshot_integrity(root: Path, snapshot: dict, book: OwnedBook,
+                             now: datetime | None) -> bool:
+    """A small cash delta cannot explain missing, duplicate or unknown fills."""
+    from .book_b_live_lifecycle import (_broker_decimal, _broker_integer, _broker_side,
+        _normalize_code, _read_jsonl_strict)
+    from .foundersc_native_broker import _status, _is_cancel_trade_row
+    from .trading_execution import BrokerStatus
+    current = now or datetime.now(timezone.utc)
+    tables = snapshot["tables"]
+    stamps = [datetime.fromisoformat(table["observed_at"]) for table in tables.values()]
+    if (any(stamp.tzinfo is None or not -30 <= (current - stamp).total_seconds() <= 300
+            for stamp in stamps)
+            or min(stamps) != datetime.fromisoformat(snapshot["observed_at"])):
+        return False
+    orders, trades, seen_trades = {}, {}, set()
+    for row in tables["today-orders"]["rows"]:
+        order_id = str(row.get("委托编号") or "").strip()
+        if (not order_id or order_id in orders
+                or _status(row.get("状态说明")) == BrokerStatus.UNKNOWN):
+            return False
+        orders[order_id] = row
+    for row in tables["today-trades"]["rows"]:
+        trade_id = str(row.get("成交编号") or "").strip()
+        order_id = str(row.get("委托编号") or "").strip()
+        if not trade_id or trade_id in seen_trades or order_id not in orders:
+            return False
+        seen_trades.add(trade_id)
+        order = orders[order_id]
+        if (_normalize_code(row.get("证券代码")) != _normalize_code(order.get("证券代码"))
+                or _broker_side(row.get("买卖标志")) != _broker_side(order.get("买卖标志"))):
+            return False
+        if _is_cancel_trade_row(row):
+            continue
+        shares = _broker_integer(row.get("成交数量"), reason="BOOK_B_ACCOUNTING_FILL_UNPROVEN")
+        price = _broker_decimal(row.get("成交价格"), reason="BOOK_B_ACCOUNTING_FILL_UNPROVEN")
+        if shares <= 0 or price <= 0:
+            return False
+        trades[order_id] = trades.get(order_id, 0) + shares
+    for order_id, row in orders.items():
+        filled = _broker_integer(row.get("成交数量") or 0, reason="BOOK_B_ACCOUNTING_FILL_UNPROVEN")
+        requested = _broker_integer(row.get("委托数量"), reason="BOOK_B_ACCOUNTING_FILL_UNPROVEN")
+        if filled != trades.get(order_id, 0) or not 0 <= filled <= requested:
+            return False
+    # Detect later broker fills on a locally terminal zero/partial order,
+    # including an order with no ownership row yet. Manual orders retain their
+    # separate ownership; only known strategy order IDs enter this comparison.
+    known_orders = {str((event.get("receipt") or {}).get("broker_order_id") or "")
+        for event in _read_jsonl_strict(root / "events.jsonl")}
+    owned_fills = {}
+    for row in book.rows:
+        if row["trade_date"][:10] == snapshot["trade_date"][:10]:
+            order_id = row["broker_order_id"]
+            owned_fills[order_id] = owned_fills.get(order_id, 0) + row["shares"]
+    return all(shares == owned_fills.get(order_id, 0)
+               for order_id, shares in trades.items() if order_id in known_orders)
+
+
 def observe_account(root: Path, *, cash, market_value, liquidation_value, snapshot: dict,
-                    capital_state: dict, initial_capital=30000) -> dict:
+                    capital_state: dict, initial_capital=30000,
+                    now: datetime | None = None) -> dict:
     """Store a hash-bound valuation; unclassified cash makes total PnL N/A."""
     root = Path(root)
     with _database(root) as db:
         cash_event_head(root, no_later_than=snapshot["observed_at"])
         book = replay_owned(root, initial_capital=initial_capital)
+        from .book_b_live_lifecycle import (validate_broker_account_snapshot,
+            _validate_same_day_broker_fill_coverage, open_execution_plan_ids)
+        full_snapshot = snapshot.get("schema_version") != "book-b-buy-preflight.v1"
+        if full_snapshot:
+            validate_broker_account_snapshot(snapshot, trade_date=snapshot["trade_date"], now=now)
+            _validate_same_day_broker_fill_coverage(snapshot, book.rows, trade_date=snapshot["trade_date"])
         entries = _sync(db, root, book, initial_capital=initial_capital)
         from .book_b_capital import POLICY, has_open_buy, has_open_buy_with_possible_effect
         cash_basis = ("owned_replay_including_buy_reserve" if has_open_buy(root) else
@@ -312,23 +396,33 @@ def observe_account(root: Path, *, cash, market_value, liquidation_value, snapsh
         db.execute("INSERT OR IGNORE INTO metadata VALUES('fund_account_binding_sha256',?)", (binding,))
         totals = _balances(entries)
         inventory = sum(v for k, v in totals.items() if k.startswith("inventory:"))
-        actual, exposure, liquidation = cents(cash), cents(market_value), cents(liquidation_value)
+        observed_cash, exposure, liquidation = cents(cash), cents(market_value), cents(liquidation_value)
         broker_available = cents(
             snapshot["available_cash"] if snapshot.get("schema_version") == "book-b-buy-preflight.v1"
             else snapshot["funds_summary"]["available_cash"]
         )
+        if cash_basis == "app_available_cash":
+            observed_cash = broker_available
+        reserve_pending = cash_basis == "owned_replay_including_buy_reserve"
+        integrity_proven = (full_snapshot and not open_execution_plan_ids(root)
+                            and _cash_snapshot_integrity(root, snapshot, book, now))
+        cash_policy = cash_observation_policy(observed_cash, totals.get("cash", 0),
+            evidence_complete=integrity_proven,
+            reserve_pending=reserve_pending)
+        # Keep an open BUY's strategy reserve in cash; its APP freeze is not
+        # a loss. In every other observation only the proved lower cash deploys.
+        actual = observed_cash if reserve_pending else cash_policy["deployable_cash_cents"]
         risk_cash = min(actual, totals.get("cash", 0))
         if cash_basis == "owned_replay_including_buy_reserve" and not has_open_buy_with_possible_effect(root):
             # A bare intent has no APP reserve; a lower fresh available cash
             # is a real conservative loss until its economic source is known.
             risk_cash = min(risk_cash, broker_available)
-        difference = actual - totals.get("cash", 0)
+        difference = observed_cash - totals.get("cash", 0)
         contributed = -totals.get("capital", 0)
         realized, unrealized = -totals.get("pnl", 0), exposure - inventory
         nav = actual + exposure
-        reconciled = difference == 0 and cash_basis != "owned_replay_including_buy_reserve"
-        status = ("cash_reserve_reconciliation_required" if cash_basis == "owned_replay_including_buy_reserve" else
-                  "reconciled" if reconciled else "cash_reconciliation_required")
+        status = cash_policy["status"]
+        reconciled = status == "reconciled"
         if difference == 0 and nav - contributed != realized + unrealized:
             raise ValueError("BOOK_B_ACCOUNTING_PNL_EQUATION_INVALID")
         body = {"schema_version": "book-b-accounting.v1", "book": "B",
@@ -341,8 +435,12 @@ def observe_account(root: Path, *, cash, market_value, liquidation_value, snapsh
             "cash_basis": cash_basis, "fee_basis": "estimated_plan_rate",
             "broker_available_cash": money(broker_available),
             "opening_capital": money(cents(initial_capital)), "cash": money(actual),
+            "observed_cash": money(observed_cash),
+            "deployable_cash": money(risk_cash),
+            "cash_discrepancy_limit": "10.00",
+            "cash_integrity_proven": integrity_proven,
             "ledger_cash": money(totals.get("cash", 0)),
-            "cash_difference": None if cash_basis == "owned_replay_including_buy_reserve" else money(difference),
+            "cash_difference": None if reserve_pending else money(difference),
             "net_contributed_capital": money(contributed), "marked_nav": money(nav),
             "owned_market_value": money(exposure),
             "liquidation_nav": money(actual + liquidation),

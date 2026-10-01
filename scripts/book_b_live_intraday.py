@@ -86,6 +86,39 @@ def main(argv: list[str] | None = None) -> int:
     run_path = run_dir / f"{trade_date}-{args.phase}.json"
     archive_path = run_dir / "archive" / f"{run_id}.json"
     try:
+        # A weekday schedule does not prove an exchange session. Stop before
+        # secrets, native reads or old-order reconciliation on a holiday.
+        client = monitor._client()
+        trading_calendar = calendar_provider(client)
+        try:
+            trading_days = trading_calendar(current)
+            latest_trading_date = max(trading_days)
+            if latest_trading_date > current.date().isoformat():
+                raise ValueError("LIVE_BOOK_B_CALENDAR_FUTURE_DATE")
+        except Exception as exc:
+            raise RuntimeError("LIVE_BOOK_B_CALENDAR_UNPROVEN") from exc
+        if current.date().isoformat() not in trading_days or trade_date not in trading_days:
+            payload = {
+                "trade_date": trade_date,
+                "phase": args.phase,
+                "status": "no_action",
+                "reason": "NON_TRADING_DAY",
+                "calendar": {
+                    "source": "xiaocao:/stock/trade_cal",
+                    "exchange": "SSE",
+                    "query_date": current.date().isoformat(),
+                    "latest_trading_date": latest_trading_date,
+                },
+                "route": "native-app",
+                "paper_ledger_used": False,
+                "execute_sells_requested": args.execute_sells,
+                "run_id": run_id,
+                "run_receipt_path": str(archive_path),
+            }
+            _write_json_atomic(archive_path, payload)
+            _write_json_atomic(run_path, payload)
+            print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+            return 0
         keychain = FounderscKeychainPreflight()
         keychain_receipt = keychain.run(read_trade_secret=True)
         required = (
@@ -105,7 +138,6 @@ def main(argv: list[str] | None = None) -> int:
             expected_fund_account_fingerprint=fingerprint,
             safety_env_provider=capital_runtime.safety_env,
         )
-        client = monitor._client()
         market_context: dict[str, object] | None = None
         sentiment_map: dict[str, dict[str, object]] | None = None
         snapshot_map: dict[tuple[str, str, str], dict[str, object]] | None = None
@@ -177,7 +209,7 @@ def main(argv: list[str] | None = None) -> int:
             freeze_dir=Path(args.freeze_dir),
             execute_sells=args.execute_sells,
             policy_root=Path(args.policy_root),
-            trading_dates_provider=calendar_provider(client),
+            trading_dates_provider=trading_calendar,
         )
         payload = receipt.as_dict()
         payload["route"] = "native-app"

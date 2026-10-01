@@ -1,6 +1,7 @@
 from pathlib import Path
 import json
 from xiaocao.live.morning_observability import review_notice, review_brief, terminal_notice
+from xiaocao.live.morning_observability import dependency_user_action
 
 
 def test_full_evidence_is_referenced_not_injected_into_operator_messages():
@@ -41,3 +42,47 @@ def test_blocked_morning_exposes_old_order_and_existing_alert_delivery(tmp_path)
     assert notice['incident_notifications'][0]['wecom'] == 'ok'
     assert notice['incident_notifications'][0]['delivered_at'] == '2026-09-22T01:01:06+00:00'
     assert notice['orders'] == []
+
+
+def test_user_only_failures_propagate_without_unknown_counter_escalation():
+    assert dependency_user_action('NATIVE_AX_ACCOUNT_SURFACE_NOT_READY:screen_locked')['required']
+    assert dependency_user_action('NATIVE_AX_ACCOUNT_SURFACE_NOT_READY:screen_lock_state_unavailable')['required']
+    assert dependency_user_action('NATIVE_AX_KEYCHAIN_READ_DENIED')['required']
+    assert dependency_user_action('OTHER', {'state': 'unproven_no_retry'})['required']
+    assert not dependency_user_action('OTHER', {'state': 'verified', 'remaining_attempts': None})['required']
+    assert not dependency_user_action('NATIVE_AX_PRESECRET_DIALOG_BLOCKED')['required']
+    action = dependency_user_action('NATIVE_AX_ACCOUNT_SURFACE_NOT_READY:screen_locked')
+    request = {'status': 'exhausted', 'failures': [{'evidence': {'user_action': action}}]}
+    payload = {'reason': 'DEPENDENCY_RECOVERY_BUDGET_EXHAUSTED',
+               'dependency_recovery': {'requests': [request]}}
+    notice = terminal_notice(payload, Path('receipt.json'))
+    assert notice['user_action_required'] and '解锁 macOS' in notice['user_action']['request']
+    request['status'] = 'recovered'
+    assert not terminal_notice(payload, Path('receipt.json'))['user_action_required']
+
+
+def test_prior_and_durable_pending_are_reported_without_inventing_fills(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from xiaocao.live import book_b_live_lifecycle, trading_execution
+    root = tmp_path / 'book_b_live_execution'
+    receipt = root / 'runs/history/run.json'
+    receipt.parent.mkdir(parents=True)
+    (root / 'events.jsonl').write_text('durable fixture supplied by store')
+    durable = {'plan_id': 'historical', 'state': 'unknown', 'broker_order_id': 'old', 'filled_shares': 0}
+    monkeypatch.setattr(book_b_live_lifecycle, 'open_execution_plan_ids', lambda _: ['historical'])
+    monkeypatch.setattr(trading_execution, 'ExecutionStore', lambda _: SimpleNamespace(
+        current=lambda _: SimpleNamespace(as_dict=lambda: durable)))
+    notice = terminal_notice({'prior_reconciliations': [{'plan_id': 'previous', 'state': 'acknowledged',
+        'broker_order_id': 'prior', 'filled_shares': 0}]}, receipt)
+    assert {r['broker_order_id'] for r in notice['pending_orders']} == {'old', 'prior'}
+    assert all(r['fill_quantity_proven'] is False for r in notice['pending_orders'])
+    assert durable == {'plan_id': 'historical', 'state': 'unknown', 'broker_order_id': 'old', 'filled_shares': 0}
+
+
+def test_only_proved_fill_readback_can_confirm_quantity():
+    row = {'plan_id': 'owned', 'state': 'filled', 'filled_shares': 100, 'receipt_mapping': True}
+    assert not terminal_notice({'execution_receipts': [row]}, Path('receipt'))['orders'][0]['fill_quantity_proven']
+    row['locator_proof'] = {'fill_observation_pending': False}
+    assert terminal_notice({'execution_receipts': [row]}, Path('receipt'))['orders'][0]['fill_quantity_proven']
+    row['submit_chain_uncertain'] = True
+    assert not terminal_notice({'execution_receipts': [row]}, Path('receipt'))['orders'][0]['fill_quantity_proven']
