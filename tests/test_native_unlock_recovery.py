@@ -25,6 +25,7 @@ class UnlockNative:
             "trade_account_fingerprint": self.post_account if self.calls else ACCOUNT,
             "trade_account_fingerprint_count": 1,
             "app_running": True, "screen_locked": False, "accessibility_trusted": True,
+            "secure_field_count": 0 if self.calls and self.post_surface in {"query_only", "trade_ready"} else 1,
             "helper_version": 14, "capabilities": {},
         })
 
@@ -127,3 +128,31 @@ def test_unlock_diagnostics_do_not_persist_arbitrary_helper_text():
     assert "fixture-secret" not in json.dumps(result)
     assert "PASSWORD_TEXT" not in json.dumps(result)
     assert result["snapshots"] == [{"phase": "preconfirm", "account_bound": True, "window_count": 1}]
+
+
+@pytest.mark.parametrize("gates", [{"secure_field_count": 1}, {"secure_field_count": None},
+    {"unlock_failure_category": "trade_password_incorrect"}])
+def test_ready_surface_with_lock_or_error_never_clears_current_or_restarted_claim(tmp_path, monkeypatch, gates):
+    sleeps = []
+    monkeypatch.setattr("xiaocao.live.foundersc_native_broker.time.sleep", sleeps.append)
+    class GatedNative(UnlockNative):
+        probes = 0
+        def probe(self, *, table_audit=False):
+            self.probes += 1
+            receipt = super().probe(table_audit=table_audit).as_dict()
+            if self.calls:
+                receipt.update(gates)
+            return NativeAXReceipt(receipt)
+    native = GatedNative(post_surface="query_only")
+    health = tmp_path / "health.json"
+    def adapter():
+        return FounderscNativeAXBrokerAdapter(native=native,
+            expected_fund_account_fingerprint=ACCOUNT, credential_health_path=health)
+    with pytest.raises(FounderscNativeAXError, match="NO_RETRY"):
+        adapter().ensure_native_ready(unlock_once=True)
+    assert json.loads(health.read_text())["state"] == "unproven_no_retry"
+    with pytest.raises(FounderscNativeAXError, match="READBACK_GATES"):
+        adapter().ensure_native_ready(unlock_once=True)
+    assert native.calls == 1
+    if "unlock_failure_category" in gates:
+        assert not sleeps and native.probes == 3

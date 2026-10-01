@@ -654,6 +654,13 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             == self.expected_fund_account_fingerprint
         )
 
+    def _unlock_readiness_proven(self, payload: dict[str, Any]) -> bool:
+        return (self._account_bound(payload)
+            and payload.get("surface_state") in {"trade_ready", "query_only"}
+            and type(payload.get("secure_field_count")) is int
+            and payload["secure_field_count"] == 0
+            and payload.get("unlock_failure_category") is None)
+
     @serialized_app_operation
     def ensure_native_ready(
         self,
@@ -774,7 +781,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                 credential_health.update(readback_attempts=index, final_surface=surface if surface in
                     {"trade_ready", "query_only", "authentication_required", "incomplete", "screen_locked"} else "unknown",
                     readback_seconds=round(time.monotonic() - read_started, 4))
-                if self._account_bound(payload) and surface in {"trade_ready", "query_only"}:
+                if self._unlock_readiness_proven(payload):
                     credential_health.update(state="verified_by_single_unlock", stage="ready",
                         verified_at=datetime.now(timezone.utc).isoformat())
                     self._save_credential_health(credential_health)
@@ -785,7 +792,8 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                         or payload.get("trade_account_fingerprint_count") not in (0, 1)
                         or payload.get("app_running") is not True
                         or payload.get("accessibility_trusted") is not True
-                        or payload.get("screen_locked") is not False):
+                        or payload.get("screen_locked") is not False
+                        or payload.get("unlock_failure_category") is not None):
                     break
             else:
                 self._save_credential_health(credential_health)
@@ -801,6 +809,8 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             )
         if self._previous_credential_health().get("state") in {"attempt_claimed", "unproven_no_retry"}:
             # Only actual account-bound readiness clears the attempt fence.
+            if not self._unlock_readiness_proven(payload):
+                raise FounderscNativeAXError("NATIVE_AX_UNLOCK_UNPROVEN_NO_RETRY:READBACK_GATES")
             credential_health = {**self.credential_health, "state": "verified_by_account_bound_readback",
                 "stage": "ready", "verified_at": datetime.now(timezone.utc).isoformat()}
             self._save_credential_health(credential_health)
