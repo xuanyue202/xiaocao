@@ -17,6 +17,9 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from xiaocao.research import guards
+from xiaocao.research.weekly_production_adapter import (
+    build_production_observations, render_production_observations,
+)
 
 OPTIONS = ('baseline_no_kol', 'current_bounded', 'kol_challenger')
 WINDOW_BASES = {'opening_window_vwap', 'opening_window_vwap_capped_by_limit'}
@@ -31,6 +34,7 @@ PATTERNS = (
     'output/research/weekly_comparison*.json',
     'output/research/paper_vs_market_*.md',
     'output/live/positions.jsonl', 'output/live/paper_trades.jsonl',
+    'output/live/paper_holdings_snapshots.jsonl', 'output/live/signal_snapshots.jsonl',
     'output/live/pnl_decompose.csv',
     'output/live/posture_calibration.jsonl', 'output/live/exit_calibration.jsonl',
     'output/live/book_b_live_execution/capital_flows.jsonl',
@@ -644,6 +648,7 @@ def build_weekly_evidence(root: Path, *, as_of: dt.date, snapshot_dir: Path | No
         hypotheses=list(hypotheses.values()), research_runs=runs,
         option_comparison=dict(options=empty_options if not comparisons else [], comparisons=comparisons),
         paper_fill_audit=_fill_audit(contents, as_of), accounting_observations=accounting,
+        production_observations=build_production_observations(contents, as_of=as_of),
         missing_evidence=sorted(set(missing)), exploration_proposals=proposals,
         promotion=dict(auto_promote=False, writes_verdict_ledger=False, changes_strategy=False),
         limitations=['saved observations are not independent broker/source verification',
@@ -689,7 +694,8 @@ def render_weekly_evidence(report: dict) -> list[str]:
     for observation in report['accounting_observations']:
         value = observation['valuation']
         lines.append(f"- 会计观测 {observation['observed_at']}：净投入 {value.get('net_contributed_capital', 'N/A')}，标记净值 {value.get('marked_nav', 'N/A')}，累计盈亏 {value.get('cumulative_pnl') if value.get('cumulative_pnl') is not None else 'N/A'}，已实现/浮动 {value.get('realized_pnl', 'N/A')}/{value.get('unrealized_pnl', 'N/A')}；费用 {value.get('fee_basis', 'unknown')}，状态 {value.get('status', 'unknown')}（已保存观测，未认证收益）。")
-    lines += ['', '### 下一步探索（提案，未运行）', '']
+    lines += ['', *render_production_observations(report.get('production_observations') or {}),
+              '', '### 下一步探索（提案，未运行）', '']
     for proposal in report['exploration_proposals']:
         lines.append(f"- `{proposal['experiment_id']}`：{proposal['objective']}；证伪：{proposal['falsifier']}；负责人 {proposal['owner']}；复核 {proposal['next_review']}；回滚 {proposal['rollback']}。")
     return lines
