@@ -42,7 +42,7 @@ def export_statement(root: Path, directory: Path, *, receipt: dict | None = None
                 report = accounting.observe_account(root, cash=account["cash"],
                     market_value=account["current_open_exposure"],
                     liquidation_value=account["liquidation_value_after_fee"],
-                    snapshot=snapshot, capital_state=current_flow_state(root))
+                    snapshot=snapshot, capital_state=current_flow_state(root), now=observed)
         detail = accounting.details(root)
         current_mark = bool(report and report["journal_head_sha256"] == state["journal_head_sha256"])
         identifier = accounting.digest({"journal_head_sha256": state["journal_head_sha256"],
@@ -101,14 +101,14 @@ def main(argv=None) -> int:
                     raise ValueError("BOOK_B_ACCOUNTING_ALLOCATION_CURRENT_OBSERVATION_REQUIRED")
                 accounting.verify_observation(root, prior, current=True)
                 available = snapshot["funds_summary"]["available_cash"]
-                if accounting.number(available) != accounting.number(prior["cash"]):
+                if accounting.number(available) != accounting.number(prior.get("observed_cash", prior["cash"])):
                     raise ValueError("BOOK_B_ACCOUNTING_ALLOCATION_OPEN_BUY_RECONCILE_REQUIRED")
                 liquidation = accounting.number(prior["liquidation_nav"]) - accounting.number(prior["cash"])
                 _, funding = allocate_cash(root, base_cash=book.cash,
                     liquidation=liquidation,
                     ownership_head=book.head, snapshot=snapshot, allocation_reference=args.approval_reference)
                 accounting.observe_account(root, cash=available, market_value=prior["owned_market_value"],
-                    liquidation_value=liquidation, snapshot=snapshot, capital_state=funding)
+                    liquidation_value=liquidation, snapshot=snapshot, capital_state=funding, now=now)
                 result = accounting.sync_journal(root)
         else:
             if args.output_dir is None:

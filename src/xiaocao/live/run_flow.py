@@ -15,6 +15,52 @@ from typing import Any
 LOG_LINE_RE = re.compile(r"^\[(?P<ts>[^\]]+)\]\s*(?P<message>.*)$")
 
 
+
+def redact_text(text: str) -> str:
+    """Remove credential assignments and authenticated URLs from diagnostics."""
+    text = re.sub(r"(https?://)[^/\s:@]+:[^/\s@]+@", r"\1[redacted]@", text, flags=re.I)
+    text = re.sub(
+        r"((?:password|passwd|token|secret|authorization|api[_-]?key|cookie|credential)"
+        r"[\s\"']*[:=]\s*)([\"'])(.*?)\2",
+        r"\1\2[redacted]\2", text, flags=re.I,
+    )
+    return re.sub(
+        r"((?:password|passwd|token|secret|authorization|api[_-]?key|cookie|credential)"
+        r"[\s\"']*[:=][\s\"']*)(?:Bearer\s+)?[^\s,;\"'}]+",
+        r"\1[redacted]", text, flags=re.I,
+    )
+
+
+def aggregate_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Compact identical adjacent observations, retaining critical transitions.
+
+    Identity includes input/decision/order/source correlation and failure reason;
+    a new status, reason, input or linked order always starts a new summary row.
+    Detailed occurrences remain in each run's log and event journal.
+    """
+    out: list[dict[str, Any]] = []
+    previous_key: str | None = None
+    for row in events:
+        detail = row.get("detail") or {}
+        structured = detail.get("type") == "command_finished"
+        identity = {
+            "step": row.get("step"), "status": row.get("status"),
+            "message": None if structured else row.get("message"),
+            "program": detail.get("program"), "reason": detail.get("reason"),
+            "exit_code": detail.get("exit_code"), "layer": detail.get("layer"),
+            "input_hashes": detail.get("input_hashes"), "correlation": detail.get("correlation"),
+            "changed_sources": detail.get("changed_sources"),
+        }
+        key = json.dumps(identity, sort_keys=True, ensure_ascii=False)
+        if key == previous_key:
+            out[-1]["repeat_count"] += 1
+            out[-1]["last_ts"] = row.get("ts")
+            continue
+        out.append({**row, "repeat_count": 1, "first_ts": row.get("ts"), "last_ts": row.get("ts")})
+        previous_key = key
+    return out
+
+
 def classify_message(message: str) -> str:
     text = message.lower()
     if "degraded" in text or "supporting-layer" in text:
@@ -54,7 +100,7 @@ def event(
         "market_date": market_date[:10],
         "step": step,
         "status": status,
-        "message": message,
+        "message": redact_text(message),
         "ts": ts or datetime.now().isoformat(timespec="seconds"),
         "log_path": log_path,
         "detail": detail or {},
@@ -158,7 +204,8 @@ def build_snapshot(
         "deterministic_status": deterministic_status,
         "supporting_health": health,
         "counts": dict(counts),
-        "steps": events,
+        "raw_event_count": len(events),
+        "steps": aggregate_events(events),
     }
 
 
@@ -251,7 +298,7 @@ def write_snapshot(path: Path, snapshot: dict[str, Any]) -> None:
 
 def upsert_snapshot_event(path: Path, snapshot: dict[str, Any], *, snapshot_path: Path) -> None:
     rows: list[dict[str, Any]] = []
-    key = (snapshot.get("market_date"), snapshot.get("automation"))
+    key = (snapshot.get("market_date"), snapshot.get("automation"), snapshot.get("run_id"))
     if path.exists():
         with path.open(encoding="utf-8") as fh:
             for line in fh:
@@ -262,12 +309,13 @@ def upsert_snapshot_event(path: Path, snapshot: dict[str, Any], *, snapshot_path
                     row = json.loads(line)
                 except json.JSONDecodeError:
                     continue
-                if (row.get("market_date"), row.get("automation")) == key:
+                if (row.get("market_date"), row.get("automation"), row.get("run_id")) == key:
                     continue
                 rows.append(row)
     rows.append({
         "schema_version": 1,
         "type": "run_flow_snapshot",
+        "run_id": snapshot.get("run_id"),
         "market_date": snapshot.get("market_date"),
         "automation": snapshot.get("automation"),
         "status": snapshot.get("status"),

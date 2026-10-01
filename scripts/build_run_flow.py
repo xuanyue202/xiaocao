@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -22,26 +23,37 @@ def main() -> int:
     ap.add_argument("--automation", required=True, help="morning/eod/weekly")
     ap.add_argument("--date", required=True)
     ap.add_argument("--log", required=True)
-    ap.add_argument("--exit-code", type=int, default=0)
+    ap.add_argument("--exit-code", type=int, default=None)
+    ap.add_argument("--terminal-receipt", default="", help="Supervisor receipt; authoritative over inferred log status")
     ap.add_argument("--live-dir", default=str(ROOT / "output" / "live"))
     ap.add_argument("--output", default="")
     args = ap.parse_args()
 
     live_dir = Path(args.live_dir)
     log_path = Path(args.log)
-    events = events_from_log(automation=args.automation, market_date=args.date, log_path=log_path)
-    supporting_health = supporting_health_from_live(live_dir=live_dir, market_date=args.date)
-    snapshot = build_snapshot(
-        automation=args.automation,
-        market_date=args.date,
-        events=events,
-        exit_code=args.exit_code,
-        supporting_health=supporting_health,
-    )
+    receipt_path = Path(args.terminal_receipt) if args.terminal_receipt else log_path.parent / "terminal.json"
+    if receipt_path.exists():
+        snapshot = json.loads(receipt_path.read_text(encoding="utf-8"))
+        if snapshot.get("automation") != args.automation or snapshot.get("market_date") != args.date:
+            ap.error("terminal receipt identity does not match automation/date")
+        if not snapshot.get("run_id") or "process_exit_code" not in snapshot:
+            ap.error("terminal receipt has no supervisor process evidence")
+    else:
+        if args.exit_code is None:
+            ap.error("provide an observed --exit-code or an authoritative --terminal-receipt")
+        events = events_from_log(automation=args.automation, market_date=args.date, log_path=log_path)
+        supporting_health = supporting_health_from_live(live_dir=live_dir, market_date=args.date)
+        snapshot = build_snapshot(
+            automation=args.automation,
+            market_date=args.date,
+            events=events,
+            exit_code=args.exit_code,
+            supporting_health=supporting_health,
+        )
     out = Path(args.output) if args.output else live_dir / f"run_flow_{args.date}_{args.automation}.json"
     write_snapshot(out, snapshot)
     upsert_snapshot_event(live_dir / "run_flow.jsonl", snapshot, snapshot_path=out)
-    print(f"run_flow -> {out} status={snapshot['status']} steps={len(events)}")
+    print(f"run_flow -> {out} status={snapshot['status']} steps={len(snapshot.get('steps', []))}")
     return 0
 
 

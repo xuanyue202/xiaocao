@@ -640,3 +640,37 @@ def test_report_quality_research_output_does_not_require_protocol_manifest(tmp_p
     assert result["mode"] == wdr.MODE_AUTO
     rows = [json.loads(l) for l in (tmp_path / result["ledger"]).read_text(encoding="utf-8").splitlines()]
     assert rows[-1]["evidence_bundle"][0]["problem_observed"] == "Weekly report needs a clearer passive-index comparison."
+
+
+def test_plan_integrates_frozen_data_review_and_final_report(tmp_path, monkeypatch):
+    _patch_paths(monkeypatch, tmp_path)
+    monkeypatch.setattr(wdr.flywheel, 'check_flywheel', lambda **_: _fake_flywheel())
+    monkeypatch.setattr(wdr, '_load_sweep_json', lambda: {})
+    monkeypatch.setattr(wdr, '_git_status', lambda: [])
+    plan = wdr.build_plan(as_of=dt.date(2026, 9, 18), output=tmp_path / 'audit/plan.json')
+    assert plan['data_evidence_review']['status'] == 'insufficient_evidence'
+    report = wdr._render_report(plan, mode=wdr.MODE_NONE, validation=[], created_issues=[],
+                                staged_files=[], blocked_dirty=[])
+    assert '数据证据与方案比较' in report
+    assert 'baseline_no_kol' in report
+    assert 'current_bounded' in report
+    assert 'kol_challenger' in report
+    assert '证据不足' in report
+
+
+def test_finalizer_refuses_corrupted_frozen_evidence_before_writing(tmp_path, monkeypatch):
+    _patch_paths(monkeypatch, tmp_path)
+    wdr.ACTION_LOG.parent.mkdir(parents=True)
+    wdr.ACTION_LOG.write_text('{"date":"2026-09-18"}\n')
+    monkeypatch.setattr(wdr.flywheel, 'check_flywheel', lambda **_: _fake_flywheel())
+    monkeypatch.setattr(wdr, '_load_sweep_json', lambda: {})
+    monkeypatch.setattr(wdr, '_git_status', lambda: [])
+    path = tmp_path / 'audit/plan.json'
+    plan = wdr.build_plan(as_of=dt.date(2026, 9, 18), output=path)
+    item = plan['data_evidence_review']['input_manifest']['files'][0]
+    Path(item['snapshot_path']).write_text('tampered')
+    import pytest
+    with pytest.raises(SystemExit, match='snapshot'):
+        wdr.finalize_plan(plan_path=path, mode=wdr.MODE_NONE, validation=[], allow_commit=False)
+    assert not wdr.CHANGE_LEDGER.exists()
+    assert not (wdr.WEEKLY_DIR / 'weekly_review_2026-09-18.md').exists()
