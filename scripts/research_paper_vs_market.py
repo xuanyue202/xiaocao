@@ -8,9 +8,13 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import math
 import statistics
 import sys
 from collections import defaultdict
+from datetime import datetime, time
+from decimal import Decimal
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +25,7 @@ from xiaocao.api.cache import SQLiteCache  # noqa: E402
 from xiaocao.api.client import XiaocaoClient  # noqa: E402
 from xiaocao.config import load_settings  # noqa: E402
 from xiaocao.live.status import build_digest  # noqa: E402
+from xiaocao.live.paper_research import day, fingerprint, money, number, read_json, read_jsonl  # noqa: E402
 
 LIVE_DIR = ROOT / "output" / "live"
 RECONSTRUCTED_DAILY = LIVE_DIR / "daily_reconstructed.jsonl"
@@ -34,36 +39,18 @@ DEFAULT_INDICES = {
 
 def f(value: Any, default: float = 0.0) -> float:
     try:
-        if value in (None, ""):
-            return default
-        return float(value)
-    except (TypeError, ValueError):
+        result = float(number(value, "number"))
+        return result if math.isfinite(result) else default
+    except (TypeError, ValueError, OverflowError):
         return default
 
 
 def load_json(path: Path) -> dict[str, Any]:
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
+    return read_json(path)
 
 
 def iter_positions(path: Path) -> list[dict[str, Any]]:
-    out: list[dict[str, Any]] = []
-    try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except OSError:
-        return out
-    for line in lines:
-        if not line.strip():
-            continue
-        try:
-            row = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(row, dict):
-            out.append(row)
-    return out
+    return read_jsonl(path)
 
 
 def client() -> XiaocaoClient:
@@ -98,11 +85,7 @@ def load_reconstructed(path: Path) -> dict[str, dict[str, dict[str, Any]]]:
     out: dict[str, dict[str, dict[str, Any]]] = defaultdict(dict)
     if not path.exists():
         return out
-    for line in path.read_text(encoding="utf-8").splitlines():
-        try:
-            row = json.loads(line)
-        except json.JSONDecodeError:
-            continue
+    for row in read_jsonl(path):
         code = str(row.get("code") or "")
         day = normal_date(row.get("date"))
         if code and day:
@@ -136,60 +119,254 @@ def summarize_groups(groups: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
     return sorted(rows, key=lambda x: x["pnl"])
 
 
+CHINA = ZoneInfo("Asia/Shanghai")
+
+
+def observed_time(value: Any) -> datetime:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("missing observation timestamp")
+    parsed = datetime.fromisoformat(value)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=CHINA)
+    return parsed.astimezone(CHINA)
+
+
+def dated_snapshot(rows: list[dict[str, Any]], date: str) -> dict[str, Any]:
+    candidates = []
+    for row in rows:
+        if row.get("date") != date or row.get("book") != "B":
+            continue
+        ts = observed_time(row.get("ts"))
+        if ts.date().isoformat() != date or ts.time() < time(15):
+            continue
+        candidates.append((ts, row))
+    if not candidates:
+        raise ValueError(f"missing exact dated EOD Book B snapshot: {date}")
+    latest = max(ts for ts, _ in candidates)
+    selected = [row for ts, row in candidates if ts == latest]
+    if len({fingerprint(row) for row in selected}) != 1:
+        raise ValueError(f"conflicting snapshots at {latest.isoformat()}")
+    row = selected[0]
+    if row.get("equity_basis") in ("cost_basis", "proxy", "fallback") or row.get("evidence_status") in ("unknown", "degraded"):
+        raise ValueError(f"unproved or proxy endpoint mark: {date}")
+    initial = money(row.get("initial_capital"), "snapshot initial_capital", nonnegative=True)
+    cash = money(row.get("cash"), "snapshot cash", nonnegative=True)
+    equity = money(row.get("total_equity_after_exit_fee"), "snapshot equity", nonnegative=True)
+    realized = money(row.get("realized_pnl"), "snapshot realized_pnl")
+    unrealized = money(row.get("unrealized_pnl_after_fee"), "snapshot unrealized_pnl")
+    holdings = row.get("holdings")
+    if not isinstance(holdings, list) or row.get("open_positions") != len(holdings):
+        raise ValueError("snapshot holdings coverage is unproved")
+    liquidation = cost = Decimal(0)
+    identities = set()
+    for holding in holdings:
+        if not isinstance(holding, dict) or holding.get("book") != "B":
+            raise ValueError("snapshot holding book is unproved")
+        identity = (holding.get("code"), day(holding.get("entry_date")))
+        if not identity[0] or identity in identities or identity[1] > date:
+            raise ValueError("invalid/duplicate snapshot lot")
+        identities.add(identity)
+        shares = number(holding.get("shares"), "holding shares")
+        if shares <= 0 or shares != shares.to_integral_value():
+            raise ValueError("invalid holding shares")
+        mark = observed_time(holding.get("latest_time"))
+        if mark.date().isoformat() != date or mark.time() < time(15) or mark > latest:
+            raise ValueError("holding lacks same-day closing mark evidence")
+        if holding.get("source") == "public" or holding.get("mark_basis") in ("cost_basis", "fallback", "proxy"):
+            raise ValueError("holding has unsupported mark evidence")
+        if number(holding.get("latest_price"), "holding latest_price") <= 0:
+            raise ValueError("invalid holding closing price")
+        liquidation += money(holding.get("liquidation_value_after_fee"), "holding liquidation", nonnegative=True)
+        cost += money(holding.get("cost"), "holding cost", nonnegative=True)
+    if equity != cash + liquidation or unrealized != liquidation - cost:
+        raise ValueError("snapshot equity/holding accounting does not close")
+    flows = money(row.get("net_external_flows", 0), "snapshot net_external_flows")
+    if initial <= 0 or equity != initial + flows + realized + unrealized:
+        raise ValueError("snapshot capital/PnL accounting does not close")
+    return row
+
+
+def period_portfolio(start: str, end: str) -> dict[str, Any]:
+    result = {"return_pct": None, "initial_capital": None, "start_equity": None,
+              "equity": None, "cash": None, "realized_pnl": None, "unrealized_pnl": None,
+              "period_pnl": None, "net_external_flows": None, "evidence_status": "unknown",
+              "return_basis": "unknown", "result_kind": "paper_modeled_portfolio",
+              "boundary": "start EOD to end EOD; external flows in (start, end]",
+              "source_evidence": {}}
+    try:
+        day(start)
+        day(end)
+        if start >= end:
+            raise ValueError("period requires start < end")
+        if (LIVE_DIR / ".ledger_txn" / "pending.json").exists():
+            raise ValueError("unresolved paper ledger transaction")
+        snapshots = read_jsonl(LIVE_DIR / "paper_holdings_snapshots.jsonl")
+        first = dated_snapshot(snapshots, start)
+        last = dated_snapshot(snapshots, end)
+        start_ts, end_ts = observed_time(first["ts"]), observed_time(last["ts"])
+        initial = money(first["initial_capital"], "initial_capital")
+        for observation in snapshots:
+            if observation.get("book") == "B" and start <= str(observation.get("date") or "") <= end:
+                if money(observation.get("initial_capital"), "observed initial_capital") != initial:
+                    raise ValueError("intervening capital baseline change")
+                if "net_external_flows" in observation and not ("net_external_flows" in first and "net_external_flows" in last):
+                    raise ValueError("intervening flow evidence lacks endpoint counters")
+        if money(last["initial_capital"], "end initial_capital") != initial:
+            raise ValueError("capital baseline changed within period")
+        start_equity = money(first["total_equity_after_exit_fee"], "start equity")
+        end_equity = money(last["total_equity_after_exit_fee"], "end equity")
+        flow_path = LIVE_DIR / "paper_capital_flows.jsonl"
+        flow_rows = read_jsonl(flow_path) if flow_path.exists() else []
+        flows = []
+        ids = set()
+        for flow in flow_rows:
+            if flow.get("book") != "B":
+                continue
+            flow_day = day(flow.get("date"))
+            if not start <= flow_day <= end:
+                continue
+            flow_ts = observed_time(flow.get("ts"))
+            if flow_ts.date().isoformat() != flow_day:
+                raise ValueError("flow observation date mismatch")
+            if not start_ts < flow_ts <= end_ts:
+                continue
+            flow_id = flow.get("flow_id")
+            if not flow_id or flow_id in ids or flow.get("verified") is not True or not flow.get("source_evidence"):
+                raise ValueError("unverified/duplicate external flow")
+            ids.add(flow_id)
+            amount = money(flow.get("amount"), "external flow")
+            flows.append((flow_ts, amount, flow))
+        net_flow = sum((amount for _, amount, _ in flows), Decimal(0))
+        explicit_flows = "net_external_flows" in first or "net_external_flows" in last
+        if explicit_flows and not ("net_external_flows" in first and "net_external_flows" in last):
+            raise ValueError("incomplete endpoint external-flow counters")
+        delta = money(last.get("net_external_flows", 0), "end flows") - money(first.get("net_external_flows", 0), "start flows")
+        if net_flow != delta:
+            raise ValueError("dated flow evidence does not match endpoint capital counters")
+        for observation in snapshots:
+            if observation.get("book") != "B" or "net_external_flows" not in observation:
+                continue
+            if not start <= str(observation.get("date") or "") <= end:
+                continue
+            observation_ts = observed_time(observation.get("ts"))
+            if not start_ts <= observation_ts <= end_ts:
+                continue
+            observed_delta = money(observation["net_external_flows"], "observed flows") - money(first.get("net_external_flows", 0), "start flows")
+            proved_delta = sum((amount for ts, amount, _ in flows if ts <= observation_ts), Decimal(0))
+            if observed_delta != proved_delta:
+                raise ValueError("intervening snapshot funding is not backed by dated flow evidence")
+        # Legacy producer writes fixed-capital paper snapshots. Retain this
+        # contract assumption explicitly; it is not a claim of flow discovery.
+        flow_basis = "verified_dated_flows" if flow_path.exists() else "fixed_paper_capital_contract_assumption_no_intervening_flow_evidence"
+        duration = Decimal(str((end_ts - start_ts).total_seconds()))
+        denominator = start_equity + sum((amount * Decimal(str((end_ts - ts).total_seconds())) / duration
+                                          for ts, amount, _ in flows), Decimal(0))
+        if denominator <= 0:
+            raise ValueError("non-positive flow-adjusted return denominator")
+        pnl = end_equity - start_equity - net_flow
+        result.update(return_pct=round(float(pnl / denominator * 100), 4),
+                      initial_capital=float(initial), start_equity=float(start_equity),
+                      equity=float(end_equity), cash=float(money(last["cash"], "cash")),
+                      realized_pnl=float(money(last["realized_pnl"], "realized_pnl")),
+                      unrealized_pnl=float(money(last["unrealized_pnl_after_fee"], "unrealized_pnl")),
+                      period_pnl=float(pnl), net_external_flows=float(net_flow), evidence_status="verified",
+                      return_basis="modified_dietz_eod_to_eod" if flows else "eod_to_eod",
+                      flow_basis=flow_basis,
+                      source_evidence={"start_snapshot_sha256": fingerprint(first),
+                                       "end_snapshot_sha256": fingerprint(last),
+                                       "period_flows_sha256": fingerprint([row for _, _, row in flows])})
+    except (OSError, ValueError, TypeError, OverflowError) as exc:
+        result["evidence_reason"] = str(exc)
+    return result
+
+
 def paper_stats(start: str, end: str) -> dict[str, Any]:
-    account = load_json(LIVE_DIR / "paper_account.json")
-    digest = build_digest(live_dir=LIVE_DIR, market_date=end)
-    initial = f(account.get("initial_capital"), 100000.0)
-    book_b = digest.get("book_b") or {}
-    positions = [
-        p for p in iter_positions(LIVE_DIR / "positions.jsonl")
-        if p.get("book", "B") == "B" and start <= str(p.get("entry_date") or "") <= end
-    ]
-    closed = [p for p in positions if p.get("status") == "closed"]
-    opened = [p for p in positions if p.get("status", "open") == "open"]
+    portfolio = period_portfolio(start, end)
     returns: list[float] = []
     by_mode: dict[str, dict[str, Any]] = defaultdict(lambda: {"n": 0, "pnl": 0.0, "returns": []})
     by_exit: dict[str, dict[str, Any]] = defaultdict(lambda: {"n": 0, "pnl": 0.0, "returns": []})
-    for p in closed:
-        pnl = f(p.get("realized_pnl"))
-        cost = f(p.get("entry_cash_out"))
-        ret = pnl / cost * 100.0 if cost else 0.0
-        returns.append(ret)
-        mode = str(p.get("mode") or "unknown")
-        by_mode[mode]["n"] += 1
-        by_mode[mode]["pnl"] += pnl
-        by_mode[mode]["returns"].append(ret)
-        reason = str(p.get("exit_reason") or "unknown")
-        by_exit[reason]["n"] += 1
-        by_exit[reason]["pnl"] += pnl
-        by_exit[reason]["returns"].append(ret)
+    positions, closed, opened, unknown = [], [], [], []
+    cohort_evidence = []
+    cohort_complete = True
+    identities = set()
+    try:
+        for p in read_jsonl(LIVE_DIR / "positions.jsonl"):
+            if p.get("book") != "B":
+                continue
+            entry_date = day(p.get("entry_date"))
+            if not start <= entry_date <= end:
+                continue
+            identity = (p.get("code"), entry_date)
+            if not identity[0] or identity in identities:
+                raise ValueError("invalid/duplicate cohort lot identity")
+            identities.add(identity)
+            shares = number(p.get("shares"), "cohort shares")
+            if shares <= 0 or shares != shares.to_integral_value():
+                raise ValueError("invalid cohort shares")
+            cost = money(p.get("entry_cash_out"), "cohort entry cost", nonnegative=True)
+            if cost <= 0:
+                raise ValueError("invalid cohort cost")
+            positions.append(p)
+            evidence = {k: p.get(k) for k in ("book", "code", "entry_date", "shares", "entry_cash_out", "mode")}
+            exit_date = p.get("exit_date")
+            if p.get("status") == "closed" and exit_date and day(exit_date) <= end:
+                if exit_date < entry_date:
+                    raise ValueError("cohort exit precedes entry")
+                pnl = money(p.get("realized_pnl"), "cohort realized_pnl")
+                cost = money(p.get("entry_cash_out"), "cohort entry cost", nonnegative=True)
+                if cost <= 0:
+                    raise ValueError("invalid cohort cost")
+                ret = float(pnl / cost * 100)
+                closed.append(p)
+                returns.append(ret)
+                for groups, key in ((by_mode, str(p.get("mode") or "unknown")),
+                                    (by_exit, str(p.get("exit_reason") or "unknown"))):
+                    groups[key]["n"] += 1
+                    groups[key]["pnl"] += float(pnl)
+                    groups[key]["returns"].append(ret)
+                evidence.update(exit_date=exit_date, realized_pnl=float(pnl), exit_reason=p.get("exit_reason"))
+            elif p.get("status") == "open" or (p.get("status") == "closed" and exit_date and day(exit_date) > end):
+                opened.append(p)
+            else:
+                unknown.append(p)
+            cohort_evidence.append(evidence)
+        cohort_status = "unknown" if unknown else "available"
+    except (OSError, ValueError, TypeError) as exc:
+        cohort_status = "unknown"
+        cohort_complete = False
+        portfolio["cohort_evidence_reason"] = str(exc)
+        positions, closed, opened, returns, cohort_evidence = [], [], [], [], []
+        by_mode.clear()
+        by_exit.clear()
     decomp = defaultdict(float)
+    decomp_status = "missing"
     path = LIVE_DIR / "pnl_decompose.csv"
     if path.exists():
-        with path.open(encoding="utf-8") as fh:
-            for row in csv.DictReader(fh):
-                if start <= str(row.get("entry_date") or "") and str(row.get("exit_date") or "") <= end:
-                    for key in ("m_pick_alpha", "m_entry_slippage", "m_exit_timing", "fees", "realized_pnl"):
-                        decomp[key] += f(row.get(key))
-    equity = f(book_b.get("equity"))
+        try:
+            with path.open(encoding="utf-8") as fh:
+                for row in csv.DictReader(fh):
+                    entry, exit_ = str(row.get("entry_date") or ""), str(row.get("exit_date") or "")
+                    if start <= entry <= end and entry <= exit_ <= end:
+                        for key in ("m_pick_alpha", "m_entry_slippage", "m_exit_timing", "fees", "realized_pnl"):
+                            decomp[key] += float(money(row.get(key), key))
+            decomp_status = "available"
+        except (OSError, ValueError, TypeError) as exc:
+            decomp.clear()
+            decomp_status = "unknown"
+            portfolio["decompose_evidence_reason"] = str(exc)
     return {
-        "start": start,
-        "end": end,
-        "initial_capital": initial,
-        "equity": equity,
-        "return_pct": round((equity / initial - 1.0) * 100.0, 4) if initial else 0.0,
-        "cash": f(book_b.get("cash")),
-        "realized_pnl": f(book_b.get("realized_pnl")),
-        "unrealized_pnl": f(book_b.get("unrealized_pnl")),
-        "buy_count": len(positions),
-        "closed_count": len(closed),
-        "open_count": len(opened),
-        "closed_avg_ret_pct": round(statistics.mean(returns), 4) if returns else 0.0,
-        "closed_median_ret_pct": round(statistics.median(returns), 4) if returns else 0.0,
-        "closed_win_rate_pct": round(sum(1 for r in returns if r > 0) / len(returns) * 100.0, 4) if returns else 0.0,
-        "mode_breakdown": summarize_groups(by_mode),
-        "exit_breakdown": summarize_groups(by_exit),
+        **portfolio, "start": start, "end": end,
+        "buy_count": len(positions) if cohort_complete else None,
+        "closed_count": len(closed) if cohort_complete else None, "open_count": len(opened) if cohort_complete else None,
+        "unknown_status_count": len(unknown), "cohort_evidence_status": cohort_status,
+        "cohort_kind": "entry_date_trade_cohort; unweighted closed-lot statistics, not portfolio returns",
+        "cohort_sha256": fingerprint(cohort_evidence),
+        "closed_avg_ret_pct": round(statistics.mean(returns), 4) if returns else None,
+        "closed_median_ret_pct": round(statistics.median(returns), 4) if returns else None,
+        "closed_win_rate_pct": round(sum(r > 0 for r in returns) / len(returns) * 100, 4) if returns else None,
+        "mode_breakdown": summarize_groups(by_mode), "exit_breakdown": summarize_groups(by_exit),
         "pnl_decompose": {k: round(v, 2) for k, v in decomp.items()},
+        "pnl_decompose_evidence_status": decomp_status,
     }
 
 
@@ -202,7 +379,11 @@ def index_report(
     count: int,
     reconstructed_path: Path = RECONSTRUCTED_DAILY,
 ) -> list[dict[str, Any]]:
-    reconstructed = load_reconstructed(reconstructed_path)
+    try:
+        reconstructed = load_reconstructed(reconstructed_path)
+    except (OSError, ValueError) as exc:
+        return [{"code": code, "name": name, "error": f"invalid reconstructed evidence: {exc}"}
+                for code, name in index_map.items()]
     indices = []
     for code, name in index_map.items():
         rows = rows_from_kline(c.date_kline(code, count=count, freq="D", adj="qfq"))
@@ -251,66 +432,61 @@ def build_report(start: str, end: str, index_map: dict[str, str], count: int) ->
         "index_coverage": f"{len(valid_standard)}/{len(required_codes)}",
         "index_avg_open_to_close_pct": round(avg_open, 4) if avg_open is not None else None,
         "index_avg_close_to_close_pct": round(avg_close, 4) if avg_close is not None else None,
-        "paper_vs_index_avg_open_pp": round(paper["return_pct"] - avg_open, 4) if avg_open is not None else None,
-        "paper_vs_index_avg_close_pp": round(paper["return_pct"] - avg_close, 4) if avg_close is not None else None,
+        "paper_vs_index_avg_open_pp": None,  # EOD portfolio boundary does not match start-open benchmark.
+        "paper_vs_index_avg_close_pp": round(paper["return_pct"] - avg_close, 4) if avg_close is not None and paper.get("return_pct") is not None else None,
     }
+
+
+def display(value: Any, spec: str, suffix: str = "") -> str:
+    try:
+        parsed = float(number(value, "display"))
+        if not math.isfinite(parsed):
+            return "N/A"
+        return format(parsed, spec) + suffix
+    except (ValueError, TypeError, OverflowError):
+        return "N/A"
 
 
 def markdown(report: dict[str, Any]) -> str:
     paper = report["paper"]
-    avg_index = report.get("index_avg_open_to_close_pct")
-    spread = report.get("paper_vs_index_avg_open_pp")
-    avg_index_text = f"{avg_index:+.2f}%" if avg_index is not None else "N/A"
-    spread_text = f"{spread:+.2f}pp" if spread is not None else "N/A"
     lines = [
-        f"# Paper Vs Market {paper['start']}..{paper['end']}",
-        "",
-        "## Summary",
-        "",
-        "| item | value |",
-        "|---|---:|",
-        f"| Book B return | {paper['return_pct']:+.2f}% |",
-        f"| equity / cash | {paper['equity']:,.2f} / {paper['cash']:,.2f} |",
-        f"| realized / unrealized | {paper['realized_pnl']:+,.2f} / {paper['unrealized_pnl']:+,.2f} |",
-        f"| buys / closed / open | {paper['buy_count']} / {paper['closed_count']} / {paper['open_count']} |",
-        f"| closed avg / median / win-rate | {paper['closed_avg_ret_pct']:+.2f}% / {paper['closed_median_ret_pct']:+.2f}% / {paper['closed_win_rate_pct']:.2f}% |",
+        f"# Paper Vs Market {paper['start']}..{paper['end']}", "", "## Summary", "",
+        "Paper modeled portfolio NAV; this is not a broker-confirmed or executable return.",
+        str(paper.get("boundary", "EOD to EOD")),
+        f"Evidence: {paper.get('evidence_status', 'unknown')} — {paper.get('evidence_reason', paper.get('return_basis', 'unknown'))}",
+        f"Flow basis: {paper.get('flow_basis', 'unknown')}", "",
+        "| item | value |", "|---|---:|",
+        f"| Book B portfolio return | {display(paper.get('return_pct'), '+.2f', '%')} |",
+        f"| start / end equity | {display(paper.get('start_equity'), ',.2f')} / {display(paper.get('equity'), ',.2f')} |",
+        f"| end cash | {display(paper.get('cash'), ',.2f')} |",
+        f"| period PnL / external flows | {display(paper.get('period_pnl'), '+,.2f')} / {display(paper.get('net_external_flows'), '+,.2f')} |",
+        f"| end cumulative realized / unrealized | {display(paper.get('realized_pnl'), '+,.2f')} / {display(paper.get('unrealized_pnl'), '+,.2f')} |",
+        f"| entry cohort buys / closed by end / open as of end | {display(paper.get('buy_count'), '.0f')} / {display(paper.get('closed_count'), '.0f')} / {display(paper.get('open_count'), '.0f')} |",
+        f"| cohort closed avg / median / win-rate | {display(paper.get('closed_avg_ret_pct'), '+.2f', '%')} / {display(paper.get('closed_median_ret_pct'), '+.2f', '%')} / {display(paper.get('closed_win_rate_pct'), '.2f', '%')} |",
         f"| index coverage | {report.get('index_coverage', '0/0')} |",
-        f"| avg index open->close | {avg_index_text} |",
-        f"| Book B - avg index | {spread_text} |",
-        "",
-        "## Indices",
-        "",
-        "| index | open->end close | close->close | close MDD |",
+        f"| avg index close->close | {display(report.get('index_avg_close_to_close_pct'), '+.2f', '%')} |",
+        f"| Book B - avg index close->close | {display(report.get('paper_vs_index_avg_close_pp'), '+.2f', 'pp')} |",
+        "", "Entry cohort statistics are unweighted closed-lot outcomes, separate from portfolio return.",
+        f"Cohort evidence: {paper.get('cohort_evidence_status', 'unknown')}",
+        "", "## Indices", "", "| index | open->end close | close->close | close MDD |",
         "|---|---:|---:|---:|",
     ]
     for row in report["indices"]:
         if "error" in row:
             lines.append(f"| {row['name']} {row['code']} | {row['error']} | - | - |")
         else:
-            lines.append(
-                f"| {row['name']} {row['code']} | {row['open_to_close_pct']:+.2f}% | "
-                f"{row['close_to_close_pct']:+.2f}% | {row['close_mdd_pct']:+.2f}% |"
-            )
-    lines += ["", "## Mode Breakdown", "", "| mode | n | avg ret | pnl |", "|---|---:|---:|---:|"]
-    for row in paper["mode_breakdown"]:
-        lines.append(f"| {row['key']} | {row['n']} | {row['avg_ret_pct']:+.2f}% | {row['pnl']:+,.2f} |")
-    lines += ["", "## Exit Breakdown", "", "| exit | n | avg ret | pnl |", "|---|---:|---:|---:|"]
-    for row in paper["exit_breakdown"]:
-        lines.append(f"| {row['key']} | {row['n']} | {row['avg_ret_pct']:+.2f}% | {row['pnl']:+,.2f} |")
+            lines.append(f"| {row['name']} {row['code']} | {display(row.get('open_to_close_pct'), '+.2f', '%')} | "
+                         f"{display(row.get('close_to_close_pct'), '+.2f', '%')} | {display(row.get('close_mdd_pct'), '+.2f', '%')} |")
+    for title, key in (("Mode Breakdown (trade cohort)", "mode_breakdown"), ("Exit Breakdown (trade cohort)", "exit_breakdown")):
+        lines += ["", f"## {title}", "", "| group | n | avg ret | pnl |", "|---|---:|---:|---:|"]
+        for row in paper.get(key, []):
+            lines.append(f"| {row['key']} | {row['n']} | {display(row.get('avg_ret_pct'), '+.2f', '%')} | {display(row.get('pnl'), '+,.2f')} |")
     decomp = paper.get("pnl_decompose") or {}
     if decomp:
-        lines += [
-            "",
-            "## PnL Decompose",
-            "",
-            "| item | contribution |",
-            "|---|---:|",
-            f"| pick_alpha | {f(decomp.get('m_pick_alpha')):+,.2f} |",
-            f"| entry_slippage_cost | {-f(decomp.get('m_entry_slippage')):+,.2f} |",
-            f"| exit_timing | {f(decomp.get('m_exit_timing')):+,.2f} |",
-            f"| fees | {-f(decomp.get('fees')):+,.2f} |",
-            f"| realized_pnl | {f(decomp.get('realized_pnl')):+,.2f} |",
-        ]
+        lines += ["", "## PnL Decompose (trade cohort)", "", "| item | contribution |", "|---|---:|"]
+        for key, sign in (("m_pick_alpha", 1), ("m_entry_slippage", -1), ("m_exit_timing", 1), ("fees", -1), ("realized_pnl", 1)):
+            value = decomp.get(key)
+            lines.append(f"| {key} | {display(value * sign if value is not None else None, '+,.2f')} |")
     return "\n".join(lines) + "\n"
 
 
@@ -341,7 +517,7 @@ def main() -> None:
     args = ap.parse_args()
     end = args.end or str(build_digest(live_dir=LIVE_DIR).get("market_date") or "")
     report = build_report(args.start, end, parse_indices(args.indices), args.count)
-    text = json.dumps(report, ensure_ascii=False, sort_keys=True, indent=2) if args.format == "json" else markdown(report)
+    text = json.dumps(report, ensure_ascii=False, sort_keys=True, indent=2, allow_nan=False) if args.format == "json" else markdown(report)
     if args.output:
         path = Path(args.output)
         if not path.is_absolute():

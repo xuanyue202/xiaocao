@@ -209,6 +209,10 @@ def _allocate_cash_locked(root: Path, *, base_cash: Decimal, liquidation: float,
                   allocation_reference: str | None) -> tuple[Decimal, dict]:
     cfg = policy(root)
     current = current_flow_state(root)
+    current_rows = flows(root)
+    if (not historical and current_rows
+            and datetime.fromisoformat(snapshot["observed_at"]) < datetime.fromisoformat(current_rows[-1]["observed_at"])):
+        raise ValueError("BOOK_B_CAPITAL_SNAPSHOT_REGRESSION")
     if historical:
         if sync:
             raise ValueError("BOOK_B_CAPITAL_HISTORICAL_WRITE_FORBIDDEN")
@@ -243,7 +247,7 @@ def _allocate_cash_locked(root: Path, *, base_cash: Decimal, liquidation: float,
         if not allocation_reference:
             # Available cash still caps current execution. Its unexplained
             # difference is observed by the journal, never unitized as funding.
-            return available, current
+            return min(available, cash), current
         existing = flows(root)
         if existing and datetime.fromisoformat(snapshot["observed_at"]) < datetime.fromisoformat(existing[-1]["observed_at"]):
             raise ValueError("BOOK_B_CAPITAL_SNAPSHOT_REGRESSION")

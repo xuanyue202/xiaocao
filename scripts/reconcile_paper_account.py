@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import hashlib
 import sys
+from contextlib import nullcontext
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -18,88 +20,102 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from xiaocao.live import accounts  # noqa: E402
+from xiaocao.live.paper_research import day, fingerprint, money, number, read_json, read_jsonl  # noqa: E402
 
 LIVE = ROOT / "output" / "live"
 POSITIONS = LIVE / "positions.jsonl"
 ACCOUNT = LIVE / "paper_account.json"
 
 
-def _f(value: Any, default: float = 0.0) -> float:
-    try:
-        if value in (None, ""):
-            return default
-        return float(value)
-    except (TypeError, ValueError):
-        return default
-
-
-def _load_json(path: Path) -> dict[str, Any]:
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-
-
-def _load_jsonl(path: Path) -> list[dict[str, Any]]:
-    if not path.exists():
-        return []
-    out: list[dict[str, Any]] = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            out.append(json.loads(line))
-        except json.JSONDecodeError:
-            continue
-    return out
-
-
 def rebuild_account(
     positions: list[dict[str, Any]],
     account: dict[str, Any],
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    initial = _f(account.get("initial_capital"), 100000.0)
-    fee_rate = _f(account.get("fee_rate"), 0.0001)
-    book_b = [p for p in positions if p.get("book", "B") == "B"]
-    closed = [p for p in book_b if p.get("status") == "closed"]
-    open_pos = [p for p in book_b if p.get("status", "open") == "open"]
-
-    realized = round(sum(_f(p.get("realized_pnl")) for p in closed), 2)
-    open_cash_out = round(sum(_f(p.get("entry_cash_out")) for p in open_pos), 2)
-    total_fees = round(
-        sum(_f(p.get("entry_fee")) + _f(p.get("exit_fee")) for p in closed)
-        + sum(_f(p.get("entry_fee")) for p in open_pos),
-        2,
-    )
-    cash = round(initial + realized - open_cash_out, 2)
-
+    if account.get("book", "B") != "B":
+        raise ValueError("account does not belong to Book B")
+    initial = money(account.get("initial_capital"), "initial_capital", nonnegative=True)
+    if initial <= 0:
+        raise ValueError("initial_capital must be positive")
+    old_cash = money(account.get("cash"), "cash", nonnegative=True)
+    old_realized = money(account.get("realized_pnl"), "realized_pnl")
+    if "fee_rate" in account:
+        fee_rate = number(account["fee_rate"], "fee_rate")
+        if not 0 <= fee_rate < 1:
+            raise ValueError("invalid fee_rate")
+    if "total_fees" in account:
+        money(account["total_fees"], "total_fees", nonnegative=True)
+    # This reconstruction is for the fixed-capital paper ledger, not APP flows.
+    for key in ("net_capital_flows", "net_external_flows", "capital_flows"):
+        if key in account and account[key] not in (0, [], None):
+            raise ValueError("capital flows require separate verified reconstruction")
+    realized = open_cash_out = total_fees = money(0, "zero")
+    closed_count = open_count = 0
+    seen = set()
+    for position in positions:
+        if not isinstance(position, dict):
+            raise ValueError("position must be an object")
+        book = accounts.require_explicit_book(position, kind="position")
+        if book != "B":
+            continue
+        code = position.get("code")
+        if not isinstance(code, str) or not code.strip():
+            raise ValueError("position requires code")
+        entry_date = day(position.get("entry_date"))
+        identity = (book, code, entry_date)
+        if identity in seen:
+            raise ValueError(f"duplicate lot: {identity}")
+        seen.add(identity)
+        shares = number(position.get("shares"), "shares")
+        if shares <= 0 or shares != shares.to_integral_value():
+            raise ValueError("shares must be a positive integer")
+        cost = money(position.get("entry_cash_out"), "entry_cash_out", nonnegative=True)
+        fee = money(position.get("entry_fee"), "entry_fee", nonnegative=True)
+        if cost <= 0 or fee >= cost:
+            raise ValueError("invalid entry cost/fee")
+        if "gross_notional" in position:
+            gross = money(position["gross_notional"], "gross_notional", nonnegative=True)
+            if gross + fee != cost:
+                raise ValueError("entry cash does not match gross plus fee")
+        for price_key in ("entry_price", "exit_price"):
+            if price_key in position and position[price_key] is not None:
+                if number(position[price_key], price_key) <= 0:
+                    raise ValueError(f"invalid {price_key}")
+        total_fees += fee
+        status = position.get("status")
+        if status == "open":
+            open_count += 1
+            open_cash_out += cost
+            if position.get("exit_date") or position.get("exit_cash_in") is not None:
+                raise ValueError("open lot contains exit accounting")
+        elif status == "closed":
+            exit_date = day(position.get("exit_date"))
+            if exit_date < entry_date:
+                raise ValueError("exit precedes entry")
+            pnl = money(position.get("realized_pnl"), "position realized_pnl")
+            cash_in = money(position.get("exit_cash_in"), "exit_cash_in", nonnegative=True)
+            exit_fee = money(position.get("exit_fee"), "exit_fee", nonnegative=True)
+            if cash_in - cost != pnl:
+                raise ValueError("closed PnL does not match exit cash minus entry cost")
+            realized += pnl
+            total_fees += exit_fee
+            closed_count += 1
+        else:
+            raise ValueError(f"unsupported position status: {status!r}")
+    if not seen:
+        raise ValueError("no verified Book B positions")
+    cash = initial + realized - open_cash_out
+    if cash < 0:
+        raise ValueError("reconstruction produces negative cash")
     rebuilt = dict(account)
-    rebuilt.update({
-        "cash": cash,
-        "fee_rate": fee_rate,
-        "initial_capital": initial,
-        "realized_pnl": realized,
-        "total_fees": total_fees,
-        "updated_at": datetime.now().isoformat(timespec="seconds"),
-        "reconcile_source": "positions.jsonl",
-        "reconcile_note": (
-            "rebuilt from Book B positions: cash = initial_capital + "
-            "closed_realized_pnl - open_entry_cash_out"
-        ),
-    })
+    rebuilt.update(cash=float(cash), initial_capital=float(initial),
+                   realized_pnl=float(realized), total_fees=float(total_fees))
     summary = {
-        "closed_book_b": len(closed),
-        "open_book_b": len(open_pos),
-        "initial_capital": initial,
-        "closed_realized_pnl": realized,
-        "open_entry_cash_out": open_cash_out,
-        "cash": cash,
-        "total_fees": total_fees,
-        "old_cash": account.get("cash"),
-        "old_realized_pnl": account.get("realized_pnl"),
-        "cash_delta": round(cash - _f(account.get("cash")), 2),
-        "realized_delta": round(realized - _f(account.get("realized_pnl")), 2),
+        "closed_book_b": closed_count, "open_book_b": open_count,
+        "initial_capital": float(initial), "closed_realized_pnl": float(realized),
+        "open_entry_cash_out": float(open_cash_out), "cash": float(cash),
+        "total_fees": float(total_fees), "old_cash": float(old_cash),
+        "old_realized_pnl": float(old_realized), "cash_delta": float(cash - old_cash),
+        "realized_delta": float(realized - old_realized),
     }
     return rebuilt, summary
 
@@ -114,23 +130,57 @@ def main() -> int:
     positions_path = Path(args.positions)
     account_path = Path(args.account)
     live_dir = account_path.parent
-    with accounts.ledger_lock(accounts.ledger_lock_path(live_dir)):
-        accounts.recover_ledger_transaction(live_dir)
-        positions = _load_jsonl(positions_path)
-        account = _load_json(account_path)
-        if not positions:
-            print(f"no positions found: {positions_path}", file=sys.stderr)
-            return 2
-        rebuilt, summary = rebuild_account(positions, account)
-        print(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True))
-        if args.write:
-            accounts.commit_file_transaction(
-                live_dir=live_dir,
-                payloads=[("account", account_path, accounts.encode_json(rebuilt))],
-            )
-            print(f"wrote rebuilt account -> {account_path}")
-        else:
-            print("dry-run only; pass --write to update the account file")
+    try:
+        if args.write and positions_path.resolve().parent != account_path.resolve().parent:
+            raise ValueError("write requires positions and account under the same shared ledger lock")
+        if args.write and account_path.name in ("paper_account_A.json", "paper_account_T.json"):
+            raise ValueError("Book B reconciliation cannot write another book account")
+        # A dry-run must not create a lock file or finish someone else's write.
+        # --write reloads and verifies all inputs while holding the shared lock.
+        context = accounts.ledger_lock(accounts.ledger_lock_path(live_dir)) if args.write else nullcontext()
+        with context:
+            pending = live_dir / ".ledger_txn" / "pending.json"
+            if pending.exists():
+                raise ValueError(f"unresolved ledger transaction: {pending}; recover separately")
+            positions_bytes = positions_path.read_bytes()
+            account_bytes = account_path.read_bytes()
+            positions = read_jsonl(positions_path)
+            account = read_json(account_path)
+            rebuilt, summary = rebuild_account(positions, account)
+            if pending.exists() or positions_path.read_bytes() != positions_bytes or account_path.read_bytes() != account_bytes:
+                raise ValueError("source changed during verification")
+            evidence = {
+                "positions_path": str(positions_path.resolve()),
+                "positions_sha256": hashlib.sha256(positions_bytes).hexdigest(),
+                "account_path": str(account_path.resolve()),
+                "account_before_sha256": hashlib.sha256(account_bytes).hexdigest(),
+                "verified_accounting_sha256": fingerprint({k: rebuilt[k] for k in
+                    ("initial_capital", "cash", "realized_pnl", "total_fees")}),
+            }
+            summary["source_evidence"] = evidence
+            changed = any(account.get(k) != rebuilt[k] for k in
+                          ("initial_capital", "cash", "realized_pnl", "total_fees"))
+            summary["changed"] = changed
+            print(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True, allow_nan=False))
+            if args.write and changed:
+                rebuilt.update({
+                    "updated_at": datetime.now().isoformat(timespec="seconds"),
+                    "reconcile_source": str(positions_path.resolve()),
+                    "reconcile_evidence": evidence,
+                    "reconcile_note": "verified fixed-capital Book B lot accounting",
+                })
+                accounts.commit_file_transaction(
+                    live_dir=live_dir,
+                    payloads=[("account", account_path, accounts.encode_json(rebuilt))],
+                )
+                print(f"wrote rebuilt account -> {account_path}")
+            elif args.write:
+                print("account already reconciled; no write")
+            else:
+                print("dry-run only; pass --write to update the account file")
+    except (OSError, ValueError, RuntimeError) as exc:
+        print(f"reconciliation refused: {exc}", file=sys.stderr)
+        return 2
     return 0
 
 

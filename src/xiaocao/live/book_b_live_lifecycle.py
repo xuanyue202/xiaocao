@@ -909,7 +909,9 @@ def project_book_b_live_account(
             ownership_head=ownership_head, snapshot=snapshot, sync=sync_capital)
         accounting = (observe_account(state_root, cash=cash, market_value=exposure,
             liquidation_value=liquidation, snapshot=snapshot, capital_state=funding,
-            initial_capital=initial_capital) if sync_capital else None)
+            initial_capital=initial_capital, now=now) if sync_capital else None)
+        if accounting is not None:
+            cash = Decimal(accounting["cash"])
     except (sqlite3.Error, PermissionError) as exc:
         if not allow_accounting_unavailable:
             raise
@@ -1006,8 +1008,13 @@ def write_book_b_live_settlement(
             from .book_b_capital import verify_account
             verify_account(root, account.as_dict())
             report = verify_observation(root, account.accounting, current=True)
-            if report["status"] != "reconciled":
+            if report["status"] not in {"reconciled", "cash_discrepancy_tolerated"}:
                 raise ValueError("LIVE_BOOK_B_SETTLEMENT_CASH_RECONCILE_REQUIRED")
+            if report["status"] == "cash_discrepancy_tolerated":
+                stamp = datetime.fromisoformat(report["observed_at"])
+                if (observed.tzinfo is None
+                        or not -30 <= (observed - stamp).total_seconds() <= 300):
+                    raise ValueError("LIVE_BOOK_B_SETTLEMENT_CASH_OBSERVATION_STALE")
         path = settlement_path(root, account.trade_date)
         if path.exists():
             existing = load_latest_book_b_live_settlement(root)

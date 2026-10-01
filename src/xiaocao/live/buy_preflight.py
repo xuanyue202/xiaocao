@@ -177,8 +177,10 @@ def pretrade_account(state_dir: Path, snapshot: dict, *, trade_date: str, now: d
         raise ValueError('BUY_PREFLIGHT_SUBACCOUNT_CASH_NEGATIVE')
     from .book_b_accounting import observe_account
     accounting = (observe_account(state_dir, cash=cash, market_value=exposure,
-        liquidation_value=liquidation, snapshot=snapshot, capital_state=funding)
+        liquidation_value=liquidation, snapshot=snapshot, capital_state=funding, now=now)
         if sync_capital else None)
+    if accounting is not None:
+        cash = Decimal(accounting['cash'])
     return BookBLiveAccountState(trade_date=trade_date, logical_account_id='primary', cash=float(cash),
         current_open_exposure=exposure, liquidation_value_after_fee=liquidation,
         settled_nav=round(float(cash)+liquidation, 2),

@@ -57,6 +57,11 @@ PYTHONPATH=src python3 scripts/research_paper_vs_market.py \
 ```
 
 Compare Book B with 上证, 深成指, 创业板指 and 中证1000. Aggregated index/spread is valid only at coverage `4/4`.
+Use exact dated EOD account snapshots for both paper endpoints. Missing marks,
+unresolved transactions or unproved capital flows remain unknown; never use
+today's account as a historical endpoint. Preserve the report's accounting and
+fill-basis qualifications when presenting returns. Paper model returns do not
+establish executable APP returns.
 
 ## Historical paper-day acceptance
 
