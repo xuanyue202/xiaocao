@@ -3,8 +3,11 @@ from __future__ import annotations
 import datetime as dt
 import importlib.util
 import json
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
+
+import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 spec = importlib.util.spec_from_file_location("weekly_deep_review", ROOT / "scripts" / "weekly_deep_review.py")
@@ -32,6 +35,53 @@ def _fake_flywheel():
         },
         "warnings": [],
     }
+
+
+@pytest.mark.parametrize("pre_staged_runtime", [False, True])
+def test_finalize_commits_exact_ignored_weekly_artifacts(tmp_path, monkeypatch, pre_staged_runtime):
+    _patch_paths(monkeypatch, tmp_path)
+    for args in [("init",), ("config", "user.name", "Weekly Test"),
+                 ("config", "user.email", "weekly@example.invalid"),
+                 ("config", "commit.gpgsign", "false")]:
+        subprocess.run(["git", *args], cwd=tmp_path, check=True, capture_output=True)
+    (tmp_path / ".gitignore").write_text("output/\n", encoding="utf-8")
+    runtime = tmp_path / "output/live/private_account.json"
+    runtime.parent.mkdir(parents=True)
+    runtime.write_text('{"private":"excluded"}', encoding="utf-8")
+    if pre_staged_runtime:
+        subprocess.run(["git", "add", "-f", "--", "output/live/private_account.json"],
+                       cwd=tmp_path, check=True, capture_output=True)
+    draft = tmp_path / "docs/unrelated/draft.md"
+    draft.parent.mkdir(parents=True)
+    draft.write_text("original WIP", encoding="utf-8")
+    proposal = wdr._proposal(
+        pid="point-in-time-evidence", title="Evidence design", reason="Missing paired data",
+        source="reference/experience/distill_action_log.jsonl", recommended_action="Collect evidence",
+        evidence=wdr._evidence_bundle(problem="Missing data", attribution="Fixed inventory",
+                                     artifact="snapshot.json", baseline="Not run", overfit="OOS required",
+                                     scope="Research design"),
+    )
+    plan_path = tmp_path / "plan.json"
+    plan_path.write_text(json.dumps({
+        "date": "2026-10-02", "proposals": [proposal],
+        "pre_existing_dirty": ["?? docs/unrelated/"]
+        + (["A  output/live/private_account.json"] if pre_staged_runtime else []),
+    }), encoding="utf-8")
+    result = wdr.finalize_plan(plan_path=plan_path, mode=wdr.MODE_PROPOSAL,
+                               validation=["focused verification: PASS"], allow_commit=True)
+    tracked = subprocess.run(["git", "ls-tree", "-r", "--name-only", "HEAD"], cwd=tmp_path, check=True,
+                             capture_output=True, text=True).stdout.splitlines()
+    assert result["commit"]
+    assert tracked == [".scratch/weekly-deep-review/2026-10-02/point-in-time-evidence.md",
+                       "output/live/flywheel_change_ledger.jsonl",
+                       "output/live/weekly_review_2026-10-02.md"]
+    ledger = json.loads(wdr.CHANGE_LEDGER.read_text(encoding="utf-8"))
+    assert ledger["files_changed"] == tracked
+    assert draft.read_text(encoding="utf-8") == "original WIP"
+    assert runtime.read_text(encoding="utf-8") == '{"private":"excluded"}'
+    staged = subprocess.run(["git", "diff", "--cached", "--name-only"], cwd=tmp_path, check=True,
+                            capture_output=True, text=True).stdout.splitlines()
+    assert staged == (["output/live/private_account.json"] if pre_staged_runtime else [])
 
 
 def test_execution_repair_watch_carries_blocked_eod_into_weekly_plan(tmp_path):
@@ -70,6 +120,99 @@ def test_execution_repair_watch_uses_as_of_order_state(tmp_path, monkeypatch):
     watch = wdr.build_execution_repair_watch(tmp_path, as_of=dt.date(2026, 9, 18))
 
     assert [(row["state"], row["event_sequence"]) for row in watch["open_plans"]] == [("acknowledged", 1)]
+
+
+def test_execution_watch_exempts_only_calendar_proved_holidays(tmp_path):
+    archive = tmp_path / "output/live/book_b_live_execution/runs/intraday/archive"
+    archive.mkdir(parents=True)
+    for day, latest, query in [
+        ("2026-10-01", "2026-09-30", "2026-10-01"),
+        ("2026-10-02", "2026-10-02", "2026-10-02"),
+        ("2026-09-30", "2026-09-29", "2026-09-29"),
+    ]:
+        (archive / f"{day}-eod-example.json").write_text(json.dumps({
+            "trade_date": day, "phase": "eod", "status": "no_action",
+            "reason": "NON_TRADING_DAY", "calendar": {
+                "query_date": query, "latest_trading_date": latest,
+                "source": "xiaocao:/stock/trade_cal",
+            },
+        }), encoding="utf-8")
+    watch = wdr.build_execution_repair_watch(tmp_path, as_of=dt.date(2026, 10, 2))
+    assert watch["non_trading_dates"] == ["2026-10-01"]
+    assert watch["missing_settlement_dates"] == ["2026-09-30", "2026-10-02"]
+
+
+def test_execution_watch_conflicting_eod_does_not_hide_settlement_gap(tmp_path):
+    archive = tmp_path / "output/live/book_b_live_execution/runs/intraday/archive"
+    archive.mkdir(parents=True)
+    for suffix, payload in [
+        ("skip", {"status": "no_action", "reason": "NON_TRADING_DAY", "calendar": {
+            "query_date": "2026-10-02", "latest_trading_date": "2026-09-30",
+            "source": "xiaocao:/stock/trade_cal"}}),
+        ("blocked", {"status": "blocked", "reason": "OPEN_ORDER"}),
+    ]:
+        (archive / f"2026-10-02-eod-{suffix}.json").write_text(json.dumps({
+            "trade_date": "2026-10-02", "phase": "eod", **payload,
+        }), encoding="utf-8")
+    watch = wdr.build_execution_repair_watch(tmp_path, as_of=dt.date(2026, 10, 2))
+    assert watch["non_trading_dates"] == []
+    assert watch["missing_settlement_dates"] == ["2026-10-02"]
+
+
+def test_holiday_closing_does_not_substitute_for_missing_eod(tmp_path):
+    archive = tmp_path / "output/live/book_b_live_execution/runs/intraday/archive"
+    archive.mkdir(parents=True)
+    (archive / "2026-10-02-closing-skip.json").write_text(json.dumps({
+        "trade_date": "2026-10-02", "phase": "closing", "status": "no_action",
+        "reason": "NON_TRADING_DAY", "calendar": {
+            "query_date": "2026-10-02", "latest_trading_date": "2026-09-30",
+            "source": "xiaocao:/stock/trade_cal",
+        },
+    }), encoding="utf-8")
+    watch = wdr.build_execution_repair_watch(tmp_path, as_of=dt.date(2026, 10, 2))
+    assert watch["missing_eod_dates"] == ["2026-10-02"]
+    assert watch["non_trading_dates"] == []
+
+
+def test_holiday_eod_preserves_earlier_closing_failure_without_settlement_duty(tmp_path):
+    archive = tmp_path / "output/live/book_b_live_execution/runs/intraday/archive"
+    archive.mkdir(parents=True)
+    (archive / "2026-10-01-closing-failed.json").write_text(json.dumps({
+        "trade_date": "2026-10-01", "phase": "closing", "status": "blocked",
+        "reason": "SUMMARY_UNPROVEN",
+    }), encoding="utf-8")
+    (archive / "2026-10-01-eod-skip.json").write_text(json.dumps({
+        "trade_date": "2026-10-01", "phase": "eod", "status": "no_action",
+        "reason": "NON_TRADING_DAY", "calendar": {
+            "query_date": "2026-10-01", "latest_trading_date": "2026-09-30",
+            "source": "xiaocao:/stock/trade_cal",
+        },
+    }), encoding="utf-8")
+    watch = wdr.build_execution_repair_watch(tmp_path, as_of=dt.date(2026, 10, 2))
+    assert watch["non_trading_dates"] == ["2026-10-01"]
+    assert watch["missing_settlement_dates"] == []
+    assert watch["blocked_checkpoints"][0]["reason"] == "SUMMARY_UNPROVEN"
+
+
+def test_execution_watch_preserves_but_rejects_original_unresolved_settlement(tmp_path):
+    state = tmp_path / "output/live/book_b_live_execution"
+    archive = state / "runs/intraday/archive"
+    archive.mkdir(parents=True)
+    (state / "settlements").mkdir()
+    settlement = {"trade_date": "2026-09-28", "status": "settled"}
+    settlement["settlement_sha256"] = wdr.canonical_sha256(settlement)
+    path = state / "settlements/2026-09-28.json"
+    original = json.dumps(settlement).encode()
+    path.write_bytes(original)
+    (archive / "2026-09-28-eod-example.json").write_text(json.dumps({
+        "trade_date": "2026-09-28", "phase": "eod", "status": "executed",
+        "settlement": settlement, "reconciliation_receipts": [
+            {"plan_id": "old-sell", "state": "unknown"}],
+    }), encoding="utf-8")
+    watch = wdr.build_execution_repair_watch(tmp_path, as_of=dt.date(2026, 10, 2))
+    assert watch["missing_settlement_dates"] == ["2026-09-28"]
+    assert watch["rejected_settlements"][0]["plan_ids"] == ["old-sell"]
+    assert path.read_bytes() == original
 
 
 def _write_protocol_registry(root: Path):

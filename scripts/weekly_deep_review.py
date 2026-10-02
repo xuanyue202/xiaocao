@@ -38,7 +38,10 @@ from xiaocao.research import protocols, weekly_evidence  # noqa: E402
 from xiaocao.kol import trading_decision  # noqa: E402
 from xiaocao.kol.publication import canonical_sha256  # noqa: E402
 from xiaocao.live import kol_policy  # noqa: E402
-from xiaocao.live.book_b_live_lifecycle import open_execution_plan_ids  # noqa: E402
+from xiaocao.live.book_b_live_lifecycle import (  # noqa: E402
+    open_execution_plan_ids,
+    settlement_nonterminal_plan_ids,
+)
 from xiaocao.live.trading_execution import TERMINAL_STATES  # noqa: E402
 
 ACTION_LOG = ROOT / "reference" / "experience" / "distill_action_log.jsonl"
@@ -107,6 +110,8 @@ def build_execution_repair_watch(root: Path, *, as_of: dt.date) -> dict:
     missing_settlements: list[str] = []
     missing_daily_reviews: list[str] = []
     missing_eod_dates: list[str] = []
+    non_trading_dates: list[str] = []
+    rejected_settlements: list[dict] = []
 
     def ref(path: Path) -> dict:
         row = {"path": path.relative_to(root).as_posix(),
@@ -128,11 +133,32 @@ def build_execution_repair_watch(root: Path, *, as_of: dt.date) -> dict:
                     raise ValueError("WEEKLY_EXECUTION_CHECKPOINT_INVALID")
                 row = {"date": day, "phase": phase, "status": data.get("status"),
                        "reason": data.get("reason"), "evidence": ref(path)}
+                calendar = data.get("calendar") or {}
+                latest = calendar.get("latest_trading_date") if isinstance(calendar, dict) else None
+                try:
+                    calendar_day = dt.date.fromisoformat(latest) if isinstance(latest, str) else None
+                except ValueError:
+                    calendar_day = None
+                row["non_trading_day_proven"] = (
+                    data.get("status") == "no_action"
+                    and data.get("reason") == "NON_TRADING_DAY"
+                    and isinstance(calendar, dict)
+                    and calendar.get("source") == "xiaocao:/stock/trade_cal"
+                    and calendar.get("query_date") == day
+                    and calendar_day is not None
+                    and calendar_day.isoformat() == latest
+                    and calendar_day < dt.date.fromisoformat(day)
+                )
                 checkpoints.append(row)
                 if phase == "eod":
                     day_eods.append(row)
                 else:
                     day_closings.append(row)
+        holiday = bool(day_eods) and all(row["non_trading_day_proven"] for row in day_eods)
+        # Earlier closing failures remain incidents, but do not create a
+        # settlement obligation when every EOD proves the calendar was closed.
+        if holiday:
+            non_trading_dates.append(day)
         if day_closings and not day_eods:
             missing_eod_dates.append(day)
         settlement = state / f"settlements/{day}.json"
@@ -140,8 +166,15 @@ def build_execution_repair_watch(root: Path, *, as_of: dt.date) -> dict:
             settled = json.loads(settlement.read_text(encoding="utf-8"))
             if not isinstance(settled, dict) or settled.get("trade_date") != day:
                 raise ValueError("WEEKLY_EXECUTION_SETTLEMENT_INVALID")
-            ref(settlement)
-        elif day_eods:
+            settlement_ref = ref(settlement)
+            unresolved = settlement_nonterminal_plan_ids(state, settled)
+            if unresolved:
+                rejected_settlements.append({
+                    "date": day, "reason": "ORIGINAL_EOD_NONTERMINAL_EXECUTION",
+                    "plan_ids": list(unresolved), "evidence": settlement_ref,
+                })
+                missing_settlements.append(day)
+        elif day_eods and not holiday:
             missing_settlements.append(day)
         if day_eods and not review.is_file():
             missing_daily_reviews.append(day)
@@ -182,6 +215,8 @@ def build_execution_repair_watch(root: Path, *, as_of: dt.date) -> dict:
                       ("clear" if checkpoints and events_path.is_file() else "missing_evidence"),
             "open_plans": open_plans, "blocked_checkpoints": blocked,
             "missing_settlement_dates": missing_settlements,
+            "non_trading_dates": non_trading_dates,
+            "rejected_settlements": rejected_settlements,
             "missing_daily_review_dates": missing_daily_reviews,
             "missing_eod_dates": missing_eod_dates,
             "daily_reviews": daily_reviews, "evidence": evidence,
@@ -688,7 +723,7 @@ def _run(cmd: list[str], *, check: bool = False) -> subprocess.CompletedProcess[
 
 
 def _git_status() -> list[str]:
-    cp = _run(["git", "status", "--porcelain"])
+    cp = _run(["git", "status", "--porcelain", "--untracked-files=all"])
     if cp.returncode != 0:
         return [f"!! git status failed: {cp.stderr.strip()}"]
     return [line for line in cp.stdout.splitlines() if line.strip()]
@@ -704,6 +739,11 @@ def _status_path(line: str) -> str:
 
 def _dirty_paths(lines: list[str]) -> set[str]:
     return {_status_path(line) for line in lines if line and not line.startswith("!! ")}
+
+
+def _was_dirty(path: str, pre_dirty: set[str]) -> bool:
+    # Older fixed plans may contain porcelain's collapsed directory entries.
+    return any(path == old or (old.endswith("/") and path.startswith(old)) for old in pre_dirty)
 
 
 def _load_sweep_json() -> dict:
@@ -1310,6 +1350,10 @@ def _render_execution_repair_watch(plan: dict) -> list[str]:
     lines = [f"- APP 执行故障复核：未结计划 {len(plans)}，阻断检查点 {len(blocked)}，缺失 EOD {len(no_eod)}，缺失结算日 {len(missing)}，缺失日复盘 {len(unreviewed)}；逐项核对卖价/买盘/成交窗口及后续买入影响，不能只归为外部状态。"]
     lines.extend(f"  - 未结 `{row['plan_id']}`：{row.get('state')} / {row.get('reason')}；委托 {row.get('broker_order_id')}；证据 `{row['evidence']['path']}`（sha256={row['evidence']['sha256']}）" for row in plans)
     lines.extend(f"  - 缺失结算：{', '.join(missing)}" for _ in [0] if missing)
+    lines.extend(f"  - 原结算不可采纳 `{row['date']}`：{row['reason']}；原件保留，未决计划 {', '.join(row['plan_ids'])}" for row in watch.get("rejected_settlements", []))
+    holidays = watch.get("non_trading_dates") or []
+    if holidays:
+        lines.append(f"  - 日历证明休市，无应结算义务：{', '.join(holidays)}")
     lines.extend(f"  - 缺失日复盘：{', '.join(unreviewed)}" for _ in [0] if unreviewed)
     lines.extend(f"  - 缺失 EOD：{', '.join(no_eod)}" for _ in [0] if no_eod)
     return lines
@@ -1328,11 +1372,17 @@ def _render_report(plan: dict, *, mode: str, validation: list[str], created_issu
         "",
         "## 先看结论",
         "",
+        *[f"- {item}" for item in plan.get("review_summary", [])],
         f"- 本周模式：{human_mode}（`{mode}`）。",
         f"- 自动改策略代码：{'有，见下方「已自动落地」' if mode == MODE_AUTO else '没有。没有完整证据链时只产出提案/审计，不想当然改策略。'}",
         f"- 需要你确认的事项：{decision_count} 个{reminder}，见下一节。",
     ]
     lines.extend(_render_execution_repair_watch(plan))
+    incident = plan.get("execution_repair_review") or {}
+    if incident:
+        lines += [f"- 执行事故复核：{incident['conclusion']}",
+                  f"- 当前修复负责人：{incident['owner']}；验收边界：{incident['next_verification']}",
+                  f"- 完整订单、任务轨迹、5 Why 与修复证据：[执行复核]({incident['report_path']})。"]
     lines.extend(_render_kol_system_review(plan))
     lines += ["", *weekly_evidence.render_weekly_evidence(plan.get("data_evidence_review") or {})]
     lines += [
@@ -1361,7 +1411,7 @@ def _render_report(plan: dict, *, mode: str, validation: list[str], created_issu
             if not isinstance(follow_up, dict):
                 follow_up = {}
             lines += [f"- `{old['experiment_id']}`：{old.get('objective') or '目标待补'}",
-                      f"  - 历史状态：{old.get('status') or '未记录'}；本周待复核；原复核日：{old.get('next_review') or '缺失'}。",
+                      f"  - 历史状态：{old.get('status') or '未记录'}；本周复核状态：{item.get('current_review_status') or 'pending_review'}；原复核日：{old.get('next_review') or '缺失'}。",
                       f"  - 跟进结论（报告声明）：{follow_up.get('conclusion') or '未记录，不能认定已完成'}",
                       f"  - 回滚：{old.get('rollback') or '缺失，需补齐后才能关闭或进入新试验'}",
                       f"  - 固定来源：`{item['source']['path']}`；复盘日期 {item['source_review_date']}；state sha256={item['state_sha256']}。"]
@@ -1390,6 +1440,8 @@ def _render_report(plan: dict, *, mode: str, validation: list[str], created_issu
         lines.extend([f"- {p}" for p in staged_files] or ["- none detected"])
     else:
         lines.append("- none")
+    if incident:
+        lines.append(f"- 独立运行事故修复（不属策略 AUTO_APPLIED）：{incident['repair']}；回滚：{incident['rollback']}。")
     lines += [
         "",
         "## 证据来源",
@@ -1456,6 +1508,8 @@ def _append_ledger(plan: dict, *, mode: str, report_path: str, validation: list[
     kol_state = _kol_review_state(plan)
     if kol_state is not None:
         rec["kol_review_state"] = kol_state
+    if plan.get("execution_repair_review"):
+        rec["execution_repair_review"] = plan["execution_repair_review"]
     with CHANGE_LEDGER.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(rec, ensure_ascii=False, sort_keys=True) + "\n")
 
@@ -1467,7 +1521,7 @@ def _stage_and_commit(*, plan: dict, mode: str, validation: list[str], report_pa
     current_dirty = _dirty_paths(current)
     generated = {str(report_path.relative_to(ROOT)), str(CHANGE_LEDGER.relative_to(ROOT)), *created_issues}
     candidates = sorted(p for p in current_dirty if _allowed_path(p, date_s=plan["date"]))
-    blocked_dirty = sorted((set(candidates) - generated) & pre_dirty)
+    blocked_dirty = sorted(p for p in set(candidates) - generated if _was_dirty(p, pre_dirty))
     if blocked_dirty and mode == MODE_AUTO:
         raise SystemExit("AUTO_APPLIED blocked by pre-existing dirty file(s): " + ", ".join(blocked_dirty))
     stage_files = sorted((set(candidates) - set(blocked_dirty)) | generated)
@@ -1479,7 +1533,12 @@ def _stage_and_commit(*, plan: dict, mode: str, validation: list[str], report_pa
     if not allow_commit:
         print("weekly finalize: commit disabled by --no-commit; skip staging")
         return None
-    _run(["git", "add", "--", *stage_files], check=True)
+    source_files = sorted(set(stage_files) - generated)
+    if source_files:
+        _run(["git", "add", "--", *source_files], check=True)
+    # Only these exact artifacts are the weekly commit contract. output/ is
+    # otherwise ignored; never force-add its runtime/account siblings.
+    _run(["git", "add", "-f", "--", *sorted(generated)], check=True)
     verb = "apply" if mode == MODE_AUTO else "propose"
     msg = [
         f"weekly: {verb} xiaocao flywheel updates {plan['date']}",
@@ -1492,7 +1551,9 @@ def _stage_and_commit(*, plan: dict, mode: str, validation: list[str], report_pa
         "",
         "Rollback: git revert <commit>",
     ]
-    _run(["git", "commit", "-m", "\n".join(msg)], check=True)
+    # A user may already have unrelated changes staged, including ignored
+    # private artifacts. Commit only our paths and preserve that existing index.
+    _run(["git", "commit", "--only", "-m", "\n".join(msg), "--", *stage_files], check=True)
     sha = _run(["git", "rev-parse", "--short", "HEAD"], check=True).stdout.strip()
     print(f"weekly finalize: committed {sha}")
     return sha
@@ -1547,7 +1608,7 @@ def finalize_plan(*, plan_path: Path, mode: str | None, validation: list[str],
     current_dirty = _dirty_paths(current)
     generated = {str(report.relative_to(ROOT)), str(CHANGE_LEDGER.relative_to(ROOT)), *created_issues}
     allowed_now = sorted(p for p in current_dirty if _allowed_path(p, date_s=plan["date"]))
-    blocked_dirty = sorted((set(allowed_now) - generated) & pre_dirty)
+    blocked_dirty = sorted(p for p in set(allowed_now) - generated if _was_dirty(p, pre_dirty))
     files_changed = sorted((set(allowed_now) - set(blocked_dirty)) | generated)
     report.write_text(_render_report(plan, mode=mode, validation=validation,
                                      created_issues=created_issues,

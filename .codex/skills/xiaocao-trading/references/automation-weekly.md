@@ -55,6 +55,12 @@ actual next-order dependency. Trace a repeated fingerprint across
 days and distinguish code repaired, tests passed and natural-run verified.
 Do not turn an absent report or missing broker proof into a normal result.
 
+Settlement file existence is not admission: preserve and flag a legacy
+settlement contradicted by its original hash-bound nonterminal EOD archive.
+An exact EOD calendar receipt proving `NON_TRADING_DAY` removes that day's
+settlement obligation; earlier closing failures remain separate incidents.
+Conflicting EOD evidence and a missing EOD cannot be hidden by a closing skip.
+
 Audit at least the first failed and latest affected daily/closing/morning task
 turns for each repeated incident. Read their actual command/tool outputs and
 timestamps, original run archives, durable event/ownership ledgers, and broker
@@ -137,6 +143,11 @@ PYTHONPATH=src python3 scripts/weekly_deep_review.py \
 Use `--mode PROPOSAL_ONLY` when appropriate. Never label failed/unrun validation as AUTO_APPLIED.
 
 Finalize must write `output/live/weekly_review_<date>.md`, append `output/live/flywheel_change_ledger.jsonl`, stage only the allowlist and commit to the current branch. Do not use `git add -A`.
+The finalizer force-stages only its exact generated report, change ledger and
+proposal paths when ignored; other runtime/account files remain excluded.
+It commits only those selected paths and preserves unrelated pre-staged changes.
+Enumerate untracked files individually; older dirty-directory entries protect
+their descendants. The ledger lists exact committed file paths.
 
 Completion requires a terminal weekly command, inspected plan, implemented-or-proposed route, passing declared validations, final report/ledger and the expected scoped commit. A plan file alone is not completion.
 After a high-impact APP-simulation change, enqueue its WeCom change notice
