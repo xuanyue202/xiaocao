@@ -13,6 +13,12 @@ REPO = Path(__file__).resolve().parents[1]
 PYTHON = Path(sys.executable)
 
 
+@pytest.fixture(autouse=True)
+def eod_identity(monkeypatch):
+    monkeypatch.setenv("CODEX_AUTOMATION_ID", "xiaocao-daily-eod")
+    monkeypatch.setenv("CODEX_THREAD_ID", "runtime-fixture")
+
+
 def isolated_daily(tmp_path: Path, *, mutate: bool = False, tail: str = '', context_exit: int = 0, fail_program: str = ''):
     (tmp_path / 'scripts').mkdir()
     script = tmp_path / 'scripts/auto_daily.sh'

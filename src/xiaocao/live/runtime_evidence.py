@@ -267,6 +267,21 @@ def command(args: list[str]) -> int:
 
 
 def launch(script: Path, root: Path, args: list[str]) -> int:
+    market_date = (os.environ.get('XIAOCAO_BOOK_T_V2_REHEARSAL_DATE')
+                   if os.environ.get('XIAOCAO_BOOK_T_V2_RUN_MODE') == 'rehearsal' else None) or datetime.now().strftime('%Y-%m-%d')
+    if args[:1] == ['eod']:
+        # Imported only in the launcher: the frozen command observer does not
+        # load business modules from the mutable checkout.
+        from xiaocao.live.eod_automation_gate import EodGateRejected, claim_eod_slot
+        try:
+            claim_eod_slot(root, 'paper', market_date)
+        except EodGateRejected as exc:
+            print(json.dumps(exc.payload, sort_keys=True), file=sys.stderr)
+            return 2
+    return _launch(script, root, args, market_date)
+
+
+def _launch(script: Path, root: Path, args: list[str], market_date: str) -> int:
     run_id = f'{datetime.now(timezone.utc):%Y%m%dT%H%M%S}-{uuid.uuid4().hex[:12]}'
     run_dir = root / 'output/live/auto/runs' / run_id
     run_dir.mkdir(parents=True, mode=0o700)
@@ -276,8 +291,6 @@ def launch(script: Path, root: Path, args: list[str]) -> int:
     stable_script.chmod(0o400)
     hashes = source_manifest(root)
     automation = args[0] if args else 'unknown'
-    market_date = (os.environ.get('XIAOCAO_BOOK_T_V2_REHEARSAL_DATE')
-                   if os.environ.get('XIAOCAO_BOOK_T_V2_RUN_MODE') == 'rehearsal' else None) or datetime.now().strftime('%Y-%m-%d')
     # Freeze the observer as well: future Python source edits cannot break or
     # bypass the command boundary that checks the original source manifest.
     helper_root = run_dir / 'observer'

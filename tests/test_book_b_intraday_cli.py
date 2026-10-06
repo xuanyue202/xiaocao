@@ -15,6 +15,9 @@ def entry(tmp_path, monkeypatch):
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "scripts"))
     cli = importlib.import_module("scripts.book_b_live_intraday")
     calls = []
+    monkeypatch.setattr(cli, "ROOT", tmp_path)
+    monkeypatch.setenv("CODEX_AUTOMATION_ID", "xiaocao-daily-eod")
+    monkeypatch.setenv("CODEX_THREAD_ID", "intraday-fixture")
     class Keychain:
         def run(self, **kwargs):
             return dict.fromkeys(("trade_item_present", "trade_account_present",

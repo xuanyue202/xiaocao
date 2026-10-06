@@ -27,6 +27,7 @@ from xiaocao.live.capital_keychain import KeychainCapitalRuntime  # noqa: E402
 from xiaocao.live.foundersc_keychain import FounderscKeychainPreflight  # noqa: E402
 from xiaocao.live.trading_runner import build_foundersc_native_execution  # noqa: E402
 from xiaocao.live.live_decision_support import calendar_provider, read_policy  # noqa: E402
+from xiaocao.live.eod_automation_gate import EodGateRejected, claim_eod_slot  # noqa: E402
 
 
 def _china_now() -> datetime:
@@ -77,6 +78,13 @@ def main(argv: list[str] | None = None) -> int:
 
     current = _china_now()
     trade_date = current.date().isoformat() if args.date == "today" else args.date
+    identity = None
+    if args.phase == "eod":
+        try:
+            identity = claim_eod_slot(ROOT, "app", trade_date)
+        except EodGateRejected as exc:
+            print(json.dumps(exc.payload, ensure_ascii=False, sort_keys=True), file=sys.stderr)
+            return 2
     state_dir = Path(args.state_dir)
     run_id = (
         f"{trade_date}-{args.phase}-"
@@ -115,6 +123,8 @@ def main(argv: list[str] | None = None) -> int:
                 "run_id": run_id,
                 "run_receipt_path": str(archive_path),
             }
+            if identity is not None:
+                payload["automation_identity"] = identity
             _write_json_atomic(archive_path, payload)
             _write_json_atomic(run_path, payload)
             print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
@@ -217,6 +227,8 @@ def main(argv: list[str] | None = None) -> int:
         payload["execute_sells_requested"] = args.execute_sells
         payload["run_id"] = run_id
         payload["run_receipt_path"] = str(archive_path)
+        if identity is not None:
+            payload["automation_identity"] = identity
         _write_json_atomic(archive_path, payload)
         _write_json_atomic(run_path, payload)
         print(json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str))
@@ -233,6 +245,8 @@ def main(argv: list[str] | None = None) -> int:
             "run_id": run_id,
             "run_receipt_path": str(archive_path),
         }
+        if identity is not None:
+            payload["automation_identity"] = identity
         _write_json_atomic(archive_path, payload)
         if payload["reason"] != "LIVE_BOOK_B_CHECKPOINT_ALREADY_RUNNING":
             _write_json_atomic(run_path, payload)
