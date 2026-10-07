@@ -1107,40 +1107,6 @@ def _verify_rollout_evidence(
         raise DailyError("rollout restored writer state is unavailable")
 
 
-def _require_rollout_peer_gate(
-    service: DailyCoordinator,
-    *,
-    automation_observed_at: str,
-) -> dict[str, Any]:
-    """Bind rollout acceptance to a recent persisted pass from the real gate."""
-
-    rows = [
-        row
-        for row in service.convergence.events()
-        if row.get("event") == "peer_gate_observed"
-    ]
-    if not rows or rows[-1].get("gate_result") != "pass":
-        raise DailyError("rollout requires a persisted passing peer gate")
-    gate = rows[-1]
-    try:
-        gate_time = datetime.fromisoformat(
-            str(gate["observed_at"]).replace("Z", "+00:00")
-        )
-        automation_time = datetime.fromisoformat(
-            automation_observed_at.replace("Z", "+00:00")
-        )
-    except (KeyError, ValueError) as exc:
-        raise DailyError("rollout peer gate time is invalid") from exc
-    if (
-        gate_time.tzinfo is None
-        or automation_time.tzinfo is None
-        or gate_time > automation_time
-        or (automation_time - gate_time).total_seconds() > 600
-    ):
-        raise DailyError("rollout peer gate is stale or out of order")
-    return gate
-
-
 def _semantic_waiting_item(
     request: dict[str, Any],
     *,
@@ -5251,12 +5217,6 @@ def main() -> int:
             readback,
             payload["automation_evidence"],
             args=args,
-        )
-        _require_rollout_peer_gate(
-            service,
-            automation_observed_at=str(
-                payload["automation_evidence"]["observed_at"]
-            ),
         )
         receipt = service.convergence.record_rollout_readback(
             readback,

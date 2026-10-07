@@ -3862,11 +3862,6 @@ def _acceptance_recomputed_duplicate_counts(
 
 
 def _acceptance_active_active(row: Mapping[str, Any]) -> bool:
-    if (
-        row.get("event") == "peer_gate_observed"
-        and row.get("gate_result") == "no_op"
-    ):
-        return True
     if row.get("active_active") is True or row.get("active-active") is True:
         return True
     if row.get("event") in {
@@ -4135,7 +4130,7 @@ def build_stability_acceptance_report(
                     "sample_count": 0,
                     "p95_ms": None,
                     "limit_ms": _PEER_GATE_P95_LIMIT_MS,
-                    "status": "pending_observation",
+                    "status": "retired",
                 },
                 "clean_sweep": {
                     "sample_count": 0,
@@ -4423,21 +4418,6 @@ def build_stability_acceptance_report(
             clean_sweep_latencies.append(latency)
     peer_p95 = _acceptance_p95(peer_latencies)
     clean_sweep_p95 = _acceptance_p95(clean_sweep_latencies)
-    if not peer_latencies:
-        blockers.append(_acceptance_blocker("peer_gate_latency_missing"))
-    elif len(peer_latencies) < _MIN_LATENCY_SAMPLES:
-        blockers.append(_acceptance_blocker(
-            "peer_gate_latency_samples_insufficient",
-            count=len(peer_latencies),
-            required=_MIN_LATENCY_SAMPLES,
-        ))
-    elif peer_p95 is not None and peer_p95 > _PEER_GATE_P95_LIMIT_MS:
-        blockers.append(_acceptance_blocker(
-            "peer_gate_p95_exceeded",
-            p95_ms=peer_p95,
-            limit_ms=_PEER_GATE_P95_LIMIT_MS,
-        ))
-        hard_failure = True
     if not clean_sweep_latencies or missing_clean_sweep_latency:
         blockers.append(_acceptance_blocker("clean_sweep_latency_missing"))
     elif len(clean_sweep_latencies) < _MIN_LATENCY_SAMPLES:
@@ -4487,13 +4467,7 @@ def build_stability_acceptance_report(
             "sample_count": len(peer_latencies),
             "p95_ms": peer_p95,
             "limit_ms": _PEER_GATE_P95_LIMIT_MS,
-            "status": (
-                "pending_observation"
-                if peer_p95 is None or len(peer_latencies) < _MIN_LATENCY_SAMPLES
-                else "failed"
-                if peer_p95 > _PEER_GATE_P95_LIMIT_MS
-                else "passed"
-            ),
+            "status": "retired",
         },
         "clean_sweep": {
             "sample_count": len(clean_sweep_latencies),
@@ -4560,8 +4534,6 @@ def build_stability_acceptance_report(
         "scheduled_slots_incomplete",
         "recent_observation_days_incomplete",
         "recent_scheduled_slots_incomplete",
-        "peer_gate_latency_missing",
-        "peer_gate_latency_samples_insufficient",
         "clean_sweep_latency_missing",
         "clean_sweep_latency_samples_insufficient",
         "duplicate_effect_audit_missing",

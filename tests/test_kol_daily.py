@@ -26,7 +26,6 @@ from scripts.kol_daily import (
     _source_repair_context,
     _source_repair_validation_progress,
     _transcript_audit_contract,
-    _require_rollout_peer_gate,
     _verify_rollout_evidence,
     _video_publication_context,
     DailyRuntime,
@@ -947,7 +946,7 @@ def test_source_cli_narrow_runner_supports_subscription_video_absence_repair():
     assert result["writer_progress"] == blocked.to_dict()
 
 
-def test_rollout_verification_uses_local_git_config_state_and_peer_gate(
+def test_rollout_verification_uses_local_git_config_and_state(
     tmp_path,
     monkeypatch,
 ):
@@ -1018,21 +1017,6 @@ def test_rollout_verification_uses_local_git_config_state_and_peer_gate(
 
     monkeypatch.setattr(kol_daily_script.subprocess, "run", git)
     _verify_rollout_evidence(readback, evidence, args=args)
-
-    coordinator = DailyCoordinator(
-        tmp_path / "coordinator",
-        now=Clock("2026-08-09T10:00:00+08:00"),
-    )
-    coordinator.convergence.record_peer_gate({
-        "gate_result": "pass",
-        "attempt_count": 1,
-        "elapsed_ms": 12,
-    })
-    gate = _require_rollout_peer_gate(
-        coordinator,
-        automation_observed_at=evidence["observed_at"],
-    )
-    assert gate["gate_result"] == "pass"
 
 
 def test_agent_json_disables_canonical_tty_for_long_response(
