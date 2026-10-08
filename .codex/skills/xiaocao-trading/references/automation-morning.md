@@ -291,6 +291,14 @@ Escalate: script failure/traceback, missing recommendation or paper-record stage
 
 Before any morning business command, query `PYTHONPATH=src .venv/bin/python -m xiaocao calendar latest --date today`. A latest date different from today ends the task as `NON_TRADING_DAY`: no APP/KOL work, freeze wait, historical reconciliation, notification retry or trading alert. An unproved calendar stops before APP work. Weekday scheduling alone is not trading-day evidence. The standalone APP runner independently checks `/stock/trade_cal` before native preflight and notices.
 
+An already terminated, no-effect preflight failure may be continued by its same
+dated owner with `--resume-preflight-receipt <exact runs/history receipt>`, under
+the receipt-bound once-only and original-budget rules in
+[book-b-live-repair.md](book-b-live-repair.md). Preserve the original committed
+producer bundle. Never replay a completed/no-action result or use this entry
+for existing BUY intents; those require exact-plan recovery. Reuse only fresh
+exact zero-fill prior-day SELL proof, retaining UNKNOWN and same-code BUY fences.
+
 The fresh scheduler-created task for today's 09:00 slot owns the runner and
 its stdout, review rendezvous, orders, receipts, and notices. A human follow-up
 in an older Automation task is a repair/inspection task, even when it has the

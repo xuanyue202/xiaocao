@@ -169,3 +169,101 @@ def test_morning_entry_dispatches_without_reproducing_recovery_candidates(tmp_pa
     elif action != "close":
         assert calls.count("prepare") == (1 if action == "resume" else 0)
         assert calls.count("execute") == calls.count("receipt") == 1
+
+
+def _preflight_archive(tmp_path):
+    state = tmp_path / 'state'
+    run_id = '2026-10-08-0123456789ab'
+    path = state / 'runs' / 'history' / f'{run_id}.json'
+    path.parent.mkdir(parents=True)
+    receipt = {
+        'run_id': run_id, 'state_path': str(state), 'trade_date': '2026-10-08',
+        'status': 'blocked', 'failed_stage': 'preflight', 'plan_count': 0,
+        'persisted_plan_ids': [], 'execution_receipts': [], 'preparation_receipts': [],
+        'preparation_budget_seconds': 1200,
+        'preparation_deadline': '2026-10-08T09:20:00+08:00',
+        'runner_identity': {'automation_id': 'xiaocao-book-b-live-morning',
+                            'entrypoint': 'scripts/book_b_live_morning.py',
+                            'owner_thread_id': 'scheduled-owner'},
+        'stage_times': {'started': '2026-10-08T09:00:00+08:00',
+                        'finished': '2026-10-08T09:01:00+08:00'},
+    }
+    path.write_text(json.dumps(receipt))
+    return state, path, receipt
+
+
+@pytest.mark.app_simulation
+def test_preflight_continuation_preserves_original_budget_and_claims_once(tmp_path):
+    from datetime import datetime
+    cli = importlib.import_module('scripts.book_b_live_morning')
+    state, path, receipt = _preflight_archive(tmp_path)
+    binding = cli._validate_preflight_continuation(path, state, '2026-10-08',
+        now=datetime.fromisoformat('2026-10-08T09:10:00+08:00'))
+    assert binding['deadline'] == '2026-10-08T09:20:00+08:00'
+    cli._claim_preflight_continuation(state, binding)
+    with pytest.raises(ValueError, match='ALREADY_CLAIMED'):
+        cli._claim_preflight_continuation(state, binding)
+    claim = json.loads((state / 'runs' / 'preflight_continuations' / f"{receipt['run_id']}.json").read_text())
+    assert claim['original_receipt_sha256'] == binding['receipt_sha256']
+    assert claim['runner_identity']['owner_thread_id'] == 'scheduled-owner'
+
+
+@pytest.mark.app_simulation
+@pytest.mark.parametrize('case', ['copied', 'foreign_owner', 'effects', 'expired', 'naive', 'missing_budget', 'missing_deadline', 'bad_state', 'terminal'])
+def test_preflight_continuation_rejects_unproved_or_consumed_original(tmp_path, case):
+    from datetime import datetime
+    cli = importlib.import_module('scripts.book_b_live_morning')
+    state, path, receipt = _preflight_archive(tmp_path)
+    clock = datetime.fromisoformat('2026-10-08T09:10:00+08:00')
+    if case == 'foreign_owner':
+        receipt['runner_identity']['owner_thread_id'] = 'other-owner'
+    elif case == 'effects':
+        receipt['execution_receipts'] = [{'state': 'unknown'}]
+    elif case == 'expired':
+        clock = datetime.fromisoformat('2026-10-08T09:20:00+08:00')
+    elif case == 'naive':
+        receipt['stage_times']['started'] = '2026-10-08T09:00:00'
+    elif case == 'missing_budget':
+        receipt.pop('preparation_budget_seconds')
+    elif case == 'missing_deadline':
+        receipt.pop('preparation_deadline')
+    elif case == 'bad_state':
+        receipt['state_path'] = str(tmp_path / 'foreign')
+    elif case == 'terminal':
+        terminal = {**receipt, 'run_id': '2026-10-08-abcdef012345',
+                    'status': 'no_action', 'recovery_of': receipt['run_id']}
+        (path.parent / f"{terminal['run_id']}.json").write_text(json.dumps(terminal))
+    path.write_text(json.dumps(receipt))
+    if case == 'copied':
+        copy = tmp_path / 'copy.json'
+        copy.write_text(path.read_text())
+        path = copy
+    with pytest.raises(ValueError):
+        cli._validate_preflight_continuation(path, state, '2026-10-08', now=clock)
+
+
+@pytest.mark.app_simulation
+def test_legacy_preflight_requires_explicit_original_budget(tmp_path):
+    from datetime import datetime
+    cli = importlib.import_module('scripts.book_b_live_morning')
+    state, path, receipt = _preflight_archive(tmp_path)
+    receipt.pop('preparation_budget_seconds')
+    receipt.pop('preparation_deadline')
+    path.write_text(json.dumps(receipt))
+    binding = cli._validate_preflight_continuation(path, state, '2026-10-08', legacy_budget=600,
+        legacy_deadline='2026-10-08T09:10:00+08:00',
+        now=datetime.fromisoformat('2026-10-08T09:05:00+08:00'))
+    assert binding['deadline'] == '2026-10-08T09:10:00+08:00'
+
+
+@pytest.mark.app_simulation
+def test_preflight_deadline_does_not_refund_wrapper_setup_time(tmp_path):
+    from datetime import datetime
+    cli = importlib.import_module('scripts.book_b_live_morning')
+    state, path, receipt = _preflight_archive(tmp_path)
+    receipt['stage_times']['started'] = '2026-10-08T09:02:00+08:00'
+    receipt['stage_times']['finished'] = '2026-10-08T09:03:00+08:00'
+    path.write_text(json.dumps(receipt))
+    binding = cli._validate_preflight_continuation(path, state, '2026-10-08',
+        now=datetime.fromisoformat('2026-10-08T09:10:00+08:00'))
+    assert binding['deadline'] == '2026-10-08T09:20:00+08:00'

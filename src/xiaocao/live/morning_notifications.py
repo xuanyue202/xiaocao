@@ -86,7 +86,9 @@ def message(kind: str, trade_date: str, facts: dict) -> tuple[str, str]:
     status = facts.get("status", "unproven")
     ok = status in {"completed", "no_action", "skipped"} and not pending and not facts.get("pending_evidence_unproven")
     preflight = facts.get("failed_stage") == "preflight"
-    title = "小草早盘：执行结果" if ok else "小草早盘：执行受阻"
+    # Historical reconciliation is reported separately from today's outcome.
+    terminal = status in {"completed", "no_action", "skipped"} and not preflight
+    title = "小草早盘：执行结果" if terminal else "小草早盘：执行受阻"
     lines = [f"{trade_date} APP 仿真"]
     if kind == "golden-window":
         title = "小草早盘：执行仍未确认"

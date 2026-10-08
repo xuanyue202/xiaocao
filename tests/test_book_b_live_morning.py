@@ -1984,3 +1984,38 @@ def test_filled_and_safely_skipped_batch_is_terminal_not_unresolved():
     assert _rollup(receipts) == ('completed', 'BROKER_TERMINAL_WITH_SKIPS')
     receipts.append(SimpleNamespace(state=ExecutionState.UNKNOWN, reason='ambiguous'))
     assert _rollup(receipts)[0] == 'unresolved'
+
+
+@pytest.mark.app_simulation
+@pytest.mark.parametrize('fresh,explicit_clock', [(True, True), (False, True), (True, False)])
+def test_fresh_old_sell_readback_is_reused_only_with_explicit_clock(tmp_path, monkeypatch, fresh, explicit_clock):
+    from xiaocao.live import book_b_live_morning as morning
+    plan = TradePlan(
+        plan_id='book-b:2026-10-07:000001.XSHE:SELL', strategy_run_id='original',
+        snapshot_ref='original#000001', strategy_sha='a' * 40, trade_date='2026-10-07',
+        book='B', logical_account_id='primary', environment='live', code='000001.XSHE',
+        name='owned', side='SELL', shares=100, limit_price=10, basket_price=10,
+        market_guard_status='ok', created_at=datetime(2026, 10, 7, tzinfo=timezone.utc),
+        recovery_deadline=datetime(2026, 10, 7, 7, tzinfo=timezone.utc),
+        allocation_proof_hash='b' * 64,
+    )
+    morning.bind_durable_live_plan_intents(tmp_path, [plan])
+    store = ExecutionStore(tmp_path / 'events.jsonl')
+    current = store.append(plan=plan, receipt=ExecutionReceipt(
+        plan_id=plan.plan_id, plan_hash=plan.plan_hash, state=ExecutionState.UNKNOWN,
+        broker_order_id='existing', filled_shares=0, remaining_shares=100,
+        next_action='reconcile_only',
+    ), kind='submit_receipt')
+    proof_clocks = []
+    def proofs(_root, *, trade_date, asof):
+        proof_clocks.append(asof)
+        return [plan.plan_id] if fresh else []
+    monkeypatch.setattr(morning, 'proven_prior_day_zero_fill_sell_ids', proofs)
+    executions = []
+    result = morning.reconcile_open_book_b_plans(tmp_path, trade_date='2026-10-08',
+        now=datetime(2026, 10, 8, 1, 27, tzinfo=timezone.utc) if explicit_clock else None,
+        execute=lambda restored: executions.append(restored) or current)
+    assert len(executions) == (0 if fresh and explicit_clock else 1)
+    assert len(result) == len(executions)
+    assert len(proof_clocks) == int(explicit_clock)
+    assert store.current(plan.plan_id).state == ExecutionState.UNKNOWN

@@ -18,7 +18,7 @@ import tempfile
 import threading
 import time
 from dataclasses import replace
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -173,6 +173,92 @@ def _write_review_immutable(path: Path, payload: dict) -> None:
         Path(temporary).unlink(missing_ok=True)
 
 
+def _validate_preflight_continuation(path: Path, state_dir: Path, trade_date: str,
+                                    *, legacy_budget: float | None = None,
+                                    legacy_deadline: str | None = None,
+                                    now: datetime | None = None) -> dict:
+    """Bind a no-effect archived failure; terminal results cannot be replayed."""
+    prior = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(prior, dict):
+        raise ValueError("LIVE_PREFLIGHT_CONTINUATION_BINDING_UNPROVEN")
+    run_id = str(prior.get("run_id") or "")
+    suffix = run_id.removeprefix(trade_date + "-")
+    archive = state_dir / "runs" / "history"
+    expected = archive / f"{run_id}.json"
+    identity = prior.get("runner_identity") or {}
+    if not isinstance(identity, dict):
+        raise ValueError("LIVE_PREFLIGHT_CONTINUATION_BINDING_UNPROVEN")
+    if (not run_id.startswith(trade_date + "-")
+            or len(suffix) != 12 or any(c not in "0123456789abcdef" for c in suffix)
+            or path.is_symlink() or path.resolve() != expected.resolve()
+            or not prior.get("state_path")
+            or Path(prior["state_path"]).resolve() != state_dir.resolve()
+            or prior.get("trade_date") != trade_date
+            or prior.get("status") != "blocked" or prior.get("failed_stage") != "preflight"
+            or prior.get("plan_count") != 0
+            or prior.get("persisted_plan_ids") != [] or prior.get("execution_receipts") != []
+            or prior.get("preparation_receipts") != []
+            or identity.get("automation_id") != AUTOMATION_ID
+            or identity.get("entrypoint") != "scripts/book_b_live_morning.py"
+            or not os.environ.get("CODEX_THREAD_ID")
+            or identity.get("owner_thread_id") != os.environ["CODEX_THREAD_ID"]):
+        raise ValueError("LIVE_PREFLIGHT_CONTINUATION_BINDING_UNPROVEN")
+    for receipt_path in archive.glob(f"{trade_date}-*.json"):
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        if not isinstance(receipt, dict) or not isinstance(receipt.get("runner_identity", {}), dict):
+            raise ValueError("LIVE_PREFLIGHT_CONTINUATION_BINDING_UNPROVEN")
+        if (receipt_path != expected and receipt.get("runner_identity", {}).get("automation_id") == AUTOMATION_ID
+                and (receipt.get("recovery_of") == run_id
+                     or receipt.get("status") in {"completed", "no_action", "skipped"}
+                     or receipt.get("persisted_plan_ids") or receipt.get("execution_receipts"))):
+            raise ValueError("LIVE_PREFLIGHT_CONTINUATION_ALREADY_CONSUMED")
+    for intent_path in (state_dir / "plan_intents").glob("*.json"):
+        intent = json.loads(intent_path.read_text(encoding="utf-8"))
+        if not isinstance(intent, dict) or not isinstance(intent.get("plan"), dict):
+            raise ValueError("LIVE_PLAN_INTENT_INVALID")
+        plan = intent.get("plan") or {}
+        if plan.get("trade_date") == trade_date and plan.get("side") == "BUY":
+            raise ValueError("LIVE_PREFLIGHT_CONTINUATION_USE_EXACT_PLAN_RECOVERY")
+    budget = prior.get("preparation_budget_seconds")
+    if budget is None:
+        budget = legacy_budget
+    if (not isinstance(budget, (int, float)) or isinstance(budget, bool)
+            or not math.isfinite(budget) or not 0 < budget <= 2100):
+        raise ValueError("LIVE_PREFLIGHT_ORIGINAL_BUDGET_UNPROVEN")
+    started = datetime.fromisoformat(prior["stage_times"]["started"])
+    finished = datetime.fromisoformat(prior["stage_times"]["finished"])
+    clock = now or datetime.now(timezone.utc)
+    if (started.tzinfo is None or finished.tzinfo is None or clock.tzinfo is None
+            or started > finished or finished > clock
+            or started.astimezone(ZoneInfo("Asia/Shanghai")).date().isoformat() != trade_date):
+        raise ValueError("LIVE_PREFLIGHT_ORIGINAL_CLOCK_UNPROVEN")
+    deadline_text = prior.get("preparation_deadline") or legacy_deadline
+    if not deadline_text:
+        raise ValueError("LIVE_PREFLIGHT_ORIGINAL_DEADLINE_UNPROVEN")
+    deadline = datetime.fromisoformat(deadline_text)
+    if deadline.tzinfo is None or deadline > started + timedelta(seconds=budget):
+        raise ValueError("LIVE_PREFLIGHT_ORIGINAL_CLOCK_UNPROVEN")
+    if clock >= deadline:
+        raise ValueError("LIVE_PREFLIGHT_ORIGINAL_BUDGET_EXHAUSTED")
+    return {"receipt": prior, "receipt_sha256": digest(prior),
+            "budget_seconds": float(budget), "deadline": deadline.isoformat()}
+
+
+def _claim_preflight_continuation(state_dir: Path, binding: dict) -> None:
+    """Claim before any native/secret action; interrupted claims stay fenced."""
+    prior = binding["receipt"]
+    claim = state_dir / "runs" / "preflight_continuations" / f"{prior['run_id']}.json"
+    if claim.exists():
+        raise ValueError("LIVE_PREFLIGHT_CONTINUATION_ALREADY_CLAIMED")
+    _write_review_immutable(claim, {
+        "original_run_id": prior["run_id"], "original_receipt_sha256": binding["receipt_sha256"],
+        "preparation_deadline": binding["deadline"], "budget_seconds": binding["budget_seconds"],
+        "claimed_at": datetime.now(timezone.utc).isoformat(),
+        "runner_identity": runner_identity(AUTOMATION_ID, "scripts/book_b_live_morning.py"),
+        "state": "claimed",
+    })
+
+
 def _review_rendezvous(request: dict, *, now=None, sleep=None, monotonic=None,
                        poll_seconds: float = 1.0) -> dict:
     """Expose one read-only request and wait for independently published policy.
@@ -291,6 +377,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--freeze-wait-seconds", type=float, default=2100.0)
     parser.add_argument("--resume-plan-id", help="Resume only this existing durable plan; never regenerate candidates")
+    parser.add_argument("--resume-preflight-receipt", type=Path,
+                        help="Continue this same-owner blocked preflight with the original preparation budget")
+    parser.add_argument("--original-preparation-budget-seconds", type=float,
+                        help="Explicit original argv budget for legacy receipts without recorded budget")
+    parser.add_argument("--original-preparation-deadline",
+                        help="Proved aware absolute original deadline for legacy receipts")
     parser.add_argument("--recovery-action", choices=("resume", "reconcile", "close"), default="resume")
     parser.add_argument("--poll-seconds", type=float, default=1.0)
     parser.add_argument("--automation-id", default=AUTOMATION_ID,
@@ -308,6 +400,10 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--recovery-action requires --resume-plan-id")
 
     trade_date = _china_date() if args.date == "today" else args.date
+    if args.resume_preflight_receipt and args.resume_plan_id:
+        parser.error("preflight continuation cannot be combined with plan recovery")
+    if (args.original_preparation_budget_seconds is not None or args.original_preparation_deadline) and not args.resume_preflight_receipt:
+        parser.error("original preparation budget requires the exact preflight receipt")
     with automation_run(args.automation_id, trade_date,
                         root=Path.home() / "Library/Caches/xiaocao/automation-runs") as lock:
         if lock["status"] == "busy":
@@ -333,6 +429,19 @@ def main(argv: list[str] | None = None) -> int:
                 _write_review_immutable(path, result)
                 _emit_json({**result, "receipt_path": str(path.resolve())})
                 return 2 if blocked else 0
+        args.preflight_continuation = None
+        if args.resume_preflight_receipt:
+            try:
+                binding = _validate_preflight_continuation(args.resume_preflight_receipt,
+                    Path(args.state_dir), trade_date, legacy_budget=args.original_preparation_budget_seconds,
+                    legacy_deadline=args.original_preparation_deadline)
+                _claim_preflight_continuation(Path(args.state_dir), binding)
+                args.preflight_continuation = binding
+            except (OSError, ValueError, KeyError, TypeError) as exc:
+                _emit_json({"status": "blocked", "reason": str(exc) if isinstance(exc, ValueError)
+                            else "LIVE_PREFLIGHT_CONTINUATION_BINDING_UNPROVEN",
+                            **runner_identity(AUTOMATION_ID, "scripts/book_b_live_morning.py")})
+                return 2
         notices = MorningNotifications(trade_date, automation_id=args.automation_id,
             on_delivery=lambda result: _emit_json({"event": "book_b_wecom_delivery", **result}))
         try:
@@ -357,7 +466,18 @@ def main(argv: list[str] | None = None) -> int:
 
 def _run(args, notices):
     trade_date = _china_date() if args.date == "today" else args.date
+    absolute_preparation_deadline = datetime.now(timezone.utc) + timedelta(seconds=max(0.0, args.freeze_wait_seconds))
     preparation_deadline = time.monotonic() + max(0.0, args.freeze_wait_seconds)
+    prior_preflight = None
+    continuation = getattr(args, "preflight_continuation", None)
+    if continuation:
+        prior_preflight = continuation["receipt"]
+        deadline = datetime.fromisoformat(continuation["deadline"])
+        absolute_preparation_deadline = deadline
+        remaining = (deadline - datetime.now(timezone.utc)).total_seconds()
+        if remaining <= 0:
+            raise ValueError("LIVE_PREFLIGHT_ORIGINAL_BUDGET_EXHAUSTED")
+        preparation_deadline = time.monotonic() + max(0.0, remaining)
     freeze_path = Path(str(args.freeze).format(date=trade_date))
     allocation_path = Path(str(args.allocation_facts).format(date=trade_date))
     if args.resume_plan_id and args.recovery_action == "close":
@@ -608,6 +728,9 @@ def _run(args, notices):
     )
     receipt = replace(
         receipt,
+        recovery_of=prior_preflight["run_id"] if prior_preflight else receipt.recovery_of,
+        preparation_budget_seconds=continuation["budget_seconds"] if continuation else args.freeze_wait_seconds,
+        preparation_deadline=absolute_preparation_deadline.isoformat(),
         runner_identity=runner_identity(args.automation_id, "scripts/book_b_live_morning.py"),
         capital_runtime=capital_receipt,
         open_plan_reconciliations=receipt.open_plan_reconciliations,

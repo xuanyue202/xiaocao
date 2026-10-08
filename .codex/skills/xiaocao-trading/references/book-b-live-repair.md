@@ -51,6 +51,19 @@ reported gap. Trade claims and historical UNKNOWN remain separate reconciliation
 Run the full live-morning command exactly once. The started task owns repair;
 do not defer a recoverable problem to the next Automation.
 
+If that original process has already terminated at preflight with zero plans,
+preparations and execution receipts, the same dated owner may continue using
+`CODEX_AUTOMATION_ID=xiaocao-book-b-live-morning PYTHONPATH=src .venv/bin/python scripts/book_b_live_morning.py --date YYYY-MM-DD --route native-app --resume-preflight-receipt <exact runs/history receipt>`.
+This validates the canonical archive, state directory, date and task identity,
+then durably claims one continuation before native actions. It preserves the
+original recorded preparation deadline; a legacy receipt needs
+`--original-preparation-budget-seconds <proved original budget>` and
+`--original-preparation-deadline <proved aware original absolute deadline>`;
+never refund wrapper setup time or grant a fresh budget. Completed/no-action results or existing BUY intents reject this
+entry; use exact-plan recovery for materialized intents. Do not restart the
+producer. Fresh, exact zero-fill prior-day SELL proofs can be reused without a
+redundant historical query; UNKNOWN and same-code BUY fences remain intact.
+
 On `dependency_recovery_wait`, the original process is alive inside preflight
 or the pre-freeze heartbeat. Read its exact `request_path` for sanitized failure
 and credential health, fix the dependency, then signal once with

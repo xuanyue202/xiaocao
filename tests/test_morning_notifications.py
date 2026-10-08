@@ -278,3 +278,15 @@ def test_same_dependency_request_notifies_when_it_becomes_human_only(tmp_path):
     notices.close()
     assert len(sent) == 1 and '解锁 macOS' in sent[0][1]
     assert json.loads((tmp_path / f'{local}.json').read_text())['delivery_policy'] == 'local_only'
+
+
+@pytest.mark.app_simulation
+@pytest.mark.parametrize('status', ['completed', 'no_action', 'blocked'])
+def test_historical_pending_does_not_relabel_current_terminal_result(status):
+    title, body = message('result', '2026-10-08', {
+        'status': status, 'reason': 'NO_EXECUTABLE_STAR_E',
+        'pending_orders': [{'code': '000572.XSHE', 'side': 'SELL',
+                            'broker_order_id': '6007019', 'state': 'unknown'}],
+    })
+    assert ('执行受阻' in title) == (status == 'blocked')
+    assert '历史委托待核对' in body and '6007019' in body

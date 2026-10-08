@@ -1,6 +1,6 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：4.33
+**版本**：4.34
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
 **关联实现**：`src/xiaocao/live/{safety,capital_keychain,foundersc_native_ax,foundersc_native_broker,trading_execution,book_b_live_lifecycle,book_b_live_intraday}.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`native/foundersc_ax_executor/`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{book_b_live_morning,book_b_live_intraday,live_monitor,research_mode_switch_replay}.py`
@@ -88,6 +88,14 @@ remote writer 对新报告只做一次完整语义工作：同一经校验的 se
 撤回09:28:30定时提醒、倒计时播报和09:30准备未完成自动跳过。用户2026-09-16确认APP在09:25后可以排队收单：BUY最早提交改为09:25，整批理想09:28前、最迟09:30前完成柜台收单证明。09:30是提交时效要求，超时必须记录为延误，不能报告达标；出现非预期情况时持续紧急修复，不凭到点放弃。后续是否可执行由原策略、行情、连续竞价时段和原计划recovery_deadline决定。既有未终结intent中的opening_preparation_deadline是撤回的历史元数据，不再作为失效依据；已经终结的计划不会因此复活。
 
 正式恢复用`--resume-plan-id`和`--recovery-action resume|reconcile|close`，不重跑生产器或修改计划经济字段。已提交/未知副作用只对账，未提交计划可恢复或正式关闭，真正到期的无claim计划仍可关闭。保留失败进度、各阶段时间和恢复历史，用于事后定位耗时，不再围绕时钟增加交易门。
+
+原进程已在 preflight 终止且没有计划、准备或执行回执时，同日原任务可用
+`--resume-preflight-receipt <原 runs/history 回执>` 接回原生产者批次。入口绑定
+原归档、状态目录、日期与任务身份，在原生动作前持久化唯一续跑 claim；继续
+原回执的准备预算和绝对截止时点，不重新计时或退还初始化耗时。旧回执缺
+这些字段时必须显式提供已证明的原预算与绝对截止时点。
+已有 BUY intent 或 completed/no_action 终态禁止该入口，改用原计划恢复。
+精确且新鲜的旧 SELL 零成交证明可复用，原 UNKNOWN 状态与同代码 BUY 禁止保持。
 
 盘中监控在账户锁内核验完整意图/事件链后，可将尚无claim、订单、成交或不确定副作用的BUY保留给原任务，并在回执`deferred_buy_plan_ids`中列明；它不阻塞已有持仓监控和原策略授权退出。账户与状态读取后重新核验；未结SELL及可能副作用仍先对账。该例外不释放BUY资金预留、不代替原任务恢复，也不绕过最终结算的未结计划检查。AX清空采用短间隔可读空值确认，等待预算400–900毫秒、含AX调用的轮询预算3秒；解锁就绪轮询也缩为3秒，就绪即返回，不增加长时间稳定空值等待。
 
@@ -622,6 +630,7 @@ APP 在用户明确批准的动态资金政策下，以账户绑定的资金划�
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| 4.34 | 2026-10-08 | 同日原任务可一次性接回无副作用 preflight 失败，绑定原归档、绝对准备截止时点和 claim；终态不重放，复用精确新鲜旧 SELL 零成交证明且保留 UNKNOWN 与同代码买入门。 |
 | 4.33 | 2026-10-01 | 小额资金观测差异可保守容忍，不强行平账；保留原订单/账链/快照风险门。修复 paper 工具点时与坏数据边界，强化真实进程终态、可回溯运行证据与可复现周度研究比较。合并既有晨间及盘中交易日历前置门：非交易日退出、未知日历在 APP 前失败关闭；启动、ready 和可恢复问题记本地，结果合并去重，保留明确用户动作和 09:30 未决通知及配送证据。 |
 | 4.32 | 2026-09-30 | 晨间原 capture 完整 checkpoint、原子执行包、APP/纸面共享验证与唯一同内容恢复；情报支持层后置并保留显式 on 的新 veto；限定运行身份、无副作用 BUY 意图保守风险标记和提交前60秒行情复核。 |
 | 4.31 | 2026-09-29 | 生产审查修复较新资金事实/较早快照混用与会计存储阻断保护性 SELL；预留现金待证、补齐明细来源并允许有证明的唯一资金冲正，保留成交权限与原始事实门。 |

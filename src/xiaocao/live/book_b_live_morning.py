@@ -118,6 +118,8 @@ class BookBLiveMorningReceipt:
     submission_observations: tuple[dict, ...] = ()
     runner_identity: dict | None = None
     dependency_recovery: dict | None = None
+    preparation_budget_seconds: float | None = None
+    preparation_deadline: str | None = None
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -1120,6 +1122,9 @@ def reconcile_open_book_b_plans(
         ExecutionState.RECONCILING,
     }
     receipts: list[dict] = []
+    proven_old_sells = set(proven_prior_day_zero_fill_sell_ids(
+        root, trade_date=trade_date, asof=now,
+    )) if now is not None else set()
     for path in sorted(intent_dir.glob("*.json")):
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
@@ -1142,6 +1147,8 @@ def reconcile_open_book_b_plans(
             continue
         if current.plan_hash != plan.plan_hash:
             raise ValueError("LIVE_PLAN_INTENT_EVENT_HASH_MISMATCH")
+        if plan.plan_id in proven_old_sells:
+            continue
         if defer_prior_day_sells and plan.side == "SELL" and plan.trade_date < trade_date:
             continue
         reconciled = execute(plan)
