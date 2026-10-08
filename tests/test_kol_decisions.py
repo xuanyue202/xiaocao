@@ -1405,3 +1405,25 @@ def test_book_kol_us_fails_closed_but_allows_inverse_etf(tmp_path, field, value)
         _bundle(item, household_path=household)
     )
     assert result["items"][0]["book_kol_us"]["status"] == "filled"
+
+
+def test_incomplete_broker_valuation_suppresses_household_bucket_gates(tmp_path):
+    transcript = _write_text(tmp_path / "real.txt", "等待成交量放大再行动")
+    context = _household_context()
+    context["valuation_complete"] = False
+    context["decision_view"] = {
+        "bucketExcesses": ["breakthrough"],
+        "bucketShortfalls": ["foundation"],
+    }
+    item = _item(transcript)
+    item["household_recommendation"].update({
+        "action": "add",
+        "avoid_add_if_bucket_excess": "breakthrough",
+    })
+    pipeline = DecisionPipeline(tmp_path / "out", household_context_loader=lambda: context)
+    result = pipeline.process(_bundle(item, household_path=tmp_path / "unused.json"))
+    assessment = result["items"][0]["household_context_assessment"]
+    assert assessment["valuation_complete"] is False
+    assert assessment["gate_triggered"] is False
+    assert assessment["bucket_excesses"] == []
+    assert assessment["bucket_shortfalls"] == []

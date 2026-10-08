@@ -207,7 +207,54 @@ class LiangHuiMcpClient:
         positions = reconciliation.get("items") if isinstance(reconciliation, dict) else None
         if not family_id or not isinstance(positions, list):
             raise DecisionError("亮灰 MCP omitted familyId or portfolio positions")
+        # read_at 是本次 MCP 读取时间；券商仓位时点只来自完成回执。
+        managed = [row for row in positions if row.get("brokerConnectionId")]
+        broker_sources = []
+        degraded = False
+        for connection_id in sorted({row["brokerConnectionId"] for row in managed}):
+            rows = [row for row in managed if row["brokerConnectionId"] == connection_id]
+            try:
+                connection = self._resource(f"finance://broker-connections/{connection_id}")
+                receipt_id = connection.get("lastCompleteReceiptId")
+                if not receipt_id:
+                    raise DecisionError("broker complete receipt missing")
+                receipt = self._resource(
+                    f"finance://broker-connections/{connection_id}/receipts/{receipt_id}"
+                )
+                observed = receipt.get("brokerObservedAt")
+                observed_time = datetime.fromisoformat(str(observed).replace("Z", "+00:00"))
+                age = (datetime.now(timezone.utc) - observed_time).total_seconds()
+                proven = (
+                    receipt.get("status") == "complete"
+                    and receipt.get("connectionId") == connection_id
+                    and receipt.get("familyId") == family_id
+                    and receipt.get("positionsVersion") == connection.get("positionsVersion")
+                    and all(row.get("brokerSyncReceiptId") == receipt_id
+                            and row.get("positionsVersion") == receipt.get("positionsVersion")
+                            and row.get("brokerObservedAt") == observed for row in rows)
+                )
+                fresh = (proven and 0 <= age <= 1800 and connection.get("enabled") is True
+                         and connection.get("authStatus") == "ready"
+                         and connection.get("syncStatus") in {"synced", "unchanged"}
+                         and all(row.get("brokerPositionStatus") == "present" for row in rows))
+                source = {"connection_id": connection_id, "receipt_id": receipt_id,
+                          "observed_at": observed if proven else None,
+                          "status": "fresh" if fresh else "stale_or_degraded",
+                          "reference": f"finance://broker-connections/{connection_id}/receipts/{receipt_id}"}
+                degraded = degraded or not fresh
+            except (DecisionError, ValueError, TypeError, AttributeError):
+                degraded = True
+                source = {"connection_id": connection_id, "observed_at": None,
+                          "status": "unproven", "reference": None}
+            broker_sources.append(source)
+        observed_values = [row["observed_at"] for row in broker_sources if row.get("observed_at")]
+        broker_observed_at = min(observed_values) if broker_sources and len(observed_values) == len(broker_sources) else None
         return {
+            "read_at": checked_at,
+            "broker_positions_observed_at": broker_observed_at,
+            "broker_positions_status": "degraded" if degraded else "fresh" if managed else "not_managed",
+            "broker_sync_sources": broker_sources,
+            "valuation_complete": decision_view.get("valuationComplete", not managed),
             "family_id": family_id,
             "as_of": checked_at,
             "source_reference": (
