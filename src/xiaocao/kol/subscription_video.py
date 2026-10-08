@@ -540,6 +540,36 @@ _CREATE_FOLDER_SCRIPT = r"""(async () => {
 })()"""
 
 
+_SELECT_RECENT_DESTINATION_FUNCTION = r"""(dialog, segments, visible) => {
+  const expectedPath = '/' + segments.join('/');
+  const matches = [...dialog.querySelectorAll('.save-path-item')].filter(
+    node => visible(node) && node.getAttribute('title') === expectedPath
+  );
+  if (matches.length === 0) return {status: 'tree_required'};
+  if (matches.length !== 1) {
+    return {status: 'destination_recent_path_ambiguous', triggered: false};
+  }
+  const selectedRows = () => [...dialog.querySelectorAll('.save-path-item.check')]
+    .filter(visible);
+  const current = selectedRows();
+  if (
+    current.length === 1
+    && current[0].getAttribute('title') === expectedPath
+  ) {
+    return {status: 'selected', selected_path: expectedPath};
+  }
+  matches[0].click();
+  const selected = selectedRows();
+  if (
+    selected.length !== 1
+    || selected[0].getAttribute('title') !== expectedPath
+  ) {
+    return {status: 'destination_recent_path_not_selected', triggered: false};
+  }
+  return {status: 'selected', selected_path: expectedPath};
+}"""
+
+
 _TRANSFER_SCRIPT = r"""(async () => {
   const expectedSharePath = __SHARE_PATH__;
   const sourceParent = __SOURCE_PARENT__;
@@ -697,44 +727,53 @@ _TRANSFER_SCRIPT = r"""(async () => {
     );
     return nodes;
   };
-  for (const segment of destinationSegments) {
-    const segmentDeadline = Date.now() + 10000;
-    let matches = [];
-    while (Date.now() < segmentDeadline) {
-      matches = exactCandidates(dialog, segment);
-      if (matches.length === 1) break;
-      await new Promise(resolve => setTimeout(resolve, 100));
-    }
-    if (matches.length !== 1) {
-      return {
-        status: 'destination_segment_not_unique',
-        segment,
-        matches: matches.length,
-        triggered: false
-      };
-    }
-    const handler = matches[0].closest('.treeview-node-handler');
-    if (!handler) {
-      return {
-        status: 'destination_segment_handler_missing',
-        segment,
-        triggered: false
-      };
-    }
-    handler.click();
-    await new Promise(resolve => setTimeout(resolve, 500));
-  }
-  const selected = exactCandidates(
-    dialog,
-    destinationSegments[destinationSegments.length - 1]
+  const selectRecentDestination = __SELECT_RECENT_DESTINATION__;
+  const recentDestination = selectRecentDestination(
+    dialog, destinationSegments, visible
   );
-  if (
-    selected.length !== 1
-    || !selected[0].closest('.treeview-node')?.classList.contains(
-      'treeview-node-on'
-    )
-  ) {
-    return {status: 'destination_not_selected', triggered: false};
+  if (!['selected', 'tree_required'].includes(recentDestination.status)) {
+    return recentDestination;
+  }
+  if (recentDestination.status === 'tree_required') {
+    for (const segment of destinationSegments) {
+      const segmentDeadline = Date.now() + 10000;
+      let matches = [];
+      while (Date.now() < segmentDeadline) {
+        matches = exactCandidates(dialog, segment);
+        if (matches.length === 1) break;
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      if (matches.length !== 1) {
+        return {
+          status: 'destination_segment_not_unique',
+          segment,
+          matches: matches.length,
+          triggered: false
+        };
+      }
+      const handler = matches[0].closest('.treeview-node-handler');
+      if (!handler) {
+        return {
+          status: 'destination_segment_handler_missing',
+          segment,
+          triggered: false
+        };
+      }
+      handler.click();
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+    const selected = exactCandidates(
+      dialog,
+      destinationSegments[destinationSegments.length - 1]
+    );
+    if (
+      selected.length !== 1
+      || !selected[0].closest('.treeview-node')?.classList.contains(
+        'treeview-node-on'
+      )
+    ) {
+      return {status: 'destination_not_selected', triggered: false};
+    }
   }
   const confirmLabels = new Set(['确定']);
   const confirms = [...dialog.querySelectorAll(
@@ -977,7 +1016,7 @@ _TRANSFER_SCRIPT = r"""(async () => {
     provider_request_observed: network.requestSeen,
     provider_response_observed: network.responseSeen
   };
-})()"""
+})()""" .replace("__SELECT_RECENT_DESTINATION__", _SELECT_RECENT_DESTINATION_FUNCTION)
 
 
 _TRANSFER_PAGE_SUBMIT_SCRIPT = r"""(async () => {

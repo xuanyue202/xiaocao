@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -27,6 +28,65 @@ from xiaocao.kol.subscription_video import (
 
 
 NOW = datetime.fromisoformat("2026-07-25T16:00:00+08:00")
+
+
+@pytest.mark.parametrize("already_selected", [False, True])
+@pytest.mark.parametrize("recent_paths,selected_paths,expected", [
+    (["/课程/自己的课/吕晓彤"], ["/课程/自己的课/吕晓彤"], "selected"),
+    (["/别处/吕晓彤"], [], "tree_required"),
+    (["/课程/自己的课/吕晓彤"] * 2, [], "destination_recent_path_ambiguous"),
+    (["/课程/自己的课/吕晓彤"], [], "destination_recent_path_not_selected"),
+    (["/课程/自己的课/吕晓彤"], ["/别处/吕晓彤"], "destination_recent_path_not_selected"),
+])
+def test_lv_transfer_recent_destination_requires_exact_selected_path(
+    recent_paths, selected_paths, expected, already_selected,
+):
+    from xiaocao.kol.subscription_video import _SELECT_RECENT_DESTINATION_FUNCTION
+
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("Node is required to execute destination selection")
+    # The provider tree can be stalled while its full recent path is usable.
+    # Selection must be proven from the resulting UI, not the click return.
+    fixture = json.dumps({
+        "recent": recent_paths, "selected": selected_paths,
+        "alreadySelected": already_selected,
+    })
+    script = """
+const fixture = __FIXTURE__;
+let clicks = 0;
+const rows = fixture.recent.map(path => ({
+  getAttribute: key => key === 'title' ? path : null,
+  click: () => { clicks++; }
+}));
+const selected = fixture.selected.map(path => ({
+  getAttribute: key => key === 'title' ? path : null
+}));
+const dialog = {querySelectorAll: selector => (
+  selector === '.save-path-item.check'
+    ? (clicks || fixture.alreadySelected ? selected : []) : rows
+)};
+const select = __FUNCTION__;
+(async () => {
+  const result = await select(dialog, ['课程', '自己的课', '吕晓彤'], () => true);
+  console.log(JSON.stringify({result, clicks}));
+})().catch(error => { console.error(error); process.exit(1); });
+""".replace("__FIXTURE__", fixture).replace(
+        "__FUNCTION__", _SELECT_RECENT_DESTINATION_FUNCTION,
+    )
+    result = subprocess.run(
+        [node, "-e", script], check=True, capture_output=True, text=True,
+    )
+    observed = json.loads(result.stdout)
+    assert observed["result"]["status"] == expected
+    expected_clicks = int(
+        len(recent_paths) == 1
+        and recent_paths[0] == "/课程/自己的课/吕晓彤"
+        and not (already_selected and expected == "selected")
+    )
+    assert observed["clicks"] == expected_clicks
+    if expected == "selected":
+        assert observed["result"]["selected_path"] == "/课程/自己的课/吕晓彤"
 
 
 def _config(tmp_path: Path) -> Path:

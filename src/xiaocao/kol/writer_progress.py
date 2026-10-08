@@ -839,6 +839,7 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
         (
             "transfer_activation_falls_back_for_bound_user_tab or "
             "transfer_bound_tab_recovery_fails_closed or "
+            "lv_transfer_recent_destination_requires_exact_selected_path or "
             "repair_validation_rejects_unrelated_native_input_failure or "
             "lv_transfer_claim_precedes_click_and_exact_copy_readback_completes or "
             "lv_transfer_lost_native_input_is_repair_not_provider_attempt or "
