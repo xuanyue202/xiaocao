@@ -414,6 +414,42 @@ def test_source_cli_narrow_runner_supports_wechat_official_accounts():
     ) is official
 
 
+@pytest.mark.parametrize("command,extra", [
+    ("prepare-trading-sources", ["--publication-key", "example"]),
+    ("capture-local", []),
+    ("resume-source-repair", ["--source-adapter", "subscription_video"]),
+])
+def test_local_capture_flag_rejects_other_business_entries(monkeypatch, command, extra):
+    monkeypatch.setattr(sys, "argv", ["kol_daily.py", command, "--local-capture", *extra])
+    monkeypatch.setattr(kol_daily_script, "DailyRuntime", lambda *args: pytest.fail("business entered"))
+    with pytest.raises(SystemExit) as exc:
+        kol_daily_script.main()
+    assert exc.value.code == 2
+
+
+def test_local_official_repair_preserves_capture_ownership(monkeypatch):
+    calls = []
+    runtime = SimpleNamespace(
+        args=SimpleNamespace(local_capture=True),
+        wechat_official_local=lambda: calls.append("local_capture") or {"status": "no_update"},
+        wechat_official_narrow_resume=lambda surface: (_ for _ in ()).throw(
+            AssertionError("local repair must not start the remote writer")
+        ),
+    )
+    monkeypatch.setattr(kol_daily_script, "_writer_failure_revision", lambda: "a" * 40)
+    result = kol_daily_script._resume_source_repair_outcome(
+        runtime, "wechat_official_accounts", "wechat_official_accounts:source",
+        failure_code="source_temporarily_unavailable",
+    )
+    assert calls == ["local_capture"]
+    assert result["status"] == "no_update"
+    with pytest.raises(DailyError):
+        _source_cli_narrow_runner(runtime, "wechat_official_accounts")(
+            "wechat_official_accounts:unrelated-article"
+        )
+    assert calls == ["local_capture"]
+
+
 def test_wechat_official_cli_missing_repair_resumes_remote_inbox_only(
     monkeypatch,
 ):

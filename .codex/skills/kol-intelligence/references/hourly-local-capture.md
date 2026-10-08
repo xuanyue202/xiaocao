@@ -45,6 +45,12 @@ message must be reconciled before creating another capture.
 `wechat_official_accounts`; it never scans Lv, analyzes, publishes, or writes
 Book. Do not substitute the remote coordinator.
 
+For a validated local `wechat_official_accounts` repair, use
+`resume-source-repair --source-adapter wechat_official_accounts
+--failure-fingerprint <exact fingerprint> --local-capture`.
+The flag keeps the continuation on URL capture and mailbox reconciliation;
+the unflagged command retains the remote inbox writer's existing behavior.
+
 The coordinator locks only short ledger transactions. Source execution uses a
 non-blocking slot per source, including narrow continuations. Browser/MCP/stdin
 waits do not hold the ledger lock. `source_skipped_busy` with
