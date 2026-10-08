@@ -2011,6 +2011,88 @@ def test_prior_day_native_history_does_not_infer_terminal_from_accepted() -> Non
     assert native.query_calls == ["history-orders", "history-trades", "positions"]
 
 
+@pytest.mark.app_simulation
+def test_historical_sell_signed_quantity_preserves_native_cell() -> None:
+    native = FakeNative()
+    native.history_trades = [{
+        "证券代码": "603042", "买卖标志": "卖出", "成交日期": "20260930",
+        "成交时间": "144609", "成交价格": "16.6300", "成交数量": "-500.00",
+        "成交金额": "8315.00", "成交编号": "1300457548", "委托编号": "6004842",
+    }]
+    result = _adapter(native)._query("history-trades")
+    assert result["rows"][0]["成交数量"] == "500"
+    assert result["rows"][0]["native_raw_trade_quantity"] == "-500.00"
+    assert native.history_trades[0]["成交数量"] == "-500.00"
+
+
+@pytest.mark.app_simulation
+def test_historical_signed_sell_reconciles_exact_fill_notional() -> None:
+    native = FakeNative()
+    native.history_orders = [{
+        "证券代码": "000001", "买卖标志": "卖出", "委托日期": "20260830",
+        "委托时间": "145040", "委托类别": "买卖", "状态说明": "已成",
+        "委托价格": "10.00", "委托数量": "100", "成交数量": "100",
+        "委托编号": "6001324",
+    }]
+    native.history_trades = [{
+        "证券代码": "000001", "买卖标志": "卖出", "成交日期": "20260830",
+        "成交时间": "145041", "成交价格": price, "成交数量": quantity,
+        "成交金额": amount, "成交编号": trade_id, "委托编号": "6001324",
+    } for price, quantity, amount, trade_id in (
+        ("10.00", "-40.00", "400.00", "700001"),
+        ("11.00", "-60.00", "660.00", "700002"),
+    )]
+    receipt = _adapter(native)._reconcile_prior_day_rows(
+        replace(_plan(), side="SELL"), requested_shares=100,
+        expected_order_id="6001324",
+    )
+    assert receipt.normalized_status() == BrokerStatus.FILLED
+    assert receipt.receipt_mapping is True
+    assert receipt.filled_shares == 100
+    assert receipt.remaining_shares == 0
+    assert receipt.fill_price == 10.6
+    assert Decimal(receipt.locator_proof["current_order_cumulative_fill_notional"]) == Decimal("1060")
+    assert native.submit_calls == native.cancel_calls == 0
+
+
+@pytest.mark.app_simulation
+def test_historical_signed_cancellation_cannot_become_fill() -> None:
+    native = FakeNative()
+    native.history_trades = [{
+        "证券代码": "603042", "买卖标志": "卖出", "成交日期": "20260930",
+        "成交时间": "144609", "成交价格": "16.63", "成交数量": "-500",
+        "成交金额": "8315", "成交编号": "1300457548", "委托编号": "6004842",
+        "成交类型": "撤单",
+    }]
+    with pytest.raises(FounderscNativeAXError, match="SIGNED_TRADE_QUANTITY_UNPROVEN"):
+        _adapter(native)._query("history-trades")
+
+
+@pytest.mark.app_simulation
+@pytest.mark.parametrize("kind,side,price,amount,quantity", [
+    ("today-trades", "卖出", "16.63", "8315", "-500"),
+    ("history-trades", "买入", "16.63", "8315", "-500"),
+    ("history-trades", "卖出", "16.63", "8314", "-500"),
+    ("history-trades", "卖出", "0", "0", "-500"),
+    ("history-trades", "卖出", "16.63", "8323.315", "-500.5"),
+])
+def test_signed_trade_quantity_requires_exact_historical_sell_proof(
+    kind, side, price, amount, quantity,
+) -> None:
+    native = FakeNative()
+    rows = [{
+        "证券代码": "603042", "买卖标志": side, "成交日期": "20260930",
+        "成交时间": "144609", "成交价格": price, "成交数量": quantity,
+        "成交金额": amount, "成交编号": "1300457548", "委托编号": "6004842",
+    }]
+    if kind == "history-trades":
+        native.history_trades = rows
+    else:
+        native.trades = rows
+    with pytest.raises(FounderscNativeAXError):
+        _adapter(native)._query(kind)
+
+
 @pytest.mark.parametrize("filled", [0, 40, 100])
 def test_prior_day_native_history_accepts_explicit_exact_cancel_terminal(filled) -> None:
     native = FakeNative()

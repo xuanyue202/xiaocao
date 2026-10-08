@@ -1068,6 +1068,8 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                                 zero_normalizations.append({"order_id": row["委托编号"], "raw": row["成交数量"]})
                                 row["成交数量"] = "0"
                     try:
+                        if kind == "history-trades" and parsing_proven:
+                            self._normalize_historical_sell_quantities(rows)
                         self._validate_rows(kind, rows)
                     except FounderscNativeAXError as exc:
                         last_error = str(exc)
@@ -1269,6 +1271,23 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             "native_result_readback",
         }
         return {key: locator[key] for key in keys if key in locator}
+
+    @staticmethod
+    def _normalize_historical_sell_quantities(rows: list[dict[str, Any]]) -> None:
+        """Preserve Founder's signed history cells while exposing share counts."""
+        for row in rows:
+            quantity = _integer(row.get("成交数量"), field="TRADE_QUANTITY")
+            if quantity >= 0:
+                continue
+            price = _decimal(row.get("成交价格"), field="TRADE_PRICE")
+            amount = _decimal(row.get("成交金额"), field="TRADE_AMOUNT")
+            if (_side(row.get("买卖标志")) != "SELL"
+                    or _is_cancel_trade_row(row)
+                    or price <= 0
+                    or amount != price * -quantity):
+                raise FounderscNativeAXError("NATIVE_QUERY_SIGNED_TRADE_QUANTITY_UNPROVEN")
+            row["native_raw_trade_quantity"] = row["成交数量"]
+            row["成交数量"] = str(-quantity)
 
     @staticmethod
     def _validate_rows(kind: str, rows: list[dict[str, Any]]) -> None:
