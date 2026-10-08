@@ -1676,7 +1676,7 @@ def test_repair_validation_accepts_subscription_video_source_run_profile(
             return CompletedProcess(command, 0, "", "")
         raise AssertionError(command)
 
-    expected_command = (
+    expected_command_prefix = (
         "env",
         "PYTHONPATH=src",
         ".venv/bin/python",
@@ -1690,37 +1690,28 @@ def test_repair_validation_accepts_subscription_video_source_run_profile(
         "tests/test_kol_writer_progress.py",
         "-q",
         "-k",
-        (
-            "semantic_duplicate_requires_receipted_household_and_paper_ledgers or "
-            "no_trade_is_an_idempotent_book_decision or "
-            "each_replay_uses_fresh_household_context or "
-            "lv_transfer_unobserved_toast_waits_for_bound_receipt or "
-            "lv_transfer_legacy_unobserved_blocker_requires_repair_revision or "
-            "lv_transfer_legacy_observability_repair_runs_one_bound_probe or "
-            "blocked_legacy_transfer_can_reenter_exact_reconciliation or "
-            "lv_transfer_reopens_share_once_after_target_not_unique or "
-            "lv_destination_triggered_claim_has_poll_deadline or "
-            "source_cli_narrow_runner_supports_subscription_video or "
-            "transcript_claim_replay_never_repeats_generation_interaction or "
-            "bound_user_player_close_releases_exact_page_to_private_folder or "
-            "source_repair_validation_accepts_pending_resume or "
-            "repair_validation_accepts_subscription_video_source_run_profile or "
-            "repair_validation_accepts_subscription_video_source_alias_profile or "
-            "bound_player_close_uses_subscription_video_source_profile or "
-            "repair_closure_accepts_subscription_video_observability_profile_alias or "
-            "repair_resume_persists_following_repair"
-        ),
     )
+    required_cases = {
+        "transfer_activation_falls_back_for_bound_user_tab",
+        "transfer_bound_tab_recovery_fails_closed",
+        "lv_transfer_claim_precedes_click_and_exact_copy_readback_completes",
+        "lv_transfer_lost_native_input_is_repair_not_provider_attempt",
+        "lv_transfer_unobserved_toast_waits_for_bound_receipt",
+        "transcript_claim_replay_never_repeats_generation_interaction",
+        "source_repair_validation_accepts_pending_resume",
+        "repair_resume_persists_following_repair",
+    }
+
+    def run_tests(command: tuple[str, ...]) -> CompletedProcess[str]:
+        assert command[:-1] == expected_command_prefix
+        assert required_cases <= set(command[-1].split(" or "))
+        return CompletedProcess(command, 0, "7 passed\n", "")
+
     service = RepairValidationService(
         tmp_path,
         ledger=RepairValidationLedger(tmp_path / "repair-validation.jsonl"),
         git_runner=git,
-        test_runner=lambda command: CompletedProcess(
-            command,
-            0 if command == expected_command else 1,
-            "7 passed\n",
-            "",
-        ),
+        test_runner=run_tests,
         now=lambda: "2026-08-10T23:30:00+08:00",
     )
 

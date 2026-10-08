@@ -1993,11 +1993,14 @@ def test_lv_transfer_retries_once_after_authoritative_absence_reconciliation(
     assert recovery["trigger_attempt_maximum"] == 2
 
 
+@pytest.mark.parametrize("bound_user_tab", [False, True])
 def test_lv_transfer_claim_precedes_click_and_exact_copy_readback_completes(
-    tmp_path,
+    tmp_path, bound_user_tab,
 ):
     triggered = False
     native_click_calls = 0
+    detached = False
+    input_page = "owned-page" if bound_user_tab else "page-1"
     service = _service(tmp_path, sleep=lambda _seconds: None)
     item = service._normalize(
         _source_rows()[0][1],
@@ -2030,13 +2033,22 @@ def test_lv_transfer_claim_precedes_click_and_exact_copy_readback_completes(
     service._direct_private_entries = direct_entries
 
     def opencli(session, *args, **_kwargs):
-        nonlocal triggered, native_click_calls
+        nonlocal triggered, native_click_calls, detached
         if args[0] == "open":
-            return {"url": "sanitized", "page": "page-1"}
+            return {"url": "sanitized", "page": input_page if detached else "page-1"}
+        if args[0] == "unbind":
+            assert bound_user_tab and not detached
+            detached = True
+            return {"unbound": True, "session": session}
         if args[0] == "tab":
-            assert args[1:3] == ("select", "page-1")
             assert args[3:5] == ("--window", "foreground")
-            return {"selected": "page-1"}
+            if bound_user_tab and not detached:
+                raise EnrichmentDiagnosticError(
+                    "bound user tab", category="provider_contract_error",
+                    code="opencli_bound_tab_mutation_blocked", stage="browser_command",
+                )
+            assert args[1:3] == ("select", input_page)
+            return {"selected": input_page}
         claim_path = service._claim_path(f"lv_transfer_{item['version_key']}")
         claim = json.loads(claim_path.read_text(encoding="utf-8"))
         assert claim["large_payload_local_bytes"] == 0
@@ -2044,7 +2056,7 @@ def test_lv_transfer_claim_precedes_click_and_exact_copy_readback_completes(
             native_click_calls += 1
             assert claim["status"] == "native_click_claimed"
             assert args[1] == '[data-xiaocao-lv-confirm="ready"]'
-            assert args[2:4] == ("--tab", "page-1")
+            assert args[2:4] == ("--tab", input_page)
             return {
                 "clicked": True,
                 "target": args[1],
@@ -2093,7 +2105,8 @@ def test_lv_transfer_claim_precedes_click_and_exact_copy_readback_completes(
             encoding="utf-8"
         )
     )
-    assert final_claim["native_click_page_id"] == "page-1"
+    assert final_claim["native_click_page_id"] == input_page
+    assert detached == bound_user_tab
     assert final_claim["native_click_window"] == "foreground"
     events = service.events_path.read_text().splitlines()
     assert sum("lv_cloud_transfer_triggered" in row for row in events) == 1

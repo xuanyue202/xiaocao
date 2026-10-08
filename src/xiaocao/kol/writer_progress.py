@@ -837,6 +837,10 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
         "-q",
         "-k",
         (
+            "transfer_activation_falls_back_for_bound_user_tab or "
+            "transfer_bound_tab_recovery_fails_closed or "
+            "lv_transfer_claim_precedes_click_and_exact_copy_readback_completes or "
+            "lv_transfer_lost_native_input_is_repair_not_provider_attempt or "
             "semantic_duplicate_requires_receipted_household_and_paper_ledgers or "
             "no_trade_is_an_idempotent_book_decision or "
             "each_replay_uses_fresh_household_context or "
