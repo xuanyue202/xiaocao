@@ -2959,6 +2959,7 @@ class ConvergenceLedger:
         self.lock_path = self.path.with_suffix(f"{self.path.suffix}.lock")
         self.now = now or (lambda: datetime.now().astimezone())
         self._thread_lock = threading.RLock()
+        self._lock_depth = 0
 
     def _now(self) -> str:
         value = self.now()
@@ -2970,11 +2971,16 @@ class ConvergenceLedger:
     def _locked(self) -> Iterator[None]:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._thread_lock:
+            if self._lock_depth:
+                yield
+                return
             with self.lock_path.open("a+", encoding="utf-8") as handle:
                 fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+                self._lock_depth += 1
                 try:
                     yield
                 finally:
+                    self._lock_depth -= 1
                     fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
     def _append(self, row: dict[str, Any]) -> dict[str, Any]:
@@ -2987,12 +2993,13 @@ class ConvergenceLedger:
         )
 
     def events(self) -> list[dict[str, Any]]:
-        return read_integrity_jsonl(
-            self.path,
-            max_line_bytes=_MAX_LEDGER_LINE_BYTES,
-            label="convergence ledger",
-            error_factory=ProgressContractError,
-        )
+        with self._locked():
+            return read_integrity_jsonl(
+                self.path,
+                max_line_bytes=_MAX_LEDGER_LINE_BYTES,
+                label="convergence ledger",
+                error_factory=ProgressContractError,
+            )
 
     def report(
         self,

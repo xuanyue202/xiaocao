@@ -2840,6 +2840,11 @@ def test_capture_local_cli_follows_exact_cloud_handoff_in_same_process(
     class FakeCoordinator:
         def __init__(self, output_dir):
             assert output_dir == tmp_path / "daily"
+            self.delegate = DailyCoordinator(output_dir)
+
+        def _source_locked(self, source):
+            observed["follow_source"] = source
+            return self.delegate._source_locked(source)
 
         def run(self, sources, *, blocker_sender):
             observed["coordinator_runs"] = int(observed["coordinator_runs"]) + 1
@@ -2917,6 +2922,7 @@ def test_capture_local_cli_follows_exact_cloud_handoff_in_same_process(
 
     assert kol_daily_script.main() == 0
     assert observed["coordinator_runs"] == 1
+    assert observed["follow_source"] == "xiaocao_wechat_live"
     assert observed["follow_calls"] == [
         ("kol-wechat-current", "kol-capture-current"),
         ("kol-wechat-current", "kol-capture-current"),

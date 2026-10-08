@@ -13,7 +13,7 @@ import json
 import re
 import threading
 import time
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -124,6 +124,23 @@ def _next_local_playback_recheck(value: datetime) -> datetime:
 
 class DailyError(EnrichmentError):
     """The daily coordination contract could not be proved."""
+
+
+class LegacyCoordinatorBusy(DailyError):
+    """An old runner owns the ledger; do not inspect or mutate it."""
+
+
+class SourceExecutionBusy(DailyError):
+    def __init__(self, source: str, code: str):
+        super().__init__(f"source execution busy: {source} ({code})")
+        self.source = source
+        self.code = code
+
+    def diagnostic(self) -> dict[str, Any]:
+        return {
+            "status": "waiting", "category": "concurrency",
+            "code": self.code, "stage": "source_run", "source": self.source,
+        }
 
 
 class ControlPlaneHandlerError(DailyError):
@@ -1861,13 +1878,16 @@ class DailyCoordinator:
             self.output_dir / "convergence.jsonl",
             now=lambda: self._beijing_now(),
         )
-        self.lock_path = self.output_dir / ".lock"
+        self.lock_path = self.output_dir / ".events.lock"
+        self.legacy_lock_path = self.output_dir / ".lock"
         self.now = now or (lambda: datetime.now(BEIJING))
         self._failure_revision_provider = failure_revision or (
             lambda: resolve_repository_revision(Path(__file__).parents[3])
         )
         self._resolved_failure_revision: str | None = None
         self._thread_lock = threading.RLock()
+        self._lock_depth = 0
+        self._source_ownership = threading.local()
 
     def mailbox_progress(self) -> dict[str, Any]:
         """Read the durable mailbox projection without contacting the provider."""
@@ -2218,27 +2238,79 @@ class DailyCoordinator:
         }
 
     @contextmanager
+    def _legacy_locked(self) -> Iterator[None]:
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        with self.legacy_lock_path.open("a+") as handle:
+            try:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_SH | fcntl.LOCK_NB)
+            except BlockingIOError as exc:
+                raise LegacyCoordinatorBusy("legacy_coordinator_busy") from exc
+            yield
+
+    @contextmanager
     def _locked(self) -> Iterator[None]:
+        """Protect ledger transactions only; never hold across source callbacks."""
         self.output_dir.mkdir(parents=True, exist_ok=True)
         with self._thread_lock:
-            with self.lock_path.open("a+", encoding="utf-8") as handle:
+            if self._lock_depth:
+                yield
+                return
+            with self._legacy_locked(), self.lock_path.open("a+", encoding="utf-8") as handle:
                 fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+                self._lock_depth += 1
                 try:
                     yield
                 finally:
+                    self._lock_depth -= 1
                     fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
-    def _events_unlocked(self) -> list[dict[str, Any]]:
-        return read_integrity_jsonl(
-            self.events_path,
-            max_line_bytes=MAX_LEDGER_LINE_BYTES,
-            label="daily ledger",
-            error_factory=DailyError,
-        )
+    @contextmanager
+    def _source_slot(self, source: str) -> Iterator[str | None]:
+        """Skip a busy source without queuing unrelated sources behind it."""
+        directory = self.output_dir / ".source-locks"
+        directory.mkdir(parents=True, exist_ok=True)
+        key = hashlib.sha256(source.encode("utf-8")).hexdigest()
+        # Old runners still hold the former global lock. Shared acquisition
+        # lets new sources coexist, but prevents old/new writers overlapping.
+        with ExitStack() as stack:
+            try:
+                stack.enter_context(self._legacy_locked())
+            except LegacyCoordinatorBusy:
+                yield "legacy_coordinator_busy"
+                return
+            with (directory / f"{key}.lock").open("a+") as handle:
+                try:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    yield "source_busy"
+                    return
+                try:
+                    owned = getattr(self._source_ownership, "sources", set())
+                    self._source_ownership.sources = owned
+                    owned.add(source)
+                    yield None
+                finally:
+                    owned.remove(source)
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+    @contextmanager
+    def _source_locked(self, source: str) -> Iterator[None]:
+        if source in getattr(self._source_ownership, "sources", set()):
+            yield
+            return
+        with self._source_slot(source) as busy:
+            if busy:
+                raise SourceExecutionBusy(source, busy)
+            yield
 
     def events(self) -> list[dict[str, Any]]:
         with self._locked():
-            return self._events_unlocked()
+            return read_integrity_jsonl(
+                self.events_path,
+                max_line_bytes=MAX_LEDGER_LINE_BYTES,
+                label="daily ledger",
+                error_factory=DailyError,
+            )
 
     @staticmethod
     def _last_sweep_state(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
@@ -2355,13 +2427,14 @@ class DailyCoordinator:
             "occurred_at": self._beijing_now().isoformat(timespec="seconds"),
             **fields,
         }
-        return append_integrity_jsonl(
-            self.events_path,
-            row,
-            max_line_bytes=MAX_LEDGER_LINE_BYTES,
-            label="daily ledger",
-            error_factory=DailyError,
-        )
+        with self._locked():
+            return append_integrity_jsonl(
+                self.events_path,
+                row,
+                max_line_bytes=MAX_LEDGER_LINE_BYTES,
+                label="daily ledger",
+                error_factory=DailyError,
+            )
 
     @staticmethod
     def _source_states(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -2381,6 +2454,10 @@ class DailyCoordinator:
                     "failure",
                     "writer_progress",
                     "resume_command",
+                    "category",
+                    "code",
+                    "stage",
+                    "busy",
                 )
                 if key in row
             }
@@ -2672,7 +2749,7 @@ class DailyCoordinator:
             raise DailyError("user-action blocker requires an operational sender")
         blocker_state_rows = [
             row
-            for row in self._events_unlocked()
+            for row in self.events()
             if row.get("event") in {"blocker_notified", "blocker_cleared"}
             and row.get("source") == source
         ]
@@ -2704,7 +2781,7 @@ class DailyCoordinator:
     ) -> bool:
         """Send one operational blocker notice until that source clears it."""
 
-        with self._locked():
+        with self._source_locked(source):
             return self._notify_user_action_unlocked(
                 source=source,
                 blocker_key=blocker_key,
@@ -2712,7 +2789,38 @@ class DailyCoordinator:
                 blocker_sender=blocker_sender,
             )
 
+    @staticmethod
+    def _legacy_busy_result() -> dict[str, Any]:
+        return {
+            "status": "waiting", "health": "waiting", "silent": False,
+            "category": "concurrency", "code": "legacy_coordinator_busy",
+            "stage": "daily_ledger_readback", "ledger_available": False,
+        }
+
     def run(
+        self,
+        sources: list[dict[str, Any]],
+        *,
+        blocker_sender: Callable[[str, str], Any] | None = None,
+    ) -> dict[str, Any]:
+        if self._beijing_now().hour not in DAYTIME_HOURS:
+            return self._run(sources, blocker_sender=blocker_sender)
+        # A shared migration guard does not serialize new sources. It prevents
+        # an old global writer starting between our short ledger transactions.
+        try:
+            with self._legacy_locked():
+                return self._run(sources, blocker_sender=blocker_sender)
+        except LegacyCoordinatorBusy:
+            result = self._legacy_busy_result()
+            result["source_results"] = [
+                {"name": str(source.get("name") or ""), "status": "waiting",
+                 "category": "concurrency", "code": "legacy_coordinator_busy",
+                 "stage": "source_run", "busy": True}
+                for source in sources
+            ]
+            return result
+
+    def _run(
         self,
         sources: list[dict[str, Any]],
         *,
@@ -2732,14 +2840,7 @@ class DailyCoordinator:
             key=lambda row: (int(row.get("priority", 100)), str(row.get("name", ""))),
         )
         with self._locked():
-            prior_rows = self._events_unlocked()
-            recorded_terminal_ids = {
-                str(event.get("event_id"))
-                for row in prior_rows
-                if row.get("event") == "source_completed"
-                for event in (row.get("result", {}).get("events") or [])
-                if isinstance(event, dict) and event.get("event_id")
-            }
+            prior_rows = self.events()
             completed_by_source = {
                 str(row.get("source")): row.get("result")
                 for row in prior_rows
@@ -2757,12 +2858,44 @@ class DailyCoordinator:
                 slot=slot,
                 source_count=len(ordered),
             )
-            results: list[dict[str, Any]] = []
-            for source in ordered:
-                name = str(source.get("name") or "").strip()
-                runner = source.get("run")
-                if not name or not callable(runner):
-                    raise DailyError("daily source needs a name and callable runner")
+        results: list[dict[str, Any]] = []
+        for source in ordered:
+            name = str(source.get("name") or "").strip()
+            runner = source.get("run")
+            if not name or not callable(runner):
+                raise DailyError("daily source needs a name and callable runner")
+            with self._source_slot(name) as busy:
+                if busy:
+                    outcome = {
+                        "status": "waiting",
+                        "category": "concurrency",
+                        "code": busy,
+                        "stage": "source_run",
+                        "busy": True,
+                    }
+                    results.append({"name": name, **outcome})
+                    self._append(
+                        "source_skipped_busy", slot=slot, source=name, **outcome,
+                    )
+                    continue
+                # Another sweep may finish this source while we run another.
+                # Refresh under its execution slot before deciding to invoke it.
+                prior_rows = self.events()
+                recorded_terminal_ids = {
+                    str(event.get("event_id"))
+                    for row in prior_rows
+                    if row.get("event") == "source_completed"
+                    for event in (row.get("result", {}).get("events") or [])
+                    if isinstance(event, dict) and event.get("event_id")
+                }
+                completed_by_source = {
+                    str(row.get("source")): row.get("result")
+                    for row in prior_rows
+                    if row.get("event") == "source_completed"
+                    and row.get("slot") == slot
+                    and (row.get("result") or {}).get("status")
+                    in {"no_update", "completed"}
+                }
                 if name in completed_by_source:
                     prior_result = completed_by_source[name]
                     if not isinstance(prior_result, dict):
@@ -3293,13 +3426,13 @@ class DailyCoordinator:
                 )
                 prior_blockers = [
                     row
-                    for row in self._events_unlocked()
+                    for row in self.events()
                     if row.get("event") == "blocker_notified"
                     and row.get("source") == name
                 ]
                 prior_clears = [
                     row
-                    for row in self._events_unlocked()
+                    for row in self.events()
                     if row.get("event") == "blocker_cleared"
                     and row.get("source") == name
                 ]
@@ -3322,31 +3455,32 @@ class DailyCoordinator:
                     result=outcome,
                     coordinator_source_video_bytes=0,
                 )
-            source_states = self._source_states(results)
-            health = self._sweep_health(results)
-            duplicate_audit = self._duplicate_effect_audit(results)
-            self._append(
-                "sweep_completed",
-                slot=slot,
-                status="completed",
-                health=health,
-                source_count=len(results),
-                source_states=source_states,
-                elapsed_ms=max(
-                    0,
-                    int((time.monotonic() - sweep_started_monotonic) * 1000),
-                ),
-                coordinator_source_video_bytes=0,
-            )
-            self._append(
-                "duplicate_effect_audit",
-                slot=slot,
-                **duplicate_audit,
-            )
+        source_states = self._source_states(results)
+        health = self._sweep_health(results)
+        duplicate_audit = self._duplicate_effect_audit(results)
+        self._append(
+            "sweep_completed",
+            slot=slot,
+            status="completed",
+            health=health,
+            source_count=len(results),
+            source_states=source_states,
+            elapsed_ms=max(
+                0,
+                int((time.monotonic() - sweep_started_monotonic) * 1000),
+            ),
+            coordinator_source_video_bytes=0,
+        )
+        self._append(
+            "duplicate_effect_audit",
+            slot=slot,
+            **duplicate_audit,
+        )
         silent = (
             all(row["status"] in {"no_update", "waiting"} for row in results)
             and not any(row.get("failure") for row in results)
             and not any(row.get("repair_required") for row in results)
+            and not any(row.get("busy") for row in results)
         )
         return {
             "status": "completed",
@@ -3375,8 +3509,8 @@ class DailyCoordinator:
                 f"{kind} resume needs one source and exact item identity"
             )
         started = time.monotonic()
-        with self._locked():
-            prior_rows = self._events_unlocked()
+        with self._source_locked(name):
+            prior_rows = self.events()
             progress_row = self._source_progress_for_identity(
                 prior_rows,
                 name,
@@ -3673,7 +3807,7 @@ class DailyCoordinator:
         _validate_source_outcome(dict(outcome))
         started = time.monotonic()
         with self._locked():
-            prior_rows = self._events_unlocked()
+            prior_rows = self.events()
             prior_sweep = self._repair_originating_sweep(
                 prior_rows,
                 source=name,
@@ -3784,8 +3918,8 @@ class DailyCoordinator:
                 "structured input resume needs one source and bound request"
             )
         started = time.monotonic()
-        with self._locked():
-            prior_rows = self._events_unlocked()
+        with self._source_locked(name):
+            prior_rows = self.events()
             prior_sweep = self._originating_sweep_for_progress(
                 prior_rows,
                 source=name,
@@ -3961,8 +4095,8 @@ class DailyCoordinator:
                 "source reconciliation needs one source and exact claim"
             )
         started = time.monotonic()
-        with self._locked():
-            prior_rows = self._events_unlocked()
+        with self._source_locked(name):
+            prior_rows = self.events()
             prior_sweep = self._originating_sweep_for_progress(
                 prior_rows,
                 source=name,
@@ -4079,7 +4213,10 @@ class DailyCoordinator:
         }
 
     def status(self) -> dict[str, Any]:
-        rows = self.events()
+        try:
+            rows = self.events()
+        except LegacyCoordinatorBusy:
+            return self._legacy_busy_result()
         last = self._last_sweep_state(rows)
         sweep_health = str((last or {}).get("health") or "unknown")
         mailbox_progress = self.mailbox_progress()
@@ -4160,7 +4297,10 @@ class DailyCoordinator:
         )
 
     def audit(self) -> dict[str, Any]:
-        rows = self.events()
+        try:
+            rows = self.events()
+        except LegacyCoordinatorBusy:
+            return self._legacy_busy_result()
         convergence_rows = self.convergence.events()
         last = self._last_sweep_state(rows)
         sweep_health = str((last or {}).get("health") or "unknown")

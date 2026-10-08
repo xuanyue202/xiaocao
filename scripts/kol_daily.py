@@ -29,6 +29,7 @@ from xiaocao.kol.daily import (
     build_triggered_evaluation_candidate,
     DailyCoordinator,
     DailyError,
+    SourceExecutionBusy,
     DailyPublicationContext,
     DailyPublicationPipeline,
     initial_projection_terminal,
@@ -2292,7 +2293,15 @@ def _cloud_handoff_binding(
 def _follow_cloud_handoff(
     runtime: "DailyRuntime",
     sweep_result: dict[str, Any],
+    *,
+    coordinator: DailyCoordinator | None = None,
 ) -> dict[str, Any] | None:
+    if coordinator is not None and (
+        _cloud_handoff_binding(sweep_result, stage="compressed_capture") is not None
+        or _cloud_handoff_binding(sweep_result) is not None
+    ):
+        with coordinator._source_locked("xiaocao_wechat_live"):
+            return _follow_cloud_handoff(runtime, sweep_result)
     # A running download is not a terminal result. Keep the same PTY alive
     # through compression, cleanup, upload and its structured mailbox receipt.
     # Never turn an awaiting-playback result into repeated UI activation.
@@ -5135,49 +5144,50 @@ def main() -> int:
                 "resume-source-repair requires source adapter and fingerprint"
             )
         service = DailyCoordinator(args.output_dir)
-        pending = service.convergence.pending_resume(args.source_adapter)
-        if pending is None:
-            raise DailyError("source repair has no validated narrow resume")
-        progress, closure = pending
-        if progress.failure_fingerprint != args.failure_fingerprint:
-            raise DailyError("source repair fingerprint changed before resume")
-        repair_revision = str(
-            (closure.get("repair_receipt") or {}).get("repair_revision") or ""
-        )
-        if not re.fullmatch(r"[0-9a-f]{40}", repair_revision):
-            raise DailyError("source repair closure lost its repair revision")
-        if args.repair_revision and args.repair_revision != repair_revision:
-            raise DailyError("source repair revision changed before resume")
-        args.repair_revision = repair_revision
-        runtime = DailyRuntime(args)
-        surface = str(progress.details["narrow_resume_surface"])
-        outcome = _resume_source_repair_outcome(
-            runtime,
-            args.source_adapter,
-            surface,
-            failure_code=str(progress.details["failure"]["code"]),
-            provider_recovery_target=(
-                {name: closure["repair_receipt"]["provider_recovery"][name]
-                 for name in ("source_identity", "bundle_sha256")}
-                if closure["repair_receipt"].get("provider_recovery") is not None
-                else None
-            ),
-        )
-        following = WriterProgress.from_dict(outcome["writer_progress"])
-        if following.status == "user_action_required":
-            outcome["notification_sent"] = service.notify_user_action(
-                source=args.source_adapter,
-                blocker_key=str(following.details["blocker_identity"]),
-                action=str(following.details["action"]),
-                blocker_sender=_sender,
+        with service._source_locked(args.source_adapter):
+            pending = service.convergence.pending_resume(args.source_adapter)
+            if pending is None:
+                raise DailyError("source repair has no validated narrow resume")
+            progress, closure = pending
+            if progress.failure_fingerprint != args.failure_fingerprint:
+                raise DailyError("source repair fingerprint changed before resume")
+            repair_revision = str(
+                (closure.get("repair_receipt") or {}).get("repair_revision") or ""
             )
-        resume_receipt = service.record_repair_resume(
-            args.source_adapter,
-            prior=progress,
-            outcome=outcome,
-            following=following,
-            slot=_source_repair_slot(service),
-        )
+            if not re.fullmatch(r"[0-9a-f]{40}", repair_revision):
+                raise DailyError("source repair closure lost its repair revision")
+            if args.repair_revision and args.repair_revision != repair_revision:
+                raise DailyError("source repair revision changed before resume")
+            args.repair_revision = repair_revision
+            runtime = DailyRuntime(args)
+            surface = str(progress.details["narrow_resume_surface"])
+            outcome = _resume_source_repair_outcome(
+                runtime,
+                args.source_adapter,
+                surface,
+                failure_code=str(progress.details["failure"]["code"]),
+                provider_recovery_target=(
+                    {name: closure["repair_receipt"]["provider_recovery"][name]
+                     for name in ("source_identity", "bundle_sha256")}
+                    if closure["repair_receipt"].get("provider_recovery") is not None
+                    else None
+                ),
+            )
+            following = WriterProgress.from_dict(outcome["writer_progress"])
+            if following.status == "user_action_required":
+                outcome["notification_sent"] = service.notify_user_action(
+                    source=args.source_adapter,
+                    blocker_key=str(following.details["blocker_identity"]),
+                    action=str(following.details["action"]),
+                    blocker_sender=_sender,
+                )
+            resume_receipt = service.record_repair_resume(
+                args.source_adapter,
+                prior=progress,
+                outcome=outcome,
+                following=following,
+                slot=_source_repair_slot(service),
+            )
         _print({
             "source_repair_resume": outcome,
             "repair_resume_receipt": resume_receipt,
@@ -5187,6 +5197,9 @@ def main() -> int:
     service.mailbox_output_dir = args.mailbox_output_dir.expanduser().resolve()
     if args.command == "status":
         value = service.status()
+        if value.get("ledger_available") is False:
+            _print(value)
+            return 0
         value["latest_lv_video_goal"] = _latest_lv_video_goal(
             args.video_output_dir,
             service.events(),
@@ -5198,6 +5211,9 @@ def main() -> int:
         return 0
     if args.command == "audit":
         value = service.audit()
+        if value.get("ledger_available") is False:
+            _print(value)
+            return 0
         value["latest_lv_video_goal"] = _latest_lv_video_goal(
             args.video_output_dir,
             service.events(),
@@ -5327,7 +5343,7 @@ def main() -> int:
         )
         if not result.get("silent"):
             _print(result)
-        follow_result = _follow_cloud_handoff(runtime, result)
+        follow_result = _follow_cloud_handoff(runtime, result, coordinator=service)
         if follow_result is not None:
             _print(follow_result)
         return 0
@@ -5338,30 +5354,33 @@ def main() -> int:
             )
         runtime = DailyRuntime.__new__(DailyRuntime)
         runtime.args = args
-        result = runtime.xiaocao_wechat(
-            only_identity=args.source_identity,
-        )
-        if result.get("status") != "no_update":
-            _print(result)
-        follow_result = _follow_cloud_handoff(runtime, result)
-        if follow_result is not None:
-            _print(follow_result)
+        with service._source_locked("xiaocao_wechat_live"):
+            result = runtime.xiaocao_wechat(
+                only_identity=args.source_identity,
+            )
+            if result.get("status") != "no_update":
+                _print(result)
+            follow_result = _follow_cloud_handoff(runtime, result)
+            if follow_result is not None:
+                _print(follow_result)
         return 0
     if args.command == "capture-wechat-official":
         runtime = DailyRuntime.__new__(DailyRuntime)
         runtime.args = args
-        result = runtime.wechat_official_local()
-        if result.get("status") != "no_update":
-            _print(result)
+        with service._source_locked("wechat_official_accounts"):
+            result = runtime.wechat_official_local()
+            if result.get("status") != "no_update":
+                _print(result)
         return 0
     if args.command == "capture-xiaocao-handoff":
         runtime = DailyRuntime.__new__(DailyRuntime)
         runtime.args = args
-        result = runtime.xiaocao_handoff_local()
-        if result.get("status") != "no_update" or result.get(
-            "handoff_dispatched"
-        ):
-            _print(result)
+        with service._source_locked("xiaocao_wechat_live"):
+            result = runtime.xiaocao_handoff_local()
+            if result.get("status") != "no_update" or result.get(
+                "handoff_dispatched"
+            ):
+                _print(result)
         return 0
     if args.command == "viewpoints":
         runtime = DailyRuntime(args)
@@ -5547,6 +5566,9 @@ def main() -> int:
         ],
         blocker_sender=_sender,
     )
+    if result.get("ledger_available") is False:
+        _print(result)
+        return 0
     result["latest_lv_video_goal"] = _latest_lv_video_goal(
         args.video_output_dir,
         service.events(),
@@ -5559,6 +5581,9 @@ def main() -> int:
 if __name__ == "__main__":
     try:
         raise SystemExit(main())
+    except SourceExecutionBusy as exc:
+        print(json.dumps(exc.diagnostic(), ensure_ascii=False))
+        raise SystemExit(0) from exc
     except (DailyError, EnrichmentError, ProgressContractError) as exc:
         print(
             json.dumps(
