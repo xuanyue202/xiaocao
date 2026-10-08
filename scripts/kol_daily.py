@@ -997,7 +997,13 @@ def _semantic_parent_review_path(packet_path: Path, request_path: Path) -> Path:
     packet_review = packet_path.with_name("parent_source_review.json")
     if packet_review.is_file():
         return packet_review
-    return request_path.with_name("parent_source_review.json")
+    request_review = request_path.with_name("parent_source_review.json")
+    if not request_review.is_file():
+        raise DailyError(
+            "semantic delegation acceptance failed: parent full-source review is missing: "
+            f"expected {packet_review} or {request_review}"
+        )
+    return request_review
 
 
 def _persist_semantic_request(

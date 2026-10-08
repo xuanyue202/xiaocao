@@ -162,3 +162,23 @@ def test_packet_parent_review_does_not_fall_back_for_invalid_file(tmp_path):
     packet_review = packet.with_name("parent_source_review.json")
     packet_review.write_text("invalid review", encoding="utf-8")
     assert kol_daily._semantic_parent_review_path(packet, request) == packet_review
+
+
+def test_missing_parent_review_reports_the_required_evidence(tmp_path):
+    request, request_path, draft, market, bundle = _inputs(tmp_path)
+    prepared = prepare(request_path, market_evidence=market)
+    packet_path = Path(prepared["packet_path"])
+    packet = json.loads(packet_path.read_text(encoding="utf-8"))
+    draft_path = Path(packet["expected_outputs"]["semantic_draft.json"])
+    draft_path.write_text(json.dumps(draft), encoding="utf-8")
+    record_dispatch(
+        request_path, packet_path=packet_path,
+        agent_id="019a7213-73b4-7351-87c4-13e1234abcde",
+        invocation_args=prepared["spawn_arguments_path"],
+    )
+    build_validated_bundle_from_files(request_path, draft_path, market)
+    packet_path.with_name("parent_semantic_review.json").write_text(
+        '{"decision":"accepted"}', encoding="utf-8"
+    )
+    with pytest.raises(DailyError, match="parent full-source review is missing"):
+        kol_daily._require_canonical_semantic_artifact(bundle, request)

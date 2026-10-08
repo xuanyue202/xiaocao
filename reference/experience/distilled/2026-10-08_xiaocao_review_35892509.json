@@ -1,0 +1,648 @@
+{
+  "schema_version": 1,
+  "knowledge_status": "reusable_knowledge",
+  "authority": 0,
+  "ingestion_status": "not_ingested",
+  "date": "2026-10-08",
+  "kind": "小草10月8日直播语义蒸馏",
+  "author": "小草",
+  "summary": "可复用部分是条件化的判断顺序与研究纪律：先用环境和开盘广度决定参与权，再用轮动仓位封顶；弱势期优先低位和下跌超跌；高分候选必须同时保存出现秒点、当时涨幅、可成交价、候选全集与失败样本。涨停持有和临近涨停新追必须分开。房地产偏多只构成待验证的政策—供给—需求—资产负债表观察。只有“秒级监控高分排名并限制涨幅”与既有XH-190构成精确复现；其余只是关联、细化或方法缺口，不能增加既有假说票数。全部内容authority=0，不自动改变姿态、策略、参数、Book或账户。",
+  "posture": {
+    "regime": "小草把10月8日定义为空仓、主跌、下跌超跌环境；收盘附近短线环境-2.2%、全盘赛道-1.11%、科创板超短-3.93%只支持当日偏弱，不能证明早盘口述广度。",
+    "dominant_style": "弱势条件下偏低位、下跌超跌与非拥挤候选；中高位紫薇模式降权，倒接力只在高开不过热且位置不高时作为窄例外。",
+    "risk": "即使参与也不突破轮动仓位；10月8日所有具体买点收盘失效，10月9日必须重新验证环境。",
+    "style_ranking": [
+      "下跌超跌起爆与低吸",
+      "开盘不过热时的低位倒接力窄例外",
+      "高分但低涨幅的观察候选",
+      "中高位、已高涨幅或环境依赖强的模式"
+    ],
+    "currentness": "conditional_until_2026-10-09_close",
+    "global_posture_write": "not_applied"
+  },
+  "regime_call": {
+    "call": "下一交易日先按弱势姿态复核，不延续10月8日个股买点。",
+    "horizon": "至2026年10月9日收盘；房地产假说另按未来数周复核。",
+    "triggers": [
+      "开盘广度不过热",
+      "短线与赛道环境仍偏弱",
+      "低位超跌相对强于中高位"
+    ],
+    "what_would_falsify": [
+      "广度、承接和高位辨识度持续转强",
+      "低位超跌前瞻样本不再占优",
+      "作者撤销弱势环境判断"
+    ],
+    "evidence_boundary": "早盘2300、2700、2500至2600和接近4000只的数字均来自口述，未由绑定行情独立核验。"
+  },
+  "directions": [
+    {
+      "direction": "A股短线",
+      "stance": "defensive_conditional",
+      "horizon": "下一交易日",
+      "rule": "环境与风险预算先于模式和个股；只有开盘不过热、位置较低且承接正常时才保留有限试错。",
+      "evidence_refs": [
+        "8aed8ea3507e1b93bf42761eb8a69a2b8b4b4cc765b7f9418152f82dd75bece5",
+        "8b8bdf2b7712808f61eefe6cf8f736cbb5e4ffab7dd8c28f1a790c22fd982285"
+      ]
+    },
+    {
+      "direction": "黄金",
+      "stance": "flat_or_no_add",
+      "horizon": "直到作者或独立事实改变方向",
+      "rule": "来源维持空仓为主，但没有工具、价格、宏观依据或转多条件，不能直接触发家庭卖出。",
+      "evidence_refs": [
+        "25187c23b1f4a7e6c264a88cd4e42e75dd9389fe59d94d7c50e69eb12dff7167"
+      ]
+    },
+    {
+      "direction": "中国房地产",
+      "stance": "positive_but_unverified",
+      "horizon": "未来数周至周期",
+      "rule": "把港股表现、上海徐泾等近郊约4人抢1套、广州地点不确定且约200套还是300套在两分钟内售罄、供给收缩和政策修复居民资产负债表视为一条待验证传导链，不能用单个楼盘轶事替代成交、租售、融资和现金流数据。",
+      "evidence_refs": [
+        "50cd4e4f516e7db6669ce49b92b2a8b8599b9226ecd350effde78381724ff942",
+        "cc521fbb4530c9836364fcfd545ec799ff56ce7f8e3381cdaa9c2c68bcc7595c"
+      ]
+    }
+  ],
+  "stocks": [
+    {
+      "name": "联泰环保",
+      "code": "603797.XSHG",
+      "source_role": "10月8日低吸第一候选的可能映射",
+      "resolution": "catalog_confirmed_identity_mapping_unproven",
+      "knowledge_use": "当日买点已过期；作为高涨幅追价案例保留"
+    },
+    {
+      "name": "中天服务",
+      "code": "002188.XSHE",
+      "source_role": "倒接力第一候选",
+      "resolution": "catalog_confirmed_identity_ranking_unverified",
+      "knowledge_use": "仅用于低位倒接力条件链"
+    },
+    {
+      "name": "上海洗霸",
+      "code": "603200.XSHG",
+      "source_role": "10月8日倒接力第三候选的可能映射，来源后段称其涨停",
+      "resolution": "catalog_confirmed_identity_mapping_unproven",
+      "knowledge_use": "当日来源声称的赢家；语音映射、涨停和成交均未核验"
+    },
+    {
+      "name": "世名科技",
+      "code": "300522.XSHE",
+      "source_role": "约11%高分第一候选的可能映射",
+      "resolution": "catalog_confirmed_identity_mapping_unproven",
+      "knowledge_use": "高分不覆盖高涨幅风险"
+    },
+    {
+      "name": "神剑股份",
+      "code": "002361.XSHE",
+      "source_role": "约2%第二候选的可能映射",
+      "resolution": "catalog_confirmed_identity_mapping_unproven",
+      "knowledge_use": "低涨幅高分候选例"
+    },
+    {
+      "name": "同大股份",
+      "code": "300321.XSHE",
+      "source_role": "盘中低吸候选的可能映射",
+      "resolution": "catalog_confirmed_identity_mapping_unproven",
+      "knowledge_use": "当日买点已过期"
+    },
+    {
+      "name": "武汉蓝电",
+      "code": "920779.BJSE",
+      "source_role": "约3.8%高分观察候选的可能映射",
+      "resolution": "catalog_confirmed_identity_mapping_unproven",
+      "knowledge_use": "与瑞丰高材形成涨幅约束对照"
+    },
+    {
+      "name": "瑞丰高材",
+      "code": "300243.XSHE",
+      "source_role": "约9.8%、3000分高涨幅回避案例",
+      "resolution": "catalog_confirmed_identity_timepoint_unverified",
+      "knowledge_use": "高分不能直接参数化"
+    },
+    {
+      "name": "特发服务",
+      "code": "300917.XSHE",
+      "source_role": "紫薇高分观察案例",
+      "resolution": "catalog_confirmed_identity_timepoint_unverified",
+      "knowledge_use": "说明中高位模式吃环境"
+    },
+    {
+      "name": "中红医疗",
+      "code": "300981.XSHE",
+      "source_role": "9:31高分案例的可能映射",
+      "resolution": "catalog_confirmed_identity_mapping_unproven",
+      "knowledge_use": "秒点监控样本"
+    },
+    {
+      "name": "大连热电",
+      "code": "600719.XSHG",
+      "source_role": "作者口述16%至22%的历史低吸案例",
+      "resolution": "catalog_confirmed_identity_return_unverified",
+      "knowledge_use": "胜例叙事，不能证明策略复现"
+    },
+    {
+      "name": "圣阳股份",
+      "code": "002580.XSHE",
+      "source_role": "作者口述约9%至11%及涨停持有案例的可能映射",
+      "resolution": "catalog_confirmed_identity_return_unverified",
+      "knowledge_use": "封板持有与新追分离"
+    },
+    {
+      "name": "福建水泥",
+      "code": "600802.XSHG",
+      "source_role": "历史倒接力案例",
+      "resolution": "catalog_confirmed_identity_return_unverified",
+      "knowledge_use": "胜例叙事，缺失败样本"
+    },
+    {
+      "name": "我爱我家",
+      "code": null,
+      "source_role": "历史轮动环境案例",
+      "resolution": "source_named_catalog_binding_absent",
+      "knowledge_use": "作者本人也未回忆对应模式"
+    },
+    {
+      "name": "北交所第二候选",
+      "code": null,
+      "source_role": "10月8日低吸替代",
+      "resolution": "unresolved",
+      "knowledge_use": "因名称、权限与波动边界排除执行"
+    },
+    {
+      "name": "生物业",
+      "code": null,
+      "source_role": "倒接力第二候选",
+      "resolution": "unresolved_catalog_candidate_not_mapping",
+      "knowledge_use": "不能因目录含生意宝002095而强行映射"
+    },
+    {
+      "name": "天威",
+      "code": null,
+      "source_role": "盘中下跌超跌候选",
+      "resolution": "unresolved",
+      "knowledge_use": "排除执行"
+    }
+  ],
+  "method_principles": [
+    "先判断环境，再确定可用风险预算，再选择模式，最后才看个股。",
+    "高开家数不是单向利多：普遍高开过热可能带来高开低走，适中广度才给低位模式有限参与权。",
+    "高分必须同时保存出现秒点、当时涨幅、可成交价和失败样本；口述300、700、2400或3000分不能直接变成阈值。",
+    "短线模式是环境条件规则，不是永久偏好；强势期的高位辨识度经验不能无条件搬到主跌期。",
+    "作者命中的历史胜例只能生成研究问题，不能替代同日全候选、失败样本、费用、成交和样本外验证。",
+    "官方名称目录、原始池、本地冻结输出和作者盘中方法属于不同证据层，必须分别解释。"
+  ],
+  "exit_lessons": [
+    "已持有且仍封住涨停，与临近涨停新开仓是两种风险状态：前者来源主张继续持有，后者利润垫薄且炸板回吐风险大。",
+    "炸板后回封只能说明当日重新封住，不能推出次日继续持有；本场没有开板即卖或次日退出规则。",
+    "日内排名、价格和封板状态在收盘后失效，不能把10月8日动作顺延到10月9日。"
+  ],
+  "decision_trace": [
+    {
+      "observation": "10月8日开盘高开约2500至2600只，未达到作者担心的近4000只；环境仍被定义为空仓、主跌。",
+      "inference": "广度不过热给予低位倒接力窄例外，但不改变弱势总姿态。",
+      "action": "只允许轮动仓位内的有限观察，过热高开则放弃。",
+      "boundary": "开盘家数为未核验口述，次日必须重新观察。"
+    },
+    {
+      "observation": "下跌超跌近期被作者认为相对占优，中高位紫薇模式更吃环境。",
+      "inference": "弱势环境下低位与超跌优先级高于高位辨识度。",
+      "action": "候选排序向低位超跌倾斜；高位只保留高分且涨幅不高的观察。",
+      "boundary": "没有完整候选、失败样本和模式收益。"
+    },
+    {
+      "observation": "约3.8%的高分候选可观察，而约9.8%或11%的高分候选被认为偏高或不敢追。",
+      "inference": "分数必须与当时涨幅、出现时点和成交条件联合解释。",
+      "action": "建设秒级监控和前瞻研究，不写死涨幅阈值。",
+      "boundary": "个股映射、分数口径与报价未独立核验。"
+    },
+    {
+      "observation": "港股房地产表现、上海徐泾等近郊约4人抢1套，以及广州地点和套数均不确定的“两分钟约200套还是300套”口述，被作者连到供给收缩和政策转向。",
+      "inference": "房地产可能处于周期修复阶段。",
+      "action": "只建立待验证方向，跟踪成交、租售、融资、现金流与政策传导。",
+      "boundary": "广州究竟在海珠、琶洲还是类似老黄埔的位置，作者自己记不清；套数、售罄时间与政策传导均未核验。"
+    }
+  ],
+  "judgment_heuristics": [
+    {
+      "heuristic": "开盘广度闸门",
+      "use": "决定是否允许模式切换",
+      "failure_mode": "把接近4000只或2500至2600只当成永久硬阈值",
+      "required_test": "跨环境比较广度分位、后续承接、回撤和可成交性"
+    },
+    {
+      "heuristic": "高分与涨幅联合约束",
+      "use": "降低高分追高风险",
+      "failure_mode": "从武汉蓝电、瑞丰高材和世名科技几个例子写出固定6%或其他阈值",
+      "required_test": "保存逐秒候选全集并做样本外分层研究"
+    },
+    {
+      "heuristic": "封板持有与新追分离",
+      "use": "区分存量利润垫和新增追高风险",
+      "failure_mode": "把封板持有简化成任何涨停股都不卖",
+      "required_test": "按持仓成本、开板次数、回封质量和次日流动性验证退出路径"
+    }
+  ],
+  "hypotheses": [
+    {
+      "existing_id": "XH-190",
+      "disposition": "reuse_exact_existing_claim",
+      "claim": "秒级监控高分排名并同时限制涨幅，可比人工间歇查看更完整地捕捉盘中候选。",
+      "implied_rule": "记录每次排名变化、分数、当时涨幅、发现延迟、可成交价格和退出，不以收盘涨停倒推成功。",
+      "falsifiable_test": "保存逐秒排名变化、分数、当时涨幅、发现延迟、可成交价和完整失败样本，比较秒级监控与人工间歇查看的样本外捕捉率和风险收益。",
+      "authority": 0,
+      "ingestable_as_new": false,
+      "rationale": "本场明确要求用监控保存秒点、分数和当时涨幅，再决定高分候选能否追。"
+    }
+  ],
+  "timing_notes": [
+    "来源文件名写盘前，但逐字稿从9:23延续到盘中；按10月8日整场直播处理。",
+    "10月8日盘中候选、排名、报价与封板状态在当日15:00后全部过期。",
+    "市场姿态、仓位、黄金和房地产观点分别判断期限，不能因日内买点过期而整体删除。",
+    "Book B短线姿态有效期最多到2026-10-09T07:00:00Z，届时必须重新验证。"
+  ],
+  "typo_corrections": [
+    {
+      "surface": "联泰/连带/联泰环保",
+      "candidate": "联泰环保（603797）",
+      "confidence": "medium",
+      "boundary": "官方目录确认名称代码，不证明含混口述映射"
+    },
+    {
+      "surface": "冬天服务/中天服务",
+      "candidate": "中天服务（002188）",
+      "confidence": "medium_high",
+      "boundary": "后段名称较清楚，排名和行情仍未核验"
+    },
+    {
+      "surface": "上海洗吧/上海洗发/洗坝",
+      "candidate": "上海洗霸（603200）",
+      "confidence": "medium",
+      "boundary": "官方目录不证明语音映射"
+    },
+    {
+      "surface": "市民科技/市民",
+      "candidate": "世名科技（300522）",
+      "confidence": "medium",
+      "boundary": "约11%报价与排名未核验"
+    },
+    {
+      "surface": "神剑/省建",
+      "candidate": "神剑股份（002361）",
+      "confidence": "medium",
+      "boundary": "约2%报价与排名未核验"
+    },
+    {
+      "surface": "同大",
+      "candidate": "同大股份（300321）",
+      "confidence": "medium_high",
+      "boundary": "口述反弹幅度未核验"
+    },
+    {
+      "surface": "肾阳/沈阳/正阳/盛阳股份",
+      "candidate": "圣阳股份（002580）",
+      "confidence": "medium",
+      "boundary": "收益和成交未核验"
+    },
+    {
+      "surface": "跨难点/武汉蓝电",
+      "candidate": "武汉蓝电（920779）",
+      "confidence": "medium",
+      "boundary": "约3.8%报价和排名未核验"
+    },
+    {
+      "surface": "中弘医疗/中红四连",
+      "candidate": "中红医疗（300981）",
+      "confidence": "medium",
+      "boundary": "分数和排名未核验"
+    },
+    {
+      "surface": "明星新材/临沂新材",
+      "candidate": null,
+      "confidence": "unresolved",
+      "boundary": "不能因目录含民士达（920394）而映射"
+    },
+    {
+      "surface": "生物业/服务业",
+      "candidate": null,
+      "confidence": "unresolved",
+      "boundary": "不能因目录含生意宝（002095）而映射"
+    },
+    {
+      "surface": "天威、ADC、现在利息大漏、垂子红",
+      "candidate": null,
+      "confidence": "unresolved",
+      "boundary": "无唯一证券映射，排除执行"
+    }
+  ],
+  "strategy_hit_audit": {
+    "status": "completed_read_only_with_limits",
+    "audit_date": "2026-10-08",
+    "named_stock_universe_count": 17,
+    "named_stock_classifications": [
+      {
+        "name": "联泰环保",
+        "code": "603797.XSHG",
+        "source_classification": "10月8日低吸主板第一候选的可能映射",
+        "local_classification": "raw_pool_only_not_emitted",
+        "evidence": "官方目录有该名称代码，dixi原始池包含该代码；09:25冻结输出及当日仓位、纸面交易、决策日志均无目标身份命中",
+        "boundary": "目录与原始池不能证明含混语音映射、排名、报价、推荐、成交或收益；买点已过期"
+      },
+      {
+        "name": "中天服务",
+        "code": "002188.XSHE",
+        "source_classification": "10月8日倒接力第一候选",
+        "local_classification": "no_same_day_producer_identity_match",
+        "evidence": "官方目录有该名称代码；09:25冻结输出及当日仓位、纸面交易、决策日志均无目标身份命中",
+        "boundary": "排名、报价、成交及作者最终收益未核验；买点已过期"
+      },
+      {
+        "name": "上海洗霸",
+        "code": "603200.XSHG",
+        "source_classification": "10月8日倒接力第三候选的可能映射；来源后段称“洗坝”涨停",
+        "local_classification": "no_same_day_producer_identity_match",
+        "evidence": "官方目录有上海洗霸及代码；09:25冻结输出及当日仓位、纸面交易、决策日志均无目标身份命中",
+        "boundary": "“洗坝”到上海洗霸仍是可能映射；涨停、排名、报价、订单和成交均未独立核验"
+      },
+      {
+        "name": "世名科技",
+        "code": "300522.XSHE",
+        "source_classification": "约11%时未追、来源后称20厘米涨停的第一候选可能映射",
+        "local_classification": "raw_pool_only_not_emitted",
+        "evidence": "官方目录有该名称代码，qibao原始池包含该代码；09:25冻结输出及当日仓位、纸面交易、决策日志均无目标身份命中",
+        "boundary": "原始池不是信号；语音映射、约11%时点和涨停未核验"
+      },
+      {
+        "name": "神剑股份",
+        "code": "002361.XSHE",
+        "source_classification": "约2%时可做、来源后称涨停的第二候选可能映射",
+        "local_classification": "no_same_day_producer_identity_match",
+        "evidence": "官方目录有该名称代码；09:25冻结输出及当日仓位、纸面交易、决策日志均无目标身份命中",
+        "boundary": "语音映射、报价、涨停、订单和成交未核验"
+      },
+      {
+        "name": "同大股份",
+        "code": "300321.XSHE",
+        "source_classification": "盘中低吸候选的可能映射，来源后称反弹约6至7个百分点",
+        "local_classification": "raw_pool_only_not_emitted",
+        "evidence": "官方目录有该名称代码，dixi原始池包含该代码；09:25冻结输出及当日仓位、纸面交易、决策日志均无目标身份命中",
+        "boundary": "原始池不是信号；语音映射、排名、报价和收益未核验"
+      },
+      {
+        "name": "武汉蓝电",
+        "code": "920779.BJSE",
+        "source_classification": "约3.8%、高分观察候选的可能映射",
+        "local_classification": "raw_pool_only_not_emitted",
+        "evidence": "官方目录有该名称代码，dixi原始池包含该代码；09:25冻结输出及当日仓位、纸面交易、决策日志均无目标身份命中",
+        "boundary": "原始池不是信号；语音映射、分数、涨幅和排名未核验"
+      },
+      {
+        "name": "瑞丰高材",
+        "code": "300243.XSHE",
+        "source_classification": "约9.8%、3000分但涨幅过高的回避案例",
+        "local_classification": "raw_pool_only_not_emitted",
+        "evidence": "官方目录有该名称代码，qibao原始池包含该代码；09:25冻结输出及当日仓位、纸面交易、决策日志均无目标身份命中",
+        "boundary": "原始池不是信号；时点涨幅、分数和排名未核验"
+      },
+      {
+        "name": "特发服务",
+        "code": "300917.XSHE",
+        "source_classification": "9:33至9:34紫薇高分观察案例",
+        "local_classification": "raw_pool_only_not_emitted",
+        "evidence": "官方目录有该名称代码，dixi原始池包含该代码；09:25冻结输出及当日仓位、纸面交易、决策日志均无目标身份命中",
+        "boundary": "原始池不是信号；分数、秒点、排名和后来表现未核验"
+      },
+      {
+        "name": "中红医疗",
+        "code": "300981.XSHE",
+        "source_classification": "9:31高分观察案例的可能映射",
+        "local_classification": "no_same_day_producer_identity_match",
+        "evidence": "官方目录有该名称代码；09:25冻结输出及当日仓位、纸面交易、决策日志均无目标身份命中",
+        "boundary": "含混语音映射、分数、秒点和排名未核验"
+      },
+      {
+        "name": "大连热电",
+        "code": "600719.XSHG",
+        "source_classification": "历史下跌低吸赢家，来源口述约16%至22%",
+        "local_classification": "raw_pool_only_not_emitted",
+        "evidence": "官方目录有该名称代码，dixi原始池包含该代码；10月8日09:25冻结输出及当日仓位、纸面交易、决策日志均无目标身份命中",
+        "boundary": "这是历史回看；原始池不是信号，作者收益、订单、成交、费用和失败样本未核验"
+      },
+      {
+        "name": "圣阳股份",
+        "code": "002580.XSHE",
+        "source_classification": "节前下跌低吸案例，来源口述10月8日上涨约9%至11%并涨停",
+        "local_classification": "no_same_day_producer_identity_match",
+        "evidence": "官方目录有该名称代码；10月8日09:25冻结输出及当日仓位、纸面交易、决策日志均无目标身份命中",
+        "boundary": "语音映射、节前入场、10月8日收益、持仓和封板状态未核验"
+      },
+      {
+        "name": "福建水泥",
+        "code": "600802.XSHG",
+        "source_classification": "历史倒接力案例，来源口述约5%并询问是否仍持有",
+        "local_classification": "raw_pool_only_not_emitted",
+        "evidence": "官方目录有该名称代码，dixi原始池包含该代码；10月8日09:25冻结输出及当日仓位、纸面交易、决策日志均无目标身份命中",
+        "boundary": "这是历史回看；原始池不是信号，入场、收益、持仓和成交未核验"
+      },
+      {
+        "name": "我爱我家",
+        "code": null,
+        "source_classification": "历史轮动环境中的模式案例，作者自己未回忆具体模式",
+        "local_classification": "historical_no_bound_identity_evidence",
+        "evidence": "完整来源仅作历史提及；绑定官方目录没有给出该名称代码映射，生产者审计也没有该名称的目标身份命中",
+        "boundary": "不能从未绑定的代码或原始池反推身份、模式、推荐、成交或收益"
+      },
+      {
+        "name": "北交所第二候选",
+        "code": null,
+        "source_classification": "10月8日低吸替代候选，表面词为“明星新材/临沂新材”",
+        "local_classification": "unresolved_no_evidence",
+        "evidence": "来源只说明其为北交所候选；绑定目录含民士达（920394），但没有证据把表面词映射到该证券",
+        "boundary": "名称、代码、排名、价格和成交均未解析，禁止执行"
+      },
+      {
+        "name": "生物业",
+        "code": null,
+        "source_classification": "10月8日倒接力第二候选，来源称三进四并在后段称涨停",
+        "local_classification": "unresolved_no_evidence",
+        "evidence": "来源表面词无法唯一解析；绑定目录含生意宝（002095），但没有证据建立映射",
+        "boundary": "名称、代码、涨停、排名、报价和成交均未核验，禁止执行"
+      },
+      {
+        "name": "天威",
+        "code": null,
+        "source_classification": "10月8日下跌超跌盘中候选",
+        "local_classification": "unresolved_no_evidence",
+        "evidence": "完整来源只有“天威”表面词，绑定目录与生产者审计均无唯一对应证据",
+        "boundary": "名称、代码、模式角色、报价和成交无法唯一解析，禁止执行"
+      }
+    ],
+    "teacher_named_winners": [
+      {
+        "name": "上海洗霸",
+        "code": "603200.XSHG",
+        "teacher_claim": "10月8日倒接力第三候选，来源后段称“洗坝”涨停",
+        "classification": "current_claimed_winner_likely_asr_mapping",
+        "verification": "语音映射、涨停、订单、成交和收益均未核验；本地无同日生产者身份命中"
+      },
+      {
+        "name": "世名科技",
+        "code": "300522.XSHE",
+        "teacher_claim": "约11%时未追，来源后称20厘米涨停",
+        "classification": "current_avoided_candidate_claimed_winner_likely_asr_mapping",
+        "verification": "语音映射、时点涨幅和涨停未核验；qibao原始池不是信号，本地无同日生产者身份命中"
+      },
+      {
+        "name": "神剑股份",
+        "code": "002361.XSHE",
+        "teacher_claim": "约2%时可做，来源后称涨停",
+        "classification": "current_entry_claimed_winner_likely_asr_mapping",
+        "verification": "语音映射、报价、涨停、订单和成交未核验；本地无同日生产者身份命中"
+      },
+      {
+        "name": "圣阳股份",
+        "code": "002580.XSHE",
+        "teacher_claim": "节前低吸，来源口述10月8日上涨约9%至11%并涨停",
+        "classification": "prior_entry_current_claimed_winner_likely_asr_mapping",
+        "verification": "语音映射、节前入场、收益、持仓和封板状态未核验；本地无同日生产者身份命中"
+      },
+      {
+        "name": "大连热电",
+        "code": "600719.XSHG",
+        "teacher_claim": "历史下跌低吸约16%至22%",
+        "classification": "historical_claimed_winner",
+        "verification": "作者收益、订单、成交、费用和失败样本未核验；dixi原始池不是信号"
+      },
+      {
+        "name": "福建水泥",
+        "code": "600802.XSHG",
+        "teacher_claim": "历史倒接力约5%",
+        "classification": "historical_claimed_winner",
+        "verification": "收益、持仓、订单和成交未核验；dixi原始池不是信号"
+      }
+    ],
+    "local_strategy_benchmark_hits": {
+      "exact_target_matches": [],
+      "frozen_rows": 11,
+      "emitted_rows_trade_eligible": 0,
+      "emitted_rows_exec_star": 0,
+      "conclusion": "本地10月8日09:25冻结输出没有上述已知代码的身份命中，11行均不可交易且无执行星；当日仓位、纸面交易和决策日志也无目标身份命中。",
+      "non_inference": "来源包含更晚盘中方法且算法可能不同，不能把无命中解释成漏选、实现故障、策略优劣，也不能用原始池成员证明推荐、成交或收益。"
+    },
+    "direction_core_observations": [
+      "10月8日收盘附近小草短线环境、全盘赛道和科创板超短均为负，只支持当日弱势背景。",
+      "原始dixi或qibao池成员只说明候选池包含，不是推荐、买入、成交、收益或同算法命中。",
+      "未解析的北交所第二候选、“生物业”和“天威”均为no_evidence，不借官方目录候选强行映射。",
+      "家庭、APP和私有账户数据不进入公开知识；本审计没有做券商订单或执行相关性。"
+    ],
+    "systemic_issue": "not_established",
+    "parameter_change": "none"
+  },
+  "action_summary": {
+    "posture_update": "proposed_only_not_applied：可将10月8日弱势姿态与10月9日重验边界交给父流程审核；本草稿不改posture_current或时间线。",
+    "playbook_update": "no_change：开盘广度闸门、高分与涨幅联合约束、封板持有边界均与既有先验相关，需研究证据后再决定是否写校准。",
+    "hypothesis_update": "reuse_exact_existing_claim_only：只有XH-190在hypotheses中作为精确复现；XH-137、XH-192、XH-206及房地产相关先验只放prior_comparisons，不增加复现票，不创建近重复假说。",
+    "audit_evidence": "已核对完整转写、spec repair行情证据、名称目录、生产者审计和既有知识账本；17个具名股票对象全部分类，只有XH-190属于精确复现。",
+    "instrumentation_todo": "建议保存逐秒分数、排名、当时涨幅、可成交价、候选全集与失败样本，并建立封板—开板—回封—次日退出序列；仅为研究建议，未建任务。",
+    "routing": [
+      "parent_deterministic_validation",
+      "knowledge_exact_claim_dedup_review",
+      "research_backlog_candidate",
+      "no_automatic_ingestion",
+      "no_strategy_or_parameter_write"
+    ],
+    "parameter_update": "no_change_authority_0",
+    "knowledge_ingestion": "not_applied_by_analyst；父流程报告已有独立摄取回执，本草稿禁止重复摄取。",
+    "external_effects": "none"
+  },
+  "limitations": [
+    "所有知识均为authority=0候选，未通过research_run或人工门槛。",
+    "hypotheses只精确复用XH-190；prior_comparisons不可直接摄取，也不增加既有假说票数。",
+    "官方目录确认名称代码存在，但不能证明含混口述对应关系、排名、报价或成交。",
+    "本地9:25记录与来源后续盘中方法的时点和选股方法不同，不能推断漏选或实现故障。",
+    "房地产约4比1、两分钟约200套还是300套以及广州地点均为作者不确定的口述，未核验。",
+    "没有作者订单、完整候选、失败样本、费用或收益核验。",
+    "黄金和房地产缺少绑定行情、基本面与交易工具。",
+    "没有写入知识库、姿态、策略、参数、Book、账户或外部系统。"
+  ],
+  "prior_comparisons": [
+    {
+      "prior_id": "XH-194",
+      "relation": "tension_and_narrow_refinement",
+      "prior_claim": "空仓环境中不做模式切换，可能比因为前一日仍赚钱而继续切换更能控制左尾；若已越规且仍盈利，第一次亏损停止点只适用于这条越规执行链。",
+      "new_evidence": "来源仍称空仓环境通常不要随便挑战模式切换，但在高开不过热、候选位置较低时允许倒接力窄例外。",
+      "handling": "只记录张力并设计规则内与例外链的分组研究；不把改写后的句子放进可摄取hypotheses，也不自动放宽现行规则。"
+    },
+    {
+      "prior_ids": [
+        "XH-117",
+        "XH-121",
+        "XH-184",
+        "XH-199"
+      ],
+      "relation": "related_context_not_recurrence",
+      "prior_claims": [
+        "住房是否企稳应先验证租金回报能否覆盖融资成本，再结合供给约束和有效需求，而不能仅凭房价反弹判断。",
+        "房地产政策改变只有通过现房供给、二手房成交、经纪佣金、融资成本和房企现金流传导，才会形成可验证的行业受益顺序。",
+        "房地产中军突然走强可能领先于节前政策催化，但盘面反推不能替代正式政策确认。",
+        "居民住房财富持续缩水可能通过消费信心和风险偏好渠道减慢权益市场修复。"
+      ],
+      "new_evidence": "小草用港股上涨、上海近郊约4比1、广州不确定地点的两分钟约200套还是300套、供给收缩和居民资产负债表修复说明房地产偏多。",
+      "handling": "保留为未核验的周期观察；来源没有租金回报、融资成本、库存、经纪佣金或房企现金流，不建立新假说，也不称为既有原文复现。"
+    },
+    {
+      "prior_id": "XH-137",
+      "relation": "related_refinement_not_recurrence",
+      "prior_claim": "高开占优时选择起爆、低开占优时选择低吸的开盘条件切换，可能比隔夜固定同一模式更贴合当日短线环境。",
+      "new_evidence": "本场分别口述上涨家数和高开家数，并以高开不过热、候选位置较低作为倒接力窄例外。",
+      "handling": "来源没有完整复述“高开占优做起爆、低开占优做低吸”的双向规则，因此只作相关细化，不计复现票。"
+    },
+    {
+      "prior_id": "XH-192",
+      "relation": "method_gap_only_not_recurrence",
+      "prior_claim": "快速涨停或连续涨停会压缩可卖窗口，因此短线持仓应在入场前定义退出路径。",
+      "new_evidence": "本场只给出当日封板不卖、炸板回封可视为消化，并未给出次日退出路径。",
+      "handling": "缺少退出规则是方法缺口，不是既有假说的正向复现。"
+    },
+    {
+      "prior_id": "XH-206",
+      "relation": "related_price_examples_not_recurrence",
+      "prior_claim": "盘中下跌超跌起爆候选在涨幅约6%以下，可能比已经涨到6%至7%的候选有更低的追高风险。",
+      "new_evidence": "本场约2%可做、约9.8%和11%不追，约6至7%是另一候选后续表现，且分属不同模式和时点。",
+      "handling": "这些跨模式案例不能确认约6%的边界，不计复现票，也不改写阈值。"
+    }
+  ],
+  "feedback_review": {
+    "source_review": "canonical与post-change spec review findings",
+    "applied": [
+      "XH-137改为相关细化而非精确复现",
+      "XH-192改为方法缺口而非复现",
+      "XH-206改为跨模式价格例而非6%边界确认",
+      "仅XH-190保留在可摄取hypotheses",
+      "strategy_hit_audit逐一覆盖17个具名股票对象",
+      "把疑似上海洗霸列为来源声称的当日赢家并保留语音映射不确定性",
+      "特发服务、中红医疗、我爱我家及三个未解析候选均补齐本地证据边界"
+    ],
+    "unresolved": []
+  },
+  "source": "小草10月8日盘前大师班直播完整转写",
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_netdisk_enrichment/artifacts/kol-netdisk-1370e2c832490953/20261008 盘前大师班直播10月8日-compressed.txt",
+      "sha256": "2fc033858a277e9b170384959c37397ade337169517ad22f7b0704fb4a2363a3",
+      "size": 26407
+    }
+  ],
+  "origin_metadata": {
+    "source_identity": "kol-35892509e56a",
+    "analysis_request_sha256": "fc081c807fb9e659f444d4a77ab52d3063a5067efbb900c6f47eec18fbecbb93",
+    "context_packet_sha256": "31df66c0ea27417849608205283d2e0b23b2108da7b680b0803e01250b5843ad",
+    "market_evidence_sha256": "bcecc7ed08eb1ebcb25c0ee5bcc1799ef0a512fec0827890b2fa11118d16579d",
+    "name_pool_audit_sha256": "076182ce8689ae1c4326d5babc5f9522bd5b6c2d84637f4558819a962879b161",
+    "producer_audit_sha256": "6ad4bf75af90bd6e40b2416f2eb7be3db509d763290c0291b57ea1ec245c7b36",
+    "knowledge_prior_backlog_sha256": "6d217f69a2d010dcc89b393845cbc0bd4c0881aa369a43c0bc8cebf266c18cbb"
+  }
+}
