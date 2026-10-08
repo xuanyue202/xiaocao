@@ -1351,10 +1351,36 @@ class SubscriptionVideoService:
         except EnrichmentDiagnosticError as exc:
             if exc.diagnostic_code != _OPENCLI_BOUND_TAB_MUTATION_CODE:
                 raise
-            # A user-bound session intentionally rejects tab mutation. The
-            # preceding exact open already returned this page identity; the
-            # later click targets it explicitly instead of selecting it.
-            return page_id
+            # Explicit tab targeting resolves a selector but cannot activate a
+            # hidden user-bound tab. Detach its lease without closing the user
+            # tab, then recover the same session on the configured share before
+            # preparing any confirmation control or dispatching native input.
+            detached = self._opencli_json(
+                session, "unbind", profile=profile, timeout_seconds=30,
+            )
+            if detached.get("unbound") is not True or detached.get("session") != session:
+                raise EnrichmentDiagnosticError(
+                    "Ticket 05 bound transfer session was not detached",
+                    category="provider_contract_error",
+                    code="opencli_tab_activation_failed",
+                    stage="browser_command",
+                )
+            reopened = self._opencli_json(
+                session, "open", self.lv.share_url, "--window", "foreground",
+                profile=profile, timeout_seconds=30,
+            )
+            page_id = str(reopened.get("page") or "").strip()
+            if not page_id:
+                raise EnrichmentDiagnosticError(
+                    "Ticket 05 recovered transfer page has no identity",
+                    category="provider_contract_error",
+                    code="opencli_tab_activation_failed",
+                    stage="browser_command",
+                )
+            selected = self._opencli_json(
+                session, "tab", "select", page_id, "--window", "foreground",
+                profile=profile, timeout_seconds=30,
+            )
         if selected.get("selected") != page_id:
             raise EnrichmentDiagnosticError(
                 "Ticket 05 OpenCLI transfer tab was not activated",

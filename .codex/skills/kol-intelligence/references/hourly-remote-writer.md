@@ -160,6 +160,13 @@ outcomes may ask. Reconcile the
 handoff/media SHA; latest content is incomplete until analysis, 灰常亮 receipt,
 and stable URL.
 
+A share-transfer session bound to a user tab may reject foreground tab selection.
+An explicit click target alone does not prove input delivery. The transfer adapter
+detaches that lease without closing the user tab, reopens the configured share in
+the same session, and activates its owned page before preparing the exact item's
+confirmation. Existing object claims, provider-attempt bounds and destination
+readback still govern the transfer; this recovery grants no extra provider retry.
+
 Baidu player work requires a pause guard, paused readback, transcript integrity,
 and exact-tab-close receipts; a missing receipt is `repair_required`.
 

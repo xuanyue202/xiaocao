@@ -2195,6 +2195,17 @@ def test_transfer_activation_falls_back_for_bound_user_tab(tmp_path):
         commands.append(command)
         browser_index = command.index("browser")
         tail = command[browser_index + 2 :]
+        if tail == ["unbind"]:
+            return SimpleNamespace(returncode=0, stdout=json.dumps(
+                {"unbound": True, "session": "ticket05"}), stderr="")
+        if tail[0] == "open":
+            assert tail == ["open", "https://pan.baidu.com/s/private-ticket05",
+                            "--window", "foreground"]
+            return SimpleNamespace(returncode=0, stdout=json.dumps(
+                {"page": "owned-page"}), stderr="")
+        if tail[:3] == ["tab", "select", "owned-page"]:
+            return SimpleNamespace(returncode=0, stdout=json.dumps(
+                {"selected": "owned-page"}), stderr="")
         assert tail[:3] == ["tab", "select", "page-1"]
         return SimpleNamespace(
             returncode=1,
@@ -2214,8 +2225,36 @@ def test_transfer_activation_falls_back_for_bound_user_tab(tmp_path):
         profile="work",
     )
 
-    assert page == "page-1"
-    assert len(commands) == 1
+    assert page == "owned-page"
+    assert len(commands) == 4
+    assert not any("close" in command for command in commands)
+
+
+@pytest.mark.parametrize("failure", ["detach", "page_identity", "activation"])
+def test_transfer_bound_tab_recovery_fails_closed(tmp_path, failure):
+    commands = []
+    service = _service(tmp_path)
+
+    def opencli(session, *args, **_kwargs):
+        commands.append(args)
+        if args[:3] == ("tab", "select", "user-page"):
+            raise EnrichmentDiagnosticError(
+                "bound user tab", category="provider_contract_error",
+                code="opencli_bound_tab_mutation_blocked", stage="browser_command",
+            )
+        if args[0] == "unbind":
+            return {"unbound": True, "session": "wrong" if failure == "detach" else session}
+        if args[0] == "open":
+            return {} if failure == "page_identity" else {"page": "owned-page"}
+        if args[0] == "tab":
+            return {"selected": "wrong"}
+        pytest.fail("failed activation must never dispatch input")
+
+    service._opencli_json = opencli
+    with pytest.raises(EnrichmentDiagnosticError) as caught:
+        service._activate_opencli_page("session", {"page": "user-page"}, profile=None)
+    assert caught.value.diagnostic_code == "opencli_tab_activation_failed"
+    assert not any(command[0] in {"click", "close"} for command in commands)
 
 
 def test_lv_transfer_reconciles_observed_default_root_save_without_resend(
