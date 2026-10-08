@@ -56,7 +56,9 @@ Status/audit remain readable during source waits.
 
 During rollout, `legacy_coordinator_busy` means an already-started old runner
 still owns the former global lock. New code returns this state immediately and
-does not overlap that old writer. It is not an indefinite lock wait or a reason
+does not read or append its in-progress ledger, or overlap that old writer.
+Status/audit return this diagnostic without pretending to have read a snapshot.
+It is not an indefinite lock wait or a reason
 to delete the lock, inspect its owner, or start another sweep. Updated code does
 not change a process that was started before deployment; preserve its exact
 identity and handle its lifecycle separately from code validation.

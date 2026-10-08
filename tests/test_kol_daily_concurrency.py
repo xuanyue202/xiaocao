@@ -2,13 +2,21 @@ from __future__ import annotations
 
 import fcntl
 import multiprocessing
+import json
+import sys
+import subprocess
 from datetime import datetime
 from queue import Queue
 from threading import Event, Thread
+from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
+from scripts import kol_daily
+from xiaocao.kol import _shared
 from xiaocao.kol.daily import DailyCoordinator, DailyError
+from xiaocao.kol.writer_progress import ConvergenceLedger
 
 
 def coordinator(path, hour=10):
@@ -178,7 +186,7 @@ def test_legacy_writer_is_reported_without_blocking_or_overlapping(tmp_path):
             result = receive(output)
             assert result["source_results"][0]["code"] == "legacy_coordinator_busy"
             status_thread, status_output = start_call(service.status)
-            assert receive(status_output)["event_count"] > 0
+            assert receive(status_output)["ledger_available"] is False
             status_thread.join(2)
         finally:
             fcntl.flock(handle, fcntl.LOCK_UN)
@@ -186,6 +194,158 @@ def test_legacy_writer_is_reported_without_blocking_or_overlapping(tmp_path):
     assert service.run([
         {"name": "xiaocao_wechat_live", "run": lambda: {"status": "no_update"}},
     ])["health"] == "healthy"
+
+
+def test_partial_legacy_append_is_neither_read_nor_overwritten(tmp_path, monkeypatch):
+    service = coordinator(tmp_path)
+    entered, release = Event(), Event()
+    original_write = _shared.os.write
+    first_write = True
+
+    def partial_write(descriptor, data):
+        nonlocal first_write
+        if first_write:
+            first_write = False
+            written = original_write(descriptor, data[:len(data) // 2])
+            entered.set()
+            assert release.wait(5)
+            return written
+        return original_write(descriptor, data)
+
+    def legacy_append():
+        with service.legacy_lock_path.open("a+") as handle:
+            fcntl.flock(handle, fcntl.LOCK_EX)
+            return _shared.append_integrity_jsonl(
+                service.events_path, {"event": "legacy_write"},
+                max_line_bytes=1000, label="daily ledger", error_factory=DailyError,
+            )
+
+    monkeypatch.setattr(_shared.os, "write", partial_write)
+    thread, output = start_call(legacy_append)
+    try:
+        assert entered.wait(2)
+        partial = service.events_path.read_bytes()
+        assert service.status()["code"] == "legacy_coordinator_busy"
+        assert service.audit()["code"] == "legacy_coordinator_busy"
+        result = service.run([
+            {"name": "xiaocao_wechat_live", "run": lambda: pytest.fail("old writer active")},
+        ])
+        assert result["code"] == "legacy_coordinator_busy"
+        assert service.events_path.read_bytes() == partial
+    finally:
+        release.set()
+        thread.join(2)
+    receive(output)
+    assert [row["event"] for row in service.events()] == ["legacy_write"]
+
+
+@pytest.mark.parametrize("command", ["status", "audit"])
+def test_cli_legacy_busy_does_not_attempt_unavailable_ledger_read(tmp_path, monkeypatch, capsys, command):
+    monkeypatch.setattr(sys, "argv", [
+        "kol_daily.py", command, "--output-dir", str(tmp_path),
+    ])
+    with (tmp_path / ".lock").open("a+") as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        assert kol_daily.main() == 0
+    assert json.loads(capsys.readouterr().out)["code"] == "legacy_coordinator_busy"
+    assert not (tmp_path / "events.jsonl").exists()
+
+
+def test_repair_cli_checks_source_slot_before_progress_or_callback(tmp_path, monkeypatch):
+    owner = coordinator(tmp_path)
+
+    def service_factory(path):
+        service = coordinator(path)
+        service.convergence.pending_resume = lambda _: pytest.fail("must check busy source first")
+        return service
+
+    monkeypatch.setattr(kol_daily, "DailyCoordinator", service_factory)
+    monkeypatch.setattr(kol_daily, "_resume_source_repair_outcome", lambda *_args, **_kwargs: pytest.fail("duplicate repair"))
+    monkeypatch.setattr(sys, "argv", [
+        "kol_daily.py", "resume-source-repair", "--output-dir", str(tmp_path),
+        "--source-adapter", "xiaocao_wechat_live", "--failure-fingerprint", "a" * 64,
+    ])
+    with owner._source_locked("xiaocao_wechat_live"):
+        with pytest.raises(DailyError, match="source execution busy"):
+            kol_daily.main()
+
+
+@pytest.mark.parametrize("command,source,method", [
+    ("capture-xiaocao-item", "xiaocao_wechat_live", "xiaocao_wechat"),
+    ("capture-xiaocao-handoff", "xiaocao_wechat_live", "xiaocao_handoff_local"),
+    ("capture-wechat-official", "wechat_official_accounts", "wechat_official_local"),
+])
+def test_local_continuation_cli_uses_canonical_source_slot(tmp_path, monkeypatch, command, source, method):
+    owner = coordinator(tmp_path)
+    monkeypatch.setattr(kol_daily.DailyRuntime, method, lambda *_args, **_kwargs: pytest.fail("duplicate continuation"))
+    monkeypatch.setattr(sys, "argv", [
+        "kol_daily.py", command, "--output-dir", str(tmp_path),
+        "--source-identity", "original-video",
+    ])
+    with owner._source_locked(source):
+        with pytest.raises(DailyError, match="source execution busy"):
+            kol_daily.main()
+
+
+def test_bound_cloud_follow_up_uses_source_slot_but_no_binding_needs_none(tmp_path):
+    owner, other = coordinator(tmp_path), coordinator(tmp_path)
+    runtime = SimpleNamespace(xiaocao_cloud_handoff=lambda *_args: pytest.fail("duplicate upload"))
+    waiting = {"waiting_items": [{
+        "identity": "original-video", "capture_job_id": "original-capture",
+        "status": "upload_claimed", "stage": "cloud_handoff",
+    }]}
+    with owner._source_locked("xiaocao_wechat_live"):
+        with pytest.raises(DailyError, match="source execution busy"):
+            kol_daily._follow_cloud_handoff(runtime, waiting, coordinator=other)
+        assert kol_daily._follow_cloud_handoff(runtime, {}, coordinator=other) is None
+
+
+def test_busy_continuation_cli_reports_wait_instead_of_repair_failure(tmp_path):
+    owner = coordinator(tmp_path)
+    with owner._source_locked("xiaocao_wechat_live"):
+        result = subprocess.run([
+            sys.executable, str(Path(kol_daily.__file__).resolve()),
+            "capture-xiaocao-item", "--output-dir", str(tmp_path),
+            "--source-identity", "original-video",
+        ], capture_output=True, text=True, timeout=5)
+    assert result.returncode == 0, result.stderr
+    message = json.loads(result.stdout)
+    assert message["status"] == "waiting"
+    assert message["code"] == "source_busy"
+    assert message["source"] == "xiaocao_wechat_live"
+
+
+def test_convergence_reads_wait_only_for_short_ledger_write(tmp_path):
+    ledger = ConvergenceLedger(tmp_path / "convergence.jsonl")
+    other = ConvergenceLedger(ledger.path)
+    entered, release = Event(), Event()
+
+    def append():
+        with ledger._locked():
+            entered.set()
+            assert release.wait(5)
+            ledger._append({"event": "test_write"})
+
+    writer, writer_output = start_call(append)
+    reader_started, reader_finished = Event(), Event()
+
+    def read():
+        reader_started.set()
+        rows = other.events()
+        reader_finished.set()
+        return rows
+
+    try:
+        assert entered.wait(2)
+        reader, reader_output = start_call(read)
+        assert reader_started.wait(2)
+        assert not reader_finished.wait(0.1)
+    finally:
+        release.set()
+        writer.join(2)
+    receive(writer_output)
+    assert [row["event"] for row in receive(reader_output)] == ["test_write"]
+    reader.join(2)
 
 
 def test_concurrent_ledger_writes_remain_readable_and_complete(tmp_path):
