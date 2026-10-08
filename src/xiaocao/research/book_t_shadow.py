@@ -1314,8 +1314,19 @@ def evaluate_book_t_shadow(
         for run in ordered
     ] if lifecycle_mode else []
     known_decision_ids = {_text(row.get("decision_id")) for row in lifecycle_rows}
-    if any(_text(event.get("decision_id")) not in known_decision_ids for event in validated_events):
+    # The append-only global ledger also contains decisions whose production
+    # run failed later. Validate every event, then defer older unselected ones.
+    # A foreign decision in the evaluated date range is still a binding fault.
+    first_date = min((_date(row.get("as_of")) for row in lifecycle_rows), default="")
+    decision_dates = {_text(event.get("decision_id")): _date(event["data"].get("as_of"))
+        for event in validated_events if event.get("stage") == "daily_mark"}
+    deferred_events = [event for event in validated_events
+        if _text(event.get("decision_id")) not in known_decision_ids]
+    if any(not first_date or not decision_dates.get(_text(event.get("decision_id")))
+            or decision_dates[_text(event.get("decision_id"))] >= first_date for event in deferred_events):
         raise BookTShadowError("lifecycle event is not bound to a supplied frozen decision")
+    validated_events = [event for event in validated_events
+        if _text(event.get("decision_id")) in known_decision_ids]
     for run, lifecycle in zip(effective_runs, lifecycle_rows):
         decision_events = events_by_decision.get(_text(lifecycle.get("decision_id")), [])
         matured_holds = _matured_holds(
@@ -1505,6 +1516,9 @@ def evaluate_book_t_shadow(
         "namespace": BOOK_T_SHADOW_NAMESPACE,
         "protocol_id": BOOK_T_SHADOW_PROTOCOL_ID,
         "status": status,
+        "deferred_lifecycle_events": [{"event_id": row.get("event_id"),
+            "decision_id": row.get("decision_id"), "decision_date": decision_dates.get(_text(row.get("decision_id"))),
+            "reason": "older_decision_outside_supplied_runs"} for row in deferred_events],
         "pending_reasons": pending,
         "rejected_reasons": hard_rejections,
         "sample": {

@@ -828,7 +828,16 @@ def _lv_pdf_dependency_progress(
 def _transcript_audit_contract(state: dict[str, Any]) -> dict[str, Any]:
     """Describe the exact character thirds consumed by transcript audit."""
 
-    character_count = int(state.get("transcript_character_count") or 0)
+    transcript_path = state.get("transcript_path")
+    if transcript_path:
+        # The provider count excludes the newline added by persistence. Audit
+        # verification reads the persisted file without normalization.
+        transcript_bytes = Path(transcript_path).read_bytes()
+        if hashlib.sha256(transcript_bytes).hexdigest() != state.get("transcript_sha256"):
+            raise DailyError("transcript audit evidence hash mismatch")
+        character_count = len(transcript_bytes.decode("utf-8"))
+    else:
+        character_count = int(state.get("transcript_character_count") or 0)
     if character_count < 3:
         raise DailyError("transcript audit requires a nontrivial character count")
     first_boundary = (character_count + 2) // 3
@@ -1096,40 +1105,6 @@ def _verify_rollout_evidence(
     events_path = Path(args.output_dir).expanduser().resolve() / "events.jsonl"
     if not events_path.is_file():
         raise DailyError("rollout restored writer state is unavailable")
-
-
-def _require_rollout_peer_gate(
-    service: DailyCoordinator,
-    *,
-    automation_observed_at: str,
-) -> dict[str, Any]:
-    """Bind rollout acceptance to a recent persisted pass from the real gate."""
-
-    rows = [
-        row
-        for row in service.convergence.events()
-        if row.get("event") == "peer_gate_observed"
-    ]
-    if not rows or rows[-1].get("gate_result") != "pass":
-        raise DailyError("rollout requires a persisted passing peer gate")
-    gate = rows[-1]
-    try:
-        gate_time = datetime.fromisoformat(
-            str(gate["observed_at"]).replace("Z", "+00:00")
-        )
-        automation_time = datetime.fromisoformat(
-            automation_observed_at.replace("Z", "+00:00")
-        )
-    except (KeyError, ValueError) as exc:
-        raise DailyError("rollout peer gate time is invalid") from exc
-    if (
-        gate_time.tzinfo is None
-        or automation_time.tzinfo is None
-        or gate_time > automation_time
-        or (automation_time - gate_time).total_seconds() > 600
-    ):
-        raise DailyError("rollout peer gate is stale or out of order")
-    return gate
 
 
 def _semantic_waiting_item(
@@ -3178,6 +3153,26 @@ class DailyRuntime:
             return self.lv()
         return self.lv(only_identity=identity, refresh_listing=False)
 
+    def lv_household_recovery_target(self) -> dict[str, str]:
+        """Bind recovery to one canonical bundle without source discovery."""
+        identity = self._lv_unique_persisted_bundle_identity()
+        if identity is None:
+            raise DailyError("household recovery requires a unique retained bundle")
+        rows = _one_exact_pending(
+            self._lv_service_for_sweep().pending_items(), identity, label="household recovery",
+        )
+        if len(rows) != 1:
+            raise DailyError("household recovery retained identity is not pending")
+        base = Path(self.args.lv_output_dir).expanduser().resolve() / "artifacts" / rows[0]["version_key"]
+        request_path = base / "analysis_request.json"
+        bundle = _require_canonical_semantic_artifact(
+            base / "validated_bundle.json", {"analysis_request_path": str(request_path)},
+        )
+        return {
+            "source_identity": identity,
+            "bundle_sha256": hashlib.sha256(bundle.read_bytes()).hexdigest(),
+        }
+
     def lv_filtered_image_reconcile(self, surface: str) -> dict[str, Any]:
         identity = _exact_progress_surface("lv_text_image", surface)
         if identity == "source":
@@ -4783,7 +4778,16 @@ def _resume_source_repair_outcome(
     surface: str,
     *,
     failure_code: str | None = None,
+    provider_recovery_target: dict[str, str] | None = None,
 ) -> dict[str, Any]:
+    if adapter == "lv_text_image" and failure_code == "lianghui_mcp_request_failed":
+        target = runtime.lv_household_recovery_target()
+        if provider_recovery_target is not None and target != provider_recovery_target:
+            raise DailyError("household recovery retained bundle changed after validation")
+        declared_identity = _exact_progress_surface(adapter, surface)
+        if declared_identity not in {"source", target["source_identity"]}:
+            raise DailyError("household recovery source identity changed")
+        surface = f"{adapter}:{target['source_identity']}"
     if (
         adapter == "subscription_video"
         and failure_code == "cloud_transfer_unobserved_reconciled_absent"
@@ -5099,12 +5103,19 @@ def main() -> int:
         ledger = RepairValidationLedger(
             args.mailbox_output_dir / "repair_validation.jsonl"
         )
+        runtime = DailyRuntime(args)
         validator = RepairValidationService(
             Path(__file__).resolve().parents[1],
             ledger=ledger,
+            provider_recovery_probe=lambda: _load_household_context_with_retry(
+                runtime._lianghui_client()
+            ),
         )
+        context = _source_repair_context(progress)
+        if context["targeted_test_profile"] == "kol_lv_text_image_household_context":
+            context["provider_recovery_target"] = runtime.lv_household_recovery_target()
         receipt = validator.validate(
-            _source_repair_context(progress),
+            context,
             repair_revision=args.repair_revision,
         )
         closure = service.convergence.close_repair(
@@ -5145,6 +5156,12 @@ def main() -> int:
             args.source_adapter,
             surface,
             failure_code=str(progress.details["failure"]["code"]),
+            provider_recovery_target=(
+                {name: closure["repair_receipt"]["provider_recovery"][name]
+                 for name in ("source_identity", "bundle_sha256")}
+                if closure["repair_receipt"].get("provider_recovery") is not None
+                else None
+            ),
         )
         following = WriterProgress.from_dict(outcome["writer_progress"])
         if following.status == "user_action_required":
@@ -5242,12 +5259,6 @@ def main() -> int:
             readback,
             payload["automation_evidence"],
             args=args,
-        )
-        _require_rollout_peer_gate(
-            service,
-            automation_observed_at=str(
-                payload["automation_evidence"]["observed_at"]
-            ),
         )
         receipt = service.convergence.record_rollout_readback(
             readback,

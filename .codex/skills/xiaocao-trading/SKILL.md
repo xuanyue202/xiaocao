@@ -49,6 +49,8 @@ Completion means the requested command reached a terminal state and the branch-s
   Contract §6 for the approved account-bound dynamic APP capital policy;
   financial postings and observations use one SQLite journal; accounting,
   statement export or cash classification work reads `docs/BOOK_B_ACCOUNTING.md`.
+  Small unexplained cash differences follow Contract §6; preserve the raw
+  observation and use conservative proved cash rather than inventing postings.
   A broker-reconciled
   settlement is still mandatory after owned fills. Morning fences a code with an
   unresolved older SELL. Intraday live
@@ -60,6 +62,10 @@ Completion means the requested command reached a terminal state and the branch-s
   a fake environment switch.
 - Before trusting A/B or repaired ledger state, run `scripts/data_doctor.py`. Raw cumulative A-B PnL is accounting information; exit comparison requires the identical-entry paired cohort.
 - Cache first and rate-limit Xiaocao API calls. The market-data branch contains endpoint-specific traps.
+- Daily shell runs retain unique evidence under `output/live/auto/runs/<run_id>`.
+  Read the supervisor's `terminal.json`, manifest and command events before
+  declaring completion; a `done` log line cannot override the process outcome.
+  Source changes require a new legal run, never a replay of completed orders.
 - Book T v2 ETF expressions are paper-only and must use the explicit contract seam in `src/xiaocao/live/instrument_contract.py`; missing lot/T+0-T+1/fees, proprietary quote contract, current trading status, liquidity status or provenance stays fail-closed. See `docs/OPERATING_CONTRACT.md` §4b/§5 for the SSOT.
 - Book T v2 daily stability and formal burn-in are distinct time gates. Run
   `scripts/book_t_v2_soak.py --gate daily-stability --required-days 5` for the

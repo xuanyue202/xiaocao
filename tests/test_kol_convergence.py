@@ -98,6 +98,31 @@ def test_stability_acceptance_waits_for_authoritative_rollout_before_observing()
     }]
 
 
+def test_stability_acceptance_no_longer_requires_peer_gate_samples():
+    daily, convergence = _stable_window_events()
+    convergence = [row for row in convergence if row["event"] != "peer_gate_observed"]
+    report = build_stability_acceptance_report(
+        daily, convergence, as_of="2026-08-08T23:00:00+08:00",
+    )
+    assert report["status"] == "passed"
+    assert report["latency"]["peer_gate"]["status"] == "retired"
+
+
+def test_historical_peer_no_op_is_not_proof_of_active_business_writers():
+    daily, convergence = _stable_window_events()
+    convergence.append({
+        "event": "peer_gate_observed",
+        "slot": "2026-08-07T12:00:00+08:00",
+        "gate_result": "no_op",
+        "elapsed_ms": 60_001,
+    })
+    report = build_stability_acceptance_report(
+        daily, convergence, as_of="2026-08-08T23:00:00+08:00",
+    )
+    assert report["status"] == "passed"
+    assert report["safety"]["active_active"] == 0
+
+
 def test_stability_acceptance_requires_all_hard_gates_before_passing():
     daily, convergence = _stable_window_events()
 
@@ -202,7 +227,7 @@ def test_stability_acceptance_reports_latency_failure_and_open_owner():
     )
 
     assert report["status"] == "failed"
-    assert report["latency"]["peer_gate"]["status"] == "failed"
+    assert report["latency"]["peer_gate"]["status"] == "retired"
     assert report["latency"]["clean_sweep"]["status"] == "failed"
     assert report["fingerprints"]["open"] == [FINGERPRINT]
     assert any(
@@ -243,14 +268,13 @@ def test_stability_acceptance_does_not_fill_an_empty_observation_date():
     )
 
 
-def test_stability_acceptance_fails_closed_on_active_peer_and_p0_safety():
+def test_stability_acceptance_fails_closed_on_active_writers_and_p0_safety():
     daily, convergence = _stable_window_events()
     convergence.extend([
         {
-            "event": "peer_gate_observed",
+            "event": "active_active_detected",
             "slot": "2026-08-07T12:00:00+08:00",
             "elapsed_ms": 1_000,
-            "gate_result": "no_op",
         },
         {
             "event": "safety_incident",

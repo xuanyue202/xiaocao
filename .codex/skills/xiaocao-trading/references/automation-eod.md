@@ -9,12 +9,27 @@ unclassified cash and estimated fees. Paper A/B/T and historical settlements sta
 
 ## Execute
 
+Before applying the command prefix, require this task's initial scheduler header
+to say exactly `Automation ID: xiaocao-daily-eod`. If an inherited
+`CODEX_AUTOMATION_ID` is nonempty and different, stop rather than replacing it.
+Bind an absent ID only from that verified header; retain the actual runtime
+`CODEX_THREAD_ID`. Environment fields are task binding evidence, not scheduler
+authentication (the scheduler run-token gap remains in Contract §1c).
 Read same-day chronology first:
 
 ```bash
 python3 scripts/show_journal.py --date today
-bash scripts/auto_daily.sh eod
+CODEX_AUTOMATION_ID=xiaocao-daily-eod bash scripts/auto_daily.sh eod
 ```
+
+Retain the runtime `CODEX_THREAD_ID` and verify it against this task's initial
+scheduler header before entry. Both EOD entrypoints require the exact Automation
+ID and a nonempty thread identity. Each claims its separate paper/APP date slot
+under `output/live/eod_task_slots/xiaocao-daily-eod/` before business work. Claims
+survive success, failure and process exit; another task or top-level retry stops
+without overwriting the original daily pointer. A failed slot permits only the
+existing narrow recovery path, never deleting the claim or rerunning EOD.
+These task claims do not replace account, order or paper-ledger resource guards.
 
 Keep the shell alive until it exits. `forward_eval` can be quiet for several minutes because API/cache fills are rate-limited; do not restart it or launch a duplicate writer.
 
@@ -22,7 +37,7 @@ After the paper EOD shell exits, run the independent real-capital Book-B
 settlement exactly once:
 
 ```bash
-PYTHONPATH=src .venv/bin/python scripts/book_b_live_intraday.py --date today --phase eod
+CODEX_AUTOMATION_ID=xiaocao-daily-eod PYTHONPATH=src .venv/bin/python scripts/book_b_live_intraday.py --date today --phase eod
 ```
 
 The live EOD entry point rejects calls before 15:00 China time or on a date
@@ -37,7 +52,10 @@ summary embedded in the same positions capture, projects
 only broker-proved Book-B owned fills, and writes the immutable settled NAV only
 when every durable live plan is terminal. Fresh zero-fill evidence supports
 independent current transactions; it does not make an old SELL terminal or
-permit EOD settlement. If the strict settlement writer blocks after a valid
+permit EOD settlement. An unresolved current or prior-day SELL must not stop
+the read-only post-close snapshot and owned-lot projection; its validated
+intent/event chain stays open and the strict settlement writer still blocks.
+If the strict settlement writer blocks after a valid
 post-close projection, the blocked receipt retains that account and exact
 reconciliation receipts; these are current observations, not settled NAV.
 Preserve any older settlement written through that

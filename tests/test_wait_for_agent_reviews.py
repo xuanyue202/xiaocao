@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from scripts.wait_for_agent_reviews import review_progress
 
 
@@ -29,3 +31,16 @@ def test_review_progress_counts_only_selected_same_day_agent_reviews(tmp_path) -
     progress = review_progress(queue, history)
 
     assert progress == {"selected": 2, "reviewed": 1, "pending": 1, "reviewed_codes": ["A.XSHE"]}
+
+
+@pytest.mark.parametrize("content,status", [(None, "queue_missing"), ("{", "queue_invalid"),
+    ("[]", "queue_invalid"), ('{"market_date":"2026-09-30","items":[1]}', "queue_invalid")])
+def test_missing_or_invalid_support_queue_is_degraded_without_wait(tmp_path, monkeypatch, capsys, content, status):
+    import sys
+    import scripts.wait_for_agent_reviews as script
+    if content is not None:
+        (tmp_path / "intelligence_review_queue_2026-09-30.json").write_text(content)
+    monkeypatch.setattr(script.time, "sleep", lambda *_: pytest.fail("invalid queue must not wait"))
+    monkeypatch.setattr(sys, "argv", ["wait_for_agent_reviews.py", "--date", "2026-09-30", "--live-dir", str(tmp_path)])
+    script.main()
+    assert json.loads(capsys.readouterr().out)["status"] == status

@@ -143,6 +143,28 @@ private struct BrokerResultReadback: Codable {
     let observedAt: String
 }
 
+// Structural metadata only: never secure-field contents, account text or titles.
+private struct UnlockSnapshot: Codable {
+    let phase: String
+    let elapsedMs: Double
+    let surfaceState: String
+    let appActive: Bool
+    let windowCount: Int
+    let windowBounds: Bounds?
+    let secureFieldBounds: Bounds?
+    let secureFieldFocused: Bool
+    let accountBound: Bool
+}
+
+private struct UnlockEvidence: Codable {
+    let attemptId: String
+    var stage: String = "preflight"
+    var focusPolls: Int = 0
+    var readinessPolls: Int = 0
+    var totalMs: Double = 0
+    var snapshots: [UnlockSnapshot] = []
+}
+
 private struct Receipt: Codable {
     var schemaVersion: Int
     var helperVersion: Int
@@ -182,6 +204,8 @@ private struct Receipt: Codable {
     var resultReadback: BrokerResultReadback?
     var timingMs: Double
     var loginNoticeDismissed: Bool? = nil
+    var unlockSurface: UnlockSnapshot? = nil
+    var unlockEvidence: UnlockEvidence? = nil
 }
 
 private struct OrderFields {
@@ -1999,7 +2023,7 @@ private func observe(command: String, auditTables: Bool = false) -> Observation 
         resultReadback: nil,
         timingMs: milliseconds(since: started)
     )
-    return Observation(
+    var observation = Observation(
         receipt: receipt,
         runningApplication: running,
         applicationElement: application,
@@ -2010,6 +2034,8 @@ private func observe(command: String, auditTables: Bool = false) -> Observation 
         orderFields: orderFields,
         submitControls: submitControls
     )
+    observation.receipt.unlockSurface = unlockSnapshot(observation, phase: "probe", started: started)
+    return observation
 }
 
 private func emit(_ receipt: Receipt) {
@@ -3884,7 +3910,7 @@ private func fillClientLoginFromStandardInput(arguments: [String]) -> Receipt {
 // A stale login-success message can intercept a targeted Return intended for
 // the unlock form. Only this account-bound informational notice may be closed;
 // unknown dialogs, password errors and transaction confirmations stay blocked.
-private func dismissLoginSuccessNotice(_ observation: Observation, expected: String) -> (Bool, Bool, String) {
+private func dismissLoginSuccessNotice(_ observation: Observation, expected: String, allowDismiss: Bool = true) -> (Bool, Bool, String) {
     guard let app = observation.applicationElement else { return (false, false, "application_unavailable") }
     let windows = attribute(app, kAXWindowsAttribute) as? [AXUIElement] ?? []
     let visibleRows = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID)
@@ -3984,6 +4010,7 @@ private func dismissLoginSuccessNotice(_ observation: Observation, expected: Str
         notices.append((window, close))
     }
     guard !notices.isEmpty else { return (true, false, "clear") }
+    guard allowDismiss else { return (false, false, "notice_appeared_before_confirmation") }
     guard notices.count == 1,
           AXUIElementPerformAction(notices[0].1, kAXPressAction as CFString) == .success else {
         return (false, false, "notice_close_unproven")
@@ -4014,217 +4041,307 @@ private func checkDialogs(arguments: [String]) -> Receipt {
     return receipt
 }
 
+private func secureFieldIsFocused(_ observation: Observation) -> Bool {
+    guard observation.secureFields.count == 1, let app = observation.applicationElement,
+          let focused = elementAttribute(app, kAXFocusedUIElementAttribute) else { return false }
+    return CFEqual(focused, observation.secureFields[0])
+}
+
+private func unlockSnapshot(_ observation: Observation, phase: String, started: DispatchTime,
+                            expected: String = "") -> UnlockSnapshot {
+    let receipt = observation.receipt
+    return UnlockSnapshot(phase: phase, elapsedMs: milliseconds(since: started),
+        surfaceState: receipt.surfaceState, appActive: receipt.appActive, windowCount: receipt.windowCount,
+        windowBounds: observation.primaryWindow.flatMap { bounds(of: $0) },
+        secureFieldBounds: observation.secureFields.count == 1 ? bounds(of: observation.secureFields[0]) : nil,
+        secureFieldFocused: secureFieldIsFocused(observation),
+        accountBound: validFingerprint(expected) && receipt.tradeAccountFingerprint == expected
+            && receipt.tradeAccountFingerprintCount == 1)
+}
+
+private func sameUnlockTarget(_ initial: Observation, _ current: Observation, expected: String) -> Bool {
+    guard current.receipt.surfaceState == "authentication_required", current.secureFields.count == 1,
+          initial.secureFields.count == 1, let firstWindow = initial.primaryWindow,
+          let currentWindow = current.primaryWindow else { return false }
+    return current.receipt.appRunning && !current.receipt.screenLocked && current.receipt.accessibilityTrusted
+        && current.receipt.unlockFailureCategory == nil
+        && current.receipt.tradeAccountFingerprint == expected && current.receipt.tradeAccountFingerprintCount == 1
+        && current.runningApplication?.processIdentifier == initial.runningApplication?.processIdentifier
+        && CFEqual(firstWindow, currentWindow) && CFEqual(initial.secureFields[0], current.secureFields[0])
+}
+
+private func unlockReady(_ observation: Observation, expected: String, pid: pid_t?) -> Bool {
+    let receipt = observation.receipt
+    return ["trade_ready", "query_only"].contains(receipt.surfaceState)
+        && receipt.appRunning && !receipt.screenLocked && receipt.accessibilityTrusted
+        && receipt.secureFieldCount == 0 && receipt.unlockFailureCategory == nil
+        && receipt.tradeAccountFingerprint == expected && receipt.tradeAccountFingerprintCount == 1
+        && pid != nil && observation.runningApplication?.processIdentifier == pid
+}
+
 private func unlockFromStandardInput(arguments: [String]) -> Receipt {
-    var initial = observe(command: "unlock-stdin")
-    var receipt = initial.receipt
-    receipt.action = ActionResult(attempted: false, succeeded: false, requiresUserInput: false,
-                                 confirmPressed: false, confirmationMode: "none", unlockPathProven: false)
-    let expectedFingerprint = option("--expected-fingerprint", in: arguments)
-    guard arguments.contains("--allow-stdin-secret") else {
-        receipt.status = "unlock_not_explicitly_enabled"
-        receipt.reason = "--allow-stdin-secret is required"
-        return receipt
-    }
-    guard validFingerprint(expectedFingerprint),
-          receipt.tradeAccountFingerprint == expectedFingerprint,
-          receipt.tradeAccountFingerprintCount == 1 else {
-        receipt.status = "trade_account_binding_unproven"
-        receipt.reason = "unique page and caller trade-account fingerprints did not match"
-        return receipt
-    }
-    guard receipt.surfaceState == "authentication_required",
-          initial.secureFields.count == 1 else {
-        receipt.status = "unlock_surface_unproven"
-        receipt.reason = "a unique secure field was not proven"
-        return receipt
-    }
-    if receipt.unlockFailureCategory != nil {
-        receipt.status = "unlock_error_alert_pending"
-        receipt.reason = "a prior broker password error alert must be acknowledged before another attempt"
-        return receipt
-    }
-    let notice = dismissLoginSuccessNotice(initial, expected: expectedFingerprint)
-    guard notice.0 else {
-        receipt.status = "unlock_overlay_unproven"
-        receipt.reason = notice.2
+    let started = DispatchTime.now()
+    var evidence = UnlockEvidence(attemptId: UUID().uuidString.lowercased())
+    func run() -> Receipt {
+        var initial = observe(command: "unlock-stdin")
+        evidence.snapshots.append(unlockSnapshot(initial, phase: "preflight", started: started))
+        var receipt = initial.receipt
         receipt.action = ActionResult(attempted: false, succeeded: false, requiresUserInput: false,
                                      confirmPressed: false, confirmationMode: "none", unlockPathProven: false)
-        return receipt
-    }
-    if notice.1 {
-        initial = observe(command: "unlock-stdin")
-        receipt = initial.receipt
-        receipt.action = ActionResult(attempted: false, succeeded: false, requiresUserInput: false,
-                                     confirmPressed: false, confirmationMode: "none", unlockPathProven: false)
-        receipt.loginNoticeDismissed = true
-        guard receipt.tradeAccountFingerprint == expectedFingerprint,
-              receipt.tradeAccountFingerprintCount == 1,
-              receipt.surfaceState == "authentication_required",
-              initial.secureFields.count == 1,
-              receipt.unlockFailureCategory == nil else {
+        let expectedFingerprint = option("--expected-fingerprint", in: arguments)
+        guard arguments.contains("--allow-stdin-secret") else {
+            receipt.status = "unlock_not_explicitly_enabled"
+            receipt.reason = "--allow-stdin-secret is required"
+            return receipt
+        }
+        guard validFingerprint(expectedFingerprint),
+              receipt.tradeAccountFingerprint == expectedFingerprint,
+              receipt.tradeAccountFingerprintCount == 1 else {
+            receipt.status = "trade_account_binding_unproven"
+            receipt.reason = "unique page and caller trade-account fingerprints did not match"
+            return receipt
+        }
+        guard receipt.surfaceState == "authentication_required",
+              initial.secureFields.count == 1 else {
             receipt.status = "unlock_surface_unproven"
-            receipt.reason = "fresh account-bound unlock surface after notice dismissal was not proven"
+            receipt.reason = "a unique secure field was not proven"
             return receipt
         }
-    }
-    let semanticConfirm = initial.confirmButtons.count == 1
-        ? initial.confirmButtons[0]
-        : nil
-    let guardedConfirm = guardedUnlockConfirmPoint(
-        field: bounds(of: initial.secureFields[0]),
-        window: receipt.windowBounds
-    )
-    let geometryConfirm = guardedUnlockConfirmButton(
-        window: initial.primaryWindow, point: guardedConfirm
-    )
-    guard semanticConfirm != nil || guardedConfirm != nil else {
-        receipt.status = "unlock_confirmation_unproven"
-        receipt.reason = "neither a semantic nor guarded coordinate confirmation was proven"
-        return receipt
-    }
-    guard let secret = readStandardInputSecret() else {
-        receipt.status = "trade_password_input_invalid"
-        receipt.reason = "stdin secret was empty, too long, or not UTF-8"
-        return receipt
-    }
-
-    // AXPress or a process-targeted Return can submit without foregrounding
-    // Founder. Keep the user's keyboard in its current app while replacing
-    // the secure field through AX; typing in Codex must not append to it.
-    let axConfirm = semanticConfirm ?? geometryConfirm
-    if initial.runningApplication?.isActive == true {
-        let quietDeadline = Date().addingTimeInterval(2)
-        while !keyboardQuietForUnlock() && Date() < quietDeadline {
-            Thread.sleep(forTimeInterval: 0.05)
-        }
-        guard keyboardQuietForUnlock() else {
-            receipt.status = "unlock_keyboard_or_focus_busy"
-            receipt.reason = "Founder has keyboard focus while the user is typing"
+        if receipt.unlockFailureCategory != nil {
+            receipt.status = "unlock_error_alert_pending"
+            receipt.reason = "a prior broker password error alert must be acknowledged before another attempt"
             return receipt
         }
-    }
-
-    receipt.action = ActionResult(attempted: true, succeeded: false, requiresUserInput: false,
-                                 confirmPressed: false, confirmationMode: "none", unlockPathProven: false)
-    let clearResult = AXUIElementSetAttributeValue(
-        initial.secureFields[0],
-        kAXValueAttribute as CFString,
-        "" as CFTypeRef
-    )
-    let clearProven = clearResult == .success
-        && stringAttribute(
-            initial.secureFields[0], kAXValueAttribute
-        ).isEmpty
-    guard clearProven else {
-        receipt.status = "trade_password_clear_failed"
-        receipt.reason = "secure field could not be proven empty before password replacement"
-        receipt.secureFieldClearedBeforeSet = false
-        receipt.action = ActionResult(
-            attempted: true,
-            succeeded: false,
-            requiresUserInput: false,
-            confirmPressed: false,
-            confirmationMode: "none",
-            unlockPathProven: false
+        evidence.stage = "overlay_check"
+        let notice = dismissLoginSuccessNotice(initial, expected: expectedFingerprint)
+        guard notice.0 else {
+            receipt.status = "unlock_overlay_unproven"
+            receipt.reason = notice.2
+            receipt.action = ActionResult(attempted: false, succeeded: false, requiresUserInput: false,
+                                         confirmPressed: false, confirmationMode: "none", unlockPathProven: false)
+            return receipt
+        }
+        if notice.1 {
+            initial = observe(command: "unlock-stdin")
+            receipt = initial.receipt
+            receipt.action = ActionResult(attempted: false, succeeded: false, requiresUserInput: false,
+                                         confirmPressed: false, confirmationMode: "none", unlockPathProven: false)
+            receipt.loginNoticeDismissed = true
+            guard receipt.tradeAccountFingerprint == expectedFingerprint,
+                  receipt.tradeAccountFingerprintCount == 1,
+                  receipt.surfaceState == "authentication_required",
+                  initial.secureFields.count == 1,
+                  receipt.unlockFailureCategory == nil else {
+                receipt.status = "unlock_surface_unproven"
+                receipt.reason = "fresh account-bound unlock surface after notice dismissal was not proven"
+                return receipt
+            }
+        }
+        let semanticConfirm = initial.confirmButtons.count == 1
+            ? initial.confirmButtons[0]
+            : nil
+        let guardedConfirm = guardedUnlockConfirmPoint(
+            field: bounds(of: initial.secureFields[0]),
+            window: receipt.windowBounds
         )
-        return receipt
-    }
+        let geometryConfirm = guardedUnlockConfirmButton(
+            window: initial.primaryWindow, point: guardedConfirm
+        )
+        guard semanticConfirm != nil || guardedConfirm != nil else {
+            receipt.status = "unlock_confirmation_unproven"
+            receipt.reason = "neither a semantic nor guarded coordinate confirmation was proven"
+            return receipt
+        }
+        // Prove the targeted Return recipient before receiving or setting a secret.
+        // AXSet success can precede an asynchronous focus change.
+        let axConfirm = semanticConfirm ?? geometryConfirm
+        if axConfirm == nil {
+            evidence.stage = "focus_target"
+            guard AXUIElementSetAttributeValue(initial.secureFields[0], kAXFocusedAttribute as CFString,
+                                              kCFBooleanTrue) == .success else {
+                receipt.status = "unlock_focus_unproven"
+                receipt.reason = "secure-field focus could not be requested"
+                return receipt
+            }
+            let focusDeadline = Date().addingTimeInterval(0.5)
+            while !secureFieldIsFocused(initial), Date() < focusDeadline {
+                evidence.focusPolls += 1
+                Thread.sleep(forTimeInterval: 0.05)
+            }
+            guard secureFieldIsFocused(initial) else {
+                receipt.status = "unlock_focus_unproven"
+                receipt.reason = "process-targeted Return recipient was not proven"
+                return receipt
+            }
+        }
+        evidence.stage = "stdin_receive"
+        guard let secret = readStandardInputSecret() else {
+            receipt.status = "trade_password_input_invalid"
+            receipt.reason = "stdin secret was empty, too long, or not UTF-8"
+            return receipt
+        }
 
-    let setResult = AXUIElementSetAttributeValue(
-        initial.secureFields[0],
-        kAXValueAttribute as CFString,
-        secret as CFTypeRef
-    )
-    let focusResult = axConfirm == nil
-        ? AXUIElementSetAttributeValue(
+        // AXPress or a process-targeted Return can submit without foregrounding
+        // Founder. Keep the user's keyboard in its current app while replacing
+        // the secure field through AX; typing in Codex must not append to it.
+        evidence.stage = "keyboard_guard"
+        if initial.runningApplication?.isActive == true {
+            let quietDeadline = Date().addingTimeInterval(2)
+            while !keyboardQuietForUnlock() && Date() < quietDeadline {
+                Thread.sleep(forTimeInterval: 0.05)
+            }
+            guard keyboardQuietForUnlock() else {
+                receipt.status = "unlock_keyboard_or_focus_busy"
+                receipt.reason = "Founder has keyboard focus while the user is typing"
+                return receipt
+            }
+        }
+
+        receipt.action = ActionResult(attempted: true, succeeded: false, requiresUserInput: false,
+                                     confirmPressed: false, confirmationMode: "none", unlockPathProven: false)
+        evidence.stage = "clear_field"
+        let clearResult = AXUIElementSetAttributeValue(
             initial.secureFields[0],
-            kAXFocusedAttribute as CFString,
-            kCFBooleanTrue
-        ) : .success
-    guard setResult == .success, focusResult == .success else {
-        receipt.status = "trade_password_set_failed"
-        receipt.reason = "secure-field value or focus could not be set"
-        receipt.action = ActionResult(
-            attempted: true,
-            succeeded: false,
-            requiresUserInput: false,
-            confirmPressed: false,
-            confirmationMode: "none",
-            unlockPathProven: false
+            kAXValueAttribute as CFString,
+            "" as CFTypeRef
         )
-        return receipt
-    }
-
-    let confirmationMode: String
-    let confirmSucceeded: Bool
-    if let axConfirm {
-        confirmationMode = semanticConfirm != nil ? "semantic" : "guarded_ax_button"
-        confirmSucceeded = AXUIElementPerformAction(
-            axConfirm,
-            kAXPressAction as CFString
-        ) == .success
-    } else if guardedConfirm != nil, let running = initial.runningApplication {
-        // The unique secure field and bounded confirm geometry prove the
-        // unlock form. A process-targeted Return avoids global keyboard focus
-        // and multi-display coordinate uncertainty.
-        confirmationMode = "secure_field_targeted_return"
-        if !running.isActive || keyboardQuietForUnlock() {
-            confirmSucceeded = postSingleReturnKey(to: running.processIdentifier)
-        } else {
-            _ = AXUIElementSetAttributeValue(
-                initial.secureFields[0], kAXValueAttribute as CFString,
-                "" as CFTypeRef
+        let clearProven = clearResult == .success
+            && (attribute(initial.secureFields[0], kAXValueAttribute) as? String) == ""
+        guard clearProven else {
+            receipt.status = "trade_password_clear_failed"
+            receipt.reason = "secure field could not be proven empty before password replacement"
+            receipt.secureFieldClearedBeforeSet = false
+            receipt.action = ActionResult(
+                attempted: true,
+                succeeded: false,
+                requiresUserInput: false,
+                confirmPressed: false,
+                confirmationMode: "none",
+                unlockPathProven: false
             )
-            receipt.status = "unlock_keyboard_or_focus_busy"
-            receipt.reason = "password field was cleared after keyboard or focus changed before confirmation"
-            receipt.secureFieldClearedBeforeSet = true
             return receipt
         }
-    } else {
-        confirmationMode = "none"
-        confirmSucceeded = false
-    }
-    guard confirmSucceeded else {
-        receipt.status = "unlock_confirm_failed"
-        receipt.reason = "the single guarded unlock confirmation could not be pressed"
-        receipt.action = ActionResult(
-            attempted: true,
-            succeeded: false,
-            requiresUserInput: false,
-            confirmPressed: false,
-            confirmationMode: confirmationMode,
-            unlockPathProven: false
-        )
-        return receipt
-    }
 
-    let deadline = Date().addingTimeInterval(3)
-    var final = observe(command: "unlock-stdin")
-    while Date() < deadline,
-          !["trade_ready", "query_only"].contains(
-            final.receipt.surfaceState
-          ) {
-        Thread.sleep(forTimeInterval: 0.10)
-        final = observe(command: "unlock-stdin")
+        evidence.stage = "set_field"
+        let setResult = AXUIElementSetAttributeValue(
+            initial.secureFields[0],
+            kAXValueAttribute as CFString,
+            secret as CFTypeRef
+        )
+        guard setResult == .success else {
+            receipt.status = "trade_password_set_failed"
+            receipt.reason = "secure-field value or focus could not be set"
+            receipt.action = ActionResult(
+                attempted: true,
+                succeeded: false,
+                requiresUserInput: false,
+                confirmPressed: false,
+                confirmationMode: "none",
+                unlockPathProven: false
+            )
+            return receipt
+        }
+
+        evidence.stage = "preconfirm_readback"
+        let current = observe(command: "probe")
+        evidence.snapshots.append(unlockSnapshot(current, phase: "preconfirm", started: started,
+                                               expected: expectedFingerprint))
+        let targetProven = sameUnlockTarget(initial, current, expected: expectedFingerprint)
+            && dismissLoginSuccessNotice(current, expected: expectedFingerprint, allowDismiss: false).0
+            && (axConfirm != nil || secureFieldIsFocused(current))
+            && (current.runningApplication?.isActive != true || keyboardQuietForUnlock())
+        guard targetProven else {
+            // A changed window/focus never receives Return or AXPress. Erase the
+            // field we populated; uncertain erasure stays fenced, without logging it.
+            let cleared = AXUIElementSetAttributeValue(initial.secureFields[0], kAXValueAttribute as CFString,
+                                                       "" as CFTypeRef) == .success
+                && (attribute(initial.secureFields[0], kAXValueAttribute) as? String) == ""
+            receipt.status = "unlock_target_changed"
+            receipt.reason = "window, account, modal, keyboard or secure focus changed before confirmation"
+            receipt.secureFieldClearedBeforeSet = clearProven
+            evidence.stage = cleared ? "target_changed_field_erased" : "target_changed_erasure_unproven"
+            return receipt
+        }
+
+        evidence.stage = "confirm_once"
+        let confirmationMode: String
+        let confirmSucceeded: Bool
+        if let axConfirm {
+            confirmationMode = semanticConfirm != nil ? "semantic" : "guarded_ax_button"
+            confirmSucceeded = AXUIElementPerformAction(
+                axConfirm,
+                kAXPressAction as CFString
+            ) == .success
+        } else if guardedConfirm != nil, let running = initial.runningApplication {
+            // The unique secure field and bounded confirm geometry prove the
+            // unlock form. A process-targeted Return avoids global keyboard focus
+            // and multi-display coordinate uncertainty.
+            confirmationMode = "secure_field_targeted_return"
+            if !running.isActive || keyboardQuietForUnlock() {
+                confirmSucceeded = postSingleReturnKey(to: running.processIdentifier)
+            } else {
+                _ = AXUIElementSetAttributeValue(
+                    initial.secureFields[0], kAXValueAttribute as CFString,
+                    "" as CFTypeRef
+                )
+                receipt.status = "unlock_keyboard_or_focus_busy"
+                receipt.reason = "password field was cleared after keyboard or focus changed before confirmation"
+                receipt.secureFieldClearedBeforeSet = true
+                return receipt
+            }
+        } else {
+            confirmationMode = "none"
+            confirmSucceeded = false
+        }
+        guard confirmSucceeded else {
+            receipt.status = "unlock_confirm_failed"
+            receipt.reason = "the single guarded unlock confirmation could not be pressed"
+            receipt.action = ActionResult(
+                attempted: true,
+                succeeded: false,
+                requiresUserInput: false,
+                confirmPressed: false,
+                confirmationMode: confirmationMode,
+                unlockPathProven: false
+            )
+            return receipt
+        }
+
+        evidence.stage = "readiness_readback"
+        let deadline = Date().addingTimeInterval(3)
+        var final = observe(command: "probe")
+        evidence.readinessPolls = 1
+        while Date() < deadline,
+              !unlockReady(final, expected: expectedFingerprint, pid: initial.runningApplication?.processIdentifier),
+              final.receipt.unlockFailureCategory == nil {
+            Thread.sleep(forTimeInterval: 0.10)
+            final = observe(command: "probe")
+            evidence.readinessPolls += 1
+        }
+        evidence.snapshots.append(unlockSnapshot(final, phase: "readiness", started: started,
+                                               expected: expectedFingerprint))
+        var result = final.receipt
+        result.loginNoticeDismissed = notice.1
+        result.secureFieldClearedBeforeSet = true
+        let proven = unlockReady(final, expected: expectedFingerprint, pid: initial.runningApplication?.processIdentifier)
+        result.status = proven ? "unlocked" : "unlock_unproven"
+        result.reason = proven
+            ? "single confirmation produced an account-bound trade or query surface"
+            : "single confirmation was pressed but native readiness was not proven; do not retry automatically"
+        result.action = ActionResult(
+            attempted: true,
+            succeeded: proven,
+            requiresUserInput: false,
+            confirmPressed: true,
+            confirmationMode: confirmationMode,
+            unlockPathProven: proven
+        )
+        evidence.stage = proven ? "ready" : "readiness_unproven"
+        return result
     }
-    var result = final.receipt
-    result.loginNoticeDismissed = notice.1
-    result.secureFieldClearedBeforeSet = true
-    let proven = ["trade_ready", "query_only"].contains(result.surfaceState)
-    result.status = proven ? "unlocked" : "unlock_unproven"
-    result.reason = proven
-        ? "single confirmation produced an account-bound trade or query surface"
-        : "single confirmation was pressed but native readiness was not proven; do not retry automatically"
-    result.tradeAccountFingerprint = expectedFingerprint
-    result.tradeAccountFingerprintCount = 1
-    result.action = ActionResult(
-        attempted: true,
-        succeeded: proven,
-        requiresUserInput: false,
-        confirmPressed: true,
-        confirmationMode: confirmationMode,
-        unlockPathProven: proven
-    )
+    var result = run()
+    evidence.totalMs = milliseconds(since: started)
+    result.unlockEvidence = evidence
     return result
 }
 

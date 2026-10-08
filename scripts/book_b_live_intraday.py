@@ -27,6 +27,7 @@ from xiaocao.live.capital_keychain import KeychainCapitalRuntime  # noqa: E402
 from xiaocao.live.foundersc_keychain import FounderscKeychainPreflight  # noqa: E402
 from xiaocao.live.trading_runner import build_foundersc_native_execution  # noqa: E402
 from xiaocao.live.live_decision_support import calendar_provider, read_policy  # noqa: E402
+from xiaocao.live.eod_automation_gate import EodGateRejected, claim_eod_slot  # noqa: E402
 
 
 def _china_now() -> datetime:
@@ -77,6 +78,13 @@ def main(argv: list[str] | None = None) -> int:
 
     current = _china_now()
     trade_date = current.date().isoformat() if args.date == "today" else args.date
+    identity = None
+    if args.phase == "eod":
+        try:
+            identity = claim_eod_slot(ROOT, "app", trade_date)
+        except EodGateRejected as exc:
+            print(json.dumps(exc.payload, ensure_ascii=False, sort_keys=True), file=sys.stderr)
+            return 2
     state_dir = Path(args.state_dir)
     run_id = (
         f"{trade_date}-{args.phase}-"
@@ -86,6 +94,41 @@ def main(argv: list[str] | None = None) -> int:
     run_path = run_dir / f"{trade_date}-{args.phase}.json"
     archive_path = run_dir / "archive" / f"{run_id}.json"
     try:
+        # A weekday schedule does not prove an exchange session. Stop before
+        # secrets, native reads or old-order reconciliation on a holiday.
+        client = monitor._client()
+        trading_calendar = calendar_provider(client)
+        try:
+            trading_days = trading_calendar(current)
+            latest_trading_date = max(trading_days)
+            if latest_trading_date > current.date().isoformat():
+                raise ValueError("LIVE_BOOK_B_CALENDAR_FUTURE_DATE")
+        except Exception as exc:
+            raise RuntimeError("LIVE_BOOK_B_CALENDAR_UNPROVEN") from exc
+        if current.date().isoformat() not in trading_days or trade_date not in trading_days:
+            payload = {
+                "trade_date": trade_date,
+                "phase": args.phase,
+                "status": "no_action",
+                "reason": "NON_TRADING_DAY",
+                "calendar": {
+                    "source": "xiaocao:/stock/trade_cal",
+                    "exchange": "SSE",
+                    "query_date": current.date().isoformat(),
+                    "latest_trading_date": latest_trading_date,
+                },
+                "route": "native-app",
+                "paper_ledger_used": False,
+                "execute_sells_requested": args.execute_sells,
+                "run_id": run_id,
+                "run_receipt_path": str(archive_path),
+            }
+            if identity is not None:
+                payload["automation_identity"] = identity
+            _write_json_atomic(archive_path, payload)
+            _write_json_atomic(run_path, payload)
+            print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+            return 0
         keychain = FounderscKeychainPreflight()
         keychain_receipt = keychain.run(read_trade_secret=True)
         required = (
@@ -105,7 +148,6 @@ def main(argv: list[str] | None = None) -> int:
             expected_fund_account_fingerprint=fingerprint,
             safety_env_provider=capital_runtime.safety_env,
         )
-        client = monitor._client()
         market_context: dict[str, object] | None = None
         sentiment_map: dict[str, dict[str, object]] | None = None
         snapshot_map: dict[tuple[str, str, str], dict[str, object]] | None = None
@@ -177,7 +219,7 @@ def main(argv: list[str] | None = None) -> int:
             freeze_dir=Path(args.freeze_dir),
             execute_sells=args.execute_sells,
             policy_root=Path(args.policy_root),
-            trading_dates_provider=calendar_provider(client),
+            trading_dates_provider=trading_calendar,
         )
         payload = receipt.as_dict()
         payload["route"] = "native-app"
@@ -185,6 +227,8 @@ def main(argv: list[str] | None = None) -> int:
         payload["execute_sells_requested"] = args.execute_sells
         payload["run_id"] = run_id
         payload["run_receipt_path"] = str(archive_path)
+        if identity is not None:
+            payload["automation_identity"] = identity
         _write_json_atomic(archive_path, payload)
         _write_json_atomic(run_path, payload)
         print(json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str))
@@ -201,6 +245,8 @@ def main(argv: list[str] | None = None) -> int:
             "run_id": run_id,
             "run_receipt_path": str(archive_path),
         }
+        if identity is not None:
+            payload["automation_identity"] = identity
         _write_json_atomic(archive_path, payload)
         if payload["reason"] != "LIVE_BOOK_B_CHECKPOINT_ALREADY_RUNNING":
             _write_json_atomic(run_path, payload)

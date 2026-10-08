@@ -34,6 +34,110 @@ def _context() -> dict[str, str]:
     }
 
 
+def _household_context() -> dict:
+    return {
+        **_context(),
+        "adapter": "lv_text_image",
+        "category": "provider_error",
+        "code": "lianghui_mcp_request_failed",
+        "stage": "household_context",
+        "targeted_test_profile": "kol_lv_text_image_household_context",
+        "claim_receipt_summary": {
+            "claim_count": 0, "receipt_count": 0, "uncertain_effect_count": 0,
+        },
+        "provider_recovery_target": {"source_identity": "f" * 64, "bundle_sha256": "0" * 64},
+    }
+
+
+def _provider_recovery_git(command: tuple[str, ...]) -> CompletedProcess[str]:
+    if command == ("branch", "--show-current"):
+        return CompletedProcess(command, 0, "main\n", "")
+    if command[0] == "rev-parse":
+        return CompletedProcess(command, 0, REPAIR_REVISION + "\n", "")
+    if command[:2] == ("merge-base", "--is-ancestor"):
+        return CompletedProcess(command, 0, "", "")
+    # A transport recovery does not invent a repository change.
+    if command[0] in {"diff-tree", "show"}:
+        return CompletedProcess(command, 0, "unrelated.txt\n", "")
+    raise AssertionError(command)
+
+
+def test_household_context_provider_recovery_uses_live_proof_without_fake_commit(tmp_path):
+    calls = []
+    ledger = RepairValidationLedger(tmp_path / "repair.jsonl")
+
+    def probe():
+        calls.append("read_only_probe")
+        return {"family_id": "private-family", "positions": [], "decision_view": {},
+                "as_of": "2026-10-08T01:30:00Z"}
+
+    service = RepairValidationService(
+        tmp_path, ledger=ledger, git_runner=_provider_recovery_git,
+        test_runner=lambda command: CompletedProcess(command, 0, "3 passed", ""),
+        provider_recovery_probe=probe, now=lambda: "2026-10-08T01:30:01Z",
+    )
+    receipt = service.validate(_household_context())
+    assert calls == ["read_only_probe"]
+    assert receipt.provider_recovery["observed_at"] == "2026-10-08T01:30:00Z"
+    assert "private-family" not in str(receipt.to_dict())
+    assert ledger.receipts() == [receipt]
+    assert service.require_current(_household_context(), repair_revision=REPAIR_REVISION) == receipt
+    changed = _household_context()
+    changed["provider_recovery_target"]["bundle_sha256"] = "1" * 64
+    with pytest.raises(ProgressContractError, match="target changed"):
+        service.require_current(changed, repair_revision=REPAIR_REVISION)
+    tampered = receipt.to_dict()
+    tampered["provider_recovery"]["readback_sha256"] = "2" * 64
+    with pytest.raises(ProgressContractError, match="hash changed"):
+        RepairValidationReceipt.from_dict(tampered)
+
+
+@pytest.mark.parametrize("failure", [
+    "effects", "missing_summary", "failed_probe", "malformed_probe",
+    "stale_probe", "future_probe", "failed_tests", "wrong_profile",
+    "missing_probe", "missing_target", "unpushed", "outside_lineage",
+])
+def test_household_context_provider_recovery_rejects_unproven_recovery(tmp_path, failure):
+    context = _household_context()
+    if failure == "effects":
+        context["claim_receipt_summary"]["claim_count"] = 1
+    if failure == "missing_summary":
+        context.pop("claim_receipt_summary")
+    if failure == "missing_target":
+        context.pop("provider_recovery_target")
+    if failure == "wrong_profile":
+        context = _context()
+
+    def probe():
+        if failure == "failed_probe":
+            raise RuntimeError("provider unavailable")
+        if failure == "malformed_probe":
+            return {"positions": []}
+        return {"family_id": "private", "positions": [], "decision_view": {},
+                "as_of": {
+                    "stale_probe": "2026-10-08T01:20:00Z",
+                    "future_probe": "2026-10-08T01:40:00Z",
+                }.get(failure, "2026-10-08T01:30:00Z")}
+
+    def git(command):
+        if failure == "unpushed" and command == ("rev-parse", "--verify", "origin/main^{commit}"):
+            return CompletedProcess(command, 0, FAILURE_REVISION, "")
+        if failure == "outside_lineage" and command[0] == "merge-base":
+            return CompletedProcess(command, 1, "", "")
+        return _provider_recovery_git(command)
+
+    ledger = RepairValidationLedger(tmp_path / "repair.jsonl")
+    service = RepairValidationService(
+        tmp_path, ledger=ledger, git_runner=git,
+        test_runner=lambda command: CompletedProcess(command, 1 if failure == "failed_tests" else 0, "tests", ""),
+        provider_recovery_probe=None if failure == "missing_probe" else probe,
+        now=lambda: "2026-10-08T01:30:01Z",
+    )
+    with pytest.raises((ProgressContractError, RuntimeError)):
+        service.validate(context)
+    assert ledger.receipts() == []
+
+
 @pytest.mark.parametrize(
     ("implementation_path", "regression_path"),
     [

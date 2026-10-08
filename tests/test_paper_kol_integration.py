@@ -47,6 +47,7 @@ def rows(path: Path):
 @pytest.fixture
 def runtime(tmp_path, monkeypatch):
     import kronos_screen.scripts.paper_record as pr
+    monkeypatch.delenv("CODEX_AUTOMATION_ID", raising=False)
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(pr, "ROOT", tmp_path)
@@ -80,7 +81,8 @@ def runtime(tmp_path, monkeypatch):
 
     def run(*extra):
         monkeypatch.setattr(sys, "argv", ["paper_record.py", "--date", "2026-09-06",
-                                         "--no-wait-fill-window", "--intelligence-trade", "off", *extra])
+                                         "--no-wait-fill-window", "--intelligence-trade", "off",
+                                         "--allow-legacy-snapshots", *extra])
         pr.main()
         claim = support.read_consumption(tmp_path, "2026-09-06", "mode_exec_star")
         result_path = support.consumption_path(tmp_path, "2026-09-06", "mode_exec_star").with_suffix(".result.json")
@@ -289,3 +291,33 @@ def test_risk_kill_and_kol_are_one_minimum_cap(tmp_path, kol_scale, risk_factor,
     assert (result[0]["mode_exec_planned_shares"] if result else 0) == expected_shares
     assert audit[0]["effective_scale"] == expected_scale
     assert baseline == original
+
+
+@pytest.mark.parametrize("mode,zero", [("shadow", False), ("on", False), ("on", True)])
+def test_formal_paper_support_missing_and_proven_zero(runtime, monkeypatch, capsys, mode, zero):
+    from xiaocao.live.morning_bundle import publish_captured_batch
+    root, live, pr, _ = runtime
+    monkeypatch.setenv("CODEX_AUTOMATION_ID", "xiaocao-daily-morning")
+    monkeypatch.setenv("CODEX_THREAD_ID", "producer-fixture")
+    batch = [] if zero else [{**r, "mode_exec_star": i < 3} for i, r in
+        enumerate(rows(live / "signal_snapshots.jsonl")) if r.get("book") == "B"]
+    raw = "".join(json.dumps(r) + "\n" for r in batch).encode()
+    publish_captured_batch(live, "2026-09-06", snapshot=raw, strategy_sha="a" * 40,
+        source_readiness={"completeness": "observed_responses"}, timing={})
+    monkeypatch.setenv("CODEX_AUTOMATION_ID", "xiaocao-daily-morning-execution")
+    monkeypatch.setattr(sys, "argv", ["paper_record.py", "--date", "2026-09-06", "--no-wait-fill-window",
+        "--intelligence-trade", mode])
+    before = (live / "paper_account.json").read_bytes()
+    if mode == "on" and not zero:
+        with pytest.raises(FileNotFoundError):
+            pr.main()
+        assert support.read_consumption(root, "2026-09-06", "mode_exec_star") is None
+        assert (live / "paper_account.json").read_bytes() == before
+    else:
+        pr.main()
+        claim = support.read_consumption(root, "2026-09-06", "mode_exec_star")
+        terminal = support.read_consumption_result(root, "2026-09-06", "mode_exec_star")
+        assert terminal["buy_count"] == (0 if zero else 3)
+        assert claim is not None
+        if not zero:
+            assert "supporting_health=degraded" in capsys.readouterr().out

@@ -300,8 +300,17 @@ def _evaluate_live_risk_locked(state_dir: Path, *, now: datetime,
                                 trade_date=now.astimezone(_CHINA).date().isoformat(), now=now)
                 if not isinstance(account, BookBLiveAccountState) or account.logical_account_id != "primary":
                     raise ValueError("LIVE_RISK_RECONCILED_CURRENT_NAV_REQUIRED")
-                if account.accounting and account.accounting.get("status") in {"unavailable", "cash_reserve_reconciliation_required"}:
-                    raise ValueError("LIVE_RISK_ACCOUNTING_" + account.accounting["status"].upper())
+                if account.accounting:
+                    accounting_status = account.accounting.get("status")
+                    if accounting_status == "unavailable":
+                        raise ValueError("LIVE_RISK_ACCOUNTING_UNAVAILABLE")
+                    if accounting_status == "cash_reserve_reconciliation_required":
+                        from .book_b_capital import has_open_buy_with_possible_effect
+                        if has_open_buy_with_possible_effect(root):
+                            raise ValueError("LIVE_RISK_ACCOUNTING_CASH_RESERVE_RECONCILIATION_REQUIRED")
+                        # A bare immutable intent reserves buying power but has
+                        # no broker effect. Keep accounting PnL unproved while
+                        # verifying this fresh account-bound conservative mark.
                 cash_by_head, _ = _ownership_cash(root)
                 if account.accounting is not None:
                     from .book_b_accounting import verify_observation
@@ -316,7 +325,8 @@ def _evaluate_live_risk_locked(state_dir: Path, *, now: datetime,
                 error = str(exc) or type(exc).__name__
             receipt = evaluate_account_risk(history, current_nav=mark, asof=now, account_id="live:B",
                         initial_capital=_CAPITAL, expected_settlement_date=expected, previous_receipt=previous,
-                        allow_proven_sell_gap=bool(proven_gap_dates and history and history[-1].date != expected))
+                        allow_proven_sell_gap=bool(mark is not None and proven_gap_dates and history
+                                                   and history[-1].date != expected))
             if error:
                 receipt = replace(receipt, status="BLOCKED", deploy_factor=0.0, nav=None,
                                   drawdown_pct=None, review_required=True,

@@ -257,3 +257,25 @@ def test_paper_freeze_wait_has_no_native_idle_schedule(tmp_path, monkeypatch):
     result = waiter.wait_for_morning_freeze(date='2026-09-15', live_dir=tmp_path,
         timeout_sec=5, poll_sec=1)
     assert result['status'] == 'ready' and elapsed[0] == 1
+
+
+def test_post_deployment_legacy_files_cannot_replace_original_producer_commit(tmp_path):
+    from xiaocao.live.morning_bundle import BUNDLE_REQUIRED_FROM, read_consumed_rows
+    import pytest
+    date = BUNDLE_REQUIRED_FROM
+    row = {"date": date, "code": "000020.XSHE", "book": "B"}
+    raw = (json.dumps(row) + "\n").encode()
+    report = b"# manual report\n"
+    path = tmp_path / f"book_b_live_freeze_{date}.jsonl"
+    path.write_bytes(raw)
+    (tmp_path / f"recommend_{date}.md").write_bytes(report)
+    queue = {"market_date": date, "status": "ready", "counts": {"selected_items": 1},
+        "freeze_binding": {"strategy_run_id": "manual-run", "strategy_sha": "a" * 40,
+            "snapshot_sha256": frozen_rows_digest([row]), "snapshot_row_count": 1,
+            "report_sha256": hashlib.sha256(report).hexdigest()}}
+    (tmp_path / f"intelligence_review_queue_{date}.json").write_text(json.dumps(queue))
+    result = wait_for_morning_freeze(date=date, live_dir=tmp_path, snapshot_path=path, timeout_sec=0, poll_sec=.01)
+    assert result["status"] == "timeout" and result["reason"] == "original_bundle_commit_missing"
+    receipt = {"snapshot_path": str(path), "bundle_live_dir": str(tmp_path)}
+    with pytest.raises(ValueError, match="ORIGINAL_REQUIRED"):
+        read_consumed_rows(receipt, date, live_dir=tmp_path)

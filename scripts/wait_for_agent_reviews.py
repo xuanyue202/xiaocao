@@ -29,8 +29,12 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
 def review_progress(queue_path: Path, history_path: Path) -> dict[str, Any]:
     try:
         queue = json.loads(queue_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        queue = {}
+        if (not isinstance(queue, dict) or not isinstance(queue.get("items"), list)
+                or not queue.get("market_date") or any(not isinstance(item, dict) for item in queue["items"])):
+            raise ValueError("queue_invalid")
+    except (OSError, ValueError) as exc:
+        return {"selected": 0, "reviewed": 0, "pending": 0, "reviewed_codes": [],
+            "status": "queue_missing" if isinstance(exc, FileNotFoundError) else "queue_invalid"}
     market_date = str(queue.get("market_date") or "")[:10]
     selected_codes = {
         str(item.get("code") or "")
@@ -66,10 +70,10 @@ def main() -> None:
     deadline = time.monotonic() + max(0.0, args.timeout_sec)
     progress = review_progress(queue, history)
     target = args.min_reviews if args.min_reviews > 0 else progress["selected"]
-    while progress["reviewed"] < target and time.monotonic() < deadline:
+    while not progress.get("status") and progress["reviewed"] < target and time.monotonic() < deadline:
         time.sleep(min(max(0.05, args.poll_sec), max(0.0, deadline - time.monotonic())))
         progress = review_progress(queue, history)
-    progress["status"] = "reviewed" if progress["reviewed"] >= target else "fallback_timeout"
+    progress.setdefault("status", "reviewed" if progress["reviewed"] >= target else "fallback_timeout")
     progress["authority"] = "shadow_only"
     print(json.dumps(progress, ensure_ascii=False, sort_keys=True))
 

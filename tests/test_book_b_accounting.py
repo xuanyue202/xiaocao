@@ -76,11 +76,13 @@ def test_unexplained_cash_is_not_capital_profit_or_risk_reset(tmp_path, cash, ri
     first = project(tmp_path, with_cash(_snapshot(), 100000))
     original = (tmp_path/"capital_flows.jsonl").read_bytes()
     account = observed(tmp_path, with_cash(_snapshot(observed_at=NOW+timedelta(seconds=1)), cash))
-    assert account.cash == cash and account.net_external_flow_total == 70000
+    assert account.cash == min(cash, 100000) and account.net_external_flow_total == 70000
     assert account.capital_flow_head_sha256 == first.capital_flow_head_sha256
     assert account.capital_unit_factor == first.capital_unit_factor
     assert account.accounting["cumulative_pnl"] is None
-    assert account.accounting["status"] == "cash_reconciliation_required"
+    assert account.accounting["status"] == "cash_discrepancy_tolerated"
+    assert account.accounting["observed_cash"] == f"{cash:.2f}"
+    assert account.accounting["cash_difference"] == f"{cash-100000:.2f}"
     assert str(verify_account(tmp_path, account.as_dict())) == risk
     assert (tmp_path/"capital_flows.jsonl").read_bytes() == original
 
@@ -205,7 +207,81 @@ def test_intent_only_buy_does_not_certify_cash_or_profit_reconciliation(tmp_path
     account = observed(tmp_path, with_cash(_snapshot(observed_at=NOW+timedelta(seconds=1)), 99995))
     assert account.accounting["status"] == "cash_reserve_reconciliation_required"
     assert account.accounting["cash_difference"] is None and account.accounting["cumulative_pnl"] is None
+    assert account.accounting["broker_available_cash"] == "99995.00"
+    # A bare intent has no broker effect, but another negative cash difference
+    # must still reduce risk NAV even while PnL classification stays pending.
+    assert str(verify_account(tmp_path, account.as_dict())) == "29998.500000"
     assert len(flows(tmp_path)) == 1
+
+
+def test_claimed_buy_reserve_is_not_counted_as_cash_loss(tmp_path):
+    from tests.test_book_b_live_lifecycle import _bind_plan_intent
+    from xiaocao.live.trading_execution import ExecutionReceipt, ExecutionState, ExecutionStore
+
+    activate(tmp_path)
+    project(tmp_path, with_cash(_snapshot(), 100000))
+    plan = _plan()
+    plan = _bind_plan_intent(tmp_path, plan)
+    ExecutionStore(tmp_path / "events.jsonl").append(plan=plan,
+        receipt=ExecutionReceipt(plan.plan_id, plan.plan_hash, ExecutionState.CLAIMED,
+            remaining_shares=plan.shares, submit_claim_id="claim-1"), kind="durable_claim")
+    account = observed(tmp_path, with_cash(_snapshot(observed_at=NOW+timedelta(seconds=1)), 99995))
+    assert account.accounting["status"] == "cash_reserve_reconciliation_required"
+    assert account.accounting["broker_available_cash"] == "99995.00"
+    assert account.accounting["cumulative_pnl"] is None
+    assert str(verify_account(tmp_path, account.as_dict())) == "30000.000000"
+
+
+def test_intent_only_buy_allows_conservative_risk_mark_until_execution_event(tmp_path, monkeypatch):
+    from xiaocao.live.account_risk import NavObservation
+    from xiaocao.live.book_b_capital import has_open_buy_with_possible_effect
+    from xiaocao.live.live_decision_support import evaluate_live_risk
+    from xiaocao.live.trading_execution import ExecutionReceipt, ExecutionState, ExecutionStore
+    import xiaocao.live.live_decision_support as support
+    from tests.test_book_b_live_lifecycle import _bind_plan_intent
+
+    activate(tmp_path)
+    project(tmp_path, with_cash(_snapshot(), 100000))
+    plan = _plan()
+    plan = _bind_plan_intent(tmp_path, plan)
+    stamp = NOW + timedelta(seconds=1)
+    snapshot = with_cash(_snapshot(observed_at=stamp), 100000)
+    account = observed(tmp_path, snapshot)
+    assert account.accounting["status"] == "cash_reserve_reconciliation_required"
+    assert account.accounting["cumulative_pnl"] is None
+    assert has_open_buy_with_possible_effect(tmp_path) is False
+
+    settled = NavObservation("2026-08-31", 30000, "live:B", 30000, 0,
+        "book_b_cash_plus_liquidation_after_exit_fee", "settled",
+        "2026-08-31T15:05:00+08:00", "a" * 64)
+    monkeypatch.setattr(support, "expected_settlement_date", lambda *_: "2026-08-31")
+    monkeypatch.setattr(support, "load_live_nav_history", lambda *_args, **_kwargs: [settled])
+    allowed = evaluate_live_risk(tmp_path, now=stamp, account=account,
+        trading_dates_provider=lambda _: ["2026-08-31", "2026-09-01"])
+    assert allowed.status == "NORMAL" and allowed.nav is not None
+    assert account.accounting["cumulative_pnl"] is None
+
+    store = ExecutionStore(tmp_path / "events.jsonl")
+    store.append(plan=plan,
+        receipt=ExecutionReceipt(plan.plan_id, plan.plan_hash, ExecutionState.PLANNED,
+            remaining_shares=plan.shares), kind="plan_created")
+    store.append(plan=plan,
+        receipt=ExecutionReceipt(plan.plan_id, plan.plan_hash, ExecutionState.PREPARED,
+            remaining_shares=plan.shares), kind="transition")
+    assert has_open_buy_with_possible_effect(tmp_path) is False
+    prepared_risk = evaluate_live_risk(tmp_path, now=stamp, account=account,
+        trading_dates_provider=lambda _: ["2026-08-31", "2026-09-01"])
+    assert prepared_risk.status == "NORMAL" and prepared_risk.nav is not None
+
+    store.append(plan=plan,
+        receipt=ExecutionReceipt(plan.plan_id, plan.plan_hash, ExecutionState.UNKNOWN,
+            reason="possible_submit", remaining_shares=plan.shares,
+            submit_claim_id="claim-1", next_action="reconcile_only"),
+        kind="possible_submit")
+    assert has_open_buy_with_possible_effect(tmp_path) is True
+    blocked = evaluate_live_risk(tmp_path, now=stamp, account=account,
+        trading_dates_provider=lambda _: ["2026-08-31", "2026-09-01"])
+    assert blocked.status == "BLOCKED" and blocked.nav is None
 
 
 def test_proved_cash_reversal_preserves_original_and_all_cash_consumers(tmp_path):
@@ -369,9 +445,144 @@ def test_source_regression_and_saved_observation_tamper_are_rejected(tmp_path):
 def test_settlement_rejects_unexplained_cash_and_changed_observation_date(tmp_path):
     activate(tmp_path)
     project(tmp_path, with_cash(_snapshot(), 100000))
-    account = observed(tmp_path, with_cash(_snapshot(observed_at=EOD_NOW), 100005))
+    account = observed(tmp_path, with_cash(_snapshot(observed_at=EOD_NOW), 100010))
     with pytest.raises(ValueError, match="CASH_RECONCILE_REQUIRED"):
         write_book_b_live_settlement(tmp_path, account, now=EOD_NOW)
     changed = replace(account, broker_snapshot_observed_at=(EOD_NOW+timedelta(days=1)).isoformat())
     with pytest.raises(ValueError, match="ACCOUNT_MISMATCH"):
         write_book_b_live_settlement(tmp_path, changed, now=EOD_NOW)
+
+
+@pytest.mark.parametrize("difference", ["-9.99", "-0.01", "0.01", "2.00", "9.99"])
+def test_small_cash_difference_settles_conservatively_without_posting(tmp_path, difference):
+    activate(tmp_path)
+    first = project(tmp_path, with_cash(_snapshot(), 100000))
+    source = (tmp_path / "capital_flows.jsonl").read_bytes()
+    journal = ledger.sync_journal(tmp_path)
+    amount = ledger.number(difference)
+    snapshot = with_cash(_snapshot(observed_at=EOD_NOW), float(100000 + amount))
+    account = observed(tmp_path, snapshot)
+    assert observed(tmp_path, snapshot) == account
+    assert account.cash == float(100000 + min(amount, 0))
+    assert account.settled_nav == account.cash
+    assert account.accounting["cash_difference"] == difference
+    assert account.accounting["status"] == "cash_discrepancy_tolerated"
+    assert account.accounting["cumulative_pnl"] is None
+    assert account.capital_flow_head_sha256 == first.capital_flow_head_sha256
+    assert account.capital_unit_factor == first.capital_unit_factor
+    settled = write_book_b_live_settlement(tmp_path, account, now=EOD_NOW)
+    assert settled["accounting"]["status"] == "cash_discrepancy_tolerated"
+    assert settled["accounting"]["cumulative_pnl"] is None
+    assert settled["settled_nav"] == account.cash
+    assert ledger.sync_journal(tmp_path) == journal
+    assert (tmp_path / "capital_flows.jsonl").read_bytes() == source
+
+
+@pytest.mark.parametrize("difference", [-10, 10, -10.01, 10.01])
+def test_ten_yuan_or_larger_does_not_settle(tmp_path, difference):
+    activate(tmp_path)
+    project(tmp_path, with_cash(_snapshot(), 100000))
+    account = observed(tmp_path, with_cash(_snapshot(observed_at=EOD_NOW), 100000 + difference))
+    assert account.accounting["status"] == "cash_reconciliation_required"
+    with pytest.raises(ValueError, match="CASH_RECONCILE_REQUIRED"):
+        write_book_b_live_settlement(tmp_path, account, now=EOD_NOW)
+
+
+def test_small_observations_cannot_split_a_larger_cash_difference(tmp_path):
+    activate(tmp_path)
+    project(tmp_path, with_cash(_snapshot(), 100000))
+    first = observed(tmp_path, with_cash(_snapshot(observed_at=NOW+timedelta(seconds=1)), 100006))
+    assert first.accounting["status"] == "cash_discrepancy_tolerated"
+    second = observed(tmp_path, with_cash(_snapshot(observed_at=NOW+timedelta(seconds=2)), 100012))
+    assert second.accounting["status"] == "cash_reconciliation_required"
+    assert second.accounting["cash_difference"] == "12.00"
+    assert ledger.sync_journal(tmp_path)["ledger_cash"] == "100000.00"
+
+
+def test_approved_two_yuan_flow_is_counted_once_before_tolerance(tmp_path):
+    activate(tmp_path)
+    project(tmp_path, with_cash(_snapshot(), 100000))
+    topped = project(tmp_path, with_cash(_snapshot(observed_at=NOW+timedelta(seconds=1)), 100002))
+    repeated = observed(tmp_path, with_cash(_snapshot(observed_at=NOW+timedelta(seconds=2)), 100002))
+    assert repeated.cash == 100002
+    assert repeated.accounting["cash_difference"] == "0.00"
+    assert repeated.accounting["cumulative_pnl"] == "0.00"
+    assert repeated.net_external_flow_total == topped.net_external_flow_total == 70002
+    assert len(flows(tmp_path)) == 2
+
+
+def test_tiny_delta_cannot_override_unresolved_sell(tmp_path):
+    from tests.test_book_b_live_lifecycle import _bind_plan_intent
+    activate(tmp_path)
+    project(tmp_path, with_cash(_snapshot(), 100000))
+    _bind_plan_intent(tmp_path, _plan(side="SELL", lot_id="unresolved-lot"))
+    account = observed(tmp_path, with_cash(_snapshot(observed_at=EOD_NOW), 100002))
+    assert account.accounting["status"] == "cash_reconciliation_required"
+    assert account.accounting["cash_integrity_proven"] is False
+    with pytest.raises(ValueError, match="OPEN_EXECUTION_RECONCILE_REQUIRED"):
+        write_book_b_live_settlement(tmp_path, account, now=EOD_NOW)
+
+
+@pytest.mark.parametrize("fault", ["stale", "hash", "binding"])
+def test_tiny_delta_cannot_override_invalid_snapshot(tmp_path, fault):
+    activate(tmp_path)
+    project(tmp_path, with_cash(_snapshot(), 100000))
+    snapshot = with_cash(_snapshot(observed_at=NOW+timedelta(seconds=1)), 100002)
+    current = NOW+timedelta(seconds=1)
+    if fault == "stale":
+        current += timedelta(seconds=301)
+    elif fault == "hash":
+        snapshot["funds_summary"]["available_cash"] = 100003
+    else:
+        snapshot.pop("snapshot_sha256")
+        snapshot["fund_account_binding_sha256"] = "b" * 64
+        snapshot["snapshot_sha256"] = digest(snapshot)
+    with pytest.raises(ValueError):
+        project_book_b_live_account(tmp_path, snapshot, trade_date=snapshot["trade_date"], now=current)
+
+
+@pytest.mark.parametrize("fault", ["duplicate_trade", "missing_trade", "duplicate_order", "missing_ownership"])
+def test_tiny_delta_cannot_hide_bad_fill_evidence(tmp_path, fault):
+    activate(tmp_path)
+    project(tmp_path, with_cash(_snapshot(), 100000))
+    buy = _record_fill(tmp_path, _plan(), price=10, event_id="owned")
+    snapshot = with_cash(_snapshot(shares=100, price=10, observed_at=EOD_NOW,
+        broker_fills=(("order-owned", buy.code, "BUY", 100, 10),)), 99001.90)
+    snapshot.pop("snapshot_sha256")
+    if fault == "duplicate_trade":
+        table = snapshot["tables"]["today-trades"]
+        table["rows"].append(dict(table["rows"][0]))
+        table["row_count"] += 1
+    elif fault == "missing_trade":
+        snapshot["tables"]["today-trades"].update(rows=[], row_count=0)
+    elif fault == "duplicate_order":
+        table = snapshot["tables"]["today-orders"]
+        table["rows"].append(dict(table["rows"][0]))
+        table["row_count"] += 1
+    else:
+        (tmp_path / "book_b_ownership_evidence.jsonl").write_text("")
+    snapshot["snapshot_sha256"] = digest(snapshot)
+    with pytest.raises(ValueError):
+        observed(tmp_path, snapshot)
+
+
+def test_tiny_delta_does_not_use_a_retimed_stale_table(tmp_path):
+    activate(tmp_path)
+    project(tmp_path, with_cash(_snapshot(), 100000))
+    snapshot = with_cash(_snapshot(observed_at=EOD_NOW), 100002)
+    snapshot.pop("snapshot_sha256")
+    snapshot["tables"]["today-trades"]["observed_at"] = (EOD_NOW-timedelta(minutes=6)).isoformat()
+    snapshot["snapshot_sha256"] = digest(snapshot)
+    account = observed(tmp_path, snapshot)
+    assert account.accounting["status"] == "cash_reconciliation_required"
+    assert account.accounting["cash_integrity_proven"] is False
+    with pytest.raises(ValueError, match="CASH_RECONCILE_REQUIRED"):
+        write_book_b_live_settlement(tmp_path, account, now=EOD_NOW)
+
+
+def test_tolerated_observation_must_still_be_fresh_when_settled(tmp_path):
+    activate(tmp_path)
+    project(tmp_path, with_cash(_snapshot(), 100000))
+    account = observed(tmp_path, with_cash(_snapshot(observed_at=EOD_NOW), 100002))
+    with pytest.raises(ValueError, match="CASH_OBSERVATION_STALE"):
+        write_book_b_live_settlement(tmp_path, account, now=EOD_NOW+timedelta(seconds=301))

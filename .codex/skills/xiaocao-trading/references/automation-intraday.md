@@ -77,6 +77,12 @@ it exists to remove model-composed startup work from the two-minute deadline.
 Do not add discovery, journal, Git, KOL, paper, broker or diagnostic work to the
 launcher, and do not use it outside the single scheduled closing pass.
 
+The live CLI proves the exchange calendar before reading credentials, opening
+APP tables or reconciling prior orders. A proved non-trading date returns a
+durable `no_action / NON_TRADING_DAY` receipt; an unavailable calendar blocks
+before APP access. Retain old claims unchanged and do not replay a holiday
+checkpoint or refresh its account/NAV through an auxiliary broker query.
+
 For every owned-lot exit, prefer the full APP account/order/trade snapshot.
 If an unrelated prior SELL remains UNKNOWN, keep its own claim for later
 reconciliation and continue other lots. A new trading day's same-lot SELL may

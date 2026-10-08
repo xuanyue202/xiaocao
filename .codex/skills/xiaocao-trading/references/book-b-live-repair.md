@@ -38,8 +38,31 @@ Never promote a partial sell-only observation to BUY/NAV/EOD authority.
 
 ## Ownership and outcome classes
 
+For `morning_bundle_repair_required`, inspect only its exact request and original
+checkpoint binding. The shared consumer already attempts one bounded exact-byte
+repair under a separate file lock. Fix local serialization/IO/adapter code and
+run `PYTHONPATH=src .venv/bin/python scripts/morning_bundle_recovery.py --request <path>`
+once. Read the recovered/next dependency event, then adopt the actual immutable
+copy while retaining original date/run/hash and durable plans. Missing original
+checkpoint cannot authorize new capture, changed expected hashes or a second
+producer. Continue necessary owner repair; source evidence still absent is a
+reported gap. Trade claims and historical UNKNOWN remain separate reconciliation.
+
 Run the full live-morning command exactly once. The started task owns repair;
 do not defer a recoverable problem to the next Automation.
+
+If that original process has already terminated at preflight with zero plans,
+preparations and execution receipts, the same dated owner may continue using
+`CODEX_AUTOMATION_ID=xiaocao-book-b-live-morning PYTHONPATH=src .venv/bin/python scripts/book_b_live_morning.py --date YYYY-MM-DD --route native-app --resume-preflight-receipt <exact runs/history receipt>`.
+This validates the canonical archive, state directory, date and task identity,
+then durably claims one continuation before native actions. It preserves the
+original recorded preparation deadline; a legacy receipt needs
+`--original-preparation-budget-seconds <proved original budget>` and
+`--original-preparation-deadline <proved aware original absolute deadline>`;
+never refund wrapper setup time or grant a fresh budget. Completed/no-action results or existing BUY intents reject this
+entry; use exact-plan recovery for materialized intents. Do not restart the
+producer. Fresh, exact zero-fill prior-day SELL proofs can be reused without a
+redundant historical query; UNKNOWN and same-code BUY fences remain intact.
 
 On `dependency_recovery_wait`, the original process is alive inside preflight
 or the pre-freeze heartbeat. Read its exact `request_path` for sanitized failure
@@ -124,6 +147,16 @@ cannot establish order correctness is a remaining blocker, not a passed repair.
 
 ## Root-cause repair: after the terminal outcome
 
+Apply the repository's mandatory post-change `code-review` rule in `AGENTS.md`:
+independent Standards and Spec reviews of the scoped repair diff, fix actionable
+findings from first principles, repair them in the owning task and re-review
+before closeout; do not leave an actionable review list for the user. Escalate
+only an irreducible permission, external-evidence gap or user decision.
+During the golden five minutes, necessary
+repair, minimum order-correctness validation and original-plan continuation come
+first; review starts after terminal or exact unresolved-order readback. Preserve
+any APP test-window deferral as a separate validation limitation.
+
 In the same task, add regression coverage for a demonstrated failure when useful;
 investigate competing causes only when causality remains uncertain. Replace a tactical
 patch with a durable root fix if needed, then test the affected behavior.
@@ -172,9 +205,10 @@ next-owner note is not an accepted handoff.
 For an early morning preflight failure, use the exact terminal receipt with
 `scripts/morning_preflight_alert.py --date today --kind book-b --receipt <path>`
 as soon as the blocked receipt is durable, while bounded local repair continues.
-This is a separate dated urgent WeCom
-incident from an order's existing notification. Read back whether it was
-delivered; absence of a new order does not suppress the preflight alert.
+This reuses the runner's consolidated result claim; it does not send a second
+message for the same receipt. Read back delivery; absence of a new order does
+not suppress an actionable failure result. Routine non-trading-day wakes stop
+before this flow and do not initiate historical reconciliation or alerts.
 
 Historical reconciliation refreshes both query tables before capture. This does
 not set or prove the UI date range; exact row date and order identity remain

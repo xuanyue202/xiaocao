@@ -6,11 +6,8 @@ Use only on Ticket 07's remote sole-writer node. Local WeChat follows
 
 ## Runner and boundary
 
-Run exactly once and keep the process alive for input requests:
-
-```bash
-PYTHONPATH=src .venv/bin/python scripts/kol_daily.py run
-```
+Start through the task/hour launcher below and retain the original process
+for input requests. An already-bound exact continuation replaces `run`.
 
 ```bash
 PYTHONPATH=src .venv/bin/python scripts/kol_daily.py status
@@ -50,57 +47,36 @@ Xiaocao video capsule use only `PYTHONPATH=src .venv/bin/python
 scripts/kol_daily.py process-xiaocao-handoff`. Run once, keep that process alive
 for input, and do not rerun the full `run` command.
 
-## Active-peer gate and LiangHuiMCP drain
+## Task/hour lock and LiangHuiMCP drain
 
-A **peer task** is another Codex task with the same Automation ID, current host,
-and current working directory. The Automation runtime supplies
-`CODEX_THREAD_ID`; never synthesize it. The desktop `codex_app__list_threads`
-wrapper is not transport: it has stalled before delivery. Use the repository
-helper and exclude the current task:
+Use the existing non-blocking hour lock, keyed by exact Automation ID and the
+current Beijing date/hour. Start once in a retained interactive PTY:
 
 ```bash
-CODEX_HOME=/Users/xuanyue202/.codex \
 CODEX_AUTOMATION_ID=xiaocao-kol-hourly-low-bandwidth-operation \
-CODEX_REMOTE_HOST=MacBook-Pro-6.local \
-node scripts/codex_peer_gate.js
+PYTHONPATH=src .venv/bin/python scripts/kol_automation_slot_gate.py \
+  --automation-id xiaocao-kol-hourly-low-bandwidth-operation \
+  --lock-dir output/live/kol_automation_hour_locks \
+  -- .venv/bin/python scripts/kol_daily.py run
 ```
 
-The helper scans descending `thread/list` pages through the authoritative
-12-hour `updatedAt` window. A peer is top-level `source=vscode`, has no parent,
-and has the exact Automation ID in its preview and first turn, or in the
-session-bound scheduler's initial `codex_app.automation_update` output before
-Agent tool work. Paginated Automation tasks can have empty preview/user text;
-the helper supplements discovery from the read-only local task index, then
-uses exact `thread/read` and rollout identity/terminal checks. Missing scheduled
-identity is a repair, never proof that no peer exists. Inherited or quoted
-prompts do not qualify. Match only the exact ID in the leading scheduler
-header; substring/prefix matches, shared Git branch names and task titles are
-not identity. Bound rollout `session_meta.forked_from_id` excludes an inherited
-fork even when Desktop reports `parentThreadId=null`; a user repair fork does
-not retain the original KOL slot. The gate returns the matched automation ID
-with each peer.
-`task_complete=true` is the durable terminal
-fence. Any matching incomplete peer returns `no_op`, regardless of whether the
-app-server snapshot says `inProgress`, `interrupted`, `failed`, or `completed`;
-this preserves peer ownership across compaction and closes the
-resume-after-check race. Complete all-page pagination with no incomplete peer
-returns `pass`; missing or contradictory identity/status/readback is
-`repair_required`.
+`hour_busy` ends this invocation before projection, mailbox or business work.
+`hour_acquired` permits work; retain this same process/stdin until its command
+terminates. The exec'd runner holds the lock through input waits and releases
+it on exit. Different Automation IDs, dates and hours use independent keys;
+a previous hour may still be running. Reacquisition after exit is allowed,
+with existing source/object claims, receipts and resource locks preventing
+repeated effects. Codex peer-session completion is no longer an execution gate.
 
-Bind the experimental app-server protocol to its current host identity
-(`remoteControl/status/changed.serverName`) and exact canonical cwd, never a
-stale project cache. Any helper error is `repair_required` and blocks effects;
-never fall back to the hanging wrapper or infer a successful no-op.
+After `hour_acquired`, build the cache-only trading projection and handle its
+exact classification-backfill IDs while the original runner waits for input.
+For an already-bound exact continuation, replace the final `run` command with
+that continuation and its exact arguments in the same launcher. Further narrow
+commands use this launcher too; never start a second full sweep for this run.
+Retain the runtime `CODEX_THREAD_ID` and verify the initial scheduler's exact
+Automation ID before launching. Identity mismatch stops before effects.
 
-Serial gate rule: invoke it with local permissions for the Codex state runtime;
-never overlap attempts/requests/readbacks or reuse a stale host. A state-runtime
-permission/init or identity/readback failure is control-plane `repair_required`:
-it blocks business effects, not repair. Apply 5 Why in this task and never defer
-to the next Automation. Do not add a Python global lock, lease, heartbeat,
-fencing token, or stale takeover.
-
-If there is no active peer, run `scripts/kol_daily.py run` exactly once. For
-each `daily_lianghui_mailbox_input_required`, call the exact operation and
+For each `daily_lianghui_mailbox_input_required`, call the exact operation and
 arguments, then return one compact JSON line to the same process:
 
 - `list_mailbox_messages`: return `{"operation":"list_mailbox_messages",
@@ -131,6 +107,15 @@ uncertain effects. Source repairs use `validate-source-repair` then
 `resume-source-repair` with exact adapter/fingerprint; resume consumes only
 `narrow_resume_surface` and reads neither mailbox nor another source.
 
+For an `lv_text_image` household-context transport failure, the same source
+validation command proves provider recovery with a fresh configured read-only
+LiangHui context and the repository-owned targeted tests. This path requires
+zero claims, receipts and uncertain effects, current pushed failure lineage,
+and a hash-bound provider readback receipt containing the exact source identity
+and accepted bundle hash. Resume that retained bundle after validation; missing,
+ambiguous or changed bundles fail closed. Preserve commit-bound repair proofs
+for other failures.
+
 `convergence-report` reads append-only ledgers for repairs, generic waits,
 gate/runner timing, effects, duplicate-effect audits, slots, and exclusions; it never
 rewrites failures. First rollout requires authoritative one-writer, revision,
@@ -140,7 +125,9 @@ WIP, dependency/config/state, and Automation-ownership readback:
 PYTHONPATH=src .venv/bin/python scripts/kol_daily.py rollout-readback
 ```
 
-Use self-hashed Automation evidence; require recent peer-gate readback.
+Use self-hashed Automation evidence and the existing runtime/state checks.
+Historical peer-gate metrics remain diagnostics with status `retired`; they
+are not rollout or stability prerequisites.
 Acceptance starts seven-day/50-scheduled-slot observation; never backfill.
 `stability-acceptance` is read-only: pending until gates, passed if all pass.
 Run it with `--period-end <as_of>` only when acceptance is due.

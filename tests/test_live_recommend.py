@@ -1,4 +1,5 @@
 from __future__ import annotations
+import json
 
 from datetime import datetime
 import importlib.util
@@ -395,6 +396,8 @@ def test_kronos_model_failure_does_not_block_mode_exec_snapshot_or_report(
         "openPctChange": 0.0,
     }
     capture_calls: list[str] = []
+    monkeypatch.setenv("CODEX_AUTOMATION_ID", "xiaocao-daily-morning")
+    monkeypatch.setenv("CODEX_THREAD_ID", "fixture-producer")
 
     class _Loader:
         def exec_module(self, module) -> None:
@@ -418,6 +421,10 @@ def test_kronos_model_failure_does_not_block_mode_exec_snapshot_or_report(
                     "mode_exec_score": 0.5,
                     "mode_exec_target_weight": 0.5,
                 })
+                raw = (json.dumps({**candidates[0], "date": _date_iso,
+                    "book": "B", "is_live": True}) + "\n").encode()
+                _kwargs["out"].write_bytes(raw)
+                _kwargs["on_captured"](raw)
 
             return SimpleNamespace(capture=capture)
         raise AssertionError(spec.name)
@@ -463,7 +470,12 @@ def test_kronos_model_failure_does_not_block_mode_exec_snapshot_or_report(
         return candidates
 
     monkeypatch.setattr(live_recommend, "annotate_mode_candidates", annotate)
-    monkeypatch.setattr(live_recommend, "_build_top_stock_sentiment", lambda *_args, **_kwargs: [])
+    def support_after_commit(*_args, **_kwargs):
+        from xiaocao.live.morning_bundle import acquire_bundle
+        ready = acquire_bundle(tmp_path, "2026-08-05")
+        assert ready["status"] == "ready" and ready["snapshot_row_count"] == 1
+        return []
+    monkeypatch.setattr(live_recommend, "_build_top_stock_sentiment", support_after_commit)
     monkeypatch.setattr(live_recommend, "_write_stock_sentiment_records", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(live_recommend, "_merge_sentiment_into_signal_snapshots", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(
@@ -572,3 +584,22 @@ def test_required_signal_capture_failure_is_not_reported_as_mode_exec_none(
         live_recommend.main()
 
     assert not (tmp_path / "recommend_2026-08-05.md").exists()
+
+
+def test_active_candidates_with_all_prices_missing_are_failure_not_zero_capture(monkeypatch, tmp_path):
+    candidate = {"code": "000020.XSHE", "mode": "首红断低吸"}
+    monkeypatch.setattr(live_recommend, "OUT_DIR", tmp_path)
+    monkeypatch.setattr(live_recommend, "_resolve_date", lambda _: "2026-10-01")
+    monkeypatch.setattr(live_recommend, "_wait_for_recommendation_start", lambda _: None)
+    monkeypatch.setattr(live_recommend, "_is_today_live_run", lambda _: True)
+    monkeypatch.setattr(live_recommend, "_client", lambda: SimpleNamespace(cache=None))
+    monkeypatch.setattr(live_recommend, "ApiDataSource", lambda *_a, **_kw: SimpleNamespace(readiness={"completeness": "observed_responses"}))
+    monkeypatch.setattr(live_recommend, "_run_strategy_when_ready", lambda *_a, **_kw: ([candidate], [candidate]))
+    monkeypatch.setattr(live_recommend, "_entry_price", lambda *_a, **_kw: (None, "missing", None))
+    monkeypatch.setattr(sys, "argv", ["live_recommend.py", "--date", "2026-10-01"])
+    with pytest.raises(RuntimeError, match="PRICES_UNPROVEN"):
+        live_recommend.main()
+    assert not (tmp_path / "morning_bundle_commit_2026-10-01.json").exists()
+    assert not (tmp_path / "recommend_2026-10-01.md").exists()
+    health = json.loads((tmp_path / "recommend_source_readiness_2026-10-01.json").read_bytes())
+    assert health["price_enrichment"]["unpriced_codes"] == ["000020.XSHE"]

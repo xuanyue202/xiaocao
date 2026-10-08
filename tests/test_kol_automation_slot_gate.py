@@ -3,6 +3,7 @@ from __future__ import annotations
 import fcntl
 import json
 import os
+import select
 from pathlib import Path
 import subprocess
 import sys
@@ -118,3 +119,60 @@ def test_other_automation_in_same_directory_and_hour_does_not_block(tmp_path):
     assert completed.returncode == 0
     assert json.loads(completed.stdout.splitlines()[0])["automation_id"] == "weekly"
     assert completed.stdout.splitlines()[1] == "continued"
+
+
+def test_same_hour_on_another_date_is_independent(tmp_path):
+    lock_path = tmp_path / "weekly/20261006T1000+0800.lock"
+    lock_path.parent.mkdir(parents=True)
+    with lock_path.open("w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        completed = _run_gate(tmp_path, "2026-10-07T10:20:00+08:00",
+                              [sys.executable, "-c", "print('continued')"])
+    assert completed.returncode == 0
+    assert json.loads(completed.stdout.splitlines()[0])["status"] == "hour_acquired"
+    assert completed.stdout.splitlines()[1] == "continued"
+
+
+def test_runner_holds_lock_while_waiting_for_input_and_releases_on_exit(tmp_path):
+    command = [sys.executable, "-c", "import sys; sys.stdin.readline(); print('finished')"]
+    process = subprocess.Popen(
+        [sys.executable, str(SCRIPT), "--now", "2026-10-07T10:20:00+08:00",
+         "--lock-dir", str(tmp_path), "--automation-id", "weekly", "--", *command],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+    )
+    try:
+        assert select.select([process.stdout], [], [], 5)[0], "gate did not start"
+        assert json.loads(process.stdout.readline())["status"] == "hour_acquired"
+        marker = tmp_path / "duplicate-effect"
+        competing = _run_gate(
+            tmp_path, "2026-10-07T10:59:00+08:00",
+            [sys.executable, "-c", f"from pathlib import Path; Path({str(marker)!r}).touch()"],
+        )
+        assert competing.returncode == 0
+        assert json.loads(competing.stdout)["status"] == "hour_busy"
+        assert not marker.exists()
+        output, errors = process.communicate("continue\n", timeout=5)
+        assert process.returncode == 0, errors
+        assert output.strip() == "finished"
+        after_exit = _run_gate(tmp_path, "2026-10-07T10:59:00+08:00",
+                               [sys.executable, "-c", "print('continued')"])
+        assert json.loads(after_exit.stdout.splitlines()[0])["status"] == "hour_acquired"
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.communicate(timeout=5)
+
+
+def test_inherited_automation_mismatch_stops_before_command(tmp_path):
+    environment = dict(os.environ, CODEX_AUTOMATION_ID="another-task")
+    marker = tmp_path / "effect"
+    completed = subprocess.run(
+        [sys.executable, str(SCRIPT), "--lock-dir", str(tmp_path),
+         "--automation-id", "weekly", "--", sys.executable, "-c",
+         f"from pathlib import Path; Path({str(marker)!r}).touch()"],
+        env=environment, text=True, capture_output=True,
+    )
+    assert completed.returncode != 0
+    assert "AUTOMATION_ENTRYPOINT_ID_MISMATCH" in completed.stderr
+    assert not marker.exists()
+    assert not (tmp_path / "weekly").exists()

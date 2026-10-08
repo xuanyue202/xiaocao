@@ -22,6 +22,8 @@ import argparse
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
+import os
+import subprocess
 import sys
 import time as _time
 from datetime import date as _date, datetime, time, timedelta
@@ -40,6 +42,8 @@ from xiaocao.api.client import XiaocaoClient  # noqa: E402
 from xiaocao.config import load_settings  # noqa: E402
 from xiaocao.datasource.api_source import ApiDataSource  # noqa: E402
 from xiaocao.live import agent_signals, intelligence, intelligence_evidence, intelligence_policy  # noqa: E402
+from xiaocao.live.morning_bundle import publish_captured_batch  # noqa: E402
+from xiaocao.utils.atomic_files import atomic_write  # noqa: E402
 from xiaocao.strategy import run_strategy  # noqa: E402
 from xiaocao.strategy.mode_switch import (  # noqa: E402
     annotate_candidates as annotate_mode_candidates,
@@ -403,10 +407,7 @@ def _write_stock_sentiment_records(records: list[dict[str, object]], date_iso: s
     latest = _load_stock_sentiment_map(date_iso)
     for record in records:
         latest[str(record.get("code") or "")] = record
-    STOCK_SENTIMENT_FILE.write_text(
-        json.dumps(list(latest.values()), ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    atomic_write(STOCK_SENTIMENT_FILE, json.dumps(list(latest.values()), ensure_ascii=False, indent=2).encode())
 
     history: dict[tuple[str, str], dict[str, object]] = {}
     if STOCK_SENTIMENT_HISTORY_FILE.exists():
@@ -500,7 +501,7 @@ def _merge_sentiment_into_signal_snapshots(records: list[dict[str, object]], dat
                 if short_flags:
                     row.update(short_flags)
         merged.append(json.dumps(row, ensure_ascii=False, default=str))
-    snap.write_text("\n".join(merged) + ("\n" if merged else ""), encoding="utf-8")
+    atomic_write(snap, ("\n".join(merged) + ("\n" if merged else "")).encode())
 
 
 def _resolve_date(date_arg: str) -> str:
@@ -1073,6 +1074,7 @@ def _select_standby_candidates(
 
 
 def main() -> None:
+    script_entered_at = datetime.now(A_SHARE_TZ).isoformat()
     parser = argparse.ArgumentParser()
     parser.add_argument("--date", default="today")
     parser.add_argument("--basket-premium-pct", type=float,
@@ -1119,19 +1121,23 @@ def main() -> None:
             poll_sec=max(1.0, args.ready_poll_sec), confirm_sec=max(0.0, args.ready_confirm_sec),
         )
     finally:
-        (OUT_DIR / f"recommend_source_readiness_{date_iso}.json").write_text(
-            json.dumps(source.readiness, ensure_ascii=False, sort_keys=True, indent=2), encoding="utf-8")
+        atomic_write(OUT_DIR / f"recommend_source_readiness_{date_iso}.json",
+            json.dumps(source.readiness, ensure_ascii=False, sort_keys=True, indent=2).encode())
 
     if not actives:
+        if _is_today_live_run(date_iso) and source.readiness.get("completeness") != "observed_responses":
+            raise RuntimeError("MORNING_CAPTURE_EMPTY_UNPROVEN: source readiness incomplete")
         msg = f"# {date_iso} 候选股: NONE"
-        if source.readiness.get("unresolved_sources"):
-            msg += "\n\n来源存在空响应或缺失，完整性未证明；本次没有可用候选，不能推断所有来源确实无信号。"
         print(msg)
-        (OUT_DIR / f"recommend_{date_iso}.md").write_text(msg, encoding="utf-8")
+        atomic_write(OUT_DIR / f"recommend_{date_iso}.md", msg.encode())
+        from capture_signals import capture
+        capture([], client, date_iso, is_live=_is_today_live_run(date_iso), out=OUT_DIR / "signal_snapshots.jsonl",
+            on_captured=lambda raw: _publish_original_batch(date_iso, source.readiness, script_entered_at, raw))
         return
 
     # Enrich each with open price + theoretical stops
     candidates = []
+    unpriced_codes = []
     for r in actives:
         code = r.get("code")
         if not code:
@@ -1150,6 +1156,7 @@ def main() -> None:
         # detail was not supplied).
         market_detail = None if cached_detail is _MISSING_ENTRY_DETAIL else cached_detail
         if not opn:
+            unpriced_codes.append(str(code))
             continue
         open_pct_change = _open_pct_from_entry(opn, pre_close, r.get("openPctChange"))
         market_status = str((market_detail or {}).get("tradeStatus") or "")
@@ -1193,6 +1200,14 @@ def main() -> None:
             "blockCodeList": r.get("blockCodeList") or "",
             "blockCategoryCodeList": r.get("blockCategoryCodeList") or "",
         })
+
+    if _is_today_live_run(date_iso):
+        source.readiness["price_enrichment"] = {"status": "degraded" if unpriced_codes else "complete",
+            "active_count": len(actives), "priced_count": len(candidates), "unpriced_codes": unpriced_codes}
+        atomic_write(OUT_DIR / f"recommend_source_readiness_{date_iso}.json",
+            json.dumps(source.readiness, ensure_ascii=False, sort_keys=True, indent=2).encode())
+        if not candidates:
+            raise RuntimeError("MORNING_CAPTURE_PRICES_UNPROVEN: active candidates have no entry prices")
 
     try:
         trade_days = _trade_days(client, date_iso)
@@ -1274,6 +1289,8 @@ def main() -> None:
             date_iso,
             is_live=_is_today_live_run(date_iso),
             top_n=max(1, args.kronos_top_n),
+            out=OUT_DIR / "signal_snapshots.jsonl",
+            on_captured=lambda raw: _publish_original_batch(date_iso, source.readiness, script_entered_at, raw),
         )
         vb_stars = [c for c in candidates if c.get("vb_star")]
         mode_stars = [c for c in candidates if c.get("mode_star")]
@@ -1328,6 +1345,10 @@ def main() -> None:
             record["target_set"] = "candidate"
     _write_stock_sentiment_records(sentiment_records, date_iso)
     _merge_sentiment_into_signal_snapshots(sentiment_records, date_iso)
+    if os.environ.get("CODEX_AUTOMATION_ID") == "xiaocao-daily-morning":
+        from xiaocao.live.morning_bundle import publish_support
+        support_rows = [json.loads(line) for line in (OUT_DIR / "signal_snapshots.jsonl").read_text().splitlines() if line.strip()]
+        publish_support(OUT_DIR, date_iso, support_rows)
     intelligence_evidence.write_freeze_artifacts(
         live_dir=OUT_DIR,
         records=sentiment_records,
@@ -1549,10 +1570,43 @@ def main() -> None:
     L.append("")
 
     md = "\n".join(L)
-    (OUT_DIR / f"recommend_{date_iso}.md").write_text(md, encoding="utf-8")
+    atomic_write(OUT_DIR / f"recommend_{date_iso}.md", md.encode())
     if not args.no_stdout:
         print(md)
     print(f"\n[wrote {OUT_DIR / f'recommend_{date_iso}.md'}]", file=sys.stderr)
+
+
+def _publish_original_batch(date_iso: str, readiness: dict, entered_at: str, snapshot: bytes) -> None:
+    if os.environ.get("CODEX_AUTOMATION_ID") != "xiaocao-daily-morning":
+        return
+    revision = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT,
+        text=True, capture_output=True, check=True, timeout=5).stdout.strip()
+    cached = _load_stock_sentiment_map(date_iso)
+    rows = []
+    for line in snapshot.decode().splitlines():
+        if line.strip():
+            row = json.loads(line)
+            if row.get("date") != date_iso or row.get("book", "B") != "B" or row.get("is_live") is not True:
+                raise ValueError("MORNING_BUNDLE_CAPTURE_IDENTITY_INVALID")
+            record = cached.get(str(row.get("code") or ""))
+            if record:
+                veto = intelligence_policy.hard_veto_state(record, asof=f"{date_iso}T09:30:00+08:00")
+                row.update({"ai_hard_veto": bool(veto.get("hard_veto")),
+                    "ai_hard_veto_event_types": veto.get("event_types") or [],
+                    "ai_hard_veto_reason": veto.get("reason") or "",
+                    "veto_flags": record.get("veto_flags") or []})
+            rows.append(row)
+    payload = ("\n".join(json.dumps(r, ensure_ascii=False, sort_keys=True, default=str) for r in rows)
+        + ("\n" if rows else "")).encode()
+    timing = {"configured_slot": f"{date_iso}T09:23:00+08:00", "script_entered_at": entered_at,
+        "scheduler_dispatched_at": None, "task_started_at": None,
+        "scheduler_timing_proof": "unavailable"}
+    result = publish_captured_batch(OUT_DIR, date_iso, snapshot=payload,
+        strategy_sha=revision, source_readiness=readiness, timing=timing, raw_capture=snapshot)
+    # This compatibility name keeps durable plan references stable. Bundle
+    # consumers use verified immutable originals or exact recovery copies.
+    atomic_write(OUT_DIR / f"book_b_live_freeze_{date_iso}.jsonl", payload, immutable=True)
+    print(json.dumps({"event": "morning_bundle_published", **result}, ensure_ascii=False), file=sys.stderr)
 
 
 if __name__ == "__main__":

@@ -463,6 +463,8 @@ def _control_fill_rows(
             and raw_fee >= 0
         )
         instrument = instrument_by_code.get(code, {})
+        if is_fill and abs(raw_notional / raw_shares - raw_price) > 0.00050001:
+            raise BookTV2ProducerError("V1_CONTROL_DISPLAY_PRICE_GROSS_MISMATCH")
         status = "filled" if is_fill else "skipped"
         row: dict[str, Any] = {
             "as_of": date_iso,
@@ -474,7 +476,11 @@ def _control_fill_rows(
             "expression_type": "v1_control",
             "status": status,
             "side": "BUY",
-            "fill_price": raw_price if is_fill else None,
+            # V1 stores a rounded display price and exact gross consideration.
+            # Preserve both; use the proved amount per share for validation.
+            "fill_price": raw_notional / raw_shares if is_fill else None,
+            "display_fill_price": raw_price if is_fill else None,
+            "fill_price_basis": "proved_v1_gross_notional_per_share" if is_fill else None,
             "shares": raw_shares if is_fill else 0.0,
             "notional": raw_notional if is_fill else 0.0,
             "fee": raw_fee if is_fill else 0.0,

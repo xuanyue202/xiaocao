@@ -4,6 +4,23 @@ Read this file only for the daily morning recommendation/paper-book branch.
 
 ## Execute
 
+For producer or consumer handoff faults, apply Operating Contract §1c and
+[book-b-live-repair.md](book-b-live-repair.md). The original 09:23 capture commits
+one execution bundle before optional news/report work. Both consumers verify
+its exact checkpoint and consume the proved original or recovered copy.
+Read `morning_bundle_repair_required.request_path`, repair the local dependency,
+then run `morning_bundle_recovery.py --request <exact-path>` once; accept only
+the revalidated original batch. Keep the original wait/budget alive. A missing
+original remains unproved, with failure notification and bounded owner repair.
+Formal paper passes the dated immutable snapshot and consumer receipt; its
+legacy mutable experiment flag is forbidden in Automation. Explicit intelligence
+`on` also requires the completed same-batch support artifact and current veto.
+An orphan checkpoint before the commit is a request for the exact original
+producer owner; only that runtime identity can finish its interrupted commit.
+Consumers cannot create a commitment. A zero-row proven capture needs no support
+artifact. Missing shadow support/review queue is explicit degradation. Empty
+new support cannot withdraw an earlier valid event; the typed policy owns expiry.
+
 For the bounded KOL overlay, also read
 [kol-trading-judgment.md](kol-trading-judgment.md). Keep the original runner and
 model. The remote writer owns full reading and independent source-level review
@@ -20,18 +37,18 @@ Scheduled delivery is split across two Automations because the recommendation
 is ready before opening-window execution can finish:
 
 ```bash
-# 09:23 task: produce the dated recommendation and frozen review queue, then exit
-bash scripts/auto_daily.sh morning-prerecommend
+# 09:23 task: commit execution bundle, then deliver derived report/review queue
+CODEX_AUTOMATION_ID=xiaocao-daily-morning bash scripts/auto_daily.sh morning-prerecommend
 
 # 09:25 task: wait for those frozen artifacts, review, and paper-record
-bash scripts/auto_daily.sh morning-execute
+CODEX_AUTOMATION_ID=xiaocao-daily-morning-execution bash scripts/auto_daily.sh morning-execute
 ```
 
 Book-B real-capital execution is a third, deliberately independent
 09:00 Automation and process:
 
 ```bash
-PYTHONPATH=src .venv/bin/python scripts/book_b_live_morning.py --date today --route native-app
+CODEX_AUTOMATION_ID=xiaocao-book-b-live-morning PYTHONPATH=src .venv/bin/python scripts/book_b_live_morning.py --date today --route native-app
 ```
 
 It may start before the dated freeze exists and wait only for that freeze. It
@@ -272,6 +289,16 @@ Escalate: script failure/traceback, missing recommendation or paper-record stage
 
 ### Invocation ownership
 
+Before any morning business command, query `PYTHONPATH=src .venv/bin/python -m xiaocao calendar latest --date today`. A latest date different from today ends the task as `NON_TRADING_DAY`: no APP/KOL work, freeze wait, historical reconciliation, notification retry or trading alert. An unproved calendar stops before APP work. Weekday scheduling alone is not trading-day evidence. The standalone APP runner independently checks `/stock/trade_cal` before native preflight and notices.
+
+An already terminated, no-effect preflight failure may be continued by its same
+dated owner with `--resume-preflight-receipt <exact runs/history receipt>`, under
+the receipt-bound once-only and original-budget rules in
+[book-b-live-repair.md](book-b-live-repair.md). Preserve the original committed
+producer bundle. Never replay a completed/no-action result or use this entry
+for existing BUY intents; those require exact-plan recovery. Reuse only fresh
+exact zero-fill prior-day SELL proof, retaining UNKNOWN and same-code BUY fences.
+
 The fresh scheduler-created task for today's 09:00 slot owns the runner and
 its stdout, review rendezvous, orders, receipts, and notices. A human follow-up
 in an older Automation task is a repair/inspection task, even when it has the
@@ -306,9 +333,13 @@ receipts bind the automation ID, actual `CODEX_THREAD_ID`, PID and entrypoint.
 A separately authorized exact-plan recovery uses its actual automation ID;
 it cannot generate a second morning candidate batch.
 
-The runner durably queues trading WeCom notices for preflight start, APP
-preflight ready, and the opening result regardless of success, no action or
-failure. `ready` means native session/account preflight passed, not future
+The runner records preflight start, APP ready and recoverable dependency problems
+locally. Trading WeCom sends one consolidated opening result; an explicit
+user-only dependency may notify immediately. Per-order incidents remain durable
+locally and are included in the same result. Unchanged same-day recovery results
+are deduplicated; `morning_preflight_alert.py --kind book-b --receipt ...` reuses
+the runner result claim. Messages explain result, cause and required user action
+in plain Chinese, with exact order IDs; hashes, paths and diagnostics stay in Codex. `ready` means native session/account preflight passed, not future
 quote/capital permission. A preflight failure reports that opening execution
 was not reached. If the original runner is still active at 09:30 without a
 terminal receipt, its deterministic notification timer sends an explicit

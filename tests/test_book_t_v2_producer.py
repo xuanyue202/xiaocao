@@ -11,7 +11,22 @@ from xiaocao.research.book_t_v2_producer import (
     BookTV2ProducerError,
     prepare_book_t_v2_shadow_day,
     record_book_t_v2_daily_mark,
+    _control_fill_rows,
 )
+
+
+def test_control_uses_proved_gross_when_display_price_is_rounded():
+    receipt = {"daily_semantics": {"selection": {"selected_codes": ["601868.XSHG"],
+        "actions": [{"code": "601868.XSHG", "kind": "trade", "side": "BUY",
+            "price": 2.368, "shares": 4800, "notional": 11367.81, "fee": 1.14}]}}}
+    _, fills = _control_fill_rows(receipt, date_iso="2026-09-29", market_hash="a" * 64, catalog={})
+    fill = fills[0]
+    assert fill["display_fill_price"] == 2.368
+    assert fill["fill_price"] * fill["shares"] == pytest.approx(11367.81)
+    assert fill["notional"] == 11367.81 and fill["fee"] == 1.14
+    receipt["daily_semantics"]["selection"]["actions"][0]["notional"] = 99999
+    with pytest.raises(BookTV2ProducerError, match="DISPLAY_PRICE_GROSS_MISMATCH"):
+        _control_fill_rows(receipt, date_iso="2026-09-29", market_hash="a" * 64, catalog={})
 
 
 def _receipt(root, date_iso: str) -> None:

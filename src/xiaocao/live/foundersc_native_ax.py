@@ -51,6 +51,10 @@ class FounderscNativeAXError(RuntimeError):
     """Raised with a credential-free native helper/build failure code."""
 
 
+class FounderscNativePreSecretError(FounderscNativeAXError):
+    """Credential preparation failed before the native helper was invoked."""
+
+
 def repository_root() -> Path:
     return Path(__file__).resolve().parents[3]
 
@@ -537,14 +541,14 @@ class FounderscNativeAXClient:
         keychain_timeout_seconds: float = 12.0,
     ) -> NativeAXReceipt:
         if not explicitly_enabled:
-            raise FounderscNativeAXError(enablement_error)
+            raise FounderscNativePreSecretError(enablement_error)
         runner = keychain_runner or self.runner
         fingerprint = FounderscKeychainPreflight(
             runner=runner,
             timeout_seconds=keychain_timeout_seconds,
         ).trade_account_fingerprint()
         if not fingerprint:
-            raise FounderscNativeAXError("NATIVE_AX_TRADE_ACCOUNT_BINDING_MISSING")
+            raise FounderscNativePreSecretError("NATIVE_AX_TRADE_ACCOUNT_BINDING_MISSING")
         try:
             result = runner(
                 [
@@ -559,11 +563,11 @@ class FounderscNativeAXClient:
                 timeout=max(0.5, float(keychain_timeout_seconds)),
             )
         except subprocess.TimeoutExpired as exc:
-            raise FounderscNativeAXError("NATIVE_AX_KEYCHAIN_READ_TIMEOUT") from exc
+            raise FounderscNativePreSecretError("NATIVE_AX_KEYCHAIN_READ_TIMEOUT") from exc
         except OSError as exc:
-            raise FounderscNativeAXError("NATIVE_AX_KEYCHAIN_READ_FAILED") from exc
+            raise FounderscNativePreSecretError("NATIVE_AX_KEYCHAIN_READ_FAILED") from exc
         if int(getattr(result, "returncode", 1)) != 0:
-            raise FounderscNativeAXError("NATIVE_AX_KEYCHAIN_READ_DENIED")
+            raise FounderscNativePreSecretError("NATIVE_AX_KEYCHAIN_READ_DENIED")
         raw = getattr(result, "stdout", b"") or b""
         if isinstance(raw, str):
             secret = bytearray(raw.encode("utf-8"))
@@ -572,7 +576,7 @@ class FounderscNativeAXClient:
         while secret and secret[-1] in (10, 13):
             secret.pop()
         if not secret:
-            raise FounderscNativeAXError("NATIVE_AX_KEYCHAIN_SECRET_EMPTY")
+            raise FounderscNativePreSecretError("NATIVE_AX_KEYCHAIN_SECRET_EMPTY")
         try:
             return self._run(
                 command,
@@ -870,6 +874,7 @@ class FounderscNativeAXClient:
 __all__ = [
     "FounderscNativeAXClient",
     "FounderscNativeAXError",
+    "FounderscNativePreSecretError",
     "NativeAXReceipt",
     "build_helper",
     "expected_helper_path",
