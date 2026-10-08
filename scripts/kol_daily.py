@@ -1757,6 +1757,10 @@ def _source_cli_narrow_runner(runtime: "DailyRuntime", adapter: str):
     if adapter == "xiaocao_wechat_live":
         return runtime.xiaocao_wechat_narrow_resume
     if adapter == "wechat_official_accounts":
+        if getattr(getattr(runtime, "args", None), "local_capture", False):
+            return lambda surface: _adapter_scope_resume(
+                adapter, surface, runtime.wechat_official_local,
+            )
         return runtime.wechat_official_narrow_resume
     raise DailyError("source repair adapter has no CLI narrow resume")
 
@@ -4920,6 +4924,10 @@ def main() -> int:
     parser.add_argument("--publication-key")
     parser.add_argument("--trading-root", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument("--source-adapter")
+    parser.add_argument(
+        "--local-capture", action="store_true",
+        help="Resume a local official-account capture repair without remote processing",
+    )
     parser.add_argument("--source-identity")
     parser.add_argument(
         "--xiaocao-backfill-since",
@@ -4955,6 +4963,11 @@ def main() -> int:
         default="site:baidu-netdisk",
     )
     args = parser.parse_args()
+    if args.local_capture and (
+        args.command != "resume-source-repair"
+        or args.source_adapter != "wechat_official_accounts"
+    ):
+        parser.error("--local-capture requires an official-account source repair")
     if args.xiaocao_backfill_since is not None and (
         args.command != "capture-xiaocao-item" or not args.source_identity
     ):
