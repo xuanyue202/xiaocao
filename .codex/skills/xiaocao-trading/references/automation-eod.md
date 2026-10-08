@@ -52,7 +52,10 @@ summary embedded in the same positions capture, projects
 only broker-proved Book-B owned fills, and writes the immutable settled NAV only
 when every durable live plan is terminal. Fresh zero-fill evidence supports
 independent current transactions; it does not make an old SELL terminal or
-permit EOD settlement. An unresolved current or prior-day SELL must not stop
+permit EOD settlement. EOD refreshes every nonterminal plan even when a fresh
+zero-fill prior-day SELL proof can be reused by morning callers. That reuse
+never skips EOD reconciliation or supplies terminal-order authority.
+An unresolved current or prior-day SELL must not stop
 the read-only post-close snapshot and owned-lot projection; its validated
 intent/event chain stays open and the strict settlement writer still blocks.
 If the strict settlement writer blocks after a valid

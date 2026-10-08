@@ -1,6 +1,6 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：4.35
+**版本**：4.36
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
 **关联实现**：`src/xiaocao/live/{safety,capital_keychain,foundersc_native_ax,foundersc_native_broker,trading_execution,book_b_live_lifecycle,book_b_live_intraday}.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`native/foundersc_ax_executor/`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{book_b_live_morning,book_b_live_intraday,live_monitor,research_mode_switch_replay}.py`
@@ -432,7 +432,7 @@ APP 在用户明确批准的动态资金政策下，以账户绑定的资金划�
   15:10 EOD 先 reconcile 全部 durable plan；`eod` 入口在中国时间 15:00 前或
   非 trade_date 当日必须拒绝，且用于结算的三张行表最老 observed_at 也必须不早于
   15:00，禁止把盘中/缓存 NAV 固化成不可变 settlement。只要仍有 claimed/submitted/
-  acknowledged/partial/unknown/reconciling 就拒绝结算；前日零成交的当前标记例外只支持独立交易，不提供 EOD 终态证明。稀疏 tick 对经 canonical intent 校验的前日自有 SELL 保留精确 deferred plan IDs，并允许当前监控取得新鲜 APP 事实后评估独立退出；旧单仍逐单对账。按实际 broker-proved
+  acknowledged/partial/unknown/reconciling 就拒绝结算；前日零成交的当前标记例外只支持独立交易，不提供 EOD 终态证明。EOD 必须重新逐单精确对账所有未终态计划，不得因已有新鲜旧 SELL 零成交证明而跳过；晨间复用规则保持。稀疏 tick 对经 canonical intent 校验的前日自有 SELL 保留精确 deferred plan IDs，并允许当前监控取得新鲜 APP 事实后评估独立退出；旧单仍逐单对账。按实际 broker-proved
   BUY/SELL fills 与最新持仓 mark 写当日不可变 settlement；下一交易日 morning 只有
   settlement ownership head 与当前 ownership chain 完全一致时，才以
   `broker_reconciled_book_b_nav` 作为滚动 NAV/敞口基准；链头变化走上文的
@@ -636,6 +636,7 @@ APP 在用户明确批准的动态资金政策下，以账户绑定的资金划�
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| 4.36 | 2026-10-08 | EOD 对新鲜零成交旧 SELL 仍执行精确对账，保留未终态回执与严格结算门；晨间原有证明复用规则不变。 |
 | 4.35 | 2026-10-08 | 历史查询要求同捕获日期范围和分页完整性证明，缺失明确 UNKNOWN；当前观测与历史事件引用分离，保留原订单与结算保护。 |
 | 4.34 | 2026-10-08 | 同日原任务可一次性接回无副作用 preflight 失败，绑定原归档、绝对准备截止时点和 claim；终态不重放，复用精确新鲜旧 SELL 零成交证明且保留 UNKNOWN 与同代码买入门。 |
 | 4.33 | 2026-10-01 | 小额资金观测差异可保守容忍，不强行平账；保留原订单/账链/快照风险门。修复 paper 工具点时与坏数据边界，强化真实进程终态、可回溯运行证据与可复现周度研究比较。合并既有晨间及盘中交易日历前置门：非交易日退出、未知日历在 APP 前失败关闭；启动、ready 和可恢复问题记本地，结果合并去重，保留明确用户动作和 09:30 未决通知及配送证据。 |

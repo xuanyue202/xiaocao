@@ -500,6 +500,7 @@ def _run_book_b_live_intraday_locked(
         execute=execute,
         now=current,
         defer_prior_day_sells=normalized_phase != "eod",
+        reconcile_proven_prior_day_sells=normalized_phase == "eod",
     )
     deferred_buys = check_monitor_pending_plans(
         state_root, trade_date=trade_date, asof=current,

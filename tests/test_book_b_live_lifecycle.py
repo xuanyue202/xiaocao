@@ -1532,8 +1532,7 @@ def test_intraday_eod_only_reconciles_projects_and_settles(tmp_path: Path) -> No
     assert receipt.settlement["settled_nav"] == 30_000
 
 
-@pytest.mark.app_simulation
-def test_blocked_eod_retains_fresh_account_and_exact_reconciliation(tmp_path: Path) -> None:
+def _prior_zero_fill_sell_after_independent_exit(tmp_path: Path, state=ExecutionState.UNKNOWN):
     buy = _record_fill(tmp_path, _plan(trade_date="2026-08-31"),
         price=10, event_id="prior-buy")
     old_sell = _bind_plan_intent(tmp_path, _plan(side="SELL", lot_id=buy.plan_id,
@@ -1554,7 +1553,7 @@ def test_blocked_eod_retains_fresh_account_and_exact_reconciliation(tmp_path: Pa
     store = ExecutionStore(tmp_path / "events.jsonl")
     unresolved = store.append(plan=old_sell,
         receipt=ExecutionReceipt(old_sell.plan_id, old_sell.plan_hash,
-            ExecutionState.UNKNOWN, filled_shares=0, remaining_shares=100,
+            state, filled_shares=0, remaining_shares=100,
             broker_order_id="6007019", locator_proof=proof,
             next_action="reconcile_only", observed_at=current),
         kind="historical-reconcile")
@@ -1562,6 +1561,14 @@ def test_blocked_eod_retains_fresh_account_and_exact_reconciliation(tmp_path: Pa
     snapshot["trade_date"] = "2026-09-04"
     snapshot.pop("snapshot_sha256")
     snapshot["snapshot_sha256"] = _canonical_sha256(snapshot)
+    return old_sell, current, store, unresolved, snapshot
+
+
+@pytest.mark.app_simulation
+@pytest.mark.parametrize("state", [ExecutionState.UNKNOWN, ExecutionState.ACKNOWLEDGED,
+                                   ExecutionState.RECONCILING])
+def test_blocked_eod_retains_fresh_account_and_exact_reconciliation(tmp_path: Path, state) -> None:
+    old_sell, current, store, unresolved, snapshot = _prior_zero_fill_sell_after_independent_exit(tmp_path, state)
     reads, reconciliations = [], []
 
     def read_account():
@@ -1572,6 +1579,12 @@ def test_blocked_eod_retains_fresh_account_and_exact_reconciliation(tmp_path: Pa
         assert plan.plan_id == old_sell.plan_id
         reconciliations.append(plan.plan_id)
         return unresolved
+
+    # Existing morning callers may reuse this fresh valuation proof without
+    # treating it as a terminal order or delaying independent transactions.
+    assert reconcile_open_book_b_plans(tmp_path, trade_date="2026-09-04",
+        execute=reconcile, now=current) == ()
+    assert reconciliations == []
 
     receipt = run_book_b_live_intraday(
         state_dir=tmp_path, trade_date="2026-09-04", phase="eod",
@@ -1588,8 +1601,30 @@ def test_blocked_eod_retains_fresh_account_and_exact_reconciliation(tmp_path: Pa
     assert receipt.decisions == receipt.execution_receipts == ()
     assert receipt.settlement is None
     assert reads == [True] and reconciliations == [old_sell.plan_id]
-    assert store.current(old_sell.plan_id).state == ExecutionState.UNKNOWN
+    assert store.current(old_sell.plan_id).state == state
     assert not (tmp_path / "settlements/2026-09-04.json").exists()
+
+
+@pytest.mark.app_simulation
+def test_eod_settles_only_after_exact_old_sell_terminal_readback(tmp_path: Path) -> None:
+    old_sell, current, store, unresolved, snapshot = _prior_zero_fill_sell_after_independent_exit(tmp_path)
+    reconciliations = []
+    def reconcile(plan):
+        assert plan.plan_id == old_sell.plan_id
+        reconciliations.append(plan.plan_id)
+        return store.append(plan=plan, receipt=replace(unresolved,
+            state=ExecutionState.CANCELLED, next_action="none", active=False,
+            reason="fixture_exact_terminal_cancel"), kind="historical-reconcile")
+    receipt = run_book_b_live_intraday(state_dir=tmp_path, trade_date="2026-09-04",
+        phase="eod", account_snapshot_provider=lambda: snapshot,
+        status_provider=lambda lots: pytest.fail("EOD must not evaluate new exits"),
+        execute=reconcile, now=lambda: current, execute_sells=False)
+    assert reconciliations == [old_sell.plan_id]
+    assert receipt.status == "settled" and receipt.settlement is not None
+    assert len(receipt.reconciliation_receipts) == 1
+    assert receipt.reconciliation_receipts[0]["state"] == "cancelled"
+    assert receipt.decisions == receipt.execution_receipts == ()
+    assert store.current(old_sell.plan_id).filled_shares == 0
 
 
 @pytest.mark.parametrize("state", [ExecutionState.ACKNOWLEDGED, ExecutionState.UNKNOWN])
