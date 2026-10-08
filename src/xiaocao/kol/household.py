@@ -236,11 +236,21 @@ class LiangHuiMcpClient:
                 fresh = (proven and 0 <= age <= 1800 and connection.get("enabled") is True
                          and connection.get("authStatus") == "ready"
                          and connection.get("syncStatus") in {"synced", "unchanged"}
-                         and all(row.get("brokerPositionStatus") == "present" for row in rows))
+                         and all(row.get("brokerPositionStatus") == "present"
+                                 and row.get("positionObservationSource") in {None, "broker_sync"}
+                                 and row.get("positionObservationId") in {None, receipt_id} for row in rows))
                 source = {"connection_id": connection_id, "receipt_id": receipt_id,
                           "observed_at": observed if proven else None,
                           "status": "fresh" if fresh else "stale_or_degraded",
                           "reference": f"finance://broker-connections/{connection_id}/receipts/{receipt_id}"}
+                source["effective_observations"] = [
+                    {"asset_id": row.get("assetId"), "source": row.get("positionObservationSource") or "broker_sync",
+                     "observed_at": row.get("positionObservedAt") or row.get("brokerObservedAt"),
+                     "receipt_id": row.get("positionObservationId") or row.get("brokerSyncReceiptId")}
+                    for row in rows
+                ]
+                if any(row.get("positionObservationSource") == "screenshot" for row in rows):
+                    source["degraded_reason"] = "SCREENSHOT_OVERRIDE"
                 degraded = degraded or not fresh
             except (DecisionError, ValueError, TypeError, AttributeError):
                 degraded = True

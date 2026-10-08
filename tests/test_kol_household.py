@@ -216,7 +216,7 @@ def test_lianghui_default_transport_reuses_one_requests_session(monkeypatch):
     assert len(calls) == 1
 
 
-@pytest.mark.parametrize("condition", ["fresh", "old", "mismatch", "unavailable", "failed", "pending"])
+@pytest.mark.parametrize("condition", ["fresh", "old", "mismatch", "unavailable", "failed", "pending", "screenshot"])
 def test_broker_household_freshness_comes_from_matching_complete_receipt(condition):
     from datetime import datetime, timedelta, timezone
     now = datetime.now(timezone.utc)
@@ -225,6 +225,8 @@ def test_broker_household_freshness_comes_from_matching_complete_receipt(conditi
     row = {"assetId": "asset-1", "brokerConnectionId": connection_id,
            "brokerSyncReceiptId": "receipt", "positionsVersion": 3,
            "brokerObservedAt": observed, "brokerPositionStatus": "absence_pending" if condition == "pending" else "present"}
+    if condition == "screenshot":
+        row.update(positionObservationSource="screenshot", positionObservedAt=now.isoformat(), positionObservationId="screenshot-receipt")
     def opener(request, timeout):
         payload = json.loads(request.data)
         if payload["method"] == "tools/call":
@@ -249,3 +251,7 @@ def test_broker_household_freshness_comes_from_matching_complete_receipt(conditi
     assert context["broker_positions_status"] == ("fresh" if condition == "fresh" else "degraded")
     assert context["broker_positions_observed_at"] == (None if condition in {"mismatch", "unavailable"} else observed)
     assert context["positions"] == [row]
+    if condition == "screenshot":
+        source = context["broker_sync_sources"][0]
+        assert source["degraded_reason"] == "SCREENSHOT_OVERRIDE"
+        assert source["effective_observations"][0]["receipt_id"] == "screenshot-receipt"
