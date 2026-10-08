@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 import re
+import select
 import stat
 import subprocess
 import sys
@@ -19,6 +20,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from time import sleep as _cloud_handoff_sleep, sleep as _household_retry_sleep
+from time import monotonic
 from typing import Any, Callable
 
 from xiaocao.kol._shared import DecisionError, canonical_sha256
@@ -655,6 +657,22 @@ def _latest_lv_video_goal(
     }
 
 
+def _read_native_agent_line(descriptor: int, *, timeout: float = 20 * 60) -> str:
+    """Bound the entire native reply, including an abandoned partial line."""
+    deadline = monotonic() + timeout
+    chunks: list[bytes] = []
+    while True:
+        remaining = deadline - monotonic()
+        if remaining <= 0 or not select.select([descriptor], [], [], remaining)[0]:
+            raise DailyError("native playback input timed out; original capture binding preserved")
+        chunk = os.read(descriptor, 4096)
+        if not chunk:
+            return b"".join(chunks).decode("utf-8")
+        chunks.append(chunk)
+        if b"\n" in chunk:
+            return b"".join(chunks).split(b"\n", 1)[0].decode("utf-8") + "\n"
+
+
 def _read_agent_line(request: dict[str, Any]) -> str:
     """Read one complete agent response, including long JSON over a PTY."""
 
@@ -671,6 +689,10 @@ def _read_agent_line(request: dict[str, Any]) -> str:
         termios.tcsetattr(descriptor, termios.TCSANOW, response_attributes)
     try:
         print(json.dumps(request, ensure_ascii=False, sort_keys=True), flush=True)
+        if request.get("action") in {
+            "activate_xiaoetong_mini_program", "resolve_xiaoetong_page",
+        }:
+            return _read_native_agent_line(sys.stdin.fileno())
         return sys.stdin.readline()
     finally:
         if descriptor is not None and original_attributes is not None:
@@ -1556,6 +1578,12 @@ def _classified_source(name: str, runner):
                     "本机微信客户端显示“需在手机上完成登录”；这不是小鹅通"
                     "账号或课程口令问题。完成微信客户端登录后保持目标课程可访问，"
                     "系统会复核同一任务并继续。",
+                ) from exc
+            if diagnostic_code == "mac_locked_manual_unlock_required":
+                raise UserActionBlocker(
+                    "xiaocao-mac-unlock",
+                    "本机 Mac 已锁定，请手动解锁。原采集身份和任务已保留；"
+                    "当前输入等待结束，不继续占用采集执行槽。",
                 ) from exc
             if diagnostic_code == "provider_authentication_required":
                 raise UserActionBlocker(
