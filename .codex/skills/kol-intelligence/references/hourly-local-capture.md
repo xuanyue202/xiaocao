@@ -54,6 +54,23 @@ sources. Report the busy source without claiming a scan, completion, or an
 Agent-owned repair. Do not rerun the hour gate or create a replacement capture.
 Status/audit remain readable during source waits.
 
+Native identity/activation replies have a total 20-minute stdin deadline,
+including partial JSON. A timeout releases execution ownership when the source
+returns; it retains the original capture and claims and is Agent-owned repair,
+not evidence of a Mac lock or a provider outcome. Semantic, upload and mailbox
+inputs keep their existing lifetime; this bound does not cancel downloads.
+
+If Computer Use actually reports the Mac locked at native activation, return
+the `activate_xiaoetong_mini_program` request's same action/subscription and
+`page_state=mac_locked_manual_unlock_required`,
+`activated=false`, `media_request_observed=false` before ending the turn.
+Do not leave the runner waiting on stdin after reporting this user boundary.
+The source records the unlock blocker and exits its input wait; other sources
+can continue. After unlock, continue the same subscription/capture, never create
+a replacement.
+The read-only `resolve_xiaoetong_page` identity resolver does not require an
+unlocked UI; keep its existing identity response contract.
+
 During rollout, `legacy_coordinator_busy` means an already-started old runner
 still owns the former global lock. New code returns this state immediately and
 does not read or append its in-progress ledger, or overlap that old writer.

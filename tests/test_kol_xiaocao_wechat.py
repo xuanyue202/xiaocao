@@ -1835,6 +1835,7 @@ def test_web_playback_route_is_rejected_at_construction(tmp_path):
 @pytest.mark.parametrize(
     "page_state, diagnostic_stage",
     [
+        ("mac_locked_manual_unlock_required", "local_machine_unlock"),
         ("wechat_client_login_required", "wechat_client_authorization"),
         ("mini_program_consent_required", "mini_program_consent"),
     ],
@@ -1905,6 +1906,52 @@ def test_wechat_mini_program_authorization_keeps_login_and_consent_distinct(
     assert resumed["observed_page_state"] == "mini_program_media_observed"
     assert resumed["activated"] is True
     assert resumed["user_action_required"] is False
+
+
+def test_native_input_timeout_retains_original_capture_for_same_item_resume(tmp_path):
+    import os
+    from scripts.kol_daily import _read_native_agent_line
+    from xiaocao.kol.daily import DailyError
+
+    payload = _history("[2026-08-09 16:42] 小花: "
+        "https://app6ums63as6516.h5.xiaoeknow.com/v4/course/alive/l_6a75cf66e4b0694c5bf6d228")
+    driver = _CaptureDriver()
+    timed_out = False
+    read_fd, write_fd = os.pipe()
+
+    def exchange(request):
+        nonlocal timed_out
+        if request["action"] == "resolve_xiaoetong_page":
+            return {"action": request["action"], "subscription_id": request["subscription_id"],
+                "page_url": request["source_url"], "page_state": "unknown"}
+        if not timed_out:
+            timed_out = True
+            return _read_native_agent_line(read_fd, timeout=0.02)
+        return {"action": request["action"], "subscription_id": request["subscription_id"],
+            "playback_surface": XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM,
+            "source_identity": "xiaoetong:app6ums63as6516:l_6a75cf66e4b0694c5bf6d228",
+            "live_id": "l_6a75cf66e4b0694c5bf6d228",
+            "page_state": "mini_program_waiting", "activated": False,
+            "media_request_observed": False, "playback_window_closed": False}
+
+    subscription = XiaocaoWechatLiveSubscription(tmp_path / "wechat",
+        history_reader=lambda: payload, browser_exchange=exchange, capture_driver=driver,
+        clock=lambda: datetime.fromisoformat("2026-08-09T23:00:00+08:00"))
+    try:
+        with pytest.raises(DailyError):
+            subscription.run_once(opencli_session="xiaocao-lv-subscription")
+    finally:
+        os.close(read_fd)
+        os.close(write_fd)
+    original = next(iter(subscription._load()["items"].values()))
+    subscription.run_once(opencli_session="xiaocao-lv-subscription", only_identity=original["identity"])
+    resumed = subscription._load()["items"][original["identity"]]
+    assert resumed["capture_job_id"] == original["capture_job_id"]
+    assert resumed["source_identity"] == original["source_identity"]
+    assert resumed["message_sha256"] == original["message_sha256"]
+    assert driver.arms == [(original["identity"], original["page_url"])]
+    assert driver.advances == 0
+    assert driver.native_bindings == []
 
 
 def test_pending_cloud_handoff_resumes_exact_job_after_stale_playback_state(

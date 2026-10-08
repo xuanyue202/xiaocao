@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import os
 import sys
 import termios
 from subprocess import CompletedProcess
@@ -1149,6 +1150,54 @@ def test_agent_json_disables_canonical_tty_for_long_response(
     assert applied[0][6][termios.VMIN] == 1
     assert applied[0][6][termios.VTIME] == 0
     assert applied[1] == original
+
+
+@pytest.mark.parametrize("partial", [b"", b'{"activated":'])
+def test_native_input_timeout_bounds_missing_and_partial_reply(partial):
+    read_fd, write_fd = os.pipe()
+    try:
+        if partial:
+            os.write(write_fd, partial)
+        with pytest.raises(DailyError):
+            kol_daily_script._read_native_agent_line(read_fd, timeout=0.02)
+    finally:
+        os.close(read_fd)
+        os.close(write_fd)
+
+
+def test_native_input_reads_long_utf8_reply_without_truncation():
+    read_fd, write_fd = os.pipe()
+    raw = json.dumps({"title": "原任务" * 1500}, ensure_ascii=False) + "\n"
+    import threading
+    writer = threading.Thread(target=lambda: os.write(write_fd, raw.encode()))
+    writer.start()
+    try:
+        assert kol_daily_script._read_native_agent_line(read_fd, timeout=2) == raw
+    finally:
+        writer.join(timeout=2)
+        os.close(read_fd)
+        os.close(write_fd)
+
+
+def test_native_input_timeout_restores_tty(monkeypatch):
+    class FakeTty(io.StringIO):
+        def isatty(self):
+            return True
+
+        def fileno(self):
+            return 42
+
+    original = [0, 0, 0, termios.ICANON | termios.ECHO, 0, 0, [0] * 32]
+    applied = []
+    monkeypatch.setattr(sys, "stdin", FakeTty())
+    monkeypatch.setattr(termios, "tcgetattr", lambda _: original)
+    monkeypatch.setattr(termios, "tcsetattr", lambda _, when, attrs: applied.append(attrs))
+    def timeout(*args, **kwargs):
+        raise DailyError("native playback input timed out")
+    monkeypatch.setattr(kol_daily_script, "_read_native_agent_line", timeout)
+    with pytest.raises(DailyError):
+        kol_daily_script._read_agent_line({"action": "activate_xiaoetong_mini_program"})
+    assert applied[-1] == original
 
 
 def _canonical_sha256(value: dict) -> str:
@@ -6251,6 +6300,22 @@ def test_source_classifier_keeps_wechat_client_login_distinct():
 
     assert captured.value.blocker_key == "xiaocao-wechat-client-login"
     assert "不是小鹅通账号" in captured.value.action
+
+
+def test_source_classifier_reports_mac_unlock_without_wechat_login():
+    runner = _classified_source(
+        "xiaocao_wechat_live",
+        lambda: (_ for _ in ()).throw(EnrichmentDiagnosticError(
+            "Mac is locked and requires manual unlock",
+            category="authentication_error",
+            code="mac_locked_manual_unlock_required",
+            stage="local_machine_unlock",
+        )),
+    )
+    with pytest.raises(UserActionBlocker) as caught:
+        runner()
+    assert caught.value.blocker_key == "xiaocao-mac-unlock"
+    assert "Mac" in caught.value.action
 
 
 def test_source_classifier_keeps_mini_program_consent_distinct():

@@ -91,6 +91,29 @@ def test_source_exclusivity_across_processes_and_release_after_exit(tmp_path):
     ])["health"] == "healthy"
 
 
+def test_native_timeout_releases_source_and_continues_articles(tmp_path):
+    import os
+    read_fd, write_fd = os.pipe()
+    calls = []
+    def capture():
+        kol_daily._read_native_agent_line(read_fd, timeout=0.02)
+    def articles():
+        calls.append("articles")
+        return {"status": "no_update"}
+    service = coordinator(tmp_path)
+    try:
+        service.run([
+            {"name": "xiaocao_wechat_live", "run": capture},
+            {"name": "wechat_official_accounts", "run": articles},
+        ])
+    finally:
+        os.close(read_fd)
+        os.close(write_fd)
+    assert calls == ["articles"]
+    with coordinator(tmp_path)._source_locked("xiaocao_wechat_live"):
+        pass
+
+
 @pytest.mark.parametrize("same_instance", [False, True])
 def test_waiting_capture_does_not_block_status_or_articles(tmp_path, same_instance):
     service = coordinator(tmp_path)

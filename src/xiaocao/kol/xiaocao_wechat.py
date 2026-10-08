@@ -58,6 +58,7 @@ _LOCAL_CAPTURE_FIRST_HOUR = 7
 _LOCAL_CAPTURE_LAST_HOUR = 22
 _NATIVE_SHARE_BRIDGE_CONFIG = Path("output/live/kol_xiaocao_live/native_share_bridge.json")
 _PLAYBACK_PAGE_STATES = {
+    "mac_locked_manual_unlock_required",
     "wechat_client_login_required",
     "waiting_to_start",
     "live",
@@ -1646,7 +1647,7 @@ class XiaocaoWechatLiveSubscription:
                 "live_id": expected_live_id or "observed l_ live_id",
                 "operator": "agent",
                 "page_state": (
-                    "wechat_client_login_required|mini_program_consent_required|waiting_to_start|live|"
+                    "mac_locked_manual_unlock_required|wechat_client_login_required|mini_program_consent_required|waiting_to_start|live|"
                     "replay_generating|playable|password_required|unknown|"
                     "mini_program_media_observed|mini_program_waiting"
                 ),
@@ -1760,7 +1761,10 @@ class XiaocaoWechatLiveSubscription:
             raise EnrichmentError(
                 "WeChat mini-program returned an unknown playback state"
             )
-        if page_state in {"wechat_client_login_required", "mini_program_consent_required"}:
+        if page_state in {
+            "mac_locked_manual_unlock_required", "wechat_client_login_required",
+            "mini_program_consent_required",
+        }:
             self._transition(
                 manifest, item, "awaiting_playback",
                 observed_page_state=page_state,
@@ -1769,6 +1773,13 @@ class XiaocaoWechatLiveSubscription:
                 media_request_observed=response.get("media_request_observed") is True,
                 playback_window_closed=response.get("playback_window_closed") is True,
                 user_action_required=True,
+            )
+        if page_state == "mac_locked_manual_unlock_required":
+            raise EnrichmentDiagnosticError(
+                "Mac is locked and requires manual unlock",
+                category="authentication_error",
+                code="mac_locked_manual_unlock_required",
+                stage="local_machine_unlock",
             )
         if page_state == "wechat_client_login_required":
             raise EnrichmentDiagnosticError(
