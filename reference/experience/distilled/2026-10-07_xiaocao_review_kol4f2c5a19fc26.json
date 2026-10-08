@@ -1,0 +1,512 @@
+{
+  "date": "2026-10-07",
+  "kind": "review",
+  "author": "小草",
+  "source": "小草直播",
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_netdisk_enrichment/artifacts/kol-netdisk-1d3fa1e3ee9602ac/20261007 大师班专场(晚18：00开播)-compressed.txt",
+      "sha256": "2928e8c84505b86814261104402939fa97a0b9ce9d2b1b9b620523939b65994d",
+      "size": 32834
+    },
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_xiaocao_live/semantic_requests/kol-4f2c5a19fc26/market_evidence_review4.json",
+      "sha256": "79220296a07268850129c3827672308377c7162e65a0c9e266943626e1f17eb4",
+      "size": 13105
+    },
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_daily/parent_receipts/20261008T1400_trade_cal.json",
+      "sha256": "7a44313c6d1f68ff55aa4781181b1e7626f6984811c00d52ecee47549208d55a",
+      "size": 462
+    }
+  ],
+  "authority": 0,
+  "summary": "可复用知识集中在三层：高开占优时偏起爆、低开占优时偏低吸；盘中起爆用约6%以下约束追高，盘中低吸则等待下跌后拐头；个性画像改善执行，却不能替代市场主流风格。父任务已完成唯一一次authority=0知识入库：XH-137新增本场来源，三条新候选分别为XH-206、XH-207、XH-208。XH-132与XH-194未变，未改参数或姿态。",
+  "posture": {
+    "regime": "作者判断为主跌与空仓环境，节后首日即使受外部市场带动高开，也可能因量能不足而回落。",
+    "dominant_style": "首选休息；确需参与时以轻仓下跌超跌低吸为过渡，并按开盘广度决定是否把红盘起爆放在绿盘低吸之前。",
+    "risk": "正面外部消息不等于趋势反转；高开追涨、倒接力、紫薇模式和未经验证的个性化模型都存在误用风险。",
+    "style_ranking": [
+      "空仓环境下休息或不交易。",
+      "确需过渡时轻仓参与下跌超跌，并区分盘中起爆与盘中低吸。",
+      "盘中起爆候选偏好涨幅约6%以下；盘中低吸候选先等下跌后拐头。",
+      "若普遍高开，红盘或盘中起爆相对优先；若低开，绿盘低吸条件可能改善。",
+      "倒接力和紫薇模式在本场环境下暂不优先。"
+    ]
+  },
+  "regime_call": {
+    "horizon": "作者面向2026-10-08及随后短线环境，未给出趋势反转期限。",
+    "call": "节后可能有高开，但量能不足与空仓环境仍占主导；后续改善若出现，更可能先体现在短线而非趋势科技。",
+    "what_would_falsify": [
+      "开盘与全天出现持续放大的成交量，高开后承接强且未回落。",
+      "空仓环境评分解除，多个交易模式由负转正并形成连续赚钱效应。",
+      "趋势与科技方向获得持续而非单日的量价确认。"
+    ],
+    "authority": 0
+  },
+  "directions": [
+    {
+      "direction": "A股短线整体",
+      "role": "谨慎等待",
+      "conditions": "重新核验当前环境、量能与板块强弱后再决定是否参与。",
+      "limitations": "原文的“明天”是2026-10-08；该日内分支已过期，不能直接滚到下一交易日。"
+    },
+    {
+      "direction": "下跌超跌低吸",
+      "role": "空仓环境中的可选过渡模式",
+      "conditions": "仓位轻，并保持筛选与入场纪律。",
+      "limitations": "休息优先；作者没有给仓位百分比。"
+    },
+    {
+      "direction": "盘中下跌超跌起爆",
+      "role": "控制追高的候选分支",
+      "conditions": "作者偏好候选涨幅约6%以下，并认为6%至7%偏高。",
+      "limitations": "约6%是口述近似边界，只适用于这一路径，没有配置、全样本和成交回放支持。"
+    },
+    {
+      "direction": "盘中下跌超跌低吸",
+      "role": "等待价格确认的候选分支",
+      "conditions": "候选仍下跌时不立即接入，等待价格拐头再买。",
+      "limitations": "“拐头”没有定量定义，也不能与起爆路径的6%边界合并成一条规则。"
+    },
+    {
+      "direction": "红盘或盘中起爆",
+      "role": "普遍高开时的条件分支",
+      "conditions": "高开家数多且开盘量能、板块强度能够承接。",
+      "limitations": "不是无条件追涨；作者同时警告高开低走。"
+    },
+    {
+      "direction": "倒接力与紫薇模式",
+      "role": "本场回避",
+      "conditions": "只有开盘环境、评分与风险结构发生变化后才重新评估。",
+      "limitations": "历史高分案例不构成当前许可。"
+    }
+  ],
+  "stocks": [
+    {
+      "raw_surface": "中心赛科",
+      "reader_name": "“中心赛科”（原话，名称待核）",
+      "role": "risk_warning",
+      "resolution_status": "unresolved",
+      "code": null,
+      "market": null,
+      "reason": "来源说其位置比较高、不属于低位；音似简称不足以唯一映射证券，不据此构造代码或收益。"
+    },
+    {
+      "raw_surface": "盛洋股份；思阳股份；盛阳股份",
+      "reader_name": "“盛洋股份／思阳股份／盛阳股份”（原话，名称待核）",
+      "role": "historical_example",
+      "resolution_status": "unresolved",
+      "code": null,
+      "market": null,
+      "reason": "逐字稿出现多个音似写法，当前绑定证据不足以唯一映射证券。"
+    },
+    {
+      "raw_surface": "大连热电",
+      "reader_name": "大连热电",
+      "role": "historical_example",
+      "resolution_status": "resolved",
+      "code": null,
+      "market": "CN",
+      "reason": "名称可识别；来源只称其盘中一度涨停、随后开板，没有退出价或最终收益证据，也不是当前交易指令。"
+    },
+    {
+      "raw_surface": "中诚咨询",
+      "reader_name": "“中诚咨询”（原话，名称待核）",
+      "role": "historical_example",
+      "resolution_status": "unresolved",
+      "code": null,
+      "market": null,
+      "reason": "音似名称、代码及作者所称收益均未获独立核验。"
+    },
+    {
+      "raw_surface": "松原安全；重要安全",
+      "reader_name": "“松原安全／重要安全”（原话，名称待核）",
+      "role": "historical_example",
+      "resolution_status": "unresolved",
+      "code": null,
+      "market": null,
+      "reason": "原文写法不稳定，不能由音似名称推定证券代码或实际收益。"
+    },
+    {
+      "raw_surface": "西电；鹰潭",
+      "reader_name": "“西电／鹰潭”（原话，名称待核）",
+      "role": "risk_warning",
+      "resolution_status": "unresolved",
+      "code": null,
+      "market": null,
+      "reason": "简称不足以唯一识别证券，仅保留作者认为约6%至7%偏高的角色。"
+    },
+    {
+      "raw_surface": "华视科技；华世科技",
+      "reader_name": "“华视科技／华世科技”（原话，名称待核）",
+      "role": "historical_example",
+      "resolution_status": "unresolved",
+      "code": null,
+      "market": null,
+      "reason": "音似名称与秒级分数相互矛盾，不能映射代码或证明收益。"
+    }
+  ],
+  "method_principles": [
+    "先判市场环境，再选模式；正面新闻不能替代量能与交易环境确认。",
+    "空仓环境允许休息，若做过渡模式，应轻仓。",
+    "盘中下跌超跌起爆与盘中下跌超跌低吸是两种入场：前者用约6%以下约束追高，后者等下跌后拐头，不能拼成一个复合阈值。",
+    "开盘高低结构只改变模式相对顺序，不构成无条件追高或低吸。",
+    "个性画像解决执行舒适度与坚持问题，市场主流风格决定机会本身；两者不能互相替代。",
+    "持仓退出沿用原入场标准，不用新增个股评分掩盖原计划。",
+    "口述得分、分钟、百分比和历史收益都要保留为待核证据，不能直接写入生产参数。",
+    "未完成测试的软件、AI画像和监控功能属于研究构想，不是可依赖的交易依据。"
+  ],
+  "exit_lessons": [
+    {
+      "lesson": "节后首日若高开，作者按板块强弱区分退出节奏：强板块可等高抛，弱板块可早出。",
+      "boundary": "这是2026-10-08的条件计划，没有个股、价格、止损或成交证据，不能滚动为当前卖出指令。",
+      "evidence_basis": "逐字稿第38至39段。"
+    },
+    {
+      "lesson": "已经持有的股票按原进场标准退出，不另造个股评分。",
+      "boundary": "需要先找回原始入场标准；缺失时不能由本场推断卖点。",
+      "evidence_basis": "逐字稿第53至58段。"
+    },
+    {
+      "lesson": "长期被套并不保证可以靠模型解套，退市风险会使所谓解套失去前提。",
+      "boundary": "原话带有玩笑语气，不能扩成具体补仓或摊薄策略。",
+      "evidence_basis": "逐字稿第65至66段。"
+    }
+  ],
+  "hypotheses": [
+    {
+      "claim": "高开占优时选择起爆、低开占优时选择低吸的开盘条件切换，可能比隔夜固定同一模式更贴合当日短线环境。",
+      "implied_rule": "预先定义高开与低开广度、量能和候选池，开盘后按可见条件选择模式，不用收盘结果回填。",
+      "falsifiable_test": "在同一股票池与风险预算下比较固定起爆、固定低吸和预注册开盘条件切换，纳入滑点、成交失败和次日退出。",
+      "expected_effect": "条件切换只有在跨期样本外收益或尾损稳定改善时才支持，否则拒绝。",
+      "category": "opening_conditional_mode",
+      "authority": 0,
+      "recurrence_of": "XH-137",
+      "relation": "recurs",
+      "source_thesis_ids": [
+        "t-highopen-breakout-branch",
+        "t-avoid-relay-ziwei"
+      ]
+    },
+    {
+      "claim": "盘中下跌超跌起爆候选在涨幅约6%以下，可能比已经涨到6%至7%的候选有更低的追高风险。",
+      "implied_rule": "记录排名出现时涨幅、可成交价与完整候选池；约6%只作待检验边界。",
+      "falsifiable_test": "预注册多个涨幅边界，使用完整候选比较含成本收益、最大不利变动、成交率和漏失率，并控制多重比较。",
+      "expected_effect": "只有约6%边界在样本外稳定降低追高损失时才支持。",
+      "category": "intraday_breakout_price_extension",
+      "authority": 0,
+      "relation": "new_candidate_after_local_dedup",
+      "source_thesis_ids": [
+        "t-intraday-breakout-under-six"
+      ]
+    },
+    {
+      "claim": "盘中下跌超跌低吸候选在排名出现后仍下跌时，等待价格拐头再买，可能比立即接入有更低的入场价格和不利波动。",
+      "implied_rule": "事前定义拐头，记录排名时点、后续低点、触发时点和可成交价，不与起爆路径的涨幅边界混用。",
+      "falsifiable_test": "比较立即接入、不同拐头定义和不交易三组的含成本收益、最大不利变动、成交率与漏失率。",
+      "expected_effect": "只有等待拐头在样本外稳定改善风险收益时才支持。",
+      "category": "intraday_lowbuy_turn_entry",
+      "authority": 0,
+      "relation": "new_candidate_after_local_dedup",
+      "source_thesis_ids": [
+        "t-intraday-lowbuy-turn-entry"
+      ]
+    },
+    {
+      "claim": "个性化交易画像可改善舒适度、纪律与模型持有耐心，但市场主流风格仍应决定策略机会；两者结合可能优于任一单独使用。",
+      "implied_rule": "把市场适配评分与个人执行适配评分分开，先满足市场适配，再用个人适配选择可坚持的实现方式。",
+      "falsifiable_test": "在不改变风险预算的前提下，比较市场优先、个人优先和市场先行加个人约束三组，评估执行偏差、放弃率、成本后收益和尾损。",
+      "expected_effect": "若混合路径只提升舒适度却降低收益或增加尾损，则不支持；若提高执行率且不损害样本外结果，才可继续研究。",
+      "category": "behavior_market_fit",
+      "authority": 0,
+      "relation": "new_candidate_after_local_dedup",
+      "source_thesis_ids": [
+        "t-regime-match-over-personal-fit",
+        "t-horizon-fit"
+      ]
+    }
+  ],
+  "timing_notes": [
+    "来源发布于2026-10-07晚间；原文的“明天”对应2026-10-08。",
+    "交易日历证据已绑定到本文件：它只证明2026-10-08与2026-10-09为A股交易日，不证明盘中走势、量能或个股收益。",
+    "2026-10-08日内高开、退出和模式分支在本次整理时已经过期，不能静默顺延到10月9日。",
+    "历史案例中说话人先说“周五”，随后纠正为“节前最后一天、周三”；交易日材料可定位该周三为2026-09-30，但不能把全部历史案例一律强制归到同一天。",
+    "作者对“后面短线改善”没有给出具体日期，仍需当下环境重验。",
+    "9:32:30、9:32:45、92分、98分及约100分是口述历史案例，且相互有近似与矛盾，不能当作确定触发。"
+  ],
+  "typo_corrections": [
+    {
+      "raw": "下跌利息；下定决心；下沙买",
+      "corrected": "下跌低吸",
+      "basis": "同场多处明确说下跌低吸或下跌超跌盘中低吸。"
+    },
+    {
+      "raw": "倒接力",
+      "corrected": null,
+      "basis": "保留来源模式名称，不擅改为其他策略术语。"
+    },
+    {
+      "raw": "指挥模式；职位模式；华视科技；华世科技",
+      "corrected": "紫薇模式；个股名称待核",
+      "basis": "模式语境可校正为紫薇；个股音似名称不能唯一校正。"
+    },
+    {
+      "raw": "中心赛科",
+      "corrected": null,
+      "basis": "保留来源表面名及“位置较高、不属于低位”的风险角色；证据不足以唯一映射证券。"
+    },
+    {
+      "raw": "盛洋股份；思阳股份；盛阳股份",
+      "corrected": null,
+      "basis": "当前绑定证据不足以唯一映射证券。"
+    },
+    {
+      "raw": "松原安全；重要安全；中诚咨询；西电；鹰潭",
+      "corrected": null,
+      "basis": "均只保留音似表面和案例角色，不构造代码。"
+    },
+    {
+      "raw": "植物过节",
+      "corrected": "持股过节",
+      "basis": "第8段明确说持股过节，后续语境也是节前持有。"
+    }
+  ],
+  "decision_trace": [
+    {
+      "observation": "作者称外部市场偏正面，预计节后首日高开，但同时判断成交量不足、主跌与空仓环境未改变。",
+      "inference": "消息驱动的高开不等于趋势反转，高开后可能回落。",
+      "action": "保守者休息；持仓按板块强弱决定等高抛或早出。",
+      "why": "量能与环境优先于外部消息。",
+      "source_thesis_ids": [
+        "t-gap-fade-volume",
+        "t-next-session-holdings-exit"
+      ]
+    },
+    {
+      "observation": "空仓环境下大多数模式为负，只有下跌低吸相对可看。",
+      "inference": "模式切换不是必须，确需参与也只是轻仓过渡。",
+      "action": "优先休息；若做，先用总分筛选候选。",
+      "why": "先控制尾部风险，再讨论候选。",
+      "source_thesis_ids": [
+        "t-empty-environment-rest",
+        "t-downtrend-lowbuy-primary",
+        "t-lowbuy-score-filter"
+      ]
+    },
+    {
+      "observation": "作者在历史复盘中分别讲了盘中起爆与盘中低吸。",
+      "inference": "起爆路径的约6%边界用于控制追高；低吸路径等待下跌后拐头，用于避免直接接飞刀。",
+      "action": "两种路径分别记录与验证，不拼成一条规则。",
+      "why": "它们的触发、风险和验证对象不同。",
+      "source_thesis_ids": [
+        "t-intraday-breakout-under-six",
+        "t-intraday-lowbuy-turn-entry"
+      ]
+    },
+    {
+      "observation": "作者区分普遍高开和低开，认为高开时起爆相对优先，低开时绿盘低吸可能更合适。",
+      "inference": "开盘结构改变模式相对顺序。",
+      "action": "按事前定义的广度、量能和板块强度选择，不追高。",
+      "why": "同一模式不能脱离当日结构固定使用。",
+      "source_thesis_ids": [
+        "t-highopen-breakout-branch",
+        "t-avoid-relay-ziwei"
+      ]
+    },
+    {
+      "observation": "个性化模型可能更舒服，但个人偏好不一定是市场最优。",
+      "inference": "市场适配与行为适配是两种独立约束。",
+      "action": "先找市场主流风格，再选择能够遵守的实现方式和持有周期。",
+      "why": "只优化舒适度可能错过市场主线，只优化理论收益又可能因无法坚持而失效。",
+      "source_thesis_ids": [
+        "t-regime-match-over-personal-fit",
+        "t-horizon-fit"
+      ]
+    }
+  ],
+  "judgment_heuristics": [
+    {
+      "heuristic": "消息、海外涨跌与节日情绪只提供开盘倾向，量能和交易环境负责确认。",
+      "limit": "没有当前市场数据时只能保留为作者判断，不能宣称已经发生。"
+    },
+    {
+      "heuristic": "空仓环境中，少做和休息本身是一种决策。",
+      "limit": "不能机械扩成长期清仓，也不能忽略样本外错失收益。"
+    },
+    {
+      "heuristic": "个性画像服务于执行纪律，市场风格服务于机会识别。",
+      "limit": "没有实盘行为数据与对照试验时，不能证明画像提升收益。"
+    }
+  ],
+  "feedback_review": {
+    "current_posture": "本地既有posture_current为过期历史态，未据本场更新或续期。",
+    "prior_comparison": [
+      {
+        "prior": "XH-137",
+        "relation": "recurs",
+        "treatment": "复用既有完全一致的claim字符串；本场再次出现高开偏起爆、低开偏低吸的开盘条件切换。"
+      },
+      {
+        "prior": "XH-132",
+        "relation": "partial_support",
+        "treatment": "本场只支持严格大于150的来源边界，没有200分比较；保留反馈但不写入本次hypotheses，避免给完整150/200命题新增来源日期。"
+      },
+      {
+        "prior": "XH-194；并与XH-061、XH-178存在近邻重合",
+        "relation": "partial_support_omitted_from_intake",
+        "treatment": "来源只支持空仓环境不做模式切换，不包含越规后第一次亏损停止链；完整方法原则保留，但不新增近重复候选。"
+      },
+      {
+        "prior": "XH-138",
+        "relation": "not_same_mechanism",
+        "treatment": "XH-138讨论排名边界进出；本场的约6%起爆边界和低吸等拐头是两条新的入场机制，均不标作XH-138复现。"
+      },
+      {
+        "prior": "本地未见同义命题",
+        "relation": "new_candidate_after_local_dedup",
+        "treatment": "市场适配优先、个人画像约束执行的双层框架作为新候选。"
+      }
+    ],
+    "calibration_boundary": "不因一场口播修改评分、涨幅、仓位、环境门槛或任何Book权限。"
+  },
+  "action_summary": {
+    "posture_update": "no_change：本场短线态势记入草稿，但不更新已过期的全局posture_current。",
+    "playbook_update": "no_change：方法原则仅为authority=0候选，未写入正式playbook。",
+    "hypothesis_update": "ingested：父任务以C4知识文件单次入库；XH-137新增2026-10-07来源，约6%起爆、低吸等拐头、市场适配框架分别落为XH-206、XH-207、XH-208；XH-132与XH-194未变。",
+    "audit_evidence": "完整读取绑定逐字稿至EOF，对81个稳定段做两轮原序复核；交易日历与9月30日证据由带哈希父级审计绑定，知识层只保留聚合边界。",
+    "instrumentation_todo": "需要模式评分原表、完整候选池、真实筛选配置、证券映射、拐头定义与可成交回放；no_issue_created。",
+    "routing": [
+      "authority=0；父任务已完成唯一一次知识入库，实际ID与哈希以绑定回执为准。",
+      "本语义代理未执行入库；无需也不得再次入库。",
+      "未执行研究运行、参数改变、姿态改变、发布、通知、Book或账户写入。",
+      "过期的2026-10-08日内计划不得滚动到2026-10-09。",
+      "私有运行台账明细未复制到公开耐久知识。"
+    ]
+  },
+  "limitations": [
+    "作者关于美股、韩国股市、A股高开、量能、个股得分和历史收益的说法均未由当前市场证据独立验证。",
+    "所有音似个股保持未解析，并在读者字段保留原始名称；不构造证券代码、价格或实际交易记录。",
+    "大连热电只保留“盘中一度涨停后开板”的来源观察，不推断最终收益为正。",
+    "9月30日本地证据只支持聚合cohort benchmark结论，不能证明老师点名身份、赢家收益、执行或9:32秒级口述。",
+    "知识草稿不含私有运行台账的个股、账户、数量、价格或库存明细。",
+    "家庭配置、paper-only Book判断与知识候选分层独立，本文件不提供真实账户指令。",
+    "本文件保留knowledge_draft文件名，但已补记父任务实际入库元数据；它不是第二次入库请求，也不把authority=0候选升级为研究结论。"
+  ],
+  "strategy_hit_audit": {
+    "evidence_date": "2026-09-30",
+    "teacher_named_winners": [
+      {
+        "surface": "盛洋股份／思阳股份／盛阳股份",
+        "classification": "no_evidence",
+        "reason": "来源将其作为下跌低吸选择及涨停相关案例；本地精确证据没有可唯一映射的同名对象。"
+      },
+      {
+        "surface": "大连热电",
+        "classification": "no_evidence",
+        "reason": "来源只称历史低吸案例盘中一度涨停、随后开板，没有退出价或最终正收益证据；本地9月30日精确证据没有该名称，且来源没有把全部案例明确绑定到同一天。"
+      },
+      {
+        "surface": "中诚咨询",
+        "classification": "no_evidence",
+        "reason": "来源称盘中低吸案例有七个多点；音似名称未解析，本地证据没有可验证的同名对象或收益。"
+      },
+      {
+        "surface": "松原安全／重要安全",
+        "classification": "no_evidence",
+        "reason": "来源称盘中起爆案例涨停或20厘米；音似名称未解析，本地证据没有可验证的同名对象或收益。"
+      }
+    ],
+    "historical_role_audit": [
+      {
+        "surface": "中心赛科",
+        "role": "high_position_risk_warning",
+        "classification": "no_evidence",
+        "reason": "来源说其位置较高、不属于低位，不是赢家声明；本地证据不能解析身份。"
+      },
+      {
+        "surface": "西电／鹰潭",
+        "role": "six_to_seven_percent_high_extension_warning",
+        "classification": "no_evidence",
+        "reason": "来源把它们作为盘中起爆涨幅偏高的风险例子，不是赢家声明；简称不足以唯一识别。"
+      },
+      {
+        "surface": "华视科技／华世科技",
+        "role": "high_score_historical_example",
+        "classification": "no_evidence",
+        "reason": "来源讨论秒级高分，不是明确赢家声明；与本地任何音似名称均不做身份连接。"
+      }
+    ],
+    "local_strategy_benchmark_hits": [
+      {
+        "classification": "cohort_benchmark",
+        "qibaoBenchmarkKind": "raw_top10_elec20_open_le6_red_notlimit",
+        "qibaoBenchmarkLayer": "paper_buy",
+        "mode_trade_eligible": false,
+        "count": 8,
+        "reason": "聚合快照说明本地系统曾承载低于6%的起爆基准方向；不公开运行台账个股、账户、数量或价格，也不证明老师点名、执行、收益或9:32秒级口述。"
+      }
+    ],
+    "direction_core_observations": [
+      {
+        "direction": "盘中起爆约6%以下",
+        "classification": "cohort_benchmark",
+        "reason": "绑定快照的基准种类与层级支持方向层面的相似性；没有老师点名身份重合、执行或收益证明。"
+      },
+      {
+        "direction": "盘中低吸等下跌后拐头",
+        "classification": "no_evidence",
+        "reason": "绑定的9月30日信号记录没有可审计的“仍下跌后拐头”触发字段。"
+      },
+      {
+        "direction": "空仓环境休息或不切换",
+        "classification": "no_evidence",
+        "reason": "绑定记录不能倒推出来源所述环境规则已命中。"
+      }
+    ],
+    "privacy_boundary": "耐久知识只保留不可变证据路径、哈希和聚合结论；运行台账的个股清单、账户、数量、价格与库存明细仅留在output私有审计，不复制到可入库知识。",
+    "boundary": "老师点名、系统候选、执行与收益是四类证据。音似名称不做身份连接；cohort benchmark不证明执行或赢家收益；9月30日记录不证明来源全部历史案例都发生在同一天。"
+  },
+  "ingestion": {
+    "status": "ingested_single_batch",
+    "authority": 0,
+    "observed_at": "2026-10-08T09:22:00Z",
+    "input_knowledge_sha256": "35a4b6a4e7f17aa6f0a693812787b38e5dc3af536002de697c493884f072c568",
+    "receipt": {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_xiaocao_live/semantic_requests/kol-4f2c5a19fc26/parent_video_ingest_receipt.json",
+      "sha256": "47df3585bfb663d963bc87b38797bec20d01555ed21856a3c9900a4640bc070f"
+    },
+    "canonical_repo": {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/reference/experience/xiaocao_hypotheses.jsonl",
+      "sha256": "2ccc90cd392f7869a6068556d9b6313ba0104a9772a7766ca56c40f5c6d0e6f3",
+      "before_count": 205,
+      "after_count": 208
+    },
+    "recurrence_updates": [
+      {
+        "local_category": "opening_conditional_mode",
+        "canonical_id": "XH-137",
+        "effect": "added_source_date_and_ref_only"
+      }
+    ],
+    "new_hypotheses": [
+      {
+        "local_category": "intraday_breakout_price_extension",
+        "canonical_id": "XH-206"
+      },
+      {
+        "local_category": "intraday_lowbuy_turn_entry",
+        "canonical_id": "XH-207"
+      },
+      {
+        "local_category": "behavior_market_fit",
+        "canonical_id": "XH-208"
+      }
+    ],
+    "unchanged_existing_ids": [
+      "XH-132",
+      "XH-194"
+    ],
+    "second_ingest_required": false
+  }
+}
