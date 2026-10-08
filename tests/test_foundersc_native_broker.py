@@ -190,10 +190,22 @@ class FakeNative:
             "history-trades": self.history_trades,
             "funds": [{"资金余额": "1000.00", "可用资金": "100.00", "总资产": "43054.60"}],
         }[kind]
+        scope = {}
+        if kind in {"history-orders", "history-trades"} and _kwargs.get("history_trade_date"):
+            requested = _kwargs["history_trade_date"]
+            column = "委托日期" if kind == "history-orders" else "成交日期"
+            rows = [row for row in rows if row.get(column) == requested.replace("-", "")]
+            scope = {"history_scope": {
+                "schema_version": "native-history-scope.v1", "kind": kind,
+                "start_date": requested, "end_date": requested,
+                "date_controls_proven": True, "all_pages_captured": True,
+                "total_row_count": len(rows), "observed_at": OBSERVED_AT,
+            }}
         summary = dict(self.position_summary) if kind == "positions" else {}
         return self._receipt(
             status="query_read",
             query_readback={
+                **scope,
                 "kind": kind,
                 "capture_proven": True,
                 "parsing_proven": True,

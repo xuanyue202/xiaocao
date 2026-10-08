@@ -23,6 +23,8 @@ from pathlib import Path
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
+from .history_query_evidence import history_query_evidence
+
 from .foundersc_native_ax import (
     FounderscNativeAXClient,
     FounderscNativeAXError,
@@ -337,6 +339,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             max(0.0, float(item)) for item in snapshot_read_delays
         )
         self.last_query_readbacks: dict[str, dict[str, Any]] = {}
+        self.last_normalized_history_readbacks: dict[str, dict[str, Any]] = {}
         self._prepared: dict[str, dict[str, Any]] = {}
         self._prepared_cancels: dict[str, dict[str, Any]] = {}
         self._submission_batch: dict[str, Any] | None = None
@@ -532,7 +535,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
     def _read_error_code(exc: FounderscNativeAXError) -> str:
         return str(exc).split(":", 1)[0]
 
-    def _failed_read_evidence(self, exc: Exception | None) -> dict[str, Any]:
+    def _failed_read_evidence(self, exc: Exception | None, *, include_history_captures: bool = False) -> dict[str, Any]:
         """Keep account-bound, redacted readbacks without arbitrary exception text."""
         return {
             "native_read_error": (
@@ -550,6 +553,15 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                 for kind, readback in self.last_query_readbacks.items()
                 if isinstance(readback.get("rows"), list)
                 for row in readback.get("rows", []) if isinstance(row, dict)
+            ],
+            "history_capture_documents": [
+                {"schema_version": "native-history-capture.v1", "kind": kind,
+                 "observed_at": readback.get("observed_at"),
+                 "native_readback": readback,
+                 "normalized_readback": self.last_normalized_history_readbacks.get(kind),
+                 "normalization_available": kind in self.last_normalized_history_readbacks}
+                for kind, readback in self.last_query_readbacks.items()
+                if include_history_captures and kind in {"history-orders", "history-trades"}
             ],
         }
 
@@ -1023,13 +1035,16 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
         body["snapshot_sha256"] = hashlib.sha256(json.dumps(body, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
         return body
 
-    def _query(self, kind: str) -> dict[str, Any]:
+    def _query(self, kind: str, *, history_trade_date: str | None = None) -> dict[str, Any]:
+        self.last_normalized_history_readbacks.pop(kind, None)
         last_error = f"NATIVE_QUERY_{kind.upper()}_UNPROVEN"
         for attempt in range(2):
             payload = self.native.read_query(
                 kind=kind,
                 expected_fingerprint=self.expected_fund_account_fingerprint,
-                **({"refresh_history": True} if kind in {"history-orders", "history-trades"} else {}),
+                **({"refresh_history": True, "history_trade_date": history_trade_date}
+                   if history_trade_date is not None else
+                   {"refresh_history": True} if kind in {"history-orders", "history-trades"} else {}),
             ).as_dict()
             readback = payload.get("query_readback")
             readback = dict(readback) if isinstance(readback, dict) else {}
@@ -1077,7 +1092,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                         if not parsing_proven and not bounded_order_readback:
                             last_error = f"NATIVE_QUERY_{kind.upper()}_UNPROVEN"
                             continue
-                        return {
+                        result = {
                             **readback,
                             "rows": rows,
                             "targeted_reread_used": attempt == 1,
@@ -1093,6 +1108,9 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                                 else []
                             ),
                         }
+                        if kind in {"history-orders", "history-trades"}:
+                            self.last_normalized_history_readbacks[kind] = result
+                        return result
             elif self._account_bound(payload):
                 last_error = f"NATIVE_QUERY_{kind.upper()}_UNPROVEN"
             else:
@@ -2131,9 +2149,39 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
         A prior-date 已报 row is not terminal, even with zero trades or holdings.
         Preserve its raw status; only explicit broker evidence releases the plan.
         """
+        self.last_query_readbacks.clear()
+        self.last_normalized_history_readbacks.clear()
         self._open_query_surface()
-        orders = self._query("history-orders")
-        trades = self._query("history-trades")
+        observation = {"source": "native_helper", "kind": "historical_reconcile",
+                       "trade_date": plan.trade_date}
+        captures = {}
+        documents = []
+        for kind in ("history-orders", "history-trades"):
+            capture = self._query(kind, history_trade_date=plan.trade_date)
+            proof = history_query_evidence(capture, kind=kind, trade_date=plan.trade_date)
+            captures[kind] = capture
+            documents.append({"schema_version": "native-history-capture.v1", "kind": kind,
+                              "observed_at": capture["observed_at"],
+                              "requested_date": plan.trade_date,
+                              "native_readback": self.last_query_readbacks[kind],
+                              "normalized_readback": capture})
+            observation[kind] = proof
+            observation["observed_at"] = proof["observed_at"]
+            if not proof["complete"]:
+                return BrokerReceipt(
+                    status=BrokerStatus.UNKNOWN, order_id=expected_order_id,
+                    requested_shares=requested_shares, remaining_shares=requested_shares,
+                    receipt_mapping=False, account_binding="proven",
+                    locator_proof={"current_observation": observation,
+                                   "history_capture_documents": documents,
+                                   "history_query_complete": False},
+                    template_name="foundersc-native-ax",
+                    reason=proof["reason"], error_code=proof["reason"],
+                    conclusive=False, retry_allowed=False,
+                    observed_at=_parse_timestamp(capture["observed_at"]),
+                    echoed=self._echo(plan, requested_shares),
+                )
+        orders, trades = captures["history-orders"], captures["history-trades"]
         positions = self._query("positions")
         compact_date = plan.trade_date.replace("-", "")
         bare = plan.code.split(".", 1)[0]
@@ -2165,6 +2213,9 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             if position else 0
         )
         locator: dict[str, Any] = {
+            "current_observation": observation,
+            "history_capture_documents": documents,
+            "history_query_complete": True,
             "comparison": "trade_date+code+side+price+quantity+non_cancel_entrust",
             "exact_order_match_count": len(order_matches),
             "exact_trade_match_count": 0,
@@ -2534,6 +2585,8 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
 
     @serialized_app_operation
     def reconcile(self, plan: TradePlan, previous: dict[str, Any]) -> BrokerReceipt:
+        self.last_query_readbacks.clear()
+        self.last_normalized_history_readbacks.clear()
         locator = dict(previous.get("locator_proof") or {})
         native_action = dict(locator.get("native_action") or {})
         durable_mapped_order = bool(
@@ -2595,7 +2648,15 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                 remaining_shares=shares,
                 account_binding="proven",
                 template_name="foundersc-native-ax",
-                locator_proof=self._failed_read_evidence(exc),
+                locator_proof={
+                    **self._failed_read_evidence(exc, include_history_captures=True),
+                    "current_observation": {
+                        "source": "native_reconcile_failure",
+                        "recorded_at": datetime.now(ZoneInfo("Asia/Shanghai")).isoformat(),
+                        "trade_date": plan.trade_date,
+                        "complete": False,
+                    },
+                },
                 reason=f"NATIVE_RECONCILE_FAILED:{type(exc).__name__}",
                 error_code="NATIVE_RECONCILE_FAILED_NO_RETRY",
                 conclusive=False,

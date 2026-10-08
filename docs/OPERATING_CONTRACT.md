@@ -1,6 +1,6 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：4.34
+**版本**：4.35
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
 **关联实现**：`src/xiaocao/live/{safety,capital_keychain,foundersc_native_ax,foundersc_native_broker,trading_execution,book_b_live_lifecycle,book_b_live_intraday}.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`native/foundersc_ax_executor/`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{book_b_live_morning,book_b_live_intraday,live_monitor,research_mode_switch_replay}.py`
@@ -316,6 +316,12 @@ APP 在用户明确批准的动态资金政策下，以账户绑定的资金划�
   durable claim 必须同时持久化 submit 前完整 order-id baseline 与 claim id；跨进程
   UNKNOWN 只有在该 baseline 之外恰好出现一个 exact tuple 时才可恢复 order/strategy
   mapping。缺 baseline/claim、重复 exact tuple 或关键字段不完整一律继续 UNKNOWN。
+  历史查询必须由同一次原生捕获证明目标日期控件范围、全部页面覆盖与完整行数；
+  无论捕获是否完整，都保留脱敏原生读回及归一化读回的不可变原件；执行回执引用原件路径、hash与来源时点，不能只有不可复核的摘要。
+  请求日期或捕获后过滤可见行不能证明查询覆盖。范围/完整性未证时明确记录
+  history query incomplete，保持 UNKNOWN/reconcile_only，不认定目标不存在。
+  当前查询事实与旧观测分开保存；旧观测以原事件、时点和 hash 引用保留，
+  不把旧状态、匹配数或解析错误冒充当前捕获事实。
   已取得成功提示 order-id 但尚无完整映射/strategy-id 时，恢复仍调用同一 durable claim
   的 exact-delta 恢复器并约束原 order-id，不能因已有号码而跳过映射恢复。
   无 order mapping 的 `REJECTED` 只有同时证明 submitted/saved/started 均为 false
@@ -630,6 +636,7 @@ APP 在用户明确批准的动态资金政策下，以账户绑定的资金划�
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| 4.35 | 2026-10-08 | 历史查询要求同捕获日期范围和分页完整性证明，缺失明确 UNKNOWN；当前观测与历史事件引用分离，保留原订单与结算保护。 |
 | 4.34 | 2026-10-08 | 同日原任务可一次性接回无副作用 preflight 失败，绑定原归档、绝对准备截止时点和 claim；终态不重放，复用精确新鲜旧 SELL 零成交证明且保留 UNKNOWN 与同代码买入门。 |
 | 4.33 | 2026-10-01 | 小额资金观测差异可保守容忍，不强行平账；保留原订单/账链/快照风险门。修复 paper 工具点时与坏数据边界，强化真实进程终态、可回溯运行证据与可复现周度研究比较。合并既有晨间及盘中交易日历前置门：非交易日退出、未知日历在 APP 前失败关闭；启动、ready 和可恢复问题记本地，结果合并去重，保留明确用户动作和 09:30 未决通知及配送证据。 |
 | 4.32 | 2026-09-30 | 晨间原 capture 完整 checkpoint、原子执行包、APP/纸面共享验证与唯一同内容恢复；情报支持层后置并保留显式 on 的新 veto；限定运行身份、无副作用 BUY 意图保守风险标记和提交前60秒行情复核。 |

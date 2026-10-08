@@ -464,7 +464,12 @@ class FounderscNativeAXClient:
         kind: str,
         expected_fingerprint: str,
         refresh_history: bool = False,
+        history_trade_date: str | None = None,
     ) -> NativeAXReceipt:
+        # The current helper cannot bind date controls or prove all pages.
+        # Record the request without manufacturing native history_scope proof.
+        if history_trade_date is not None and kind not in {"history-orders", "history-trades"}:
+            raise ValueError("history date is only valid for history queries")
         if refresh_history and kind not in {"history-orders", "history-trades"}:
             raise ValueError("history refresh is only valid for history queries")
         args = [
@@ -477,10 +482,14 @@ class FounderscNativeAXClient:
         ]
         if refresh_history:
             args.append("--refresh-history-query")
-        return self._run(
-            "read-query",
-            args,
-        )
+        receipt = self._run("read-query", args)
+        if history_trade_date is None:
+            return receipt
+        payload = receipt.as_dict()
+        readback = dict(payload.get("query_readback") or {})
+        readback["requested_history_date"] = history_trade_date
+        payload["query_readback"] = readback
+        return NativeAXReceipt(payload)
 
     def open_order_surface(
         self,

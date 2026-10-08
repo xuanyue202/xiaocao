@@ -153,29 +153,32 @@ _SENSITIVE_EVIDENCE_MARKERS = (
 )
 
 
-def _safe_evidence(value: object, *, depth: int = 0) -> object:
-    """Keep small locator proofs useful while excluding credential material."""
-    if depth > 3:
+def _safe_evidence(value: object, *, depth: int = 0, bounded: bool = True) -> object:
+    """Exclude credential keys; normally limit locator evidence size/depth."""
+    if bounded and depth > 3:
         return "<depth-limit>"
     if isinstance(value, dict):
         safe: dict[str, object] = {}
-        for raw_key, raw_value in list(value.items())[:64]:
+        items = list(value.items())
+        for raw_key, raw_value in (items[:64] if bounded else items):
             key = str(raw_key)
             lowered = key.lower()
             if any(marker in lowered for marker in _SENSITIVE_EVIDENCE_MARKERS):
                 continue
-            if key == "baseline_order_ids" and isinstance(raw_value, (list, tuple)):
+            if bounded and key == "baseline_order_ids" and isinstance(raw_value, (list, tuple)):
                 # This is recovery authority, not display-only evidence.  A
                 # truncated baseline can turn an old order into an apparently
                 # new order after a lost submit response.
                 safe[key] = [str(item)[:32] for item in raw_value]
             else:
-                safe[key[:128]] = _safe_evidence(raw_value, depth=depth + 1)
+                safe[key[:128] if bounded else key] = _safe_evidence(raw_value, depth=depth + 1, bounded=bounded)
         return safe
     if isinstance(value, (list, tuple)):
-        return [_safe_evidence(item, depth=depth + 1) for item in list(value)[:128]]
+        items = list(value)
+        return [_safe_evidence(item, depth=depth + 1, bounded=bounded)
+                for item in (items[:128] if bounded else items)]
     if isinstance(value, (str, int, float, bool)) or value is None:
-        return value if not isinstance(value, str) else value[:512]
+        return value if not isinstance(value, str) or not bounded else value[:512]
     return str(value)[:512]
 
 
@@ -815,6 +818,37 @@ class ExecutionStore:
             return None
         latest = rows[-1].get("receipt") or {}
         return ExecutionReceipt.from_dict(latest)
+
+    def archive_history_capture(self, document: dict[str, Any]) -> dict[str, Any]:
+        """Keep full credential-safe readbacks outside bounded locator evidence."""
+        safe = _safe_evidence(document, bounded=False)
+        payload = _canonical(safe)
+        digest = hashlib.sha256(payload).hexdigest()
+        directory = self.path.parent / "native-history-captures"
+        directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+        path = directory / (digest + ".json")
+        temporary = directory / (".capture-" + uuid.uuid4().hex + ".tmp")
+        try:
+            with temporary.open("xb") as stream:
+                os.chmod(temporary, 0o600)
+                stream.write(payload)
+                stream.flush()
+                os.fsync(stream.fileno())
+            try:
+                os.link(temporary, path)
+            except FileExistsError:
+                if path.read_bytes() != payload:
+                    raise ValueError("NATIVE_HISTORY_CAPTURE_ARTIFACT_MISMATCH")
+        finally:
+            temporary.unlink(missing_ok=True)
+        return {"source": "credential_redacted_history_capture",
+                "path": str(path), "document_sha256": digest,
+                "kind": safe.get("kind"), "observed_at": safe.get("observed_at"),
+                "native_readback_sha256": hashlib.sha256(_canonical(safe["native_readback"])).hexdigest(),
+                "normalized_readback_sha256": (hashlib.sha256(_canonical(safe["normalized_readback"])).hexdigest()
+                                                if safe["normalized_readback"] is not None else None),
+                "normalization_available": safe["normalized_readback"] is not None,
+                "complete_payload_retained": True, "credential_keys_redacted": True}
 
     def append(
         self,
@@ -2827,6 +2861,35 @@ class TradingExecution:
         remaining = max(0, int(plan.shares) - filled)
         if state in {ExecutionState.CANCELLED, ExecutionState.REJECTED}:
             remaining = max(0, int(plan.shares) - filled)
+        locator = {**previous.locator_proof, **broker.locator_proof}
+        if "current_observation" in broker.locator_proof:
+            # Original action/baseline authority remains durable; old query
+            # status/errors/counts cannot describe the latest capture.
+            durable = {
+                key: value for key, value in previous.locator_proof.items()
+                if key.startswith(("baseline_", "cancel_")) or key in {
+                    "native_action", "native_result_readback", "server_rejection",
+                }
+            }
+            locator = {
+                **durable, **broker.locator_proof,
+                "prior_observation_ref": {
+                    "source": "previous_execution_receipt",
+                    "event_id": previous.event_id,
+                    "observed_at": _iso(previous.observed_at),
+                    "plan_id": previous.plan_id,
+                    "plan_hash": previous.plan_hash,
+                    "locator_sha256": hashlib.sha256(json.dumps(
+                        previous.locator_proof, sort_keys=True,
+                        ensure_ascii=False, separators=(",", ":")
+                    ).encode()).hexdigest(),
+                },
+            }
+        documents = locator.pop("history_capture_documents", [])
+        if documents:
+            locator["current_capture_refs"] = [
+                self.store.archive_history_capture(document) for document in documents
+            ]
         return replace(
             previous,
             state=state,
@@ -2885,8 +2948,7 @@ class TradingExecution:
             account_binding=broker.account_binding or previous.account_binding,
             locator_proof=_safe_evidence(
                 {
-                    **previous.locator_proof,
-                    **broker.locator_proof,
+                    **locator,
                     "current_order_base_filled_shares": order_base_filled,
                     "current_order_base_fill_notional": str(order_base_notional),
                     "plan_cumulative_fill_notional": (

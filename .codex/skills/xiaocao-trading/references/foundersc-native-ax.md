@@ -374,3 +374,19 @@ proof. Buying power is the directly read available cash. Complete account
 equations and order/trade reconciliation remain required after submission and
 for recovery/SELL/cancel, using their existing ports. This route cannot certify
 settlement or convert an uncertain earlier write into a new submit.
+
+### Historical-query evidence boundary
+
+History reconciliation accepts only a native `history_scope` receipt that binds
+verified date controls to the requested exact day, the same timezone-aware capture
+time, all pages and the complete row count. Post-capture row filtering, a requested
+date or a visible empty table alone never proves coverage. The current helper does
+not emit this proof: it therefore produces explicit incomplete-history UNKNOWN,
+never order absence or terminality. Actual date-control/pagination implementation
+and APP verification remain required before this capability is claimed. Keep
+current query facts separate from the previous immutable event reference; preserve
+original submit/cancel authority and every UNKNOWN/reconcile-only fence.
+Execution receipts retain immutable credential-redacted capture artifacts under
+`native-history-captures` beside the execution ledger. Read back the referenced
+document hash and native/normalized readback hashes; normalized capture hashes
+describe adapter output, never an unmodified native receipt.

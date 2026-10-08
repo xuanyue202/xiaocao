@@ -29,6 +29,41 @@ from xiaocao.live.safety import ENV_LIVE_ENABLED, ENV_SIGNING_KEY, make_authoriz
 _DEFAULT_PLAN_DEADLINE = datetime.now(timezone.utc) + timedelta(minutes=15)
 
 
+@pytest.mark.app_simulation
+def test_history_observation_does_not_inherit_old_status_error_or_exact_match(tmp_path):
+    old = {"native_order_id": "o-1", "order_id_mapping": "exact",
+           "historical_order_status": "已报", "native_read_error": "OLD_ERROR",
+           "exact_order_match_count": 1, "baseline_order_ids": ["older-order"],
+           "native_action": {"attempted": True, "confirm_pressed": True}}
+    broker = FakeBroker(submit=[BrokerReceipt(
+        status=BrokerStatus.UNKNOWN, order_id="o-1", locator_proof=old,
+        reason="old_unknown", observed_at=datetime(2026, 8, 15, tzinfo=timezone.utc),
+    )], reconcile=[BrokerReceipt(
+        status=BrokerStatus.UNKNOWN, order_id="o-1", reason="history_incomplete",
+        locator_proof={"current_observation": {"kind": "historical_reconcile",
+            "observed_at": "2026-08-16T01:00:00+00:00"}, "history_query_complete": False},
+        observed_at=datetime(2026, 8, 16, 1, tzinfo=timezone.utc),
+    )])
+    execution = TradingExecution(broker=broker, store=InMemoryExecutionStore(tmp_path / "events.jsonl"))
+    plan = _plan()
+    previous = execution.execute(plan)
+    current = execution.execute(plan)
+    assert current.state == ExecutionState.UNKNOWN and current.next_action == "reconcile_only"
+    for key in ("native_order_id", "order_id_mapping", "historical_order_status",
+                "native_read_error", "exact_order_match_count"):
+        assert key not in current.locator_proof
+        assert previous.locator_proof[key] == old[key]
+    assert current.locator_proof["native_action"] == old["native_action"]
+    assert current.locator_proof["baseline_order_ids"] == ["older-order"]
+    ref = current.locator_proof["prior_observation_ref"]
+    events = execution.store.events(plan.plan_id)
+    referenced = next(event for event in events if event["event_id"] == ref["event_id"])
+    assert referenced["receipt"]["locator_proof"]["historical_order_status"] == "已报"
+    assert referenced["receipt"]["observed_at"] == ref["observed_at"]
+    assert current.locator_proof["prior_observation_ref"]["locator_sha256"]
+    assert broker.submit_calls == 1 and broker.cancel_calls == 0
+
+
 @pytest.fixture(autouse=True)
 def no_external_execution_notifications(monkeypatch):
     monkeypatch.setattr(TradingExecution, "_default_notifier", staticmethod(lambda *_args: None))

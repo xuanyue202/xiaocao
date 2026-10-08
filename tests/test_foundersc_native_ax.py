@@ -696,6 +696,18 @@ def test_history_query_refresh_is_explicit_and_history_only(tmp_path):
                           refresh_history=True)
 
 
+def test_history_date_request_does_not_manufacture_native_scope(tmp_path):
+    runner = HelperRunner(_receipt(status='query_read'))
+    client = FounderscNativeAXClient(helper_path=_helper(tmp_path), runner=runner)
+    receipt = client.read_query(kind='history-orders', expected_fingerprint='123******890',
+                                refresh_history=True, history_trade_date='2026-09-30')
+    assert receipt.as_dict()['query_readback']['requested_history_date'] == '2026-09-30'
+    assert 'history_scope' not in receipt.as_dict()['query_readback']
+    with pytest.raises(ValueError, match='only valid for history'):
+        client.read_query(kind='today-orders', expected_fingerprint='123******890',
+                          history_trade_date='2026-09-30')
+
+
 @pytest.mark.skipif(sys.platform != "darwin" or shutil.which("swift") is None, reason="macOS Swift required")
 def test_position_crop_requires_same_strict_numeric_value():
     cases = [
