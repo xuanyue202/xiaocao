@@ -3153,6 +3153,26 @@ class DailyRuntime:
             return self.lv()
         return self.lv(only_identity=identity, refresh_listing=False)
 
+    def lv_household_recovery_target(self) -> dict[str, str]:
+        """Bind recovery to one canonical bundle without source discovery."""
+        identity = self._lv_unique_persisted_bundle_identity()
+        if identity is None:
+            raise DailyError("household recovery requires a unique retained bundle")
+        rows = _one_exact_pending(
+            self._lv_service_for_sweep().pending_items(), identity, label="household recovery",
+        )
+        if len(rows) != 1:
+            raise DailyError("household recovery retained identity is not pending")
+        base = Path(self.args.lv_output_dir).expanduser().resolve() / "artifacts" / rows[0]["version_key"]
+        request_path = base / "analysis_request.json"
+        bundle = _require_canonical_semantic_artifact(
+            base / "validated_bundle.json", {"analysis_request_path": str(request_path)},
+        )
+        return {
+            "source_identity": identity,
+            "bundle_sha256": hashlib.sha256(bundle.read_bytes()).hexdigest(),
+        }
+
     def lv_filtered_image_reconcile(self, surface: str) -> dict[str, Any]:
         identity = _exact_progress_surface("lv_text_image", surface)
         if identity == "source":
@@ -4758,7 +4778,16 @@ def _resume_source_repair_outcome(
     surface: str,
     *,
     failure_code: str | None = None,
+    provider_recovery_target: dict[str, str] | None = None,
 ) -> dict[str, Any]:
+    if adapter == "lv_text_image" and failure_code == "lianghui_mcp_request_failed":
+        target = runtime.lv_household_recovery_target()
+        if provider_recovery_target is not None and target != provider_recovery_target:
+            raise DailyError("household recovery retained bundle changed after validation")
+        declared_identity = _exact_progress_surface(adapter, surface)
+        if declared_identity not in {"source", target["source_identity"]}:
+            raise DailyError("household recovery source identity changed")
+        surface = f"{adapter}:{target['source_identity']}"
     if (
         adapter == "subscription_video"
         and failure_code == "cloud_transfer_unobserved_reconciled_absent"
@@ -5074,12 +5103,19 @@ def main() -> int:
         ledger = RepairValidationLedger(
             args.mailbox_output_dir / "repair_validation.jsonl"
         )
+        runtime = DailyRuntime(args)
         validator = RepairValidationService(
             Path(__file__).resolve().parents[1],
             ledger=ledger,
+            provider_recovery_probe=lambda: _load_household_context_with_retry(
+                runtime._lianghui_client()
+            ),
         )
+        context = _source_repair_context(progress)
+        if context["targeted_test_profile"] == "kol_lv_text_image_household_context":
+            context["provider_recovery_target"] = runtime.lv_household_recovery_target()
         receipt = validator.validate(
-            _source_repair_context(progress),
+            context,
             repair_revision=args.repair_revision,
         )
         closure = service.convergence.close_repair(
@@ -5120,6 +5156,12 @@ def main() -> int:
             args.source_adapter,
             surface,
             failure_code=str(progress.details["failure"]["code"]),
+            provider_recovery_target=(
+                {name: closure["repair_receipt"]["provider_recovery"][name]
+                 for name in ("source_identity", "bundle_sha256")}
+                if closure["repair_receipt"].get("provider_recovery") is not None
+                else None
+            ),
         )
         following = WriterProgress.from_dict(outcome["writer_progress"])
         if following.status == "user_action_required":

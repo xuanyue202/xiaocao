@@ -107,6 +107,15 @@ uncertain effects. Source repairs use `validate-source-repair` then
 `resume-source-repair` with exact adapter/fingerprint; resume consumes only
 `narrow_resume_surface` and reads neither mailbox nor another source.
 
+For an `lv_text_image` household-context transport failure, the same source
+validation command proves provider recovery with a fresh configured read-only
+LiangHui context and the repository-owned targeted tests. This path requires
+zero claims, receipts and uncertain effects, current pushed failure lineage,
+and a hash-bound provider readback receipt containing the exact source identity
+and accepted bundle hash. Resume that retained bundle after validation; missing,
+ambiguous or changed bundles fail closed. Preserve commit-bound repair proofs
+for other failures.
+
 `convergence-report` reads append-only ledgers for repairs, generic waits,
 gate/runner timing, effects, duplicate-effect audits, slots, and exclusions; it never
 rewrites failures. First rollout requires authoritative one-writer, revision,

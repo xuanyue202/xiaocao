@@ -792,6 +792,105 @@ def test_household_context_retries_one_transient_read_failure():
     assert pauses == [1.0]
 
 
+def test_household_context_source_validation_cli_uses_configured_read_only_probe(monkeypatch, tmp_path):
+    observed = []
+    progress = SimpleNamespace(failure_fingerprint="e" * 64)
+    receipt = SimpleNamespace(to_dict=lambda: {"receipt_sha256": "f" * 64})
+    monkeypatch.setattr(kol_daily_script, "_source_repair_validation_progress", lambda *args: progress)
+    monkeypatch.setattr(kol_daily_script, "_source_repair_context", lambda p: {
+        "exact": p.failure_fingerprint,
+        "targeted_test_profile": "kol_lv_text_image_household_context",
+    })
+    target = {"source_identity": "a" * 64, "bundle_sha256": "b" * 64}
+    monkeypatch.setattr(DailyRuntime, "lv_household_recovery_target", lambda self: target)
+    monkeypatch.setattr(kol_daily_script, "_source_repair_slot", lambda service: "slot")
+    monkeypatch.setattr(kol_daily_script, "DailyCoordinator", lambda path: SimpleNamespace(
+        convergence=SimpleNamespace(close_repair=lambda *args, **kwargs: {"closed": True})
+    ))
+
+    def configured_client(path):
+        observed.append(path)
+        return SimpleNamespace(load_context=lambda: {"family_id": "family", "positions": []})
+
+    monkeypatch.setattr(kol_daily_script.LiangHuiMcpClient, "from_config", configured_client)
+
+    class Validator:
+        def __init__(self, root, *, ledger, provider_recovery_probe):
+            self.probe = provider_recovery_probe
+
+        def validate(self, context, *, repair_revision):
+            assert context == {
+                "exact": "e" * 64,
+                "targeted_test_profile": "kol_lv_text_image_household_context",
+                "provider_recovery_target": target,
+            }
+            assert self.probe() == {"family_id": "family", "positions": []}
+            return receipt
+
+    monkeypatch.setattr(kol_daily_script, "RepairValidationService", Validator)
+    config = tmp_path / "private.toml"
+    monkeypatch.setattr(sys, "argv", [
+        "kol_daily.py", "validate-source-repair", "--source-adapter", "lv_text_image",
+        "--failure-fingerprint", "e" * 64, "--lianghui-config", str(config),
+        "--output-dir", str(tmp_path / "daily"), "--mailbox-output-dir", str(tmp_path / "mailbox"),
+    ])
+    assert kol_daily_script.main() == 0
+    assert observed == [config]
+
+
+def test_household_context_recovery_rejects_missing_or_ambiguous_bundle():
+    runtime = DailyRuntime.__new__(DailyRuntime)
+    runtime._lv_unique_persisted_bundle_identity = lambda: None
+    runtime.lv = lambda **kwargs: pytest.fail("household recovery must not sweep")
+    with pytest.raises(DailyError, match="unique retained"):
+        runtime.lv_household_recovery_target()
+
+
+def test_household_context_recovery_target_binds_canonical_retained_bundle(monkeypatch, tmp_path):
+    identity, version = "a" * 64, "b" * 64
+    base = tmp_path / "artifacts" / version
+    base.mkdir(parents=True)
+    bundle = base / "validated_bundle.json"
+    bundle.write_text('{}\n')
+    request = base / "analysis_request.json"
+    request.write_text(json.dumps({"identity": identity, "version_key": version}))
+    runtime = DailyRuntime.__new__(DailyRuntime)
+    runtime.args = SimpleNamespace(lv_output_dir=tmp_path)
+    runtime._lv_unique_persisted_bundle_identity = lambda: identity
+    runtime._lv_service_for_sweep = lambda: SimpleNamespace(pending_items=lambda: [{"identity": identity, "version_key": version}])
+    checked = []
+    monkeypatch.setattr(kol_daily_script, "_require_canonical_semantic_artifact", lambda path, req: checked.append((path, req)) or path)
+    assert runtime.lv_household_recovery_target() == {
+        "source_identity": identity,
+        "bundle_sha256": hashlib.sha256(bundle.read_bytes()).hexdigest(),
+    }
+    assert checked == [(bundle, {"analysis_request_path": str(request)})]
+
+
+@pytest.mark.parametrize("changed", [False, True])
+def test_household_context_resume_uses_receipt_bound_identity_without_source_sweep(changed):
+    target = {"source_identity": "a" * 64, "bundle_sha256": "b" * 64}
+    current = {**target, **({"bundle_sha256": "c" * 64} if changed else {})}
+    calls = []
+    runtime = SimpleNamespace(
+        lv_household_recovery_target=lambda: current,
+        lv_narrow_resume=lambda surface: calls.append(surface) or {"status": "no_update"},
+    )
+    if changed:
+        with pytest.raises(DailyError, match="changed after validation"):
+            kol_daily_script._resume_source_repair_outcome(
+                runtime, "lv_text_image", "lv_text_image:source",
+                failure_code="lianghui_mcp_request_failed", provider_recovery_target=target,
+            )
+        assert calls == []
+    else:
+        kol_daily_script._resume_source_repair_outcome(
+            runtime, "lv_text_image", "lv_text_image:source",
+            failure_code="lianghui_mcp_request_failed", provider_recovery_target=target,
+        )
+        assert calls == ["lv_text_image:" + target["source_identity"]]
+
+
 def test_household_context_retries_two_transient_read_failures():
     calls = 0
     pauses = []

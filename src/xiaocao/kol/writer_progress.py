@@ -341,6 +341,7 @@ class RepairValidationReceipt:
     validated_at: str
     receipt_sha256: str
     schema_version: int = 1
+    provider_recovery: dict[str, str] | None = None
 
     def __post_init__(self) -> None:
         if isinstance(self.schema_version, bool) or self.schema_version != 1:
@@ -393,12 +394,28 @@ class RepairValidationReceipt:
         if self.test_status != "passed":
             raise ProgressContractError("repair validation test did not pass")
         _timezone_aware(self.validated_at, field_name="validated_at")
+        if self.provider_recovery is not None:
+            if (
+                not isinstance(self.provider_recovery, dict)
+                or set(self.provider_recovery) != {
+                    "readback_sha256", "observed_at", "source_identity", "bundle_sha256",
+                }
+                or self.targeted_test_profile != "kol_lv_text_image_household_context"
+                or self.failure_code != "lianghui_mcp_request_failed"
+                or self.failure_stage != "household_context"
+            ):
+                raise ProgressContractError("provider recovery proof is invalid")
+            _sha256(self.provider_recovery["readback_sha256"], field_name="readback_sha256")
+            _timezone_aware(self.provider_recovery["observed_at"], field_name="observed_at")
+            for name in ("source_identity", "bundle_sha256"):
+                _sha256(self.provider_recovery[name], field_name=name)
         _sha256(self.receipt_sha256, field_name="receipt_sha256")
         if self.receipt_sha256 != self._unsigned_digest():
             raise ProgressContractError("repair validation receipt hash changed")
 
     def _unsigned_dict(self) -> dict[str, Any]:
         return {
+            **({"provider_recovery": dict(self.provider_recovery)} if self.provider_recovery is not None else {}),
             "schema_version": self.schema_version,
             "message_id": self.message_id,
             "content_sha256": self.content_sha256,
@@ -443,6 +460,7 @@ class RepairValidationReceipt:
         test_command_digest: str,
         test_result_sha256: str,
         validated_at: str,
+        provider_recovery: dict[str, str] | None = None,
     ) -> "RepairValidationReceipt":
         lineage = {
             "failure_revision": failure_revision,
@@ -451,6 +469,7 @@ class RepairValidationReceipt:
             "is_ancestor": True,
         }
         unsigned = {
+            **({"provider_recovery": dict(provider_recovery)} if provider_recovery is not None else {}),
             "schema_version": 1,
             "message_id": message_id,
             "content_sha256": content_sha256,
@@ -498,7 +517,7 @@ class RepairValidationReceipt:
             "receipt_sha256",
         }
         missing = sorted(required - set(value))
-        extra = sorted(set(value) - required)
+        extra = sorted(set(value) - required - {"provider_recovery"})
         if missing:
             raise ProgressContractError(
                 f"repair validation receipt lacks {', '.join(missing)}"
@@ -529,6 +548,7 @@ class RepairValidationReceipt:
             test_status=str(value["test_status"]),
             validated_at=str(value["validated_at"]),
             receipt_sha256=str(value["receipt_sha256"]),
+            provider_recovery=value.get("provider_recovery"),
         )
 
 
@@ -618,7 +638,7 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
     "kol_lv_text_image_household_context": (
         "env", "PYTHONPATH=src", ".venv/bin/python", "-m", "pytest",
         "tests/test_kol_daily.py", "tests/test_kol_repair_validation.py",
-        "-q", "-k", "household_context or repair_validation_accepts_lv_household_context_profile",
+        "-q", "-k", "household_context",
     ),
     "kol_mailbox_exact_resume": (
         "env",
@@ -1690,12 +1710,14 @@ class RepairValidationService:
         ledger: RepairValidationLedger,
         git_runner: Callable[[tuple[str, ...]], Any] | None = None,
         test_runner: Callable[[tuple[str, ...]], Any] | None = None,
+        provider_recovery_probe: Callable[[], Mapping[str, Any]] | None = None,
         now: Callable[[], str] | None = None,
     ):
         self.repository_root = Path(repository_root).expanduser().resolve()
         self.ledger = ledger
         self.git_runner = git_runner or self._run_git
         self.test_runner = test_runner or self._run_tests
+        self.provider_recovery_probe = provider_recovery_probe
         self.now = now or (
             lambda: datetime.now().astimezone().isoformat(timespec="seconds")
         )
@@ -1874,6 +1896,11 @@ class RepairValidationService:
             raise ProgressContractError(
                 "repair validation targeted test profile changed"
             )
+        if receipt.provider_recovery is not None:
+            self._require_zero_provider_effects(context)
+            target = self._provider_recovery_target(context)
+            if any(receipt.provider_recovery[name] != value for name, value in target.items()):
+                raise ProgressContractError("provider recovery target changed")
         if self.resolve_head() != repair_revision:
             raise ProgressContractError("repair revision is not current HEAD")
         branch = self._git_value(
@@ -1896,6 +1923,72 @@ class RepairValidationService:
                 "repair validation target branch readback changed"
             )
         return receipt
+
+    def _require_repair_commit(self, revision: str, profile: str, fingerprint: str) -> None:
+        changed_files_result = self.git_runner(
+            ("diff-tree", "--no-commit-id", "--name-only", "-r", revision)
+        )
+        if getattr(changed_files_result, "returncode", 1) != 0:
+            raise ProgressContractError("repair commit file readback failed")
+        changed_files = {
+            line.strip()
+            for line in str(getattr(changed_files_result, "stdout", "") or "").splitlines()
+            if line.strip()
+        }
+        if not changed_files & _TARGETED_REPAIR_IMPLEMENTATION_PATHS[profile]:
+            raise ProgressContractError("repair commit is unrelated to target")
+        if not changed_files & _TARGETED_REPAIR_TEST_PATHS[profile]:
+            raise ProgressContractError(
+                "repair commit lacks a targeted regression change"
+            )
+        message_result = self.git_runner(
+            ("show", "-s", "--format=%B", revision)
+        )
+        if getattr(message_result, "returncode", 1) != 0:
+            raise ProgressContractError("repair commit message readback failed")
+        trailers = {
+            line.strip()
+            for line in str(
+                getattr(message_result, "stdout", "") or ""
+            ).splitlines()
+        }
+        if f"Repair-Fingerprint: {fingerprint}" not in trailers:
+            raise ProgressContractError(
+                "repair commit does not bind the failure fingerprint"
+            )
+
+    @staticmethod
+    def _require_zero_provider_effects(context: Mapping[str, Any]) -> None:
+        summary = _claim_receipt_summary(context.get("claim_receipt_summary"))
+        if any(summary.values()):
+            raise ProgressContractError("provider recovery requires zero prior effects")
+
+    @staticmethod
+    def _provider_recovery_target(context: Mapping[str, Any]) -> dict[str, str]:
+        target = context.get("provider_recovery_target")
+        if not isinstance(target, dict) or set(target) != {"source_identity", "bundle_sha256"}:
+            raise ProgressContractError("provider recovery exact bundle target is missing")
+        for name, value in target.items():
+            _sha256(value, field_name=name)
+        return dict(target)
+
+    def _probe_provider_recovery(self) -> dict[str, str]:
+        assert self.provider_recovery_probe is not None
+        readback = self.provider_recovery_probe()
+        if (
+            not isinstance(readback, Mapping)
+            or not str(readback.get("family_id") or "").strip()
+            or not isinstance(readback.get("positions"), list)
+            or not isinstance(readback.get("decision_view"), dict)
+        ):
+            raise ProgressContractError("provider recovery household readback is incomplete")
+        observed_at = str(readback.get("as_of") or "")
+        _timezone_aware(observed_at, field_name="provider recovery observed_at")
+        observed = datetime.fromisoformat(observed_at.replace("Z", "+00:00"))
+        validated = datetime.fromisoformat(self.now().replace("Z", "+00:00"))
+        if not 0 <= (validated - observed).total_seconds() <= 300:
+            raise ProgressContractError("provider recovery household readback is not fresh")
+        return {"readback_sha256": _digest(readback), "observed_at": observed_at}
 
     def validate(
         self,
@@ -1984,37 +2077,15 @@ class RepairValidationService:
         )
         if target_branch_revision != resolved_revision:
             raise ProgressContractError("repair revision is not pushed")
-        changed_files_result = self.git_runner(
-            ("diff-tree", "--no-commit-id", "--name-only", "-r", resolved_revision)
+        provider_recovery = (
+            profile == "kol_lv_text_image_household_context"
+            and self.provider_recovery_probe is not None
         )
-        if getattr(changed_files_result, "returncode", 1) != 0:
-            raise ProgressContractError("repair commit file readback failed")
-        changed_files = {
-            line.strip()
-            for line in str(getattr(changed_files_result, "stdout", "") or "").splitlines()
-            if line.strip()
-        }
-        if not changed_files & _TARGETED_REPAIR_IMPLEMENTATION_PATHS[profile]:
-            raise ProgressContractError("repair commit is unrelated to target")
-        if not changed_files & _TARGETED_REPAIR_TEST_PATHS[profile]:
-            raise ProgressContractError(
-                "repair commit lacks a targeted regression change"
-            )
-        message_result = self.git_runner(
-            ("show", "-s", "--format=%B", resolved_revision)
-        )
-        if getattr(message_result, "returncode", 1) != 0:
-            raise ProgressContractError("repair commit message readback failed")
-        trailers = {
-            line.strip()
-            for line in str(
-                getattr(message_result, "stdout", "") or ""
-            ).splitlines()
-        }
-        if f"Repair-Fingerprint: {failure_fingerprint}" not in trailers:
-            raise ProgressContractError(
-                "repair commit does not bind the failure fingerprint"
-            )
+        if provider_recovery:
+            self._require_zero_provider_effects(context)
+            recovery_target = self._provider_recovery_target(context)
+        else:
+            self._require_repair_commit(resolved_revision, profile, failure_fingerprint)
         lineage = (
             "merge-base",
             "--is-ancestor",
@@ -2031,6 +2102,10 @@ class RepairValidationService:
             raise ProgressContractError("repair validation targeted test failed")
         command_digest = _digest(command)
         result_digest = hashlib.sha256(output.encode("utf-8")).hexdigest()
+        recovery_proof = None
+        if provider_recovery:
+            recovery_proof = {**self._probe_provider_recovery(), **recovery_target}
+        validated_at = self.now()
         receipt = RepairValidationReceipt.create(
             message_id=message_id,
             content_sha256=content_sha256,
@@ -2044,7 +2119,8 @@ class RepairValidationService:
             targeted_test_profile=profile,
             test_command_digest=command_digest,
             test_result_sha256=result_digest,
-            validated_at=self.now(),
+            validated_at=validated_at,
+            provider_recovery=recovery_proof,
         )
         return self.ledger.append(receipt)
 
