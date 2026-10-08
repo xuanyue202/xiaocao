@@ -214,3 +214,38 @@ def test_lianghui_default_transport_reuses_one_requests_session(monkeypatch):
     assert [tool["name"] for tool in client.list_tools()] == ["get_kol_record"]
     assert client.session is session
     assert len(calls) == 1
+
+
+@pytest.mark.parametrize("condition", ["fresh", "old", "mismatch", "unavailable", "failed", "pending"])
+def test_broker_household_freshness_comes_from_matching_complete_receipt(condition):
+    from datetime import datetime, timedelta, timezone
+    now = datetime.now(timezone.utc)
+    observed = (now - timedelta(minutes=45 if condition == "old" else 2)).isoformat()
+    connection_id = "lb-sg-example"
+    row = {"assetId": "asset-1", "brokerConnectionId": connection_id,
+           "brokerSyncReceiptId": "receipt", "positionsVersion": 3,
+           "brokerObservedAt": observed, "brokerPositionStatus": "absence_pending" if condition == "pending" else "present"}
+    def opener(request, timeout):
+        payload = json.loads(request.data)
+        if payload["method"] == "tools/call":
+            value = {"items": [row]} if payload["params"]["name"] == "get_portfolio_reconciliation_view" else {"totalAssets": 100}
+            result = {"content": [{"text": json.dumps(value)}]}
+        else:
+            uri = payload["params"]["uri"]
+            if uri == "user://current":
+                value = {"familyId": "family-real"}
+            elif "/receipts/" in uri:
+                if condition == "unavailable":
+                    return _Response({"error": {"message": "unavailable"}})
+                value = {"status": "complete", "familyId": "family-real", "connectionId": connection_id,
+                         "positionsVersion": 4 if condition == "mismatch" else 3, "brokerObservedAt": observed}
+            else:
+                value = {"enabled": True, "authStatus": "ready", "lastCompleteReceiptId": "receipt",
+                         "positionsVersion": 3, "syncStatus": "sync_failed" if condition == "failed" else "synced"}
+            result = {"contents": [{"text": json.dumps(value)}]}
+        return _Response({"result": result})
+    context = LiangHuiMcpClient("https://example.test/mcp", {"X-Phone-Number": "secret"}, opener=opener).load_context()
+    assert context["as_of"] == context["read_at"]
+    assert context["broker_positions_status"] == ("fresh" if condition == "fresh" else "degraded")
+    assert context["broker_positions_observed_at"] == (None if condition in {"mismatch", "unavailable"} else observed)
+    assert context["positions"] == [row]

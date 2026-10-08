@@ -441,18 +441,23 @@ class DecisionPipeline:
             contextual_signals.append(signal)
             relevant_codes.update(signal_codes)
         relevant_positions = positions_for(relevant_codes)
-        excesses = list(decision_view.get("bucketExcesses") or [])
+        valuation_complete = context.get("valuation_complete", True)
+        excesses = list(decision_view.get("bucketExcesses") or []) if valuation_complete else []
         result = dict(recommendation)
         gate = recommendation.get("avoid_add_if_bucket_excess")
         gate_triggered = bool(gate and gate in excesses)
         if result.get("action") in {"buy", "add"} and gate_triggered:
             result["context_constraint"] = (
-                f"fresh household context shows {gate} above its target range"
+                f"household context shows {gate} above its target range"
             )
         assessment = {
             "read_at": context["as_of"],
+            "broker_positions_observed_at": context.get("broker_positions_observed_at"),
+            "broker_positions_status": context.get("broker_positions_status", "not_managed"),
+            "broker_sync_sources": context.get("broker_sync_sources", []),
+            "valuation_complete": valuation_complete,
             "cash_available_cny": decision_view.get("cashAvailable"),
-            "bucket_shortfalls": decision_view.get("bucketShortfalls") or [],
+            "bucket_shortfalls": (decision_view.get("bucketShortfalls") or []) if valuation_complete else [],
             "bucket_excesses": excesses,
             "relevant_positions": relevant_positions,
             "gate_triggered": gate_triggered,
