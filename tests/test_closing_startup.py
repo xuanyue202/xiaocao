@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -17,12 +17,15 @@ CHINA = ZoneInfo("Asia/Shanghai")
 @pytest.mark.parametrize(
     ("current", "expected"),
     [
+        (datetime(2026, 10, 8, 14, 40, 0, tzinfo=CHINA), 300.0),
+        (datetime(2026, 10, 8, 14, 40, 8, 259390, tzinfo=CHINA), 291.74061),
+        (datetime(2026, 10, 8, 14, 39, 59, tzinfo=CHINA), 0.0),
         (datetime(2026, 9, 17, 14, 41, 0, tzinfo=CHINA), 240.0),
         (datetime(2026, 9, 17, 14, 42, 31, tzinfo=CHINA), 149.0),
         (datetime(2026, 9, 17, 14, 44, 0, tzinfo=CHINA), 60.0),
         (datetime(2026, 9, 17, 14, 44, 23, 500_000, tzinfo=CHINA), 36.5),
         (datetime(2026, 9, 17, 14, 44, 59, 900_000, tzinfo=CHINA), 0.1),
-        (datetime(2026, 9, 17, 14, 40, 59, tzinfo=CHINA), 0.0),
+        (datetime(2026, 9, 17, 14, 40, 59, tzinfo=CHINA), 241.0),
         (datetime(2026, 9, 17, 14, 45, 0, tzinfo=CHINA), 0.0),
         (datetime(2026, 9, 17, 14, 57, 0, tzinfo=CHINA), 0.0),
     ],
@@ -52,3 +55,19 @@ def test_wait_for_closing_window_does_not_delay_late_run() -> None:
 
     assert waited == 0.0
     assert sleeps == []
+
+
+def test_observed_early_dispatch_reaches_legal_close_before_business() -> None:
+    current = datetime(2026, 10, 8, 14, 40, 8, 259390, tzinfo=CHINA)
+    sleeps: list[float] = []
+
+    def advance(seconds: float) -> None:
+        nonlocal current
+        sleeps.append(seconds)
+        current += timedelta(seconds=seconds)
+
+    waited = wait_for_closing_window(now=lambda: current, sleep=advance)
+
+    assert waited == pytest.approx(291.74061)
+    assert current == datetime(2026, 10, 8, 14, 45, tzinfo=CHINA)
+    assert all(0 < seconds <= 60 for seconds in sleeps)

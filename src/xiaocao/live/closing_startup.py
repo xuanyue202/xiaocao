@@ -11,13 +11,15 @@ from zoneinfo import ZoneInfo
 _CHINA = ZoneInfo("Asia/Shanghai")
 _CLOSING_HOUR = 14
 _CLOSING_MINUTE = 45
-_PREARM_MINUTES = 4
+# The 14:41 scheduler dispatch was observed arriving during 14:40. Wait
+# through that bounded early arrival instead of consuming the close too soon.
+_PREARM_MINUTES = 5
 _MAX_PREARM_WAIT_SECONDS = float(_PREARM_MINUTES * 60)
 _MAX_SLEEP_CHUNK_SECONDS = 60.0
 
 
 def closing_prearm_wait_seconds(current: datetime) -> float:
-    """Return the bounded delay to 14:55, or zero outside the pre-arm span."""
+    """Return the bounded delay to 14:45, or zero outside 14:40–14:45."""
 
     local = current.astimezone(_CHINA)
     target = local.replace(

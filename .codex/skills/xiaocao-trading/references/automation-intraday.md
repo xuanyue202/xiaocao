@@ -76,6 +76,12 @@ instruction/memory reads and then the exact live command in one shell process;
 it exists to remove model-composed startup work from the two-minute deadline.
 Do not add discovery, journal, Git, KOL, paper, broker or diagnostic work to the
 launcher, and do not use it outside the single scheduled closing pass.
+The schedule remains 14:41. The launcher also waits to 14:45 when that dispatch
+arrives during 14:40; its total wait stays bounded to five minutes and each
+sleep to 60 seconds. Earlier calls still reach the existing rejecting time gate.
+This tolerance changes startup waiting only; the legal exit window stays
+14:45:00–14:56:59. Verify it at the next natural scheduled close, never by
+replaying a missed checkpoint.
 
 The live CLI proves the exchange calendar before reading credentials, opening
 APP tables or reconciling prior orders. A proved non-trading date returns a
