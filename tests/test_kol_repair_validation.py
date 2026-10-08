@@ -663,6 +663,24 @@ def test_repair_validation_accepts_subscription_video_cloud_enrichment_profile(
     )
 
 
+@pytest.mark.parametrize("changed_field", ["adapter", "category", "code", "stage"])
+def test_repair_validation_rejects_unrelated_native_input_failure(tmp_path, changed_field):
+    service = RepairValidationService(
+        tmp_path,
+        ledger=RepairValidationLedger(tmp_path / "repair-validation.jsonl"),
+    )
+    context = {
+        "adapter": "subscription_video",
+        "category": "provider_contract_error",
+        "code": "lv_native_click_not_delivered",
+        "stage": "cloud_transfer_confirmation",
+        "targeted_test_profile": "kol_subscription_video_source_run",
+    }
+    context[changed_field] = "unrelated"
+    with pytest.raises(ProgressContractError, match="no repository-owned targeted test profile"):
+        service._expected_profile(context)
+
+
 def test_repair_validation_accepts_subscription_private_listing_profile(
     tmp_path,
 ) -> None:
@@ -1623,6 +1641,13 @@ def test_repair_validation_accepts_xiaocao_wechat_source_profile(
             "kol_subscription_video_cloud_transfer_confirmation",
             "src/xiaocao/kol/writer_progress.py",
         ),
+        (
+            "provider_contract_error",
+            "lv_native_click_not_delivered",
+            "cloud_transfer_confirmation",
+            "kol_subscription_video_source_run",
+            "src/xiaocao/kol/writer_progress.py",
+        ),
     ),
 )
 def test_repair_validation_accepts_subscription_video_source_run_profile(
@@ -1694,6 +1719,7 @@ def test_repair_validation_accepts_subscription_video_source_run_profile(
     required_cases = {
         "transfer_activation_falls_back_for_bound_user_tab",
         "transfer_bound_tab_recovery_fails_closed",
+        "repair_validation_rejects_unrelated_native_input_failure",
         "lv_transfer_claim_precedes_click_and_exact_copy_readback_completes",
         "lv_transfer_lost_native_input_is_repair_not_provider_attempt",
         "lv_transfer_unobserved_toast_waits_for_bound_receipt",
