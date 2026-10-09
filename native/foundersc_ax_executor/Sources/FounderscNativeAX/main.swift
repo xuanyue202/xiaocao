@@ -114,6 +114,18 @@ private struct QueryReadback: Codable {
     let observedAt: String
     var criticalCellConfidences: [[String: Float]]? = nil
     var structuralParsingProven: Bool? = nil
+    var historyScope: HistoryScope? = nil
+}
+
+private struct HistoryScope: Codable {
+    let schemaVersion: String = "native-history-scope.v1"
+    let kind: String
+    let startDate: String
+    let endDate: String
+    let dateControlsProven: Bool
+    let allPagesCaptured: Bool
+    let totalRowCount: Int
+    let observedAt: String
 }
 
 private struct CancelReadback: Codable {
@@ -891,10 +903,17 @@ private func queryNavigationTokens(
     }
 }
 
+private struct HistoryDateRange: Equatable {
+    let start: String
+    let end: String
+}
+
 private func capturedQueryReadback(
     kind: String,
     observation: Observation
 ) -> QueryReadback? {
+    let isHistory = ["history-orders", "history-trades"].contains(kind)
+    let historyDatesBefore = isHistory ? observedHistoryDates(observation) : nil
     guard let running = observation.runningApplication,
           let windowBounds = observation.receipt.windowBounds,
           let capture = captureFounderWindow(
@@ -908,13 +927,94 @@ private func capturedQueryReadback(
         screenBounds: capture.1,
         shapes: observation.receipt.tableShapes
     )
-    return structuredQueryReadback(
+    var readback = structuredQueryReadback(
         kind: kind,
         tokens: tokens,
         tableShapes: observation.receipt.tableShapes,
         navigationLabelCount: 1,
         navigationClickMode: "ocr_guarded_coordinate"
     )
+    if isHistory,
+       let dates = historyDatesBefore,
+       let after = observedHistoryDates(observation),
+       dates == after {
+        let counts = tokens.compactMap { token -> Int? in
+            let x = (token.bounds.x + token.bounds.width / 2 - windowBounds.x) / windowBounds.width
+            let y = (token.bounds.y + token.bounds.height / 2 - windowBounds.y) / windowBounds.height
+            let text = token.text.components(separatedBy: .whitespacesAndNewlines).joined()
+            guard token.confidence >= minimumCriticalOCRConfidence,
+                  (0.32...0.55).contains(x), (0.075...0.13).contains(y),
+                  text.range(of: #"^共[0-9]{1,6}条$"#, options: .regularExpression) != nil else { return nil }
+            return Int(text.dropFirst().dropLast())
+        }
+        if counts.count == 1, let total = counts.first {
+            let table = observation.receipt.tableShapes.first
+            let visibleRows = table?.rowBounds ?? []
+            func contains(_ outer: Bounds, _ inner: Bounds) -> Bool {
+                inner.x >= outer.x && inner.y >= outer.y
+                    && inner.x + inner.width <= outer.x + outer.width
+                    && inner.y + inner.height <= outer.y + outer.height
+            }
+            let rowsVisible = table?.bounds.map { viewport in
+                visibleRows.allSatisfy { contains(viewport, $0) && contains(windowBounds, $0) }
+            } ?? false
+            let dateColumn = kind == "history-orders" ? "委托日期" : "成交日期"
+            let rowDatesBound = dates.start == dates.end && readback.rows.allSatisfy {
+                $0[dateColumn]?.trimmingCharacters(in: .whitespacesAndNewlines)
+                    == dates.start.replacingOccurrences(of: "-", with: "")
+            }
+            // An unchanged empty table has no response-binding witness. It
+            // cannot prove that an asynchronous refresh completed for this range.
+            readback.historyScope = HistoryScope(kind: kind, startDate: dates.start, endDate: dates.end,
+                dateControlsProven: true,
+                allPagesCaptured: total > 0 && rowDatesBound
+                    && readback.structuralParsingProven == true && rowsVisible
+                    && total == readback.rows.count && total == visibleRows.count,
+                totalRowCount: total, observedAt: readback.observedAt)
+        }
+    }
+    return readback
+}
+
+private func observedHistoryDates(_ observation: Observation) -> HistoryDateRange? {
+    guard let window = observation.primaryWindow, let windowBounds = observation.receipt.windowBounds else { return nil }
+    var controls: [(Bounds, String)] = []
+    var visited = 0
+    var complete = true
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = TimeZone(identifier: "Asia/Shanghai")
+    formatter.dateFormat = "yyyy-MM-dd"
+    func walk(_ element: AXUIElement, depth: Int) {
+        guard depth <= maximumDepth, visited < maximumNodes else { complete = false; return }
+        visited += 1
+        if stringAttribute(element, kAXRoleAttribute) == "AXDateTimeArea",
+           let box = bounds(of: element) {
+            let y = (box.y + box.height / 2 - windowBounds.y) / windowBounds.height
+            let x = (box.x + box.width / 2 - windowBounds.x) / windowBounds.width
+            if (0.075...0.13).contains(y), (0.08...0.32).contains(x),
+               let value = attribute(element, kAXValueAttribute) {
+                if let date = value as? Date {
+                    controls.append((box, formatter.string(from: date)))
+                } else if let text = value as? String,
+                          text.range(of: #"^[0-9]{4}/[0-9]{1,2}/[0-9]{1,2}$"#, options: .regularExpression) != nil {
+                    let input = DateFormatter()
+                    input.locale = formatter.locale
+                    input.timeZone = formatter.timeZone
+                    input.dateFormat = "yyyy/M/d"
+                    input.isLenient = false
+                    if let date = input.date(from: text) { controls.append((box, formatter.string(from: date))) }
+                }
+            }
+        }
+        for child in (attribute(element, kAXChildrenAttribute) as? [AXUIElement] ?? []) { walk(child, depth: depth + 1) }
+    }
+    walk(window, depth: 0)
+    controls.sort { $0.0.x < $1.0.x }
+    guard complete, controls.count == 2,
+          controls[0].0.x + controls[0].0.width < controls[1].0.x,
+          abs(controls[0].0.y - controls[1].0.y) < 3 else { return nil }
+    return HistoryDateRange(start: controls[0].1, end: controls[1].1)
 }
 
 private func emptyCapabilities() -> Capabilities {

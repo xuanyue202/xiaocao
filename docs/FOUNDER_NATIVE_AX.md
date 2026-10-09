@@ -383,6 +383,14 @@ production selection remains at most three seats. Current account/form identity,
 KOL restrictions, market guards and capital authorization still apply per order.
 No full-grid query belongs between successful counter acknowledgements.
 
+Historical scope is observed from the two actual date controls and a unique
+visible total count in the same native capture. Positive results qualify only
+when every parsed row belongs to the exact observed day and the complete row
+rectangles fit both the table and window. An empty result has no native response
+completion witness and remains incomplete. The requested date does not set
+controls; historical orders and trades retain independent date ranges. Preserve
+UNKNOWN until the exact order has explicit terminal evidence.
+
 An exact native confirmed action plus the account-bound prepared tuple and unique
 `委托已提交` success-notice contract number outside the baseline/earlier batch IDs
 may prove ACK. Persist action/result and the claim binding. This is counter

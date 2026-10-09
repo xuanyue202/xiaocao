@@ -39,6 +39,7 @@ from .book_b_live_recovery import check_monitor_pending_plans
 from .trading_runner import frozen_rows_digest
 from .kol_policy import exit_adjustment
 from .live_decision_support import bind_plan_audit, evaluate_live_risk, read_policy
+from .morning_bundle import acquire_bundle, bundle_required, read_consumed_rows
 
 
 _AUTHORIZED_REASONS = frozenset(
@@ -188,21 +189,35 @@ def load_monitor_contexts(
     for lot in lots:
         grouped.setdefault(lot.entry_date, []).append(lot)
     for entry_date, dated_lots in grouped.items():
-        path = Path(freeze_dir) / f"book_b_live_freeze_{entry_date}.jsonl"
-        if not path.is_file():
-            raise ValueError(f"LIVE_BOOK_B_MONITOR_FREEZE_MISSING:{entry_date}")
-        rows: list[dict[str, Any]] = []
-        try:
-            with path.open(encoding="utf-8") as stream:
-                for line in stream:
-                    if not line.strip():
-                        continue
-                    row = json.loads(line)
-                    if not isinstance(row, dict):
-                        raise ValueError
-                    rows.append(row)
-        except (OSError, json.JSONDecodeError, ValueError) as exc:
-            raise ValueError(f"LIVE_BOOK_B_MONITOR_FREEZE_INVALID:{entry_date}") from exc
+        root = Path(freeze_dir)
+        commitment = root / f"morning_bundle_commit_{entry_date}.json"
+        legacy = root / f"book_b_live_freeze_{entry_date}.jsonl"
+        if bundle_required(entry_date) and not commitment.exists():
+            raise ValueError(f"LIVE_BOOK_B_MONITOR_COMMITMENT_MISSING:{entry_date}")
+        if commitment.exists():
+            bundle = acquire_bundle(root, entry_date, repair=False)
+            if bundle.get("status") != "ready":
+                raise ValueError(f"LIVE_BOOK_B_MONITOR_FREEZE_UNPROVEN:{entry_date}")
+            rows = read_consumed_rows(bundle, entry_date, live_dir=root)
+            path = commitment
+        else:
+            # Pre-bundle lots retain their original immutable legacy reference.
+            # A failed committed bundle never falls through to this branch.
+            path = legacy
+            if not path.is_file():
+                raise ValueError(f"LIVE_BOOK_B_MONITOR_FREEZE_MISSING:{entry_date}")
+            rows: list[dict[str, Any]] = []
+            try:
+                with path.open(encoding="utf-8") as stream:
+                    for line in stream:
+                        if not line.strip():
+                            continue
+                        row = json.loads(line)
+                        if not isinstance(row, dict):
+                            raise ValueError
+                        rows.append(row)
+            except (OSError, json.JSONDecodeError, ValueError) as exc:
+                raise ValueError(f"LIVE_BOOK_B_MONITOR_FREEZE_INVALID:{entry_date}") from exc
         digest = frozen_rows_digest(rows)
         for lot in dated_lots:
             match = re.fullmatch(

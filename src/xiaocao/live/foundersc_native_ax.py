@@ -466,8 +466,8 @@ class FounderscNativeAXClient:
         refresh_history: bool = False,
         history_trade_date: str | None = None,
     ) -> NativeAXReceipt:
-        # The current helper cannot bind date controls or prove all pages.
-        # Record the request without manufacturing native history_scope proof.
+        # The helper observes the actual date controls and visible coverage;
+        # this request never sets dates or manufactures history_scope proof.
         if history_trade_date is not None and kind not in {"history-orders", "history-trades"}:
             raise ValueError("history date is only valid for history queries")
         if refresh_history and kind not in {"history-orders", "history-trades"}:

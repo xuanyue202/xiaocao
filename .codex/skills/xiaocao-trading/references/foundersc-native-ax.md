@@ -380,10 +380,15 @@ settlement or convert an uncertain earlier write into a new submit.
 History reconciliation accepts only a native `history_scope` receipt that binds
 verified date controls to the requested exact day, the same timezone-aware capture
 time, all pages and the complete row count. Post-capture row filtering, a requested
-date or a visible empty table alone never proves coverage. The current helper does
-not emit this proof: it therefore produces explicit incomplete-history UNKNOWN,
-never order absence or terminality. Actual date-control/pagination implementation
-and APP verification remain required before this capability is claimed. Keep
+date or a visible empty table alone never proves coverage. The helper observes
+the actual two date controls before and after capture; it does not set them from
+the requested date. A positive capture can prove coverage when all rows match
+that exact day, the uniquely observed total equals all fully visible parsed/AX
+rows, and those rows fit the table and window. Empty captures remain incomplete
+until a native response-binding witness proves query completion. Scrolled,
+truncated or ambiguous captures also remain UNKNOWN, never absence or terminality.
+Bind each history page's own date controls separately before exact reconciliation.
+Keep
 current query facts separate from the previous immutable event reference; preserve
 original submit/cancel authority and every UNKNOWN/reconcile-only fence.
 Execution receipts retain immutable credential-redacted capture artifacts under
