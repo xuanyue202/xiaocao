@@ -267,9 +267,13 @@ def command(args: list[str]) -> int:
 
 
 def launch(script: Path, root: Path, args: list[str]) -> int:
+    from xiaocao.utils.trading_session import A_SHARE_TZ
     market_date = (os.environ.get('XIAOCAO_BOOK_T_V2_REHEARSAL_DATE')
-                   if os.environ.get('XIAOCAO_BOOK_T_V2_RUN_MODE') == 'rehearsal' else None) or datetime.now().strftime('%Y-%m-%d')
+                   if os.environ.get('XIAOCAO_BOOK_T_V2_RUN_MODE') == 'rehearsal' else None) or datetime.now(A_SHARE_TZ).strftime('%Y-%m-%d')
     if args[:1] == ['eod']:
+        from datetime import time as wall_time
+        from xiaocao.utils.business_clock import wait_for_business_time
+        wait_for_business_time(market_date, wall_time(15, 10))
         # Imported only in the launcher: the frozen command observer does not
         # load business modules from the mutable checkout.
         from xiaocao.live.eod_automation_gate import EodGateRejected, claim_eod_slot

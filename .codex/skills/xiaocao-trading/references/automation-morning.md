@@ -4,8 +4,26 @@ Read this file only for the daily morning recommendation/paper-book branch.
 
 ## Execute
 
+Scheduler wakes are preparation only: producer and paper wake at 09:18; APP
+wakes at 08:53. Start the original entrypoint promptly. Python waits until
+09:25:01 before capture/paper consumption, and until 09:00 before fresh APP
+preflight notices and its 2100-second preparation budget. Continuations retain
+their exact prior absolute deadline. Required data and every active candidate's
+dated entry price must be ready together; the original producer retries every
+two seconds until ready. Paper waits for that same original bundle every two
+seconds. Review support retains its separate bounded budget and is bound to
+the consumer's checkpoint. Failed-run context packs read existing queues.
+
+Recover saved credentials within the current owner. A pre-secret APP receipt
+with both action flags false is not a consumed password attempt. The helper
+may dismiss the uniquely proven old error sheet, reprove the same account and
+window, then use Keychain once. True confirmations and uncertain transports
+retain their fence. Proven no-action dependency failures recheck every two
+seconds within the original budget. Missing credentials, locked accounts and
+explicit human-only authentication remain distinct blockers.
+
 For producer or consumer handoff faults, apply Operating Contract §1c and
-[book-b-live-repair.md](book-b-live-repair.md). The original 09:23 capture commits
+[book-b-live-repair.md](book-b-live-repair.md). The original 09:25:01 capture commits
 one execution bundle before optional news/report work. Both consumers verify
 its exact checkpoint and consume the proved original or recovered copy.
 Read `morning_bundle_repair_required.request_path`, repair the local dependency,
@@ -20,6 +38,8 @@ producer owner; only that runtime identity can finish its interrupted commit.
 Consumers cannot create a commitment. A zero-row proven capture needs no support
 artifact. Missing shadow support/review queue is explicit degradation. Empty
 new support cannot withdraw an earlier valid event; the typed policy owns expiry.
+After a proved bundle commit, a conflicting compatibility freeze is preserved
+and reported as supporting degradation; it does not abort derived support work.
 
 For the bounded KOL overlay, also read
 [kol-trading-judgment.md](kol-trading-judgment.md). Keep the original runner and
@@ -37,7 +57,7 @@ Scheduled delivery is split across two Automations because the recommendation
 is ready before opening-window execution can finish:
 
 ```bash
-# 09:23 task: commit execution bundle, then deliver derived report/review queue
+# 09:25:01 task: commit execution bundle, then deliver derived report/review queue
 CODEX_AUTOMATION_ID=xiaocao-daily-morning bash scripts/auto_daily.sh morning-prerecommend
 
 # 09:25 task: wait for those frozen artifacts, review, and paper-record
@@ -181,7 +201,7 @@ The orchestration must reach these stages:
 1. The prerecommendation stage runs `live_recommend.py`, freezes the usable 9:25 signal/evidence set, and writes `output/live/recommend_<date>.md` plus ★/★B/★M/★E snapshots. K/P is an optional ranking overlay: a missing model/cache must fall back to neutral K/P ranks and must not skip deterministic snapshot capture or ★E selection. Snapshot-capture failure is fatal and must never be reported as a genuine `★E NONE`.
 2. The same stage runs `build_intelligence_review_queue.py` to create the zero-fetch, zero-score review queue, then terminates so its final/inbox result is user-visible. Priority is open Book-B positions, then ★E, ★B and ★.
 3. The execution stage uses `wait_for_morning_freeze.py` to require the matching dated report and queue. Missing, malformed or wrong-date evidence fails closed; it never regenerates the signal set.
-4. `wait_for_agent_reviews.py` opens a bounded rendezvous. While the execution shell waits, read the dated queue and frozen evidence, then write structured reviews with `scripts/agent_intelligence_review.py`. Never substitute keyword scoring. For this local paper branch, if time expires, let base picks continue and report supporting-layer fallback. The independent APP opening runner follows §1b instead.
+4. `wait_for_agent_reviews.py` opens a bounded rendezvous. A missing derived queue waits within that same budget; its later arrival never resets the deadline. Invalid or wrong-date queues remain explicit degradation. While the execution shell waits, read the dated queue and frozen evidence, then write structured reviews with `scripts/agent_intelligence_review.py`. Supply each queue item's exact `evidence_freeze_ref` using `--evidence-freeze-ref`; an absent or different reference is rejected before writing. Never substitute keyword scoring. For this local paper branch, if time expires, let base picks continue and report supporting-layer fallback. The independent APP opening runner follows §1b instead.
 5. `paper_record.py --pick mode_exec_star --intelligence-trade shadow` records only executable ★E Book-B fills plus the matching Book-A reference rows. K/P, auxiliary indicators, intelligence and manual notional cannot restore a failed mode gate.
 6. Book T runs independently after the Book-B attempt, including a missing Book-B freeze or failed Book-B paper record. The original shell preserves the Book-B failure exit status after finishing Book T; it skips B review/buy when B evidence is missing. A Book-T error remains deterministic failure and prevents its optional shadow consumer. Shared ledger recovery/locking and Book-T market gates still apply. Report each book as checked, failed, or not started from its own receipt.
 7. `paper_record.py --trend-only` first checks whether Book T has an empty slot or a sellable switch candidate. A full aligned book returns immediately; otherwise it waits for the opening window and fills or performs a paired switch. No candidate or an unfilled replacement is normal.
@@ -363,7 +383,11 @@ current client has not submitted the saved password: run the local
 `--captcha-from-keychain` command in a PTY with short yield, inspect its
 emitted image with `view_image`, and enter one visually verified code into
 the waiting process. OCR may assist but cannot be the sole evidence for an
-ambiguous character. Do not repeat a rejected password/captcha login. After
+ambiguous character. The recovery lock covers challenge fetch, agent input,
+login and token storage. An explicitly rejected/expired CAPTCHA fetches a new
+challenge, at most three in this owner; inspect each image before entering its
+code. Password/account rejection stops; unknown rejection retains its distinct
+category and cooldown rather than claiming the saved password is wrong. After
 agent recovery, verify
 with one fresh-process probe and consume only a valid immutable producer freeze.
 
@@ -375,14 +399,14 @@ The 09:00 readiness surface is deliberately small:
 2. The one uncached market authentication read proves the stored token; on
    990502 the agent obtains a new token through the single challenge flow,
    then verifies one fresh-process read. Pre-open empty rows are not source
-   completeness failure. The 09:23 producer validates its actual dated inputs.
+   completeness failure. The 09:25:01 producer validates its actual dated inputs.
 3. Run `scripts/morning_preflight_alert.py --date today --kind transport`
    once to prove a trading WeCom recipient and relay configuration exist;
    this is read-only and does not claim delivery. Save the KOL projection and
    its quality separately; degraded coverage uses the deterministic baseline.
 4. If authentication remains blocked after repair, run the alert command with
    `--kind market-auth`. If the original runner ends blocked, use `--kind book-b
-   --receipt <exact terminal receipt_path>`. A failed original 09:23 producer
+   --receipt <exact terminal receipt_path>`. A failed original 09:25:01 producer
    uses `--kind producer --receipt <exact run_flow path>`. The alert script
    makes a dated durable incident, sends urgent trading WeCom once for a
    delivered incident, and prints delivery readback; `unproven` or missing

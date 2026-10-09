@@ -850,14 +850,16 @@ def test_keychain_failure_before_helper_does_not_consume_password_attempt(tmp_pa
 
 
 @pytest.mark.app_simulation
-def test_proved_presecret_overlay_failure_allows_recovery_after_restart(tmp_path):
+@pytest.mark.parametrize("category,stage", [("unclassified", "overlay_check"), ("trade_password_incorrect", "overlay_check")])
+def test_proved_presecret_overlay_failure_allows_recovery_after_restart(tmp_path, category, stage):
     class OverlayNative(FakeNative):
         def __init__(self):
             super().__init__(surface_state="authentication_required")
         def unlock_from_keychain(self, *, explicitly_enabled):
             self.unlock_calls += 1
             if self.unlock_calls == 1:
-                return self._receipt(status="unlock_overlay_unproven",
+                return self._receipt(status="unlock_overlay_unproven", unlock_failure_category=category,
+                    unlock_evidence={"stage": stage},
                     action={"attempted": False, "confirm_pressed": False, "confirmation_mode": "none"})
             self.surface = "trade_ready"
             return self._receipt(status="unlocked", secure_field_cleared_before_set=True)

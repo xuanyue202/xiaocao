@@ -7,6 +7,7 @@ import json
 
 from xiaocao.api.catalog import STOCK_GROUPS, resolve_group
 from xiaocao.api.client import XiaocaoClient
+from xiaocao.api.errors import ApiSchemaError
 
 
 GROUPS = {key: item.value for key, item in STOCK_GROUPS.items()}
@@ -32,6 +33,12 @@ class ApiDataSource:
         stamp = datetime.now(timezone.utc).isoformat()
         try:
             rows = fetch()
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                observed_date = row.get("tradeDate") or row.get("trade_date")
+                if observed_date and str(observed_date).replace("-", "")[:8] != date.replace("-", "")[:8]:
+                    raise ApiSchemaError("MORNING_SOURCE_DATE_MISMATCH:" + kind)
         except Exception as exc:
             self.observations.append({"source": kind, "requested_date": date,
                                       "observed_at": stamp, "status": "error",
@@ -39,8 +46,9 @@ class ApiDataSource:
             raise
         missing = []
         if requested_codes:
-            found = {str(row.get("code") or row.get("stockCode") or row.get("stockId") or "")
-                     for row in rows if isinstance(row, dict)}
+            found = {str(row) if isinstance(row, str) else
+                     str(row.get("code") or row.get("stockCode") or row.get("stockId") or "")
+                     for row in rows if isinstance(row, (dict, str))}
             missing = sorted(set(requested_codes) - found)
         self.observations.append({
             "source": kind, "requested_date": date, "observed_at": stamp,
@@ -97,7 +105,7 @@ class ApiDataSource:
         descending: bool = True,
         target_type: int | str = "stock",
     ) -> list[str]:
-        rows = self.client.sort_v2(
+        rows = self._observe(f"sort:{sort_id}", date, lambda: self.client.sort_v2(
             codes,
             sort_id=sort_id,
             sort_type=descending,
@@ -105,7 +113,7 @@ class ApiDataSource:
             date=date,
             hpqb_state=self.hpqb_state,
             lpdx_state=self.lpdx_state,
-        )
+        ), requested_codes=codes)
         result = []
         for row in rows:
             if isinstance(row, str):

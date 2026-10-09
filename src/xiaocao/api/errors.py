@@ -19,7 +19,8 @@ class ApiAuthError(ApiError):
         official_login_code: int | None = None,
     ) -> None:
         super().__init__(message)
-        self.failure_category = failure_category
+        self.failure_category = failure_category or (message if message.startswith("MARKET_")
+                                                     and message.replace("_", "").isalnum() else None)
         self.official_login_code = official_login_code
 
 

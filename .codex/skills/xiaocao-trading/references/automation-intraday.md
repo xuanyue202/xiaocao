@@ -76,9 +76,10 @@ instruction/memory reads and then the exact live command in one shell process;
 it exists to remove model-composed startup work from the two-minute deadline.
 Do not add discovery, journal, Git, KOL, paper, broker or diagnostic work to the
 launcher, and do not use it outside the single scheduled closing pass.
-The schedule remains 14:41. The launcher also waits to 14:45 when that dispatch
-arrives during 14:40; its total wait stays bounded to five minutes and each
-sleep to 60 seconds. Earlier calls still reach the existing rejecting time gate.
+The nominal wake is 14:38. The launcher waits to the absolute 14:45 start,
+including dispatches before 14:40, with each sleep at most 60 seconds and a
+fresh wall-clock read after each chunk. The 14:25 precheck wakes at 14:18;
+both paper and APP entrypoints wait before holdings, reconciliation or sells.
 This tolerance changes startup waiting only; the legal exit window stays
 14:45:00–14:56:59. Verify it at the next natural scheduled close, never by
 replaying a missed checkpoint.

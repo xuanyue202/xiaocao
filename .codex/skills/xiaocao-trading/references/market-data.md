@@ -29,15 +29,21 @@ Read this file only for quotes, market state, pools, sectors, indices, indicator
   image with `view_image` (enlarge locally if ambiguous), and send one visually
   verified code to the waiting process through `write_stdin`. OCR is advisory;
   never blindly submit its guess. The agent input has a 120-second bound and
-  the script deletes the temporary image. A login rejection ends that attempt;
-  do not cycle guesses. `--dialog` remains optional for a person and
+  the script deletes the temporary image. One cross-process lock covers the
+  full challenge/input/login/storage flow; another owner reuses a rotated
+  session. Only explicit CAPTCHA rejection fetches a fresh image, at most
+  three, each visually verified. Password/account or unclassified rejection
+  keeps a durable rejected/uncertain-attempt fence, even after the 120-second
+  interval; only a proved different saved session clears it. Inspect the typed category and original
+  recovery state before continuing. `--dialog` remains optional for a person and
   `--token-only` for manual session replacement.
 - On 990502, official `/stock/` reads may reuse another process's rotated
   token. Otherwise they fail with `MARKET_LOGIN_CAPTCHA_REQUIRED` without
   submitting the saved password, because the current official frontend
   requires a solved captcha for `/user/v2/login`. Explicit environment
-  overrides disable renewal. Missing credentials or rejected captcha/login
-  remains an authentication blocker, never an empty opportunity. No
+  overrides disable renewal. Missing credentials, password/account rejection
+  or human-only confirmation remain authentication blockers. Saved-credential
+  CAPTCHA recovery is performed by the agent without a user login. No
   refresh-token API is assumed. After agent-assisted recovery, validate with
   a fresh-process preflight. If the final 09:00 authentication check is still
   blocked, run `PYTHONPATH=src .venv/bin/python scripts/morning_preflight_alert.py
@@ -47,12 +53,12 @@ Read this file only for quotes, market state, pools, sectors, indices, indicator
   Successful web login/disabled buttons are not API authorization proof.
   A failed preflight reports only the sanitized login failure category and
   numeric official login code when available; it never prints server text or
-  credentials. `MARKET_LOGIN_REQUIRES_USER` means a credential/captcha login
+  credentials. `MARKET_LOGIN_REJECTED_UNCLASSIFIED` means a credential/captcha login
   was submitted once and the login service did not accept it. The numeric code
   alone does not identify a wrong password versus a challenge or account
   policy. `MARKET_LOGIN_CAPTCHA_REQUIRED` means no password was submitted.
   Raise this blocker immediately at the 09:00 preflight; do not repeat the
-  password attempt while waiting for the 09:23 recommendation producer.
+  password attempt while waiting for the 09:25:01 recommendation capture.
 
 - Cache first (`output/.cache/xiaocao.db`). For more than a few symbols/dates, batch small, space requests roughly 0.5–1 second and keep concurrency at or below about 8. Empty/null responses after bursts can be silent throttling.
 - Always use exchange suffixes: `.XSHG`, `.XSHE` or `.BJSE`.

@@ -9,6 +9,10 @@ unclassified cash and estimated fees. Paper A/B/T and historical settlements sta
 
 ## Execute
 
+The scheduler wakes at 15:03. Enter the retained command promptly; both paper
+and APP EOD entrypoints wait until 15:10 before their slot claims or business
+effects. Each sleep is at most 60 seconds and rereads China wall time.
+
 Before applying the command prefix, require this task's initial scheduler header
 to say exactly `Automation ID: xiaocao-daily-eod`. If an inherited
 `CODEX_AUTOMATION_ID` is nonempty and different, stop rather than replacing it.

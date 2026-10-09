@@ -583,7 +583,28 @@ def _validate_fill_rows(
             if price <= 0 or shares <= 0 or notional <= 0 or fee < 0:
                 raise BookTShadowError(f"{field_prefix}.fills[{index}] has invalid fill economics")
             if not math.isclose(price * shares, notional, rel_tol=0.0, abs_tol=0.02):
-                raise BookTShadowError(f"{field_prefix}.fills[{index}].notional does not match price*shares")
+                # Legacy v1 freezes retained a three-decimal display price.
+                # Recover economics only from the already validated, hash-bound
+                # exact action receipt; leave the frozen input bytes/hash intact.
+                receipt = variant.get("control_receipt") if field_prefix == "control" else None
+                semantics = receipt.get("daily_semantics", {}) if isinstance(receipt, Mapping) else {}
+                selection = semantics.get("selection", {}) if isinstance(semantics, Mapping) else {}
+                actions = selection.get("actions", []) if isinstance(selection, Mapping) else []
+                matches = [action for action in actions if isinstance(action, Mapping)
+                    and _text(action.get("kind")) == "trade" and _text(action.get("side")).upper() == "BUY"
+                    and _text(action.get("code")) == code
+                    and _text(action.get("event_sha256"))
+                    and fill_id == "v1-control-" + _text(action.get("event_sha256"))]
+                proved = len(matches) == 1 and all(
+                    math.isclose(_finite(matches[0].get(key), "control action." + key), value,
+                                 rel_tol=0.0, abs_tol=1e-9)
+                    for key, value in (("price", price), ("shares", shares), ("notional", notional), ("fee", fee)))
+                if not proved or abs(notional / shares - price) > 0.000500001:
+                    raise BookTShadowError(f"{field_prefix}.fills[{index}].notional does not match price*shares")
+                item.update(display_fill_price=price, fill_price=notional / shares,
+                            fill_price_basis="proved_v1_gross_notional_per_share",
+                            control_receipt_sha256=receipt["receipt_sha256"])
+                price = notional / shares
             if not math.isclose(fee, notional * fee_rate, rel_tol=0.0, abs_tol=0.02):
                 raise BookTShadowError(f"{field_prefix}.fills[{index}].fee does not match frozen fee assumption")
             if _text(row.get("instrument_type")).lower() not in {"equity", "stock", "etf"}:

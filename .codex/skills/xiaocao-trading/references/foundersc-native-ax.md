@@ -73,6 +73,13 @@ a quiet keyboard before setting the field and again before confirmation. A
 recognized broker password-error dialog is a recorded attempt, not a reason to
 submit the secret again; acknowledge the exact dialog and diagnose focus or
 credential state before a separately authorized attempt. It
+has one pre-secret exception: the helper may dismiss a uniquely matched stale
+password-error sheet only when both password_action_attempted and
+confirmation_pressed are false, its exact known text/control geometry and
+account are bound, and the same unlock target is proved after dismissal.
+Record that dismissal separately; this does not clear a previous uncertain or
+confirmed password attempt. Such a proved no-action dependency is locally
+recoverable without asking the user.
 must never print, log, persist, return, place in argv, or place in environment
 the raw account/password. `unlock_unproven` is terminal for that attempt and
 must not be retried automatically. Before setting either login or in-session
@@ -381,8 +388,10 @@ History reconciliation accepts only a native `history_scope` receipt that binds
 verified date controls to the requested exact day, the same timezone-aware capture
 time, all pages and the complete row count. Post-capture row filtering, a requested
 date or a visible empty table alone never proves coverage. The helper observes
-the actual two date controls before and after capture; it does not set them from
-the requested date. A positive capture can prove coverage when all rows match
+the actual two date controls before and after capture. An exact requested date
+sets both unique account/page-bound AX date controls, proves their readback,
+then refreshes. Unsupported setters or changed targets fail explicitly; the
+requested date itself never supplies coverage proof. A positive capture can prove coverage when all rows match
 that exact day, the uniquely observed total equals all fully visible parsed/AX
 rows, and those rows fit the table and window. Empty captures remain incomplete
 until a native response-binding witness proves query completion. Scrolled,

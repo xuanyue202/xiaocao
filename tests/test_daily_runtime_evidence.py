@@ -17,6 +17,9 @@ PYTHON = Path(sys.executable)
 def eod_identity(monkeypatch):
     monkeypatch.setenv("CODEX_AUTOMATION_ID", "xiaocao-daily-eod")
     monkeypatch.setenv("CODEX_THREAD_ID", "runtime-fixture")
+    # Isolated historical paper shell fixtures must not wait for today's EOD.
+    monkeypatch.setenv("XIAOCAO_BOOK_T_V2_RUN_MODE", "rehearsal")
+    monkeypatch.setenv("XIAOCAO_BOOK_T_V2_REHEARSAL_DATE", "2026-09-30")
 
 
 def isolated_daily(tmp_path: Path, *, mutate: bool = False, tail: str = '', context_exit: int = 0, fail_program: str = ''):
@@ -32,7 +35,7 @@ if [ "$1" = "-m" ] && [ "$2" = "xiaocao.live.runtime_evidence" ]; then
 fi
 if [ "$1" = "-m" ] && [ "$2" = "xiaocao" ]; then
   if [ "${{MUTATE_SOURCE:-0}}" = 1 ]; then printf '\\nif true; then\\n' >> "$XIAOCAO_ROOT/scripts/auto_daily.sh"; fi
-  date +%F
+  if [ -n "${{XIAOCAO_BOOK_T_V2_REHEARSAL_DATE:-}}" ]; then echo "$XIAOCAO_BOOK_T_V2_REHEARSAL_DATE"; else date +%F; fi
   exit 0
 fi
 if [ "$1" = "{fail_program}" ]; then

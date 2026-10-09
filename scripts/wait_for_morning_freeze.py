@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import time
-from datetime import datetime
+from datetime import datetime, time as wall_time
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -63,7 +63,9 @@ def wait_for_morning_freeze(
     heartbeat_seconds: float = 30.0,
     dependency_notice=None,
 ) -> dict[str, Any]:
-    deadline = time.monotonic() + max(0.0, timeout_sec)
+    deadline = float("inf") if timeout_sec < 0 else time.monotonic() + timeout_sec
+    china_zone = ZoneInfo("Asia/Shanghai")
+    live_session = datetime.now(china_zone).date().isoformat() == date[:10]
     next_heartbeat = time.monotonic()
     # The native caller already performed its initial readiness check. Leave
     # the App alone until one minute before the expected 09:25 freeze, then
@@ -78,6 +80,8 @@ def wait_for_morning_freeze(
     )
     emitted_requests = set()
     while result["status"] != "ready" and time.monotonic() < deadline:
+        if live_session and datetime.now(china_zone).date().isoformat() != date[:10]:
+            raise RuntimeError("MORNING_FREEZE_WAIT_SESSION_CHANGED")
         request_path = result.get("request_path")
         if dependency_notice and request_path and request_path not in emitted_requests:
             dependency_notice({"event": "morning_bundle_repair_required", **result})
@@ -111,9 +115,12 @@ def main() -> None:
     parser.add_argument("--live-dir", default="output/live")
     parser.add_argument("--snapshot-path", default=None)
     parser.add_argument("--receipt-path", type=Path)
-    parser.add_argument("--timeout-sec", type=float, default=240.0)
-    parser.add_argument("--poll-sec", type=float, default=1.0)
+    parser.add_argument("--timeout-sec", type=float, default=-1.0)
+    parser.add_argument("--poll-sec", type=float, default=2.0)
     args = parser.parse_args()
+    if args.timeout_sec != 0:
+        from xiaocao.utils.business_clock import wait_for_business_time
+        wait_for_business_time(args.date, wall_time(9, 25, 1))
     result = wait_for_morning_freeze(
         date=args.date,
         live_dir=Path(args.live_dir),

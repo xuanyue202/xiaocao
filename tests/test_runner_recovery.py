@@ -158,3 +158,17 @@ def test_typed_failure_context_is_persisted_and_available_to_notifier(tmp_path):
     assert 'private diagnostic' not in record
     assert observed[0]['user_action']['required']
     assert '解锁 macOS' in observed[0]['user_action']['request']
+
+
+def test_proved_no_action_retry_uses_two_seconds_without_refunding_budget(tmp_path):
+    clock, events, calls = Clock(), [], []
+    wait = recovery(tmp_path, clock, events, deadline=12, boundary=30)
+    wait.automatic_retry = lambda failure: failure["code"] == "DEPENDENCY_DOWN"
+    def check():
+        calls.append(clock.elapsed)
+        if len(calls) < 3:
+            clock.elapsed += 1  # slow dependency check
+            raise RuntimeError("DEPENDENCY_DOWN")
+        return "ready"
+    assert wait.run(check) == "ready"
+    assert calls == [0, 3, 6] and wait.deadline == 12

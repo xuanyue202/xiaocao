@@ -466,8 +466,8 @@ class FounderscNativeAXClient:
         refresh_history: bool = False,
         history_trade_date: str | None = None,
     ) -> NativeAXReceipt:
-        # The helper observes the actual date controls and visible coverage;
-        # this request never sets dates or manufactures history_scope proof.
+        # The helper sets exact dates only after account/page binding, then
+        # observes the actual controls and coverage; requested metadata is not proof.
         if history_trade_date is not None and kind not in {"history-orders", "history-trades"}:
             raise ValueError("history date is only valid for history queries")
         if refresh_history and kind not in {"history-orders", "history-trades"}:
@@ -482,6 +482,11 @@ class FounderscNativeAXClient:
         ]
         if refresh_history:
             args.append("--refresh-history-query")
+        if history_trade_date is not None:
+            from datetime import date
+            if date.fromisoformat(history_trade_date).isoformat() != history_trade_date:
+                raise ValueError("history date must be canonical ISO date")
+            args.extend(["--history-trade-date", history_trade_date, "--refresh-history-query"])
         receipt = self._run("read-query", args)
         if history_trade_date is None:
             return receipt

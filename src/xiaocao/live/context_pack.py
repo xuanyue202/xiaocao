@@ -9,7 +9,6 @@ from typing import Any
 
 from xiaocao.live import data_health, status as live_status
 from xiaocao.live.agent_signals import read_signals
-from xiaocao.live.intelligence_review_queue import build_review_queue
 
 
 def _read_json(path: Path) -> Any:
@@ -229,7 +228,12 @@ def build_context_pack(
     now = now or datetime.now()
     health = data_health.check(live_dir, today=market_date)
     digest = live_status.build_digest(live_dir=live_dir, market_date=market_date, now=now)
-    review_queue = build_review_queue(live_dir=live_dir, market_date=market_date, limit=8, now=now)
+    queue_path = live_dir / f"intelligence_review_queue_{market_date}.json"
+    review_queue = _read_json(queue_path)
+    if not isinstance(review_queue, dict):
+        review_queue = {"market_date": market_date,
+                       "status": "missing" if not queue_path.exists() else "invalid",
+                       "counts": {"selected_items": 0, "pending_items": 0}, "items": []}
     return {
         "schema_version": 1,
         "market_date": market_date,

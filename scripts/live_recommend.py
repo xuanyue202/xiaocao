@@ -22,6 +22,7 @@ import argparse
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
+import math
 import os
 import subprocess
 import sys
@@ -39,6 +40,7 @@ sys.path.insert(0, str(ROOT / "kronos_screen" / "scripts"))
 
 from xiaocao.api.cache import SQLiteCache  # noqa: E402
 from xiaocao.api.client import XiaocaoClient  # noqa: E402
+from xiaocao.api.errors import ApiAuthError, ApiError, ApiNotFoundError, ApiSchemaError  # noqa: E402
 from xiaocao.config import load_settings  # noqa: E402
 from xiaocao.datasource.api_source import ApiDataSource  # noqa: E402
 from xiaocao.live import agent_signals, intelligence, intelligence_evidence, intelligence_policy  # noqa: E402
@@ -66,13 +68,12 @@ TRAINING_ROWS_FILE = OUT_DIR / "training_rows.parquet"
 STOCK_SENTIMENT_FILE = OUT_DIR / "stock_sentiment.json"
 STOCK_SENTIMENT_HISTORY_FILE = OUT_DIR / "stock_sentiment_history.jsonl"
 POSITIONS_FILE = OUT_DIR / "positions.jsonl"
-WAIT_START = time(9, 20)
 WAIT_TARGET = time(9, 25, 1)
 DEFAULT_MAX_CANDIDATES = 3
 DEFAULT_MAX_PER_MODE = 2
 DEFAULT_MAX_STANDBY = 2
-DEFAULT_READY_TIMEOUT_SEC = 30.0
-DEFAULT_READY_POLL_SEC = 1.0
+DEFAULT_READY_TIMEOUT_SEC = -1.0
+DEFAULT_READY_POLL_SEC = 2.0
 DEFAULT_READY_CONFIRM_SEC = 8.0
 DEFAULT_READY_STABLE_SAMPLES = 2
 STANDBY_MAX_RANK_GAP = 3.0
@@ -111,7 +112,7 @@ def _client() -> XiaocaoClient:
     cache = SQLiteCache(ROOT / "output" / ".cache" / "xiaocao.db")
     return XiaocaoClient(
         base_url=settings.base_url, timeout=settings.timeout,
-        retries=settings.retries, cache=cache,
+        retries=settings.retries, cache=cache, minimum_request_interval=0.5,
     )
 
 
@@ -532,7 +533,7 @@ def _seconds_until_recommendation_start(date_iso: str, now: datetime) -> float:
     if date_iso != now.date().isoformat():
         return 0.0
     current = now.time()
-    if not (WAIT_START <= current < WAIT_TARGET):
+    if current >= WAIT_TARGET:
         return 0.0
     target = datetime.combine(now.date(), WAIT_TARGET, tzinfo=A_SHARE_TZ)
     return max(0.0, (target - now).total_seconds())
@@ -546,7 +547,9 @@ def _wait_for_recommendation_start(date_iso: str) -> None:
         f"[wait] 当前为 {date_iso} 早盘集合竞价窗口，等待 {wait_seconds:.1f}s 到 09:25:01 后开跑",
         file=sys.stderr,
     )
-    _time.sleep(wait_seconds)
+    from xiaocao.utils.business_clock import wait_for_business_time
+    wait_for_business_time(date_iso, WAIT_TARGET,
+                           now=lambda: datetime.now(A_SHARE_TZ), sleep=_time.sleep)
 
 
 def _today_iso() -> str:
@@ -565,22 +568,21 @@ def _run_strategy_when_ready(
     poll_sec: float,
     confirm_sec: float = DEFAULT_READY_CONFIRM_SEC,
     stable_samples: int = DEFAULT_READY_STABLE_SAMPLES,
+    price_probe=None,
 ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
-    """Run live strategy, retrying empty early-morning results.
+    """Wait for one stable, source- and price-complete observation.
 
-    Around 09:25 the exchange-side auction price may be final, while Xiaocao's
-    pool/index APIs can still lag by tens of seconds. An empty strategy result
-    during today's live run is therefore ambiguous: it can mean either "no
-    signals" or "backend not populated yet". Poll briefly before declaring NONE.
+    Negative timeout keeps the original producer waiting. A nonnegative
+    timeout remains available for bounded diagnostics and historical fixtures.
     """
-    if not _is_today_live_run(date_iso) or timeout_sec <= 0:
+    if not _is_today_live_run(date_iso) or timeout_sec == 0:
         if hasattr(source, "begin_observation"):
             source.begin_observation(1)
         rows = run_strategy(date_iso, source, profile="validated_v5", adaptive_modes=False)
         actives = [r for r in rows if r.get("adaptive_active") in (True, None)]
         return rows, actives
 
-    deadline = _time.monotonic() + max(0.0, timeout_sec)
+    deadline = float("inf") if timeout_sec < 0 else _time.monotonic() + timeout_sec
     attempt = 0
     best_rows: list[dict[str, object]] = []
     best_actives: list[dict[str, object]] = []
@@ -588,6 +590,7 @@ def _run_strategy_when_ready(
     first_nonempty_at: float | None = None
     last_fingerprint: tuple[tuple[object, object, object], ...] | None = None
     stable_seen = 0
+    last_failure_category = None
     def finish(selected_rows, selected_actives, reason, selected_evidence=None):
         if hasattr(source, "readiness"):
             last_observation = source.readiness
@@ -603,11 +606,35 @@ def _run_strategy_when_ready(
                                      "note": "Request date and populated responses do not prove provider completeness."})
         return selected_rows, selected_actives
     while True:
+        if not _is_today_live_run(date_iso):
+            raise RuntimeError("MORNING_CAPTURE_SESSION_CHANGED")
         attempt += 1
         if hasattr(source, "begin_observation"):
             source.begin_observation(attempt)
-        rows = run_strategy(date_iso, source, profile="validated_v5", adaptive_modes=False)
-        actives = [r for r in rows if r.get("adaptive_active") in (True, None)]
+        try:
+            rows = run_strategy(date_iso, source, profile="validated_v5", adaptive_modes=False)
+            actives = [r for r in rows if r.get("adaptive_active") in (True, None)]
+            observations = getattr(source, "readiness", {}).get("sources", [])
+            sources_ready = bool(observations) and all(
+                row.get("status") in {"populated", "empty_confirmed"} for row in observations)
+            missing_prices = price_probe(actives) if price_probe is not None and sources_ready else []
+        except (ApiNotFoundError, ApiSchemaError):
+            raise
+        except ApiError as exc:
+            category = getattr(exc, "failure_category", None) or type(exc).__name__
+            if isinstance(exc, ApiAuthError) and category not in {
+                    "MARKET_LOGIN_CAPTCHA_REQUIRED", "MARKET_LOGIN_BUSY", "MARKET_LOGIN_COOLDOWN"}:
+                raise
+            if category != last_failure_category:
+                print(json.dumps({"event": "market_dependency_recovery_wait", "trade_date": date_iso,
+                    "failure_category": category,
+                    "recovery_command": "PYTHONPATH=src .venv/bin/python scripts/configure_market_data_auth.py --captcha-from-keychain"
+                    if isinstance(exc, ApiAuthError) else None}, ensure_ascii=False), file=sys.stderr, flush=True)
+                last_failure_category = category
+            if _time.monotonic() >= deadline:
+                raise
+            _time.sleep(min(max(0.2, poll_sec), deadline - _time.monotonic()))
+            continue
 
         # Equal signal coverage should retain the most recent observation and
         # its matching source evidence, not stale prices from the first tie.
@@ -616,7 +643,14 @@ def _run_strategy_when_ready(
             best_actives = actives
             best_readiness = dict(getattr(source, "readiness", {}))
 
-        if actives:
+        capture_ready = price_probe is None or (sources_ready and not missing_prices)
+        if price_probe is not None:
+            source.readiness["price_enrichment"] = {
+                "status": "complete" if sources_ready and not missing_prices else "waiting",
+                "active_count": len(actives), "priced_count": len(actives) - len(missing_prices),
+                "unpriced_codes": missing_prices}
+
+        if actives or capture_ready and sources_ready:
             now = _time.monotonic()
             if first_nonempty_at is None:
                 first_nonempty_at = now
@@ -627,16 +661,19 @@ def _run_strategy_when_ready(
             ))
             stable_seen = stable_seen + 1 if fingerprint == last_fingerprint else 1
             last_fingerprint = fingerprint
-            if stable_seen >= max(1, stable_samples) and now - first_nonempty_at >= max(0.0, confirm_sec):
+            if capture_ready and stable_seen >= max(1, stable_samples) and now - first_nonempty_at >= max(0.0, confirm_sec):
                 return finish(rows, actives, "confirmation_window_elapsed")
             remaining = deadline - now
             if remaining <= 0:
+                if price_probe is not None:
+                    raise RuntimeError("MORNING_CAPTURE_READINESS_TIMEOUT")
                 return finish(best_rows or rows, best_actives or actives, "readiness_timeout",
                               best_readiness if best_rows else None)
             sleep_sec = min(max(0.2, poll_sec), remaining)
             print(
                 f"[settle] {date_iso} 第 {attempt} 次已有 {len(rows)} 个信号/"
-                f"{len(actives)} 个 active，继续秒级确认稳定性；{sleep_sec:.1f}s 后重试",
+                f"{len(actives)} 个 active，source_ready={sources_ready}，"
+                f"unpriced={missing_prices}；{sleep_sec:.1f}s 后重试",
                 file=sys.stderr,
             )
             _time.sleep(sleep_sec)
@@ -644,6 +681,8 @@ def _run_strategy_when_ready(
 
         remaining = deadline - _time.monotonic()
         if remaining <= 0:
+            if price_probe is not None:
+                raise RuntimeError("MORNING_CAPTURE_EMPTY_UNPROVEN")
             return finish(best_rows or rows, best_actives or actives, "empty_unconfirmed_timeout",
                           best_readiness if best_rows else None)
         sleep_sec = min(max(0.2, poll_sec), remaining)
@@ -680,6 +719,8 @@ def _market_detail_for_date(client: XiaocaoClient, code: str, date_iso: str) -> 
         return None
     try:
         detail = _extract_realtime_detail_row(client.second_line_detail_info(code), code)
+    except (ApiAuthError, ApiSchemaError, ApiNotFoundError):
+        raise
     except Exception:
         return None
     if not detail:
@@ -719,12 +760,14 @@ def _entry_price_with_detail(
             price = float(detail.get("open") or 0) or None
         except (TypeError, ValueError):
             price = None
-        if price:
+        if price and math.isfinite(price) and price > 0:
             pre_close = _to_float(detail.get("preClose"))
             return price, "realtime_open", pre_close, detail
 
     try:
         rows = client.date_kline(code, count=10, freq="D", adj="qfq")
+    except (ApiAuthError, ApiSchemaError, ApiNotFoundError):
+        raise
     except Exception:
         rows = []
     # NOTE: a per-candidate empty/failed date_kline degrades gracefully here (we
@@ -742,12 +785,14 @@ def _entry_price_with_detail(
                     price = float(r.get("open") or 0) or None
                 except (TypeError, ValueError):
                     price = None
-                if price:
+                if price and math.isfinite(price) and price > 0:
                     pre_close = _to_float(r.get("preClose"))
                     return price, "open", pre_close, detail
 
     try:
         auction_rows = client.stock_call_auction(code, date_iso)
+    except (ApiAuthError, ApiSchemaError, ApiNotFoundError):
+        raise
     except Exception:
         auction_rows = []
     if isinstance(auction_rows, list):
@@ -760,7 +805,7 @@ def _entry_price_with_detail(
                 price = float(r.get("trade") or r.get("buyPrice1") or r.get("sellPrice1") or 0) or None
             except (TypeError, ValueError):
                 price = None
-            if price:
+            if price and math.isfinite(price) and price > 0:
                 pre_close = _to_float(r.get("preClose"))
                 return price, "auction", pre_close, detail
     return None, "", None, detail
@@ -1086,7 +1131,7 @@ def main() -> None:
     parser.add_argument("--max-standby", type=int, default=DEFAULT_MAX_STANDBY,
                         help="小仓候补最多输出几只；仅保留与第 N 名分差很小且不拥挤的候选")
     parser.add_argument("--ready-timeout-sec", type=float, default=DEFAULT_READY_TIMEOUT_SEC,
-                        help="今天实时运行时，空信号疑似 API 未 ready 的最长等待秒数；0 表示不等待")
+                        help="数据就绪等待秒数；默认 -1 持续等待，0 为单次诊断")
     parser.add_argument("--ready-poll-sec", type=float, default=DEFAULT_READY_POLL_SEC,
                         help="今天实时运行时，空信号重试间隔秒数")
     parser.add_argument("--ready-confirm-sec", type=float, default=DEFAULT_READY_CONFIRM_SEC,
@@ -1115,10 +1160,25 @@ def main() -> None:
     # they differ only in scoring (exit rule), so signals should be identical.
     # We run once and label each signal as "in v5" / "in v6" — they're all in
     # both. The differentiation is in the STOP price computed below.
+    entry_prices = {}
+    def price_probe(active_rows):
+        missing = []
+        entry_prices.clear()
+        _ENTRY_DETAIL_CACHE.clear()
+        for row in active_rows:
+            code = str(row.get("code") or "")
+            if not code:
+                raise RuntimeError("MORNING_CAPTURE_CODE_MISSING")
+            if code not in entry_prices:
+                entry_prices[code] = _entry_price(client, code, date_iso)
+            if not entry_prices[code][0]:
+                missing.append(code)
+        return sorted(set(missing))
     try:
         rows, actives = _run_strategy_when_ready(
-            date_iso, source, timeout_sec=max(0.0, args.ready_timeout_sec),
+            date_iso, source, timeout_sec=args.ready_timeout_sec,
             poll_sec=max(1.0, args.ready_poll_sec), confirm_sec=max(0.0, args.ready_confirm_sec),
+            price_probe=price_probe if _is_today_live_run(date_iso) else None,
         )
     finally:
         atomic_write(OUT_DIR / f"recommend_source_readiness_{date_iso}.json",
@@ -1147,7 +1207,8 @@ def main() -> None:
         # ``_entry_price`` directly.  The realtime detail is an optional
         # enrichment for the market guard and must not make those fixtures lose
         # their candidate solely because the detail endpoint is unavailable.
-        opn, entry_source, pre_close = _entry_price(client, code, date_iso)
+        opn, entry_source, pre_close = (entry_prices[code] if code in entry_prices
+                                       else _entry_price(client, code, date_iso))
         cached_detail = _ENTRY_DETAIL_CACHE.pop((date_iso, str(code)), _MISSING_ENTRY_DETAIL)
         # `_entry_price` already performs the one realtime-detail read and
         # stores its result.  A missing cache means a compatibility caller
@@ -1605,8 +1666,17 @@ def _publish_original_batch(date_iso: str, readiness: dict, entered_at: str, sna
         strategy_sha=revision, source_readiness=readiness, timing=timing, raw_capture=snapshot)
     # This compatibility name keeps durable plan references stable. Bundle
     # consumers use verified immutable originals or exact recovery copies.
-    atomic_write(OUT_DIR / f"book_b_live_freeze_{date_iso}.jsonl", payload, immutable=True)
-    print(json.dumps({"event": "morning_bundle_published", **result}, ensure_ascii=False), file=sys.stderr)
+    compatibility_path = OUT_DIR / f"book_b_live_freeze_{date_iso}.jsonl"
+    compatibility = {"path": str(compatibility_path), "status": "written"}
+    try:
+        atomic_write(compatibility_path, payload, immutable=True)
+    except ValueError as exc:
+        if str(exc) != "IMMUTABLE_FILE_CONTENT_CONFLICT":
+            raise
+        compatibility["status"] = "conflict_preserved"
+        print("morning compatibility freeze DEGRADED: conflict preserved; committed bundle remains authoritative", file=sys.stderr)
+    print(json.dumps({"event": "morning_bundle_published", **result,
+        "compatibility_freeze": compatibility}, ensure_ascii=False), file=sys.stderr)
 
 
 if __name__ == "__main__":

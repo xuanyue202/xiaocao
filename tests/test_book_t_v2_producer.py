@@ -133,6 +133,18 @@ def test_producer_builds_pending_shadow_input_from_injected_source_adapters(tmp_
     mark = record_book_t_v2_daily_mark(tmp_path, date_iso, marks=[])
     assert mark["stage_counts"]["daily_mark"] == 1
     assert mark["outcome_matured"] == 0
+    from scripts.book_t_shadow import _load_event_frozen_days, _load_lifecycle_events
+    from xiaocao.research.book_t_shadow import BookTShadowError
+    events = _load_lifecycle_events(tmp_path)
+    assert _load_event_frozen_days(events, through=date_iso, root=tmp_path) == [frozen]
+    bad = json.loads(json.dumps(frozen))
+    bad["assumptions"]["budget_ratio"] = 0.9
+    result["input"].write_text(json.dumps(bad))
+    with pytest.raises(BookTShadowError, match="input_sha256"):
+        _load_event_frozen_days(events, through=date_iso, root=tmp_path)
+    result["input"].unlink()
+    with pytest.raises(BookTShadowError, match="cannot read JSON"):
+        _load_event_frozen_days(events, through=date_iso, root=tmp_path)
 
 
 def test_producer_rejects_control_artifact_changed_after_receipt(tmp_path) -> None:
@@ -153,3 +165,21 @@ def test_producer_rejects_control_artifact_changed_after_receipt(tmp_path) -> No
                 "agent_draft": {"themes": []},
             },
         )
+
+
+def test_multiview_publication_keeps_complete_manifest_per_identity(tmp_path, monkeypatch):
+    from xiaocao.research.book_t_v2_producer import _load_publications
+    from xiaocao.kol.publication import PublicationLedger
+    artifact = {"records": [
+        {"kind": "viewpoint", "record_id": "v1"},
+        {"kind": "viewpoint", "record_id": "v2"},
+        {"kind": "viewpoint_evaluation", "record_id": "e1"},
+        {"kind": "viewpoint_evaluation", "record_id": "e2"},
+        {"kind": "report", "record_id": "r"},
+    ], "manifest_sha256": "original-manifest"}
+    state = {"completed": True, "artifact": artifact, "publish_receipt": {"recordId": "r"}}
+    monkeypatch.setattr(PublicationLedger, "status_snapshot", lambda self: {"p": state})
+    sources, errors = _load_publications(tmp_path)
+    assert not errors
+    assert {r["viewpoint_id"] for r in sources} == {"v1", "v2"}
+    assert all(r["artifact"] == artifact and r["publish_receipt"] == state["publish_receipt"] for r in sources)

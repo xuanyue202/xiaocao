@@ -102,6 +102,14 @@ def main() -> int:
     key = (args.date[:10], args.code)
     found = False
     review = _load_review(args)
+    if args.scope == "short" and (live / f"morning_bundle_commit_{args.date[:10]}.json").exists():
+        from xiaocao.live.morning_bundle import acquire_bundle
+        receipt = acquire_bundle(live, args.date[:10])
+        if receipt.get("status") != "ready":
+            raise ValueError("MORNING_REVIEW_ORIGINAL_UNPROVEN")
+        expected_ref = f"morning-bundle:{receipt['checkpoint_sha256']}:{receipt['snapshot_sha256']}"
+        if review.get("evidence_freeze_ref") != expected_ref:
+            raise ValueError("MORNING_REVIEW_BATCH_MISMATCH")
     out: list[dict[str, Any]] = []
     for row in rows:
         if (str(row.get("date") or "")[:10], str(row.get("code") or "")) == key:

@@ -429,6 +429,10 @@ def main(argv: list[str] | None = None) -> int:
                 _write_review_immutable(path, result)
                 _emit_json({**result, "receipt_path": str(path.resolve())})
                 return 2 if blocked else 0
+        if not args.resume_plan_id and not args.resume_preflight_receipt:
+            from xiaocao.utils.business_clock import wait_for_business_time
+            from datetime import time as wall_time
+            wait_for_business_time(trade_date, wall_time(9, 0))
         args.preflight_continuation = None
         if args.resume_preflight_receipt:
             try:
@@ -668,6 +672,9 @@ def _run(args, notices):
         evidence=lambda: getattr(broker, "credential_health", {}),
         failure_evidence=lambda exc: {**getattr(broker, "credential_health", {}),
             "user_action": dependency_user_action(str(exc), getattr(broker, "credential_health", {}))},
+        automatic_retry=lambda failure: (failure.get("code") == "NATIVE_AX_UNLOCK_NOT_ATTEMPTED"
+            and (failure.get("evidence") or {}).get("state") == "not_attempted"
+            and not ((failure.get("evidence") or {}).get("user_action") or {}).get("required")),
     )
     def live_heartbeat():
         return read_live_heartbeat() if args.resume_plan_id else recovery.run(read_live_heartbeat)

@@ -608,3 +608,26 @@ def test_runtime_check_preserves_v1_control_as_tomorrows_consumer(tmp_path: Path
     assert result["consumer"] == "book_t_v1_control"
     assert result["v2_shadow"] == "separate_research_namespace_only"
     assert result["next_command"] == "bash scripts/auto_daily.sh morning-execute"
+
+
+def test_legacy_display_price_requires_exact_control_action_receipt():
+    value = _day(1, instrument_type="equity")
+    fill = value["control"]["fills"][0]
+    fill.update(fill_price=10.0, shares=1000, notional=10000.19, fee=10.0, fill_id="v1-control-" + "a" * 64)
+    action = {"kind": "trade", "side": "BUY", "code": fill["code"], "event_sha256": "a" * 64,
+              "price": 10.0, "shares": 1000, "notional": 10000.19, "fee": 10.0}
+    receipt = value["control"]["control_receipt"]
+    receipt["daily_semantics"] = {"selection": {"actions": [action]}}
+    receipt.pop("receipt_sha256")
+    receipt["receipt_sha256"] = canonical_sha256(receipt)
+    bound = bind_book_t_shadow_input(value)
+    run = run_book_t_shadow(bound)
+    normalized = run["control"]["fills"][0]
+    assert normalized["fill_price"] * normalized["shares"] == pytest.approx(10000.19)
+    assert normalized["display_fill_price"] == 10.0
+    assert bound["control"]["fills"][0]["fill_price"] == 10.0
+    action["event_sha256"] = "b" * 64
+    receipt.pop("receipt_sha256")
+    receipt["receipt_sha256"] = canonical_sha256(receipt)
+    with pytest.raises(BookTShadowError, match="notional does not match"):
+        run_book_t_shadow(bind_book_t_shadow_input(value))

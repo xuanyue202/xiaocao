@@ -7,8 +7,11 @@ from xiaocao.api.errors import ApiAuthError
 
 
 @pytest.fixture(autouse=True)
-def isolate_platform(monkeypatch):
+def isolate_platform(monkeypatch, tmp_path):
     monkeypatch.setattr(auth.sys, "platform", "darwin")
+    monkeypatch.setattr(auth, "_login_state_directory", lambda: tmp_path / "auth-state")
+    monkeypatch.setattr(auth, "read_keychain_token", lambda: "")
+    monkeypatch.setattr(auth, "_rejected_session_hash", "")
 
 
 def test_official_password_encoding_matches_frontend_vector():
@@ -67,8 +70,8 @@ def test_challenge_does_not_return_token_or_expose_server_text(monkeypatch):
     with pytest.raises(ApiAuthError) as error:
         auth.login_with_credentials("13800000000", "fixture-password", captcha_code="AB12")
     assert "fixture-password" not in str(error.value)
-    assert "MARKET_LOGIN_REQUIRES_USER" in str(error.value)
-    assert error.value.failure_category == "MARKET_LOGIN_REQUIRES_USER"
+    assert "MARKET_LOGIN_REJECTED_UNCLASSIFIED" in str(error.value)
+    assert error.value.failure_category == "MARKET_LOGIN_REJECTED_UNCLASSIFIED"
     assert error.value.official_login_code == 9001
 
 
@@ -112,10 +115,11 @@ def test_client_replays_read_only_once_after_login(monkeypatch):
     client = XiaocaoClient(retries=3)
     post = Mock(return_value=response)
     monkeypatch.setattr(client._session, "post", post)
-    with pytest.raises(ApiAuthError):
+    with pytest.raises(ApiAuthError) as error:
         client.get_industry_block_rank("2026-09-14", 0)
     assert post.call_count == 2
-    renew.assert_called_once_with("old")
+    assert [call.args for call in renew.call_args_list] == [("old",), ("new",)]
+    assert error.value.failure_category == "MARKET_LOGIN_BUSY"
 
 
 def test_client_preserves_sanitized_login_rejection(monkeypatch):

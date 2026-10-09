@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Daily xiaocao paper-trade + data-accumulation automation (the compounding flywheel).
-#   auto_daily.sh morning-prerecommend # ~09:23: recommend + freeze review queue, then exit for prompt delivery
+#   auto_daily.sh morning-prerecommend # ~09:18 prewake / 09:25:01 business: recommend + freeze review queue, then exit for prompt delivery
 #   auto_daily.sh morning-execute      # ~09:25: consume frozen artifacts + review rendezvous + paper-record
 #   auto_daily.sh morning              # manual compatibility: run both stages in one shell
-#   auto_daily.sh eod        # ~15:05 (after close): tick capture + forward A/B/F + monitor + settle + digest->WeCom + pipeline health
+#   auto_daily.sh eod        # 15:03 prewake / 15:10 business (after close): tick capture + forward A/B/F + monitor + settle + digest->WeCom + pipeline health
 #   auto_daily.sh optimize   # ~weekly (trading Fri): capability flywheel — judge short-line + trend pipelines and record to the ledger
 #   auto_daily.sh weekly     # Friday evening: deep flywheel review plan (Codex applies/finalizes evidence-backed changes)
 # Capital flywheel: morning entries -> intraday staged exits -> eod settle/digest.
@@ -45,7 +45,7 @@ run_book_b_morning() {
   local FREEZE_STATUS FREEZE_EXIT REVIEW_RENDEZVOUS FREEZE_RECEIPT
   FREEZE_RECEIPT="output/live/morning_consumers/paper-${TODAY}.json"
   log "morning execute: wait for dated frozen recommendation + review queue (never rerun live_recommend)"
-  FREEZE_STATUS="$(run_python scripts/wait_for_morning_freeze.py --date "$TODAY" --snapshot-path "output/live/book_b_live_freeze_${TODAY}.jsonl" --receipt-path "$FREEZE_RECEIPT" --timeout-sec "${XIAOCAO_MORNING_FREEZE_TIMEOUT_SEC:-240}" 2>&1)"
+  FREEZE_STATUS="$(run_python scripts/wait_for_morning_freeze.py --date "$TODAY" --snapshot-path "output/live/book_b_live_freeze_${TODAY}.jsonl" --receipt-path "$FREEZE_RECEIPT" --timeout-sec "${XIAOCAO_MORNING_FREEZE_TIMEOUT_SEC:--1}" --poll-sec 2 2>&1)"
   FREEZE_EXIT=$?
   log "morning freeze result: $FREEZE_STATUS"
   if [ "$FREEZE_EXIT" -ne 0 ]; then
@@ -53,7 +53,7 @@ run_book_b_morning() {
     return "$FREEZE_EXIT"
   fi
   log "bounded agent-review rendezvous (structured review only; timeout falls back to base picks)"
-  REVIEW_RENDEZVOUS="$(run_python scripts/wait_for_agent_reviews.py --date "$TODAY" --timeout-sec "${XIAOCAO_AGENT_REVIEW_TIMEOUT_SEC:-180}" 2>&1)" || true
+  REVIEW_RENDEZVOUS="$(run_python scripts/wait_for_agent_reviews.py --date "$TODAY" --morning-freeze-receipt "$FREEZE_RECEIPT" --timeout-sec "${XIAOCAO_AGENT_REVIEW_TIMEOUT_SEC:-180}" 2>&1)" || true
   log "agent-review rendezvous result: $REVIEW_RENDEZVOUS"
   log "paper-record ★E mode-qualified picks"
   if ! run_python kronos_screen/scripts/paper_record.py --date "$TODAY" --pick mode_exec_star --morning-freeze-receipt "$FREEZE_RECEIPT" --initial-capital 100000 --fee-rate 0.0001 --deploy-ratio 0.5 --max-total-exposure-ratio 1.0 --quality-governor shadow --intelligence-trade shadow >>"$LOG" 2>&1; then

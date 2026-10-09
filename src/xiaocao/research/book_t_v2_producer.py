@@ -202,33 +202,29 @@ def _load_receipt(root: Path, date_iso: str) -> dict[str, Any]:
 def _load_publications(root: Path) -> tuple[list[dict[str, Any]], list[str]]:
     ledger = PublicationLedger(root / "output/live/kol_daily/publications")
     try:
-        events = ledger.events()
+        statuses = ledger.status_snapshot()
     except Exception as exc:
         return [], [f"publication_ledger_read:{type(exc).__name__}"]
-    keys = sorted({_text(row.get("publication_key")) for row in events if _text(row.get("publication_key"))})
     readbacks: list[dict[str, Any]] = []
     errors: list[str] = []
-    for key in keys:
-        try:
-            status = ledger.status(key)
-        except Exception as exc:
-            errors.append(f"publication_status:{key}:{type(exc).__name__}")
-            continue
+    for key, status in sorted(statuses.items()):
         if status.get("completed") is True:
             artifact = status.get("artifact")
             records = artifact.get("records", []) if isinstance(artifact, Mapping) else []
-            viewpoint_count = sum(
-                1
-                for row in records
-                if isinstance(row, Mapping) and _text(row.get("kind")) == "viewpoint"
-            )
+            viewpoints = [_text(row.get("record_id")) for row in records
+                          if isinstance(row, Mapping) and _text(row.get("kind")) == "viewpoint"]
+            viewpoint_count = len(viewpoints)
             evaluation_count = sum(
                 1
                 for row in records
                 if isinstance(row, Mapping) and _text(row.get("kind")) == "viewpoint_evaluation"
             )
-            if viewpoint_count == 1 and evaluation_count == 1:
-                readbacks.append(status)
+            if viewpoints and evaluation_count:
+                for viewpoint_id in viewpoints:
+                    # Preserve the entire manifest and receipt; the downstream
+                    # binder validates and selects the matching evaluation.
+                    readbacks.append({**status, "viewpoint_id": viewpoint_id,
+                                      "source_key": f"{key}:{viewpoint_id}"})
             else:
                 errors.append(
                     f"publication_shape_skipped:{key}:viewpoints={viewpoint_count}:evaluations={evaluation_count}"

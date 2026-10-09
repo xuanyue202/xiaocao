@@ -7,9 +7,11 @@ from xiaocao.api.client import XiaocaoClient
 
 
 @pytest.fixture(autouse=True)
-def isolated(monkeypatch):
+def isolated(monkeypatch, tmp_path):
     monkeypatch.delenv(auth.TOKEN_ENV, raising=False)
     monkeypatch.setattr(auth.sys, "platform", "darwin")
+    monkeypatch.setattr(auth, "_login_state_directory", lambda: tmp_path / "auth-state")
+    monkeypatch.setattr(auth, "_rejected_session_hash", "")
     auth.invalidate_token_cache()
     yield
     auth.invalidate_token_cache()

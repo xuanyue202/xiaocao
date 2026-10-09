@@ -216,6 +216,7 @@ private struct Receipt: Codable {
     var resultReadback: BrokerResultReadback?
     var timingMs: Double
     var loginNoticeDismissed: Bool? = nil
+    var stalePasswordErrorDismissed: Bool? = nil
     var unlockSurface: UnlockSnapshot? = nil
     var unlockEvidence: UnlockEvidence? = nil
 }
@@ -1015,6 +1016,64 @@ private func observedHistoryDates(_ observation: Observation) -> HistoryDateRang
           controls[0].0.x + controls[0].0.width < controls[1].0.x,
           abs(controls[0].0.y - controls[1].0.y) < 3 else { return nil }
     return HistoryDateRange(start: controls[0].1, end: controls[1].1)
+}
+
+private func setHistoryDates(_ observation: Observation, target: String, fingerprint: String) -> Bool {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = TimeZone(identifier: "Asia/Shanghai")
+    formatter.dateFormat = "yyyy-MM-dd"
+    formatter.isLenient = false
+    guard let date = formatter.date(from: target), formatter.string(from: date) == target,
+          let window = observation.primaryWindow,
+          let windowBounds = observation.receipt.windowBounds,
+          let pid = observation.runningApplication?.processIdentifier,
+          observation.receipt.tradeAccountFingerprint == fingerprint,
+          observation.receipt.tradeAccountFingerprintCount == 1,
+          observedHistoryDates(observation) != nil else { return false }
+    var controls: [(AXUIElement, Bounds)] = []
+    var visited = 0
+    var complete = true
+    func walk(_ element: AXUIElement, depth: Int) {
+        guard depth <= maximumDepth, visited < maximumNodes else { complete = false; return }
+        visited += 1
+        if stringAttribute(element, kAXRoleAttribute) == "AXDateTimeArea", let box = bounds(of: element) {
+            let x = (box.x + box.width / 2 - windowBounds.x) / windowBounds.width
+            let y = (box.y + box.height / 2 - windowBounds.y) / windowBounds.height
+            if (0.075...0.13).contains(y), (0.08...0.32).contains(x) { controls.append((element, box)) }
+        }
+        for child in (attribute(element, kAXChildrenAttribute) as? [AXUIElement] ?? []) { walk(child, depth: depth + 1) }
+    }
+    walk(window, depth: 0)
+    controls.sort { $0.1.x < $1.1.x }
+    guard complete, controls.count == 2,
+          controls[0].1.x + controls[0].1.width < controls[1].1.x,
+          abs(controls[0].1.y - controls[1].1.y) < 3,
+          controls.allSatisfy({ isSettable($0.0, kAXValueAttribute) }) else { return false }
+    for (element, _) in controls {
+        let current = observe(command: "read-query")
+        guard current.runningApplication?.processIdentifier == pid,
+              current.receipt.tradeAccountFingerprintCount == 1,
+              current.receipt.tradeAccountFingerprint == fingerprint,
+              let currentWindow = current.primaryWindow, CFEqual(currentWindow, window),
+              observedHistoryDates(current) != nil else { return false }
+        let oldValue = attribute(element, kAXValueAttribute)
+        let value: CFTypeRef
+        if oldValue is Date { value = date as NSDate }
+        else if oldValue is String {
+            let wire = DateFormatter()
+            wire.locale = formatter.locale; wire.timeZone = formatter.timeZone
+            wire.dateFormat = "yyyy/M/d"
+            value = wire.string(from: date) as CFString
+        } else { return false }
+        guard AXUIElementSetAttributeValue(element, kAXValueAttribute as CFString, value) == .success else { return false }
+    }
+    let after = observe(command: "read-query")
+    return after.runningApplication?.processIdentifier == pid
+        && after.receipt.tradeAccountFingerprintCount == 1
+        && after.receipt.tradeAccountFingerprint == fingerprint
+        && after.primaryWindow.map { CFEqual($0, window) } == true
+        && observedHistoryDates(after) == HistoryDateRange(start: target, end: target)
 }
 
 private func emptyCapabilities() -> Capabilities {
@@ -3503,6 +3562,17 @@ private func readQuery(arguments: [String]) -> Receipt {
                 == expectedFingerprint else {
             break
         }
+        let requestedDate = option("--history-trade-date", in: arguments)
+        if !requestedDate.isEmpty {
+            guard ["history-orders", "history-trades"].contains(kind),
+                  setHistoryDates(finalObservation, target: requestedDate, fingerprint: expectedFingerprint) else {
+                receipt.status = "history_date_set_unproven"
+                receipt.reason = "exact account-bound date controls could not be set and read back"
+                receipt.timingMs = milliseconds(since: started)
+                return receipt
+            }
+            finalObservation = observe(command: "read-query", auditTables: true)
+        }
         if arguments.contains("--refresh-history-query"),
            ["history-orders", "history-trades"].contains(kind) {
             guard let refreshRunning = finalObservation.runningApplication,
@@ -3531,6 +3601,8 @@ private func readQuery(arguments: [String]) -> Receipt {
                   finalObservation.receipt.tradeAccountFingerprint
                     == expectedFingerprint else { break }
         }
+        if !requestedDate.isEmpty,
+           observedHistoryDates(finalObservation) != HistoryDateRange(start: requestedDate, end: requestedDate) { break }
         finalReceipt = finalObservation.receipt
         finalReadback = capturedQueryReadback(
             kind: kind,
@@ -4010,7 +4082,8 @@ private func fillClientLoginFromStandardInput(arguments: [String]) -> Receipt {
 // A stale login-success message can intercept a targeted Return intended for
 // the unlock form. Only this account-bound informational notice may be closed;
 // unknown dialogs, password errors and transaction confirmations stay blocked.
-private func dismissLoginSuccessNotice(_ observation: Observation, expected: String, allowDismiss: Bool = true) -> (Bool, Bool, String) {
+private func dismissLoginSuccessNotice(_ observation: Observation, expected: String, allowDismiss: Bool = true,
+                                      allowStalePasswordError: Bool = false) -> (Bool, Bool, String) {
     guard let app = observation.applicationElement else { return (false, false, "application_unavailable") }
     let windows = attribute(app, kAXWindowsAttribute) as? [AXUIElement] ?? []
     let visibleRows = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID)
@@ -4027,20 +4100,39 @@ private func dismissLoginSuccessNotice(_ observation: Observation, expected: Str
             && abs($0.width - area.width) <= 1 && abs($0.height - area.height) <= 1 }
     }
     let primaryVisible = observation.primaryWindow.flatMap { bounds(of: $0) }.map(visible) == true
+    func noticeSurfaces(_ roots: [AXUIElement]) -> [AXUIElement] {
+        var surfaces = roots
+        func sheets(_ node: AXUIElement, _ depth: Int) {
+            guard depth < 4, surfaces.count < 50 else { return }
+            for child in attribute(node, kAXChildrenAttribute) as? [AXUIElement] ?? [] {
+                if stringAttribute(child, kAXRoleAttribute) == "AXSheet",
+                   !surfaces.contains(where: { CFEqual($0, child) }) { surfaces.append(child) }
+                sheets(child, depth + 1)
+            }
+        }
+        for root in roots { sheets(root, 0) }
+        return surfaces
+    }
     var notices: [(AXUIElement, AXUIElement)] = []
-    for window in windows {
+    for window in noticeSurfaces(windows) {
         if let primary = observation.primaryWindow, CFEqual(window, primary) { continue }
         let title = stringAttribute(window, kAXTitleAttribute)
         if title == "通达信键盘精灵" { continue }
         var texts = Set<String>()
         var count = 0
         var buttonSubroles: [String] = []
+        var noticeButtons: [AXUIElement] = []
         var otherControl = false
         func walk(_ element: AXUIElement, _ depth: Int) {
             guard depth <= 12, count < 200 else { return }
             count += 1
             let role = stringAttribute(element, kAXRoleAttribute)
-            if role == "AXButton" { buttonSubroles.append(stringAttribute(element, kAXSubroleAttribute)) }
+            if role == "AXButton" {
+                buttonSubroles.append(stringAttribute(element, kAXSubroleAttribute))
+                if ["确定", "确认", "OK"].contains(stringAttribute(element, kAXTitleAttribute)) {
+                    noticeButtons.append(element)
+                }
+            }
             if ["AXTextField", "AXComboBox", "AXCheckBox", "AXRadioButton", "AXWebArea"].contains(role) { otherControl = true }
             if ["AXStaticText", "AXText", "AXHeading"].contains(stringAttribute(element, kAXRoleAttribute)) {
                 for key in [kAXTitleAttribute, kAXValueAttribute, kAXDescriptionAttribute] {
@@ -4092,6 +4184,23 @@ private func dismissLoginSuccessNotice(_ observation: Observation, expected: Str
             }
         }
         let messageCenter = title == "消息中心" || texts.contains("消息中心")
+        let staleError = allowStalePasswordError && !otherControl && noticeButtons.count == 1
+            && stringAttribute(window, kAXRoleAttribute) == "AXSheet"
+            && stringAttribute(window, kAXDescriptionAttribute) == "alert"
+            && stringAttribute(noticeButtons[0], kAXIdentifierAttribute) == "action-button-1"
+            && texts.contains(where: { $0.replacingOccurrences(of: " ", with: "").hasSuffix("用户名或密码错误") })
+            && texts.allSatisfy { text in
+                ["用户名或密码错误", "方正证券网上交易用户名或密码错误", "方正证券网上交易", "确定"]
+                    .contains(text.replacingOccurrences(of: " ", with: ""))
+            }
+        if staleError, primaryVisible, let area = bounds(of: window),
+           let parent = observation.primaryWindow.flatMap({ bounds(of: $0) }),
+           area.x >= parent.x, area.y >= parent.y,
+           area.x + area.width <= parent.x + parent.width,
+           area.y + area.height <= parent.y + parent.height {
+            notices.append((window, noticeButtons[0]))
+            continue
+        }
         let bodies = texts.filter { $0.range(of: #"^\d{8,20}\s+.{1,40}的交易已重新登录成功[!！]$"#, options: .regularExpression) != nil }
         let allowed = texts.allSatisfy { text in
             text == "消息中心" || bodies.contains(text)
@@ -4117,7 +4226,7 @@ private func dismissLoginSuccessNotice(_ observation: Observation, expected: Str
     }
     let deadline = Date().addingTimeInterval(1)
     while Date() < deadline {
-        let current = attribute(app, kAXWindowsAttribute) as? [AXUIElement] ?? []
+        let current = noticeSurfaces(attribute(app, kAXWindowsAttribute) as? [AXUIElement] ?? [])
         if !current.contains(where: { CFEqual($0, notices[0].0) }) { return (true, true, "known_notice_dismissed") }
         Thread.sleep(forTimeInterval: 0.05)
     }
@@ -4207,13 +4316,16 @@ private func unlockFromStandardInput(arguments: [String]) -> Receipt {
             receipt.reason = "a unique secure field was not proven"
             return receipt
         }
-        if receipt.unlockFailureCategory != nil {
+        let stalePasswordError = receipt.unlockFailureCategory == "trade_password_incorrect"
+        if receipt.unlockFailureCategory != nil && !stalePasswordError {
             receipt.status = "unlock_error_alert_pending"
             receipt.reason = "a prior broker password error alert must be acknowledged before another attempt"
             return receipt
         }
         evidence.stage = "overlay_check"
-        let notice = dismissLoginSuccessNotice(initial, expected: expectedFingerprint)
+        let beforeNotice = initial
+        let notice = dismissLoginSuccessNotice(initial, expected: expectedFingerprint,
+                                              allowStalePasswordError: stalePasswordError)
         guard notice.0 else {
             receipt.status = "unlock_overlay_unproven"
             receipt.reason = notice.2
@@ -4226,12 +4338,17 @@ private func unlockFromStandardInput(arguments: [String]) -> Receipt {
             receipt = initial.receipt
             receipt.action = ActionResult(attempted: false, succeeded: false, requiresUserInput: false,
                                          confirmPressed: false, confirmationMode: "none", unlockPathProven: false)
-            receipt.loginNoticeDismissed = true
+            receipt.loginNoticeDismissed = !stalePasswordError
+            receipt.stalePasswordErrorDismissed = stalePasswordError
+            evidence.snapshots.append(unlockSnapshot(initial,
+                phase: stalePasswordError ? "stale_password_alert_cleared" : "login_notice_cleared", started: started,
+                expected: expectedFingerprint))
             guard receipt.tradeAccountFingerprint == expectedFingerprint,
                   receipt.tradeAccountFingerprintCount == 1,
                   receipt.surfaceState == "authentication_required",
                   initial.secureFields.count == 1,
-                  receipt.unlockFailureCategory == nil else {
+                  receipt.unlockFailureCategory == nil,
+                  sameUnlockTarget(beforeNotice, initial, expected: expectedFingerprint) else {
                 receipt.status = "unlock_surface_unproven"
                 receipt.reason = "fresh account-bound unlock surface after notice dismissal was not proven"
                 return receipt

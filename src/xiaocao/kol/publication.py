@@ -779,6 +779,21 @@ class PublicationLedger:
                 for row in self._events_unlocked()
                 if row.get("publication_key") == publication_key
             ]
+        return self._status_from_events(publication_key, events)
+
+    def status_snapshot(self) -> dict[str, dict[str, Any]]:
+        """One locked, integrity-checked snapshot for read-only consumers."""
+        with self._locked():
+            grouped: dict[str, list[dict[str, Any]]] = {}
+            for event in self._events_unlocked():
+                key = str(event.get("publication_key") or "")
+                if key:
+                    grouped.setdefault(key, []).append(event)
+            return {key: self._status_from_events(key, events)
+                    for key, events in grouped.items()}
+
+    @staticmethod
+    def _status_from_events(publication_key: str, events: list[dict[str, Any]]) -> dict[str, Any]:
         prepared = next(
             (
                 row

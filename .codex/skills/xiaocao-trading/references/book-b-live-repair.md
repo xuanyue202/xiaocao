@@ -69,7 +69,10 @@ or the pre-freeze heartbeat. Read its exact `request_path` for sanitized failure
 and credential health, fix the dependency, then signal once with
 `PYTHONPATH=src .venv/bin/python scripts/morning_preflight_recovery.py --request <path>`.
 The bound owner requests a check, not a ready result. Consume the next emitted
-event; without a repair signal the only automatic early recheck is 09:24.
+event. Only an explicit pre-secret `not_attempted` dependency with no
+user-only action is automatically rechecked every two seconds; possible
+password actions still need exact readiness or a bound repair signal.
+09:24 remains the ordinary automatic boundary recheck.
 The startup preparation budget is shared with freeze waiting. Native helper
 repairs may be adopted from their new source hash; do not assume Python edits
 hot-load into the original interpreter. An unproved unlock remains fenced

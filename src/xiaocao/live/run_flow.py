@@ -227,6 +227,21 @@ def supporting_health_from_live(
             "detail": f"critical={health.get('critical', 0)} warn={health.get('warn', 0)}",
         })
 
+    queue_path = live_dir / f"intelligence_review_queue_{market_date[:10]}.json"
+    try:
+        queue = json.loads(queue_path.read_text(encoding="utf-8"))
+        if (not isinstance(queue, dict) or not isinstance(queue.get("items"), list)
+                or any(not isinstance(item, dict) for item in queue["items"])
+                or str(queue.get("market_date") or "")[:10] != market_date[:10]):
+            queue = {}
+    except (OSError, json.JSONDecodeError):
+        queue = {}
+    if not queue:
+        issues.append({"surface": "agent_review", "severity": "warn",
+                       "detail": "review_queue_missing_or_invalid; review completion unproven"})
+    expected_refs = {str(item.get("code") or ""): item.get("evidence_freeze_ref")
+                     for item in queue.get("items", [])}
+    modern = (live_dir / f"morning_bundle_commit_{market_date[:10]}.json").exists()
     history = live_dir / "stock_sentiment_history.jsonl"
     reviewed_codes: set[str] = set()
     legacy_pending_codes: set[str] = set()
@@ -236,17 +251,15 @@ def supporting_health_from_live(
                 row = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            if str(row.get("date") or "")[:10] != market_date[:10]:
+            if not isinstance(row, dict) or str(row.get("date") or "")[:10] != market_date[:10]:
                 continue
-            if row.get("score_source") == "agent_review":
-                reviewed_codes.add(str(row.get("code") or ""))
-            elif row.get("score_source") == "pending_agent_review":
-                legacy_pending_codes.add(str(row.get("code") or ""))
-    queue_path = live_dir / f"intelligence_review_queue_{market_date[:10]}.json"
-    try:
-        queue = json.loads(queue_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        queue = {}
+            code = str(row.get("code") or "")
+            expected_ref = queue.get("evidence_freeze_ref") or expected_refs.get(code)
+            bound = not modern or bool(expected_ref and row.get("evidence_freeze_ref") == expected_ref)
+            if row.get("score_source") == "agent_review" and bound:
+                reviewed_codes.add(code)
+            else:
+                legacy_pending_codes.add(code)
     selected_codes = {
         str(item.get("code") or "")
         for item in (queue.get("items") or [])

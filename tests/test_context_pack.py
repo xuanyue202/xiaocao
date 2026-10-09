@@ -76,7 +76,8 @@ def test_build_context_pack_from_existing_artifacts(tmp_path: Path) -> None:
     assert pack["intelligence_status"]["status"] == "pending_agent_review"
     assert pack["intelligence_status"]["fallback_to_base_pick"] is True
     assert pack["intelligence_status"]["agent_review_rows"] == 0
-    assert pack["intelligence_review_queue"]["counts"]["selected_items"] == 1
+    assert pack["intelligence_review_queue"]["status"] == "missing"
+    assert not (live / "book_b_live_freeze_2026-07-01.jsonl").exists()
 
 
 def test_context_pack_status_uses_fresh_review_queue_not_stale_file(tmp_path: Path) -> None:
@@ -117,6 +118,6 @@ def test_context_pack_status_uses_fresh_review_queue_not_stale_file(tmp_path: Pa
 
     fresh_counts = pack["intelligence_review_queue"]["counts"]
     status_queue = pack["intelligence_status"]["review_queue"]
-    assert fresh_counts["selected_items"] == 1
+    assert fresh_counts["selected_items"] == 99
     assert status_queue["selected_items"] == fresh_counts["selected_items"]
     assert status_queue["pending_items"] == fresh_counts["pending_items"]

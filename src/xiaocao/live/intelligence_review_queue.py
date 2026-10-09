@@ -198,6 +198,14 @@ def build_review_queue(
     evidence_rows = _date_rows(_read_jsonl(live_dir / f"intelligence_evidence_{market_date}.jsonl"), market_date)
     reviews = _stock_review_map(live_dir, market_date)
     open_book_b = _open_book_b_map(live_dir)
+    receipt = None
+    expected_ref = None
+    if (live_dir / f"morning_bundle_commit_{market_date}.json").exists():
+        from .morning_bundle import acquire_bundle
+        receipt = acquire_bundle(live_dir, market_date)
+        if receipt.get("status") != "ready":
+            raise ValueError("MORNING_BUNDLE_ORIGINAL_UNPROVEN")
+        expected_ref = f"morning-bundle:{receipt['checkpoint_sha256']}:{receipt['snapshot_sha256']}"
 
     items: list[dict[str, Any]] = []
     for row in evidence_rows:
@@ -206,6 +214,8 @@ def build_review_queue(
             continue
         review = reviews.get(code, {})
         reviewed = str(review.get("score_source") or "") == "agent_review"
+        if expected_ref is not None:
+            reviewed = reviewed and review.get("evidence_freeze_ref") == expected_ref
         if reviewed:
             continue
         ctx = row.get("candidate_context") if isinstance(row.get("candidate_context"), dict) else {}
@@ -219,7 +229,8 @@ def build_review_queue(
             "priority": score,
             "priority_reasons": reasons,
             "review_scope": "short",
-            "score_source": review.get("score_source") or "pending_agent_review",
+            "evidence_freeze_ref": expected_ref,
+            "score_source": "pending_agent_review",
             "data_quality": row.get("data_quality"),
             "evidence_count": row.get("evidence_count") or 0,
             "evidence_ref": f"output/live/intelligence_evidence_{market_date}.jsonl#code={code}",
@@ -259,11 +270,8 @@ def build_review_queue(
         _read_jsonl(live_dir / "signal_snapshots.jsonl"),
         market_date,
     )
-    if (live_dir / f"morning_bundle_commit_{market_date}.json").exists():
-        from .morning_bundle import acquire_bundle, read_consumed_rows
-        receipt = acquire_bundle(live_dir, market_date)
-        if receipt.get("status") != "ready":
-            raise ValueError("MORNING_BUNDLE_ORIGINAL_UNPROVEN")
+    if receipt is not None:
+        from .morning_bundle import read_consumed_rows
         frozen_snapshot_rows = read_consumed_rows(receipt, market_date, live_dir=live_dir)
         live_freeze_path = Path(receipt["snapshot_path"])
     else:
@@ -279,6 +287,7 @@ def build_review_queue(
         "generated_at": now.isoformat(timespec="seconds"),
         "fetch_policy": "zero_fetch_existing_artifacts_only",
         "review_scope": "short",
+        "evidence_freeze_ref": expected_ref,
         "status": "ready" if selected else "empty",
         "counts": {
             "evidence_rows": len(evidence_rows),

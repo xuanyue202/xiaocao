@@ -702,6 +702,8 @@ def test_history_date_request_does_not_manufacture_native_scope(tmp_path):
     receipt = client.read_query(kind='history-orders', expected_fingerprint='123******890',
                                 refresh_history=True, history_trade_date='2026-09-30')
     assert receipt.as_dict()['query_readback']['requested_history_date'] == '2026-09-30'
+    assert '--history-trade-date' in runner.calls[0][0]
+    assert '2026-09-30' in runner.calls[0][0]
     assert 'history_scope' not in receipt.as_dict()['query_readback']
     with pytest.raises(ValueError, match='only valid for history'):
         client.read_query(kind='today-orders', expected_fingerprint='123******890',

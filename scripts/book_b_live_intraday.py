@@ -78,6 +78,12 @@ def main(argv: list[str] | None = None) -> int:
 
     current = _china_now()
     trade_date = current.date().isoformat() if args.date == "today" else args.date
+    from datetime import time as wall_time
+    from xiaocao.utils.business_clock import wait_for_business_time
+    start_times = {"precheck": wall_time(14, 25), "closing": wall_time(14, 45), "eod": wall_time(15, 10)}
+    if args.phase in start_times:
+        wait_for_business_time(trade_date, start_times[args.phase])
+        current = _china_now()
     identity = None
     if args.phase == "eod":
         try:

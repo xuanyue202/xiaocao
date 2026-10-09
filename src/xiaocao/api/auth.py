@@ -5,7 +5,10 @@ import os
 import json
 import base64
 import binascii
+import hashlib
+import math
 from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 import subprocess
 import sys
@@ -24,6 +27,9 @@ OFFICIAL_HOSTS = frozenset({"p-xcapi.kjap1.cn", "p-xcapi.topxlc.com"})
 _lock = threading.Lock()
 _cached_token = ""
 _read_after = 0.0
+_login_owner = ContextVar("market_login_owner", default=None)
+_rejected_session_hash = ""
+_rejected_session_category = "MARKET_LOGIN_CAPTCHA_REQUIRED"
 
 
 def invalidate_token_cache() -> None:
@@ -56,10 +62,16 @@ def _read_keychain_secret(service: str) -> str:
 
 def load_market_token() -> str:
     """Explicit environment override, otherwise a short-lived in-memory read."""
-    global _cached_token, _read_after
+    global _cached_token, _read_after, _rejected_session_hash
     if TOKEN_ENV in os.environ:
         return os.environ[TOKEN_ENV].strip()
     with _lock:
+        if _rejected_session_hash:
+            current = read_keychain_token()
+            if hashlib.sha256(current.encode()).hexdigest() == _rejected_session_hash:
+                raise ApiAuthError(_rejected_session_category)
+            _rejected_session_hash = ""
+            _cached_token, _read_after = current, time.monotonic() + 30
         if time.monotonic() >= _read_after:
             _cached_token = read_keychain_token()
             _read_after = time.monotonic() + 30
@@ -224,9 +236,18 @@ def login_with_credentials(
             else int(code) if isinstance(code, str) and code.isascii() and code.isdigit() and len(code) <= 6
             else None
         )
+        message = (body.get("msg") or body.get("errmsg") or "") if isinstance(body, dict) else ""
+        category = "MARKET_LOGIN_REJECTED_UNCLASSIFIED"
+        if isinstance(message, str):
+            if any(word in message for word in ("账户已锁定", "账号已锁定", "次数已耗尽")):
+                category = "MARKET_ACCOUNT_LOCKED"
+            elif any(word in message for word in ("密码错误", "密码不正确", "用户名或密码错误")):
+                category = "MARKET_PASSWORD_REJECTED"
+            elif "验证码" in message and any(word in message for word in ("错误", "失效", "过期")):
+                category = "MARKET_CAPTCHA_REJECTED"
         raise ApiAuthError(
-            "MARKET_LOGIN_REQUIRES_USER",
-            failure_category="MARKET_LOGIN_REQUIRES_USER",
+            category,
+            failure_category=category,
             official_login_code=safe_code,
         )
     result = body.get("result")
@@ -241,12 +262,17 @@ def _login_state_directory() -> Path:
 
 
 @contextmanager
-def _login_lock():
+def _login_lock(*, timeout_seconds: float = 25):
     import fcntl
+    owned = _login_owner.get()
+    if owned is not None:
+        yield owned
+        return
     directory = _login_state_directory()
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     fd = os.open(directory / "login.lock", os.O_CREAT | os.O_RDWR, 0o600)
-    deadline = time.monotonic() + 25
+    deadline = time.monotonic() + timeout_seconds
+    owner_token = None
     try:
         while True:
             try:
@@ -256,12 +282,62 @@ def _login_lock():
                 if time.monotonic() >= deadline:
                     raise ApiAuthError("MARKET_LOGIN_BUSY")
                 time.sleep(0.1)
+        owner_token = _login_owner.set(directory)
         yield directory
     finally:
+        if owner_token is not None:
+            _login_owner.reset(owner_token)
         os.close(fd)
 
 
+@contextmanager
+def captcha_recovery_owner(observed_token: str | None):
+    """One owner from challenge fetch through hidden agent input and storage."""
+    with _login_lock(timeout_seconds=150) as directory:
+        current = read_keychain_token()
+        if observed_token is not None and current and current != observed_token:
+            invalidate_token_cache()
+            yield False
+            return
+        _check_login_cooldown(directory)
+        yield True
+
+
+def _check_login_cooldown(directory: Path) -> None:
+    try:
+        previous = json.loads((directory / "last-attempt.json").read_text())
+    except FileNotFoundError:
+        return
+    except (OSError, ValueError):
+        raise ApiAuthError("MARKET_LOGIN_STATE_UNPROVEN") from None
+    if not isinstance(previous, dict):
+        raise ApiAuthError("MARKET_LOGIN_STATE_UNPROVEN")
+    if (set(previous) == {"attempted_at"} and type(previous["attempted_at"]) in (int, float)
+            and math.isfinite(previous["attempted_at"]) and previous["attempted_at"] > 0):
+        # The prior schema wrote this exact shape only after both Keychain
+        # writes succeeded. It is a legacy completed attempt, never a claim.
+        return
+    if previous.get("status") == "completed":
+        return
+    token_hash = previous.get("session_sha256")
+    current = read_keychain_token()
+    if token_hash and current and hashlib.sha256(current.encode()).hexdigest() != token_hash:
+        return
+    if previous.get("status") == "attempt_claimed":
+        raise ApiAuthError("MARKET_LOGIN_ATTEMPT_UNPROVEN")
+    category = previous.get("failure_category")
+    if category != "MARKET_CAPTCHA_REJECTED":
+        raise ApiAuthError(category if isinstance(category, str) and category.startswith("MARKET_")
+                           else "MARKET_LOGIN_STATE_UNPROVEN")
+    retry_after = previous.get("retry_after", 0)
+    if type(retry_after) not in (int, float):
+        raise ApiAuthError("MARKET_LOGIN_STATE_UNPROVEN")
+    if previous.get("status") != "completed" and time.time() < retry_after:
+        raise ApiAuthError("MARKET_LOGIN_COOLDOWN")
+
+
 def renew_market_token(rejected_token: str) -> str:
+    global _rejected_session_hash, _rejected_session_category
     if TOKEN_ENV in os.environ:
         raise ApiAuthError("MARKET_EXPLICIT_TOKEN_REJECTED")
     if sys.platform != "darwin":
@@ -271,11 +347,16 @@ def renew_market_token(rejected_token: str) -> str:
         if current and current != rejected_token:
             invalidate_token_cache()
             return current
+        _check_login_cooldown(_login_owner.get())
         credentials = read_credentials()
         if credentials is None:
+            _rejected_session_hash = hashlib.sha256(current.encode()).hexdigest()
+            _rejected_session_category = "MARKET_CREDENTIALS_REQUIRED"
             raise ApiAuthError("MARKET_CREDENTIALS_REQUIRED")
-        # The current official login form requires a human-solved captcha.
+        # The current official login form requires an agent-solved captcha.
         # Never submit the stored password without its challenge response.
+        _rejected_session_hash = hashlib.sha256(current.encode()).hexdigest()
+        _rejected_session_category = "MARKET_LOGIN_CAPTCHA_REQUIRED"
         raise ApiAuthError(
             "MARKET_LOGIN_CAPTCHA_REQUIRED",
             failure_category="MARKET_LOGIN_CAPTCHA_REQUIRED",
@@ -294,10 +375,26 @@ def configure_credentials(
     with _login_lock() as directory:
         if captcha_code is None:
             raise ApiAuthError("MARKET_LOGIN_CAPTCHA_REQUIRED")
-        token = login_with_credentials(
-            username.strip(), password, captcha_code=captcha_code, session=session,
-        )
+        _check_login_cooldown(directory)
+        attempt = {"attempted_at": time.time(), "retry_after": time.time() + 120,
+                   "status": "attempt_claimed",
+                   "session_sha256": hashlib.sha256(read_keychain_token().encode()).hexdigest()}
+        from xiaocao.utils.atomic_files import atomic_write
+        state_path = directory / "last-attempt.json"
+        atomic_write(state_path, json.dumps(attempt).encode())
+        try:
+            token = login_with_credentials(
+                username.strip(), password, captcha_code=captcha_code, session=session,
+            )
+        except ApiAuthError as exc:
+            # Explicit challenge rejection permits a new challenge, never a
+            # repeated guess on the old one. Password/transport ambiguity cools.
+            if exc.failure_category == "MARKET_CAPTCHA_REJECTED":
+                attempt["retry_after"] = 0
+            atomic_write(state_path, json.dumps({**attempt, "status": "rejected",
+                                                "failure_category": exc.failure_category}).encode())
+            raise
         _store_keychain_secret(CREDENTIALS_SERVICE, json.dumps(
             {"username": username.strip(), "password": password}, ensure_ascii=False))
         store_market_token(token)
-        (directory / "last-attempt.json").write_text(json.dumps({"attempted_at": time.time()}))
+        atomic_write(state_path, json.dumps({**attempt, "status": "completed"}).encode())
