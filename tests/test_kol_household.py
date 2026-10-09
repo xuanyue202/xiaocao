@@ -293,3 +293,41 @@ def test_broker_cash_uses_its_own_complete_receipt_coverage(condition):
         assert context["broker_sync_sources"][0]["cash_observed_at"] == cash_at
     if condition in {"wrong_scope", "wrong_currency", "wrong_time"}:
         assert context["broker_positions_observed_at"] is None
+
+
+@pytest.mark.parametrize("kind,condition", [(kind, condition) for kind in ("stock", "cash")
+                                            for condition in ("covered", "uncovered", "nonzero", "screenshot")])
+def test_complete_api_absence_is_fresh_only_with_explicit_zero_coverage(kind, condition):
+    from datetime import datetime, timedelta, timezone
+    observed = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
+    connection_id = "lb-sg-pending"
+    row = {"assetId": "asset", "brokerConnectionId": connection_id,
+           "brokerSyncReceiptId": "receipt", "positionsVersion": 3,
+           "brokerObservedAt": observed, "brokerPositionStatus": "absence_pending",
+           "positionObservationSource": "screenshot" if condition == "screenshot" else "broker_sync",
+           "positionObservationId": "receipt", "positionObservedAt": observed,
+           "currentAmount": 5 if condition == "nonzero" else 0, "costAmount": 0,
+           "holdingQuantity": 0, "brokerSecurityKind": kind,
+           "brokerSymbol": "CASH.USD" if kind == "cash" else "AAPL.US", "currency": "USD"}
+    def opener(request, timeout):
+        payload = json.loads(request.data)
+        if payload["method"] == "tools/call":
+            value = {"items": [row]} if payload["params"]["name"] == "get_portfolio_reconciliation_view" else {}
+            result = {"structuredContent": value}
+        else:
+            uri = payload["params"]["uri"]
+            if uri == "user://current":
+                value = {"familyId": "family-real"}
+            elif "/receipts/" in uri:
+                value = {"status": "complete", "familyId": "family-real", "connectionId": connection_id,
+                         "positionsVersion": 3, "brokerObservedAt": observed, "cashObservedAt": observed,
+                         "scope": "complete_unfiltered_stock_positions", "cashScope": "complete_native_currency_balances",
+                         "cashCurrencies": [], "pendingCashCurrencies": [] if condition == "uncovered" else ["USD"],
+                         "pendingAbsenceSymbols": [] if condition == "uncovered" else ["AAPL.US"]}
+            else:
+                value = {"enabled": True, "authStatus": "ready", "lastCompleteReceiptId": "receipt",
+                         "positionsVersion": 3, "syncStatus": "synced"}
+            result = {"contents": [{"text": json.dumps(value)}]}
+        return _Response({"result": result})
+    result = LiangHuiMcpClient("https://example.test/mcp", {}, opener=opener).load_context()
+    assert result["broker_positions_status"] == ("fresh" if condition == "covered" else "degraded")

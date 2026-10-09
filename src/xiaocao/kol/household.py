@@ -54,6 +54,22 @@ class LiangHuiMcpError(DecisionError):
         self.data = data or {}
 
 
+
+def _receipt_covers_broker_absence(row: dict[str, Any], receipt: dict[str, Any]) -> bool:
+    if (row.get("brokerPositionStatus") != "absence_pending"
+            or row.get("positionObservationSource") != "broker_sync"
+            or any(type(row.get(field)) not in {int, float} or row[field] != 0
+                   for field in ("currentAmount", "costAmount"))):
+        return False
+    if row.get("brokerSecurityKind") == "cash":
+        return (receipt.get("cashScope") == "complete_native_currency_balances"
+                and row.get("currency") in receipt.get("pendingCashCurrencies", [])
+                and row.get("brokerSymbol") == f"CASH.{row.get('currency')}")
+    return (receipt.get("scope") == "complete_unfiltered_stock_positions"
+            and row.get("brokerSymbol") in receipt.get("pendingAbsenceSymbols", [])
+            and type(row.get("holdingQuantity")) in {int, float}
+            and row["holdingQuantity"] == 0)
+
 class LiangHuiMcpClient:
     """Use the existing authenticated family MCP without copying credentials."""
 
@@ -239,7 +255,8 @@ class LiangHuiMcpClient:
                     if row.get("brokerSecurityKind") == "cash":
                         currency = row.get("currency")
                         if (receipt.get("cashScope") != "complete_native_currency_balances"
-                                or currency not in receipt.get("cashCurrencies", [])
+                                or (currency not in receipt.get("cashCurrencies", [])
+                                    and not _receipt_covers_broker_absence(row, receipt))
                                 or row.get("brokerSymbol") != f"CASH.{currency}"):
                             raise DecisionError("broker cash coverage unproven")
                         row_observed = receipt.get("cashObservedAt")
@@ -263,7 +280,8 @@ class LiangHuiMcpClient:
                 fresh = (proven and all(0 <= age <= 1800 for age in ages) and connection.get("enabled") is True
                          and connection.get("authStatus") == "ready"
                          and connection.get("syncStatus") in {"synced", "unchanged"}
-                         and all(row.get("brokerPositionStatus") == "present"
+                         and all((row.get("brokerPositionStatus") == "present"
+                                  or _receipt_covers_broker_absence(row, receipt))
                                  and row.get("positionObservationSource") in {None, "broker_sync"}
                                  and row.get("positionObservationId") in {None, receipt_id} for row in rows))
                 source = {"connection_id": connection_id, "receipt_id": receipt_id,
