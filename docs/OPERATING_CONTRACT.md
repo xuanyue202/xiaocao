@@ -1,6 +1,6 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：4.36
+**版本**：4.37
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
 **关联实现**：`src/xiaocao/live/{safety,capital_keychain,foundersc_native_ax,foundersc_native_broker,trading_execution,book_b_live_lifecycle,book_b_live_intraday}.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`native/foundersc_ax_executor/`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{book_b_live_morning,book_b_live_intraday,live_monitor,research_mode_switch_replay}.py`
@@ -163,7 +163,7 @@ LiangHui 语义投影质量、来源读回时效、当前正式决策是三个�
 
 ### 2a. 已授权的有界 KOL 当下判断（2026-09-07）
 
-家庭长桥仓位由灰常亮服务端维护，Xiaocao 只通过 LiangHui MCP 消费，不持有券商凭证、不登录券商、不导入 Book A/B/T/KOL-US。家庭上下文的兼容 `as_of` 与 `read_at` 表示读取时间，不证明仓位新鲜；`broker_positions_observed_at` 只来自可读、已完成、family/connection/version/每项 receipt 引用一致的券商回执。观测超过 30 分钟、授权失效/停用、同步失败、缺失待确认或证据不一致，必须携带 `broker_positions_status=degraded` 与逐连接证据；不能把读取当作新的成功同步。未纳管的原有家庭资产仍保持原读取语义。此状态供家庭适用性评估使用，不替代上述各 Book 的执行账户证据。
+家庭长桥仓位由灰常亮服务端维护，Xiaocao 只通过 LiangHui MCP 消费，不持有券商凭证、不登录券商、不导入 Book A/B/T/KOL-US。家庭上下文的兼容 `as_of` 与 `read_at` 表示读取时间，不证明仓位新鲜；`broker_positions_observed_at` 只来自可读、已完成、family/connection/version/每项 receipt 引用一致的券商回执。观测超过 30 分钟、授权失效/停用、同步失败、缺失未证实或证据不一致，必须携带 `broker_positions_status=degraded` 与逐连接证据；不能把读取当作新的成功同步。完整 API 首次确认缺失的证券或现金已经归零、尚待第二次观测归档时，仅在完成回执显式覆盖缺失 symbol/currency、数量及金额为零且来源/version/receipt/时点均匹配时，仍属于新鲜 API 观测；截图或无覆盖证明的待归档行继续降级。未纳管的原有家庭资产仍保持原读取语义。此状态供家庭适用性评估使用，不替代上述各 Book 的执行账户证据。
 
 用户确认新增判断接口，不要求每次当下判断先完成研究 PASS；这不把原始
 KOL 断言、候选假设或报告升级为策略真值，也不替代永久参数升级的 §10 证据与通知门。
@@ -638,6 +638,7 @@ APP 在用户明确批准的动态资金政策下，以账户绑定的资金划�
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| 4.37 | 2026-10-09 | 家庭长桥 API 缺失首观测归零、第二观测归档；消费者仅认可完整回执覆盖且零数量/金额的待归档行，保持账户、版本、来源及时效校验。 |
 | 4.36 | 2026-10-08 | EOD 对新鲜零成交旧 SELL 仍执行精确对账，保留未终态回执与严格结算门；晨间原有证明复用规则不变。 |
 | 4.35 | 2026-10-08 | 历史查询要求同捕获日期范围和分页完整性证明，缺失明确 UNKNOWN；当前观测与历史事件引用分离，保留原订单与结算保护。 |
 | 4.34 | 2026-10-08 | 同日原任务可一次性接回无副作用 preflight 失败，绑定原归档、绝对准备截止时点和 claim；终态不重放，复用精确新鲜旧 SELL 零成交证明且保留 UNKNOWN 与同代码买入门。 |
