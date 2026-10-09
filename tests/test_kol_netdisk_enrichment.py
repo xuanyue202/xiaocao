@@ -65,6 +65,7 @@ def test_opencli_time_wait_rejects_unbound_receipt(tmp_path, output):
 
 @pytest.mark.parametrize("stages,expected", [
     (["tabs", "select"], "upload_select_failed"),
+    (["tabs", "navigate"], "upload_navigate_failed"),
     (["folder_scan", "mark_input", "activate"], "upload_activate_failed"),
     (["attach"], "upload_attachment_uncertain"),
     (["attach", "receipt"], "upload_attachment_uncertain"),
@@ -4459,8 +4460,8 @@ def test_same_second_preclaim_evidence_is_rejected_with_microsecond_precision(
         )
 
 
-@pytest.mark.parametrize("failure", [None, "wrong_claim", "attached", "started", "uncertain", "missing_stage", "no_failure_exit"])
-@pytest.mark.parametrize("stage", ["upload_foreground", "upload_event_loop"])
+@pytest.mark.parametrize("failure", [None, "wrong_claim", "attached", "started", "uncertain", "missing_stage", "no_failure_exit", "auth", "wrong_directory"])
+@pytest.mark.parametrize("stage", ["upload_navigate", "upload_foreground", "upload_event_loop"])
 def test_foreground_repair_uses_bound_adapter_and_never_retries_attachment(tmp_path, monkeypatch, failure, stage):
     video = tmp_path / "video-compressed.mp4"
     video.write_bytes(b"real-video")
@@ -4471,6 +4472,7 @@ def test_foreground_repair_uses_bound_adapter_and_never_retries_attachment(tmp_p
                "reason": "browser_command_failed", "failure_stage": stage,
                "diagnostic": {"category": "transport_error", "code": stage + "_failed", "stage": stage, "exit_code": 1}}
     if failure == "no_failure_exit": current["diagnostic"]["exit_code"] = 0
+    if failure == "auth": current["diagnostic"]["category"] = "authentication_error"
     if failure == "started": current["upload_started_at"] = NOW.isoformat()
     if failure == "uncertain": current["diagnostic"]["code"] = "upload_attachment_uncertain"
     if failure == "missing_stage": current.pop("diagnostic")
@@ -4480,6 +4482,7 @@ def test_foreground_repair_uses_bound_adapter_and_never_retries_attachment(tmp_p
              "surfaceState": {"receiptMatchesTarget": False, "targetInTransferUi": False,
                               "targetUiRows": [], "inputs": [{"targetAttached": failure == "attached"}]}}
     if failure == "wrong_claim": proof["claimId"] = "other-job"
+    if failure == "wrong_directory": proof["directory"] = "/other-folder"
     def inspect(**kwargs):
         assert kwargs["inspect_only"] is True
         assert kwargs["claim_id"] == job["job_id"]

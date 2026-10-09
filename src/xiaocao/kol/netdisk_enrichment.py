@@ -2718,7 +2718,7 @@ class NetdiskEnrichmentService:
             )
             readiness_failure = (
                 row.get("reason") == "browser_command_failed"
-                and row.get("failure_stage") in {"upload_foreground", "upload_event_loop"}
+                and row.get("failure_stage") in {"upload_navigate", "upload_foreground", "upload_event_loop"}
                 and (row.get("diagnostic") or {}).get("code") == row.get("failure_stage") + "_failed"
                 and (row.get("diagnostic") or {}).get("stage") == row.get("failure_stage")
                 and (row.get("diagnostic") or {}).get("category") == "transport_error"
@@ -2759,7 +2759,7 @@ class NetdiskEnrichmentService:
         if not eligible(current):
             raise EnrichmentError("upload has no eligible proven pre-attachment failure")
         # Reconcile the retained adapter page, not the separate Browser session.
-        if current.get("failure_stage") in {"upload_foreground", "upload_event_loop", "upload_folder_scan"}:
+        if current.get("failure_stage") in {"upload_navigate", "upload_foreground", "upload_event_loop", "upload_folder_scan"}:
             result = self._opencli_upload_template_process(
                 session=session, profile=profile, video_path=Path(current["video_path"]),
                 target_name=current["video_basename"], claim_id=job_id, inspect_only=True,

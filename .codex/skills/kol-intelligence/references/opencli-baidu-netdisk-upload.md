@@ -77,11 +77,15 @@ modify extension permissions or browser security settings. An explicit security
 denial, authentication/consent challenge, or unknown upload effect still stops
 the corresponding action; do not switch surfaces to bypass it.
 
-For a ledger-bound `upload_foreground_failed` / `upload_foreground` or
+For a ledger-bound `upload_navigate_failed` / `upload_navigate`,
+`upload_foreground_failed` / `upload_foreground` or
 `upload_event_loop_failed` / `upload_event_loop` diagnostic,
 the original run proves attachment was not reached. After repairing the adapter,
 `resume_pre_attachment_upload` requires same-claim adapter folder/name readback
-and no target in receipt/UI/inputs, then persists one continuation claim. Never
+and no target in receipt/UI/inputs, then persists one continuation claim.
+A navigation failure may continue only after the retained adapter page exists
+and passes its exact-folder inspection; a missing page is not permission to
+navigate or recreate an uploader during reconciliation. Never
 infer this eligibility from a later inspection or a generic historical failure.
 
 A claim-bound `upload_folder_scan_failed` / `upload_folder_scan` also proves
