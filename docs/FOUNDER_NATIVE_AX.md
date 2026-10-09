@@ -216,6 +216,14 @@ readback length must also match the supplied secret; a silent AX no-op fails. `c
 the bound login page is ready for CAPTCHA, not that authentication completed;
 `client_login_notice_dismissed` records the bounded validation-notice action.
 
+The in-session empty-confirm validation uses a distinct exact `AXWindow` with `AXDialog` subrole:
+`请输入交易密码解锁!`, alert description, and one `确定` button with identifier
+`action-button--998`. Only the pre-secret unlock path may close this bound
+validation dialog; require disappearance and fresh target binding before the
+one permitted unlock attempt. It is not a credential rejection and does not
+relax the durable prohibition on repeating an attempted/uncertain password.
+First-client-login recovery does not gain this dialog authority.
+
 Provisioning remains human-only:
 
 ```bash

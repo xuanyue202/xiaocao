@@ -4125,7 +4125,8 @@ private func fillClientLoginFromStandardInput(arguments: [String]) -> Receipt {
 private func dismissLoginSuccessNotice(_ observation: Observation, expected: String, allowDismiss: Bool = true,
                                       allowStalePasswordError: Bool = false,
                                       allowClientPasswordRequiredNotice: Bool = false,
-                                      allowLoginSuccessNotice: Bool = true) -> (Bool, Bool, String) {
+                                      allowLoginSuccessNotice: Bool = true,
+                                      allowUnlockPasswordRequiredNotice: Bool = false) -> (Bool, Bool, String) {
     guard let app = observation.applicationElement else { return (false, false, "application_unavailable") }
     let windows = attribute(app, kAXWindowsAttribute) as? [AXUIElement] ?? []
     let visibleRows = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID)
@@ -4237,11 +4238,21 @@ private func dismissLoginSuccessNotice(_ observation: Observation, expected: Str
             && normalizedTexts.allSatisfy {
                 ["请输入交易密码!", "方正证券网上交易请输入交易密码!", "方正证券网上交易", "确定"].contains($0)
             }
-        if (staleError || missingClientInput), !otherControl,
+        let missingUnlockInput = allowUnlockPasswordRequiredNotice
+            && normalizedTexts.contains(where: { $0 == "请输入交易密码解锁!" || $0 == "提示请输入交易密码解锁!" })
+            && normalizedTexts.allSatisfy {
+                ["请输入交易密码解锁!", "提示请输入交易密码解锁!", "提示", "确定"].contains($0)
+            }
+        let knownShape = ((staleError || missingClientInput)
+            && stringAttribute(window, kAXRoleAttribute) == "AXSheet")
+            || (missingUnlockInput && stringAttribute(window, kAXRoleAttribute) == "AXWindow"
+                && stringAttribute(window, kAXSubroleAttribute) == "AXDialog")
+        let expectedButton = missingUnlockInput ? "action-button--998" : "action-button-1"
+        if knownShape, !otherControl,
            noticeButtons.count == 1, buttonSubroles.count == 1,
-           stringAttribute(window, kAXRoleAttribute) == "AXSheet",
            stringAttribute(window, kAXDescriptionAttribute) == "alert",
-           stringAttribute(noticeButtons[0], kAXIdentifierAttribute) == "action-button-1",
+           stringAttribute(noticeButtons[0], kAXIdentifierAttribute) == expectedButton,
+           !missingUnlockInput || stringAttribute(noticeButtons[0], kAXTitleAttribute) == "确定",
            primaryVisible, let area = bounds(of: window),
            let parent = observation.primaryWindow.flatMap({ bounds(of: $0) }),
            area.x >= parent.x, area.y >= parent.y,
@@ -4263,7 +4274,7 @@ private func dismissLoginSuccessNotice(_ observation: Observation, expected: Str
             let titleKind = title.replacingOccurrences(of: #"\d{8,20}"#, with: "masked_account", options: .regularExpression)
             let area = bounds(of: window)
             let visibleGeometry = visibleBounds.map { "\($0.x),\($0.y),\($0.width),\($0.height)" }.joined(separator: ";")
-            return (false, false, "secondary_window_unrecognized:title=\(titleKind):body=\(bodies.count):texts=\(texts.count):nodes=\(count):buttons=\(buttonSubroles):other_control=\(otherControl):bounds=\(area?.x ?? -1),\(area?.y ?? -1),\(area?.width ?? -1),\(area?.height ?? -1):primary_visible=\(primaryVisible):onscreen=\(visibleGeometry)")
+            return (false, false, "secondary_window_unrecognized:role=\(stringAttribute(window, kAXRoleAttribute)):subrole=\(stringAttribute(window, kAXSubroleAttribute)):description_alert=\(stringAttribute(window, kAXDescriptionAttribute) == "alert"):title=\(titleKind):body=\(bodies.count):texts=\(texts.count):nodes=\(count):buttons=\(buttonSubroles):other_control=\(otherControl):bounds=\(area?.x ?? -1),\(area?.y ?? -1),\(area?.width ?? -1),\(area?.height ?? -1):primary_visible=\(primaryVisible):onscreen=\(visibleGeometry)")
         }
         notices.append((window, close))
     }
@@ -4374,7 +4385,8 @@ private func unlockFromStandardInput(arguments: [String]) -> Receipt {
         evidence.stage = "overlay_check"
         let beforeNotice = initial
         let notice = dismissLoginSuccessNotice(initial, expected: expectedFingerprint,
-                                              allowStalePasswordError: stalePasswordError)
+                                              allowStalePasswordError: stalePasswordError,
+                                              allowUnlockPasswordRequiredNotice: true)
         guard notice.0 else {
             receipt.status = "unlock_overlay_unproven"
             receipt.reason = notice.2

@@ -46,6 +46,14 @@ steps from an earlier receipt.
 | `none` | Helper foundation is ready. The live runner must still prove native positions/orders/trades, the account-bound funds summary embedded in the positions capture, and order-page capabilities before `supports_submit=true`. |
 | `inspect_native_receipt` | Stop on unknown/incomplete state; preserve the receipt and do not improvise clicks. |
 
+The in-session empty-confirm validation uses a distinct exact `AXWindow` with `AXDialog` subrole:
+`请输入交易密码解锁!`, alert description, and one `确定` button with identifier
+`action-button--998`. Only the pre-secret unlock path may close this bound
+validation dialog; require disappearance and fresh target binding before the
+one permitted unlock attempt. It is not a credential rejection and does not
+relax the durable prohibition on repeating an attempted/uncertain password.
+First-client-login recovery does not gain this dialog authority.
+
 Manual password assistance is `focus-unlock`. It only raises the app and
 focuses the unique secure field; the user types and confirms.
 

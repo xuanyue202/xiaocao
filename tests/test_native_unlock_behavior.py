@@ -113,9 +113,15 @@ private func option(_ name: String, in arguments: [String]) -> String { "123****
 private func readStandardInputSecret() -> String? { secretReads += 1; return "fixture-secret" }
 private func dismissLoginSuccessNotice(_ observation: Observation, expected: String,
                                       allowDismiss: Bool = true,
-                                      allowStalePasswordError: Bool = false) -> (Bool, Bool, String) {
+                                      allowStalePasswordError: Bool = false,
+                                      allowUnlockPasswordRequiredNotice: Bool = false) -> (Bool, Bool, String) {
     if mode == "overlay" || (mode == "late-overlay" && valueWrites > 0) { return (false, false, "unknown-overlay") }
     if mode == "prior-error" { return (false, false, "unproved-error-sheet") }
+    if mode.hasPrefix("input-") && !noticeDismissed {
+        guard allowUnlockPasswordRequiredNotice, mode != "input-persistent" else { return (false, false, "input-notice-not-clear") }
+        noticeDismissed = true
+        return (true, true, "known_notice_dismissed")
+    }
     if mode.hasPrefix("stale-") && !noticeDismissed {
         guard allowStalePasswordError else { return (false, false, "stale-error-not-enabled") }
         noticeDismissed = true
@@ -131,7 +137,7 @@ private func observe(command: String) -> Observation {
     if mode.hasPrefix("stale-") && (!noticeDismissed || mode == "stale-persistent") {
         receipt.unlockFailureCategory = "trade_password_incorrect"
     }
-    if noticeDismissed && mode == "stale-account-changed" { receipt.tradeAccountFingerprint = "999******999" }
+    if noticeDismissed && (mode == "stale-account-changed" || mode == "input-account-changed") { receipt.tradeAccountFingerprint = "999******999" }
     if confirmations > 0 {
         if mode != "never-ready" && !(mode == "slow-ready" && elapsed < 1.2) {
             receipt.status = "query_only"; receipt.surfaceState = "query_only"; receipt.secureFieldCount = 0
@@ -141,9 +147,9 @@ private func observe(command: String) -> Observation {
         if mode == "password-error" { receipt.unlockFailureCategory = "trade_password_incorrect" }
     }
     let changed = valueWrites > 0 && confirmations == 0
-    return Observation(receipt: receipt, runningApplication: (mode == "restart" && confirmations > 0) || (noticeDismissed && mode == "stale-pid-changed") ? Running(22) : running, applicationElement: app,
-        primaryWindow: (changed && mode == "window-changed") || (noticeDismissed && mode == "stale-window-changed") ? otherWindow : window,
-        secureFields: receipt.secureFieldCount == 0 ? [] : [(changed && mode == "field-changed") || (noticeDismissed && mode == "stale-field-changed") ? otherField : field],
+    return Observation(receipt: receipt, runningApplication: (mode == "restart" && confirmations > 0) || (noticeDismissed && (mode == "stale-pid-changed" || mode == "input-pid-changed")) ? Running(22) : running, applicationElement: app,
+        primaryWindow: (changed && mode == "window-changed") || (noticeDismissed && (mode == "stale-window-changed" || mode == "input-window-changed")) ? otherWindow : window,
+        secureFields: receipt.secureFieldCount == 0 ? [] : [(changed && mode == "field-changed") || (noticeDismissed && (mode == "stale-field-changed" || mode == "input-field-changed")) ? otherField : field],
         confirmButtons: mode == "semantic-busy" ? [button] : [])
 }
 '''
@@ -229,4 +235,24 @@ def test_stale_alert_recovery_rebinds_before_one_password_attempt(unlock_executa
 def test_stale_alert_recovery_never_reads_secret_after_binding_changes(unlock_executable, mode):
     receipt, counters = run_unlock(unlock_executable, mode)
     assert receipt["status"] == "unlock_surface_unproven"
+    assert counters[:3] == ["0", "0", "0"]
+
+
+def test_empty_unlock_input_notice_recovery_precedes_one_secret_attempt(unlock_executable):
+    receipt, counters = run_unlock(unlock_executable, "input-cleared")
+    assert receipt["status"] == "unlocked"
+    assert receipt["login_notice_dismissed"] is True
+    assert counters[:3] == ["1", "1", "1"]
+
+
+@pytest.mark.parametrize("mode", ["input-account-changed", "input-pid-changed", "input-window-changed", "input-field-changed"])
+def test_empty_unlock_notice_rebinds_before_reading_secret(unlock_executable, mode):
+    receipt, counters = run_unlock(unlock_executable, mode)
+    assert receipt["status"] == "unlock_surface_unproven"
+    assert counters[:3] == ["0", "0", "0"]
+
+
+def test_persistent_empty_unlock_notice_prevents_secret_read(unlock_executable):
+    receipt, counters = run_unlock(unlock_executable, "input-persistent")
+    assert receipt["status"] == "unlock_overlay_unproven"
     assert counters[:3] == ["0", "0", "0"]
