@@ -59,6 +59,15 @@ process, window, password and CAPTCHA controls before receiving the secret.
 An empty password field requires a successful string readback; a missing or
 non-string AX value never proves clearing.
 
+Before a first-login secret is read, check blocking notices. Only one exact
+account/window-bound `请输入交易密码!` validation sheet may be dismissed;
+prove disappearance and rebind the same controls before fill. Credential
+rejection and unknown/ambiguous dialogs return `client_login_notice_blocked`.
+Check the same binding and absence of blocking dialogs again after fill/focus. The secure-field
+readback length must also match the supplied secret; a silent AX no-op fails.
+`client_login_password_filled` means ready for CAPTCHA, not authenticated;
+`client_login_notice_dismissed` records that bounded validation-notice action.
+
 Codex visual recognition may handle CAPTCHA in this slow recovery path when the
 user authorizes it. Require a fresh screenshot, exactly four recognized digits,
 field readback, and one login press. Permit at most one retry for an explicit

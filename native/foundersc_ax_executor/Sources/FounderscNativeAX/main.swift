@@ -216,6 +216,7 @@ private struct Receipt: Codable {
     var resultReadback: BrokerResultReadback?
     var timingMs: Double
     var loginNoticeDismissed: Bool? = nil
+    var clientLoginNoticeDismissed: Bool? = nil
     var staleAuthErrorDismissed: Bool? = nil
     var unlockSurface: UnlockSnapshot? = nil
     var unlockEvidence: UnlockEvidence? = nil
@@ -4020,22 +4021,43 @@ private func fillClientLoginFromStandardInput(arguments: [String]) -> Receipt {
         receipt.reason = "Founder window could not be proven frontmost"
         return receipt
     }
-    let current = observe(command: "fill-client-login-stdin")
+    func sameLoginTarget(_ candidate: Observation) -> Bool {
+        let state = candidate.receipt
+        guard state.appRunning, !state.screenLocked, state.accessibilityTrusted,
+              state.surfaceState == "client_login_required",
+              state.tradeAccountFingerprint == expectedFingerprint,
+              state.tradeAccountFingerprintCount == 1,
+              candidate.secureFields.count == 1, candidate.clientLoginCaptchaFields.count == 1,
+              let initialPID = initial.runningApplication?.processIdentifier,
+              candidate.runningApplication?.processIdentifier == initialPID,
+              let initialWindow = initial.primaryWindow, let currentWindow = candidate.primaryWindow else { return false }
+        return CFEqual(initialWindow, currentWindow)
+            && CFEqual(initial.secureFields[0], candidate.secureFields[0])
+            && CFEqual(initial.clientLoginCaptchaFields[0], candidate.clientLoginCaptchaFields[0])
+    }
+    var current = observe(command: "fill-client-login-stdin")
     receipt = current.receipt
-    guard receipt.appRunning, !receipt.screenLocked, receipt.accessibilityTrusted,
-          receipt.surfaceState == "client_login_required",
-          receipt.tradeAccountFingerprint == expectedFingerprint,
-          receipt.tradeAccountFingerprintCount == 1,
-          current.secureFields.count == 1, current.clientLoginCaptchaFields.count == 1,
-          let initialPID = initial.runningApplication?.processIdentifier,
-          current.runningApplication?.processIdentifier == initialPID,
-          let initialWindow = initial.primaryWindow, let currentWindow = current.primaryWindow,
-          CFEqual(initialWindow, currentWindow),
-          CFEqual(initial.secureFields[0], current.secureFields[0]),
-          CFEqual(initial.clientLoginCaptchaFields[0], current.clientLoginCaptchaFields[0]) else {
+    guard sameLoginTarget(current) else {
         receipt.status = "client_login_surface_unproven"
         receipt.reason = "login account, process, window or password/CAPTCHA fields changed during activation"
         return receipt
+    }
+    let notice = dismissLoginSuccessNotice(current, expected: expectedFingerprint,
+                                           allowClientPasswordRequiredNotice: true, allowLoginSuccessNotice: false)
+    receipt.clientLoginNoticeDismissed = notice.1
+    guard notice.0 else {
+        receipt.status = "client_login_notice_blocked"
+        receipt.reason = notice.2
+        return receipt
+    }
+    if notice.1 {
+        current = observe(command: "fill-client-login-stdin")
+        guard sameLoginTarget(current),
+              dismissLoginSuccessNotice(current, expected: expectedFingerprint, allowDismiss: false, allowLoginSuccessNotice: false).0 else {
+            receipt.status = "client_login_surface_unproven"
+            receipt.reason = "login target changed or remains blocked after validation-notice dismissal"
+            return receipt
+        }
     }
     guard let secret = readStandardInputSecret() else {
         receipt.status = "trade_password_input_invalid"
@@ -4074,14 +4096,18 @@ private func fillClientLoginFromStandardInput(arguments: [String]) -> Receipt {
         kAXFocusedAttribute as CFString,
         kCFBooleanTrue
     )
+    let afterFill = observe(command: "fill-client-login-stdin")
     let succeeded = setResult == .success && focusResult == .success
+        && (attribute(initial.secureFields[0], kAXValueAttribute) as? String)?.count == secret.count
+        && sameLoginTarget(afterFill)
+        && dismissLoginSuccessNotice(afterFill, expected: expectedFingerprint, allowDismiss: false, allowLoginSuccessNotice: false).0
     receipt.secureFieldClearedBeforeSet = true
     receipt.status = succeeded
         ? "client_login_password_filled"
         : "client_login_password_fill_failed"
     receipt.reason = succeeded
         ? "trade password filled and CAPTCHA focused; login was not pressed"
-        : "password fill or CAPTCHA focus failed; login was not pressed"
+        : "password fill, CAPTCHA focus or final unblocked login binding was not proven; login was not pressed"
     receipt.action = ActionResult(
         attempted: true,
         succeeded: succeeded,
@@ -4097,7 +4123,9 @@ private func fillClientLoginFromStandardInput(arguments: [String]) -> Receipt {
 // the unlock form. Only this account-bound informational notice may be closed;
 // unknown dialogs, password errors and transaction confirmations stay blocked.
 private func dismissLoginSuccessNotice(_ observation: Observation, expected: String, allowDismiss: Bool = true,
-                                      allowStalePasswordError: Bool = false) -> (Bool, Bool, String) {
+                                      allowStalePasswordError: Bool = false,
+                                      allowClientPasswordRequiredNotice: Bool = false,
+                                      allowLoginSuccessNotice: Bool = true) -> (Bool, Bool, String) {
     guard let app = observation.applicationElement else { return (false, false, "application_unavailable") }
     let windows = attribute(app, kAXWindowsAttribute) as? [AXUIElement] ?? []
     let visibleRows = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID)
@@ -4198,16 +4226,23 @@ private func dismissLoginSuccessNotice(_ observation: Observation, expected: Str
             }
         }
         let messageCenter = title == "消息中心" || texts.contains("消息中心")
-        let staleError = allowStalePasswordError && !otherControl && noticeButtons.count == 1
-            && stringAttribute(window, kAXRoleAttribute) == "AXSheet"
-            && stringAttribute(window, kAXDescriptionAttribute) == "alert"
-            && stringAttribute(noticeButtons[0], kAXIdentifierAttribute) == "action-button-1"
-            && texts.contains(where: { $0.replacingOccurrences(of: " ", with: "").hasSuffix("用户名或密码错误") })
-            && texts.allSatisfy { text in
-                ["用户名或密码错误", "方正证券网上交易用户名或密码错误", "方正证券网上交易", "确定"]
-                    .contains(text.replacingOccurrences(of: " ", with: ""))
+        let normalizedTexts = texts.map { $0.replacingOccurrences(of: " ", with: "") }
+        let staleError = allowStalePasswordError
+            && normalizedTexts.contains(where: { $0.hasSuffix("用户名或密码错误") })
+            && normalizedTexts.allSatisfy {
+                ["用户名或密码错误", "方正证券网上交易用户名或密码错误", "方正证券网上交易", "确定"].contains($0)
             }
-        if staleError, primaryVisible, let area = bounds(of: window),
+        let missingClientInput = allowClientPasswordRequiredNotice
+            && normalizedTexts.contains(where: { $0 == "请输入交易密码!" || $0 == "方正证券网上交易请输入交易密码!" })
+            && normalizedTexts.allSatisfy {
+                ["请输入交易密码!", "方正证券网上交易请输入交易密码!", "方正证券网上交易", "确定"].contains($0)
+            }
+        if (staleError || missingClientInput), !otherControl,
+           noticeButtons.count == 1, buttonSubroles.count == 1,
+           stringAttribute(window, kAXRoleAttribute) == "AXSheet",
+           stringAttribute(window, kAXDescriptionAttribute) == "alert",
+           stringAttribute(noticeButtons[0], kAXIdentifierAttribute) == "action-button-1",
+           primaryVisible, let area = bounds(of: window),
            let parent = observation.primaryWindow.flatMap({ bounds(of: $0) }),
            area.x >= parent.x, area.y >= parent.y,
            area.x + area.width <= parent.x + parent.width,
@@ -4221,7 +4256,7 @@ private func dismissLoginSuccessNotice(_ observation: Observation, expected: Str
                 || text.range(of: #"^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}$"#, options: .regularExpression) != nil
                 || text.range(of: #"^\d{1,4}/\d{1,4}$"#, options: .regularExpression) != nil
         }
-        guard messageCenter, bodies.count == 1, allowed,
+        guard allowLoginSuccessNotice, messageCenter, bodies.count == 1, allowed,
               maskedFingerprint(in: bodies.first!) == expected,
               let close = elementAttribute(window, kAXCloseButtonAttribute),
               stringAttribute(close, kAXRoleAttribute) == "AXButton" else {

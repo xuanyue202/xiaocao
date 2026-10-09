@@ -207,6 +207,15 @@ AX values block the fill. The final in-session unlock receipt retains
 `stale_auth_error_dismissed`; this Boolean status uses a credential-free key and
 passes the same Python sensitive-key filter as all other native receipts.
 
+Before a first-login secret is read, the helper also checks blocking notices.
+It may dismiss one exact account/window-bound `请输入交易密码!` validation sheet,
+prove it disappeared, and rebind the same login controls; credential rejection
+and unknown/ambiguous dialogs block the fill. It checks the binding and absence
+of blocking dialogs again after fill/focus. The secure-field
+readback length must also match the supplied secret; a silent AX no-op fails. `client_login_password_filled` means
+the bound login page is ready for CAPTCHA, not that authentication completed;
+`client_login_notice_dismissed` records the bounded validation-notice action.
+
 Provisioning remains human-only:
 
 ```bash

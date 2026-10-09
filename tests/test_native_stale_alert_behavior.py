@@ -37,8 +37,9 @@ private enum WindowOption { case optionOnScreenOnly }
 private let mode=CommandLine.arguments[1]
 private var presses=0, dismissed=false
 private let button=Element("AXButton","确定","",mode == "wrong-button" ? "unknown-button" : "action-button-1")
-private let text=Element("AXStaticText",mode == "mixed-text" ? "用户名或密码错误 交易委托确认" : "用户名或密码错误")
-private let sheet=Element(mode == "wrong-role" ? "AXWindow" : "AXSheet", "", mode == "wrong-description" ? "unknown" : "alert", children:[text,button], area:Bounds(x:mode == "outside" ? 1500:20,y:20,width:200,height:100))
+private let noticeText = mode.hasPrefix("client-") && mode != "client-credential-error" ? "方正证券网上交易 请输入交易密码!" : "用户名或密码错误"
+private let text=Element("AXStaticText",mode.hasSuffix("success-message") ? "1234567890 测试的交易已重新登录成功!" : (mode == "mixed-text" || mode == "client-mixed-text" ? noticeText + " 交易委托确认" : noticeText))
+private let sheet=Element(mode == "wrong-role" ? "AXWindow" : "AXSheet", mode.hasSuffix("success-message") ? "消息中心" : "", mode == "wrong-description" ? "unknown" : "alert", children:[text,button], area:Bounds(x:mode == "outside" ? 1500:20,y:20,width:200,height:100))
 private let primary=Element("AXWindow", children:[sheet], area:Bounds(x:0,y:0,width:1000,height:800))
 private let app=Element("AXApplication")
 private final class Running { let processIdentifier: pid_t=11 }
@@ -51,7 +52,7 @@ private func attribute(_ element: Element, _ key: String) -> AnyObject? {
 private func stringAttribute(_ element: Element, _ key: String) -> String {
  switch key { case kAXRoleAttribute:return element.role; case kAXTitleAttribute:return element.title; case kAXDescriptionAttribute:return element.descriptionText; case kAXIdentifierAttribute:return element.identifier; default:return "" }
 }
-private func elementAttribute(_ element: Element, _ key: String) -> Element? { nil }
+private func elementAttribute(_ element: Element, _ key: String) -> Element? { mode.hasSuffix("success-message") && element === sheet && key == kAXCloseButtonAttribute ? button:nil }
 private func bounds(of element: Element) -> Bounds? { element.area }
 private func CFEqual(_ a: Element, _ b: Element) -> Bool { a === b }
 private func maskedFingerprint(in text: String) -> String { "123******890" }
@@ -69,8 +70,9 @@ private func AXUIElementPerformAction(_ element: Element, _ action: CFString) ->
     harness += routine
     harness += r'''
 if mode == "extra-control" { sheet.children.append(Element("AXTextField")) }
+if mode == "extra-button" || mode == "client-extra-button" { sheet.children.append(Element("AXButton","取消")) }
 if mode == "duplicate" { primary.children.append(Element("AXSheet","","alert",children:[text,button])) }
-let result=dismissLoginSuccessNotice(Observation(applicationElement:app,runningApplication:Running(),primaryWindow:primary), expected:"123******890",allowStalePasswordError:mode != "not-enabled")
+let result=dismissLoginSuccessNotice(Observation(applicationElement:app,runningApplication:Running(),primaryWindow:primary), expected:"123******890",allowStalePasswordError:mode != "not-enabled" && !mode.hasPrefix("client-"),allowClientPasswordRequiredNotice:mode.hasPrefix("client-") && mode != "client-not-enabled",allowLoginSuccessNotice:!mode.hasPrefix("client-"))
 print(String(data:try! JSONSerialization.data(withJSONObject:["clear":result.0,"dismissed":result.1,"presses":presses]),encoding:.utf8)!)
 '''
     directory = tmp_path_factory.mktemp("alert-swift")
@@ -91,7 +93,8 @@ def test_exact_stale_alert_dismissed_once_and_proven_gone(alert_executable):
 
 
 @pytest.mark.parametrize("mode", ["wrong-role", "wrong-description", "wrong-button", "mixed-text", "outside",
-                                 "invisible", "extra-control", "duplicate", "not-enabled"])
+                                 "invisible", "extra-control", "extra-button", "duplicate", "not-enabled",
+                                 "client-not-enabled", "client-credential-error", "client-mixed-text", "client-extra-button", "client-success-message"])
 def test_unknown_or_ambiguous_sheet_never_pressed(alert_executable, mode):
     assert run_alert(alert_executable, mode) == {"clear": False, "dismissed": False, "presses": 0}
 
@@ -99,3 +102,11 @@ def test_unknown_or_ambiguous_sheet_never_pressed(alert_executable, mode):
 @pytest.mark.parametrize("mode", ["press-failed", "persistent"])
 def test_press_without_disappearance_is_not_recovery(alert_executable, mode):
     assert run_alert(alert_executable, mode) == {"clear": False, "dismissed": False, "presses": 1}
+
+
+def test_client_empty_password_validation_notice_has_separate_authority(alert_executable):
+    assert run_alert(alert_executable, "client-required") == {"clear": True, "dismissed": True, "presses": 1}
+
+
+def test_in_session_known_success_message_authority_preserved(alert_executable):
+    assert run_alert(alert_executable, "session-success-message") == {"clear": True, "dismissed": True, "presses": 1}
