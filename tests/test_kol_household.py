@@ -255,3 +255,41 @@ def test_broker_household_freshness_comes_from_matching_complete_receipt(conditi
         source = context["broker_sync_sources"][0]
         assert source["degraded_reason"] == "SCREENSHOT_OVERRIDE"
         assert source["effective_observations"][0]["receipt_id"] == "screenshot-receipt"
+
+
+@pytest.mark.parametrize("condition", ["fresh", "old_cash", "future_cash", "wrong_scope", "wrong_currency", "wrong_time"])
+def test_broker_cash_uses_its_own_complete_receipt_coverage(condition):
+    from datetime import datetime, timedelta, timezone
+    now = datetime.now(timezone.utc)
+    stock_at = (now - timedelta(minutes=2)).isoformat()
+    cash_at = (now + timedelta(minutes=1) if condition == "future_cash" else now - timedelta(minutes=45 if condition == "old_cash" else 1)).isoformat()
+    connection_id = "lb-sg-cash"
+    common = {"brokerConnectionId": connection_id, "brokerSyncReceiptId": "receipt", "positionsVersion": 3, "brokerPositionStatus": "present", "positionObservationSource": "broker_sync", "positionObservationId": "receipt"}
+    rows = [dict(common, assetId="stock", brokerObservedAt=stock_at),
+            dict(common, assetId="cash", brokerObservedAt=stock_at if condition == "wrong_time" else cash_at,
+                 brokerSecurityKind="cash", brokerSymbol="CASH.USD", currency="USD")]
+    def opener(request, timeout):
+        payload = json.loads(request.data)
+        if payload["method"] == "tools/call":
+            value = {"items": rows} if payload["params"]["name"] == "get_portfolio_reconciliation_view" else {"valuationComplete": True}
+            result = {"structuredContent": value}
+        else:
+            uri = payload["params"]["uri"]
+            if uri == "user://current":
+                value = {"familyId": "family-real"}
+            elif "/receipts/" in uri:
+                value = {"status": "complete", "familyId": "family-real", "connectionId": connection_id,
+                         "positionsVersion": 3, "brokerObservedAt": stock_at, "cashObservedAt": cash_at,
+                         "cashScope": "partial" if condition == "wrong_scope" else "complete_native_currency_balances",
+                         "cashCurrencies": ["HKD"] if condition == "wrong_currency" else ["USD"]}
+            else:
+                value = {"enabled": True, "authStatus": "ready", "lastCompleteReceiptId": "receipt", "positionsVersion": 3, "syncStatus": "synced"}
+            result = {"contents": [{"text": json.dumps(value)}]}
+        return _Response({"result": result})
+    context = LiangHuiMcpClient("https://example.test/mcp", {"X-Phone-Number": "secret"}, opener=opener).load_context()
+    assert context["broker_positions_status"] == ("fresh" if condition == "fresh" else "degraded")
+    if condition == "fresh":
+        assert context["broker_positions_observed_at"] == stock_at
+        assert context["broker_sync_sources"][0]["cash_observed_at"] == cash_at
+    if condition in {"wrong_scope", "wrong_currency", "wrong_time"}:
+        assert context["broker_positions_observed_at"] is None

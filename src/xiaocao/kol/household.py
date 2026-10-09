@@ -221,9 +221,25 @@ class LiangHuiMcpClient:
                 receipt = self._resource(
                     f"finance://broker-connections/{connection_id}/receipts/{receipt_id}"
                 )
-                observed = receipt.get("brokerObservedAt")
-                observed_time = datetime.fromisoformat(str(observed).replace("Z", "+00:00"))
-                age = (datetime.now(timezone.utc) - observed_time).total_seconds()
+                stock_observed = receipt.get("brokerObservedAt")
+                observed_times = [stock_observed]
+                row_times = []
+                for row in rows:
+                    row_observed = stock_observed
+                    if row.get("brokerSecurityKind") == "cash":
+                        currency = row.get("currency")
+                        if (receipt.get("cashScope") != "complete_native_currency_balances"
+                                or currency not in receipt.get("cashCurrencies", [])
+                                or row.get("brokerSymbol") != f"CASH.{currency}"):
+                            raise DecisionError("broker cash coverage unproven")
+                        row_observed = receipt.get("cashObservedAt")
+                        observed_times.append(row_observed)
+                    row_times.append(row_observed)
+                parsed_times = [datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+                                for value in observed_times]
+                observed = min(zip(parsed_times, observed_times), key=lambda item: item[0])[1]
+                ages = [(datetime.now(timezone.utc) - value).total_seconds()
+                        for value in parsed_times]
                 proven = (
                     receipt.get("status") == "complete"
                     and receipt.get("connectionId") == connection_id
@@ -231,9 +247,10 @@ class LiangHuiMcpClient:
                     and receipt.get("positionsVersion") == connection.get("positionsVersion")
                     and all(row.get("brokerSyncReceiptId") == receipt_id
                             and row.get("positionsVersion") == receipt.get("positionsVersion")
-                            and row.get("brokerObservedAt") == observed for row in rows)
+                            and row.get("brokerObservedAt") == row_observed
+                            for row, row_observed in zip(rows, row_times))
                 )
-                fresh = (proven and 0 <= age <= 1800 and connection.get("enabled") is True
+                fresh = (proven and all(0 <= age <= 1800 for age in ages) and connection.get("enabled") is True
                          and connection.get("authStatus") == "ready"
                          and connection.get("syncStatus") in {"synced", "unchanged"}
                          and all(row.get("brokerPositionStatus") == "present"
@@ -243,6 +260,8 @@ class LiangHuiMcpClient:
                           "observed_at": observed if proven else None,
                           "status": "fresh" if fresh else "stale_or_degraded",
                           "reference": f"finance://broker-connections/{connection_id}/receipts/{receipt_id}"}
+                if any(row.get("brokerSecurityKind") == "cash" for row in rows):
+                    source["cash_observed_at"] = receipt.get("cashObservedAt")
                 source["effective_observations"] = [
                     {"asset_id": row.get("assetId"), "source": row.get("positionObservationSource") or "broker_sync",
                      "observed_at": row.get("positionObservedAt") or row.get("brokerObservedAt"),
