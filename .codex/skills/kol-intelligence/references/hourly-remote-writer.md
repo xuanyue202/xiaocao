@@ -107,6 +107,14 @@ uncertain effects. Source repairs use `validate-source-repair` then
 `resume-source-repair` with exact adapter/fingerprint; resume consumes only
 `narrow_resume_surface` and reads neither mailbox nor another source.
 
+The LiangHui publication client may retry the same `get_kol_write_status`
+read up to three times after a transport timeout or connection failure, with
+short backoff. This never retries a write or an application error; uncertain
+writes still require the original claim's authoritative status reconciliation.
+For a source-level video repair with one retained request-bound bundle, narrow
+resume uses that exact pending identity without scanning subscriptions again.
+Multiple retained bundles fail closed until the exact target is resolved.
+
 For an `lv_text_image` household-context transport failure, the same source
 validation command proves provider recovery with a fresh configured read-only
 LiangHui context and the repository-owned targeted tests. This path requires

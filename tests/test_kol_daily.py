@@ -8921,3 +8921,47 @@ def test_legacy_explicit_source_handoff_remains_ordered_for_reconciliation(tmp_p
         result = pipeline.process(_publication_bundle())
         pipeline.deliver_wechat(result, sender=lambda *_: {"wecom": "ok"})
     assert order == ["gray", "book", "alert", "prepared"] * 2
+
+
+@pytest.mark.parametrize("retained_count", [1, 2])
+def test_subscription_video_source_resume_reuses_retained_bundle_without_scan(
+    tmp_path, monkeypatch, retained_count,
+):
+    root = tmp_path / "videos"
+    evidence = tmp_path / "transcript.txt"
+    evidence.write_text("complete source", encoding="utf-8")
+    items = []
+    for index in range(retained_count):
+        item = {"identity": str(index + 1) * 64, "version_key": str(index + 3) * 64,
+                "source": "source", "author": "author"}
+        items.append(item)
+        artifact = root / "artifacts" / item["version_key"]
+        artifact.mkdir(parents=True)
+        request = {"event": "subscription_video_analysis_input_required",
+                   "source_identity": item["identity"], "source_version_key": item["version_key"],
+                   "source": item["source"], "author": item["author"],
+                   "evidence_path": str(evidence),
+                   "evidence_sha256": hashlib.sha256(evidence.read_bytes()).hexdigest(),
+                   "artifact_dir": str(artifact)}
+        (artifact / "analysis_request.json").write_text(json.dumps(request), encoding="utf-8")
+        (artifact / "validated_bundle.json").write_text("{}", encoding="utf-8")
+
+    class Service:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def pending_items(self):
+            return items + [{"identity": "historical-uncertain", "version_key": "no-bundle"}]
+
+    monkeypatch.setattr(kol_daily_script, "SubscriptionVideoService", Service)
+    runtime = DailyRuntime.__new__(DailyRuntime)
+    runtime.args = SimpleNamespace(video_output_dir=root, config=tmp_path / "private.yaml")
+    calls = []
+    runtime.videos = lambda **kwargs: calls.append(kwargs) or {"status": "completed"}
+    if retained_count == 2:
+        with pytest.raises(DailyError, match="multiple retained"):
+            runtime.videos_narrow_resume("subscription_video:source")
+        assert calls == []
+    else:
+        assert runtime.videos_narrow_resume("subscription_video:source") == {"status": "completed"}
+        assert calls == [{"only_identity": items[0]["identity"], "refresh_listing": False}]

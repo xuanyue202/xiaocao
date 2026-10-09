@@ -1427,3 +1427,88 @@ def test_incomplete_broker_valuation_suppresses_household_bucket_gates(tmp_path)
     assert assessment["gate_triggered"] is False
     assert assessment["bucket_excesses"] == []
     assert assessment["bucket_shortfalls"] == []
+
+
+@pytest.mark.parametrize("failures", [1, 2])
+def test_write_status_retries_transient_transport_reads(monkeypatch, failures):
+    import requests
+    from xiaocao.kol.household import LiangHuiMcpClient
+
+    client = LiangHuiMcpClient("https://example.invalid/mcp", {"test": "fixture"})
+    calls = []
+    delays = []
+
+    class Response:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"result": {"structuredContent": {"recordState": "staged"}}}
+
+    def post(url, *, data, headers, timeout):
+        calls.append(json.loads(data))
+        if len(calls) <= failures:
+            raise requests.exceptions.ReadTimeout("fixture timeout")
+        return Response()
+
+    monkeypatch.setattr(client.session, "post", post)
+    monkeypatch.setattr("time.sleep", delays.append, raising=False)
+    result = client.call_tool("get_kol_write_status", {"idempotency_key": "exact-claim"})
+    assert result == {"recordState": "staged"}
+    assert len(calls) == failures + 1
+    assert all(call == calls[0] for call in calls)
+    assert len(delays) == failures
+
+
+@pytest.mark.parametrize("tool", ["put_kol_record", "publish_kol_report", "get_kol_record"])
+def test_write_status_retries_never_repeat_other_calls(monkeypatch, tool):
+    import requests
+    from xiaocao.kol.household import LiangHuiMcpClient
+
+    client = LiangHuiMcpClient("https://example.invalid/mcp", {"test": "fixture"})
+    calls = []
+
+    def post(*args, **kwargs):
+        calls.append(kwargs["data"])
+        raise requests.exceptions.ReadTimeout("fixture timeout")
+
+    monkeypatch.setattr(client.session, "post", post)
+    with pytest.raises(DecisionError, match="亮灰 MCP request failed"):
+        client.call_tool(tool, {"idempotency_key": "exact-claim"})
+    assert len(calls) == 1
+
+
+def test_write_status_retries_are_bounded_and_do_not_retry_application_errors(monkeypatch):
+    import requests
+    from xiaocao.kol.household import LiangHuiMcpClient, LiangHuiMcpError
+
+    client = LiangHuiMcpClient("https://example.invalid/mcp", {"test": "fixture"})
+    calls = []
+    monkeypatch.setattr("time.sleep", lambda delay: None, raising=False)
+
+    def failed_post(*args, **kwargs):
+        calls.append(kwargs["data"])
+        raise requests.exceptions.ConnectionError("fixture transport")
+
+    monkeypatch.setattr(client.session, "post", failed_post)
+    with pytest.raises(DecisionError):
+        client.call_tool("get_kol_write_status", {"idempotency_key": "exact-claim"})
+    assert len(calls) == 3
+
+    class Rejected:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"error": {"message": "missing", "data": {"code": "NOT_FOUND"}}}
+
+    calls.clear()
+    def rejected_post(*args, **kwargs):
+        calls.append(kwargs["data"])
+        return Rejected()
+
+    monkeypatch.setattr(client.session, "post", rejected_post)
+    with pytest.raises(LiangHuiMcpError) as error:
+        client.call_tool("get_kol_write_status", {"idempotency_key": "exact-claim"})
+    assert error.value.code == "NOT_FOUND"
+    assert len(calls) == 1

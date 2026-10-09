@@ -3858,6 +3858,21 @@ class DailyRuntime:
     def videos_narrow_resume(self, surface: str) -> dict[str, Any]:
         identity = _exact_progress_surface("subscription_video", surface)
         if identity == "source":
+            service = SubscriptionVideoService(
+                self.args.video_output_dir,
+                config_path=self.args.config,
+            )
+            retained = []
+            for item in service.pending_items():
+                request = _persisted_video_analysis_request(
+                    self.args.video_output_dir, item,
+                )
+                if request is not None and _persisted_validated_bundle(request) is not None:
+                    retained.append(str(item["identity"]))
+            if len(retained) > 1:
+                raise DailyError("video source resume has multiple retained bundles")
+            if retained:
+                return self.videos(only_identity=retained[0], refresh_listing=False)
             return self.videos()
         return self.videos(
             only_identity=identity,

@@ -837,6 +837,8 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
         "-q",
         "-k",
         (
+            "write_status_retries or "
+            "subscription_video_source_resume_reuses or "
             "transfer_activation_falls_back_for_bound_user_tab or "
             "transfer_bound_tab_recovery_fails_closed or "
             "lv_transfer_recent_destination_requires_exact_selected_path or "

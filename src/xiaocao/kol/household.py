@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import stat
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -173,8 +174,17 @@ class LiangHuiMcpClient:
 
     def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
         """Public small-tool seam used by the durable publication ledger."""
-
-        return self._tool(name, arguments)
+        attempts = 3 if name == "get_kol_write_status" else 1
+        for attempt in range(1, attempts + 1):
+            try:
+                return self._tool(name, arguments)
+            except DecisionError as exc:
+                if attempt == attempts or not isinstance(
+                    exc.__cause__,
+                    (requests.exceptions.Timeout, requests.exceptions.ConnectionError),
+                ):
+                    raise
+                time.sleep(0.5 * attempt)
 
     def list_tools(self) -> list[dict[str, Any]]:
         """Return the live MCP registry for a production contract preflight."""
