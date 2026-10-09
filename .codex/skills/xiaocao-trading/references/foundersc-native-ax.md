@@ -54,6 +54,10 @@ An app restart is a distinct `client_login_required` state. The explicit
 Keychain-backed trade password and focus the unique CAPTCHA field. It must
 never press `登录`; CAPTCHA stays in the slow recovery plane and unattended
 recovery remains unproven.
+After activating the client, the helper re-observes and binds the same account,
+process, window, password and CAPTCHA controls before receiving the secret.
+An empty password field requires a successful string readback; a missing or
+non-string AX value never proves clearing.
 
 Codex visual recognition may handle CAPTCHA in this slow recovery path when the
 user authorizes it. Require a fresh screenshot, exactly four recognized digits,

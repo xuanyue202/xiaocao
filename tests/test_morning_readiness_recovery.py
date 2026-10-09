@@ -107,11 +107,29 @@ def test_explicit_stale_source_date_is_rejected():
         source.get_industry_block_rank("2026-10-09")
 
 
-def test_partial_sort_response_stays_unready():
+def test_ranking_subset_keeps_unranked_universe_visible_without_blocking():
     from xiaocao.datasource.api_source import ApiDataSource
     source = ApiDataSource(SimpleNamespace(sort_v2=lambda *a, **k: ["A"]))
     source.begin_observation(1)
     source.sort_codes("2026-10-09", ["A", "B"])
+    assert source.readiness["sources"][0]["status"] == "populated"
+    assert source.readiness["sources"][0]["unranked_codes"] == ["B"]
+
+
+def test_global_ranking_without_any_requested_member_stays_unready():
+    from xiaocao.datasource.api_source import ApiDataSource
+    source = ApiDataSource(SimpleNamespace(sort_v2=lambda *a, **k: ["outside-pool"]))
+    source.begin_observation(1)
+    source.sort_codes("2026-10-09", ["A", "B"])
+    assert source.readiness["sources"][0]["status"] == "partial"
+    assert source.readiness["sources"][0]["unranked_codes"] == ["A", "B"]
+
+
+def test_selected_stock_index_missing_a_code_still_blocks_capture():
+    from xiaocao.datasource.api_source import ApiDataSource
+    source = ApiDataSource(SimpleNamespace(get_xiao_cao_index_v2=lambda *a: [{"code": "A"}]))
+    source.begin_observation(1)
+    source.get_stock_index("2026-10-09", ["A", "B"])
     assert source.readiness["sources"][0]["status"] == "partial"
     assert source.readiness["sources"][0]["missing_codes"] == ["B"]
 

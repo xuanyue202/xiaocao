@@ -216,7 +216,7 @@ private struct Receipt: Codable {
     var resultReadback: BrokerResultReadback?
     var timingMs: Double
     var loginNoticeDismissed: Bool? = nil
-    var stalePasswordErrorDismissed: Bool? = nil
+    var staleAuthErrorDismissed: Bool? = nil
     var unlockSurface: UnlockSnapshot? = nil
     var unlockEvidence: UnlockEvidence? = nil
 }
@@ -4015,15 +4015,31 @@ private func fillClientLoginFromStandardInput(arguments: [String]) -> Receipt {
         receipt.reason = "unique client password and CAPTCHA fields were not proven"
         return receipt
     }
-    guard let secret = readStandardInputSecret() else {
-        receipt.status = "trade_password_input_invalid"
-        receipt.reason = "stdin secret was empty, too long, or not UTF-8"
-        return receipt
-    }
-
     guard activateFounder(initial) else {
         receipt.status = "app_activation_failed"
         receipt.reason = "Founder window could not be proven frontmost"
+        return receipt
+    }
+    let current = observe(command: "fill-client-login-stdin")
+    receipt = current.receipt
+    guard receipt.appRunning, !receipt.screenLocked, receipt.accessibilityTrusted,
+          receipt.surfaceState == "client_login_required",
+          receipt.tradeAccountFingerprint == expectedFingerprint,
+          receipt.tradeAccountFingerprintCount == 1,
+          current.secureFields.count == 1, current.clientLoginCaptchaFields.count == 1,
+          let initialPID = initial.runningApplication?.processIdentifier,
+          current.runningApplication?.processIdentifier == initialPID,
+          let initialWindow = initial.primaryWindow, let currentWindow = current.primaryWindow,
+          CFEqual(initialWindow, currentWindow),
+          CFEqual(initial.secureFields[0], current.secureFields[0]),
+          CFEqual(initial.clientLoginCaptchaFields[0], current.clientLoginCaptchaFields[0]) else {
+        receipt.status = "client_login_surface_unproven"
+        receipt.reason = "login account, process, window or password/CAPTCHA fields changed during activation"
+        return receipt
+    }
+    guard let secret = readStandardInputSecret() else {
+        receipt.status = "trade_password_input_invalid"
+        receipt.reason = "stdin secret was empty, too long, or not UTF-8"
         return receipt
     }
     let clearResult = AXUIElementSetAttributeValue(
@@ -4032,9 +4048,7 @@ private func fillClientLoginFromStandardInput(arguments: [String]) -> Receipt {
         "" as CFTypeRef
     )
     let clearProven = clearResult == .success
-        && stringAttribute(
-            initial.secureFields[0], kAXValueAttribute
-        ).isEmpty
+        && (attribute(initial.secureFields[0], kAXValueAttribute) as? String) == ""
     guard clearProven else {
         receipt.status = "trade_password_clear_failed"
         receipt.reason = "secure field could not be proven empty before password replacement"
@@ -4339,7 +4353,7 @@ private func unlockFromStandardInput(arguments: [String]) -> Receipt {
             receipt.action = ActionResult(attempted: false, succeeded: false, requiresUserInput: false,
                                          confirmPressed: false, confirmationMode: "none", unlockPathProven: false)
             receipt.loginNoticeDismissed = !stalePasswordError
-            receipt.stalePasswordErrorDismissed = stalePasswordError
+            receipt.staleAuthErrorDismissed = stalePasswordError
             evidence.snapshots.append(unlockSnapshot(initial,
                 phase: stalePasswordError ? "stale_password_alert_cleared" : "login_notice_cleared", started: started,
                 expected: expectedFingerprint))
@@ -4538,7 +4552,8 @@ private func unlockFromStandardInput(arguments: [String]) -> Receipt {
         evidence.snapshots.append(unlockSnapshot(final, phase: "readiness", started: started,
                                                expected: expectedFingerprint))
         var result = final.receipt
-        result.loginNoticeDismissed = notice.1
+        result.loginNoticeDismissed = notice.1 && !stalePasswordError
+        result.staleAuthErrorDismissed = notice.1 && stalePasswordError
         result.secureFieldClearedBeforeSet = true
         let proven = unlockReady(final, expected: expectedFingerprint, pid: initial.runningApplication?.processIdentifier)
         result.status = proven ? "unlocked" : "unlock_unproven"

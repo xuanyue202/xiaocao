@@ -200,6 +200,13 @@ fill only the Keychain-backed password and focus CAPTCHA; it never presses
 login automatically. CAPTCHA recognition is a slow, bounded visual recovery
 path and is outside the order hot path.
 
+Before receiving a first-login secret, the helper activates and freshly binds
+the same account, PID, window, password field and CAPTCHA field. Clearing is
+proved only by an actual string empty-value readback. Missing or wrongly typed
+AX values block the fill. The final in-session unlock receipt retains
+`stale_auth_error_dismissed`; this Boolean status uses a credential-free key and
+passes the same Python sensitive-key filter as all other native receipts.
+
 Provisioning remains human-only:
 
 ```bash

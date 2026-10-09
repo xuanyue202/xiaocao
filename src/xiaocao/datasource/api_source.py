@@ -113,7 +113,7 @@ class ApiDataSource:
             date=date,
             hpqb_state=self.hpqb_state,
             lpdx_state=self.lpdx_state,
-        ), requested_codes=codes)
+        ))
         result = []
         for row in rows:
             if isinstance(row, str):
@@ -124,6 +124,18 @@ class ApiDataSource:
                     result.append(code)
         requested = set(codes)
         filtered = [code for code in result if code in requested]
+        if self._observe_enabled:
+            # sort_v2 publishes a ranking, not a permutation: the official
+            # frontend intersects it with stockIds and unranked stocks can
+            # be absent. Keep that omission visible without requiring every
+            # unranked universe member to acquire a score. The subsequent
+            # stock_index reads still require each selected code's detail.
+            self.observations[-1].update(
+                ranked_requested_count=len(set(filtered)),
+                unranked_codes=sorted(requested - set(filtered)),
+            )
+            if codes and not filtered:
+                self.observations[-1]["status"] = "partial"
         return filtered or list(codes)
 
     def get_industry_block_rank(self, date: str, model: int = 1) -> list[dict[str, Any]]:

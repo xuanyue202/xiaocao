@@ -44,6 +44,7 @@ private var elapsed = 0.0
 private var secretReads = 0, valueWrites = 0, confirmations = 0, reads = 0
 private var secureValue = "residual"
 private var focusRequested = false
+private var noticeDismissed = false
 private func simulatedNow() -> Date { Date(timeIntervalSince1970: elapsed) }
 private func wait(_ seconds: Double) { elapsed += seconds }
 private func milliseconds(since: Date) -> Double { (elapsed - since.timeIntervalSince1970) * 1000 }
@@ -54,6 +55,7 @@ private final class Running {
 }
 private let running = Running()
 private struct Receipt: Codable {
+    let schemaVersion = 2, helperVersion = 14
     var status = "authentication_required", reason = "", surfaceState = "authentication_required"
     var tradeAccountFingerprint = "123******890", tradeAccountFingerprintCount = 1
     var secureFieldCount = 1, windowCount = 1
@@ -62,6 +64,7 @@ private struct Receipt: Codable {
     var unlockFailureCategory: String? = nil
     var secureFieldClearedBeforeSet: Bool? = nil
     var loginNoticeDismissed: Bool? = nil
+    var staleAuthErrorDismissed: Bool? = nil
     var action: ActionResult? = nil
     var unlockEvidence: UnlockEvidence? = nil
 }
@@ -109,8 +112,15 @@ private func validFingerprint(_ text: String) -> Bool { text == "123******890" }
 private func option(_ name: String, in arguments: [String]) -> String { "123******890" }
 private func readStandardInputSecret() -> String? { secretReads += 1; return "fixture-secret" }
 private func dismissLoginSuccessNotice(_ observation: Observation, expected: String,
-                                      allowDismiss: Bool = true) -> (Bool, Bool, String) {
+                                      allowDismiss: Bool = true,
+                                      allowStalePasswordError: Bool = false) -> (Bool, Bool, String) {
     if mode == "overlay" || (mode == "late-overlay" && valueWrites > 0) { return (false, false, "unknown-overlay") }
+    if mode == "prior-error" { return (false, false, "unproved-error-sheet") }
+    if mode.hasPrefix("stale-") && !noticeDismissed {
+        guard allowStalePasswordError else { return (false, false, "stale-error-not-enabled") }
+        noticeDismissed = true
+        return (true, true, "known_notice_dismissed")
+    }
     return (true, false, "clear")
 }
 private func observe(command: String) -> Observation {
@@ -118,6 +128,10 @@ private func observe(command: String) -> Observation {
     var receipt = Receipt()
     receipt.appActive = running.isActive
     if mode == "prior-error" { receipt.unlockFailureCategory = "trade_password_incorrect" }
+    if mode.hasPrefix("stale-") && (!noticeDismissed || mode == "stale-persistent") {
+        receipt.unlockFailureCategory = "trade_password_incorrect"
+    }
+    if noticeDismissed && mode == "stale-account-changed" { receipt.tradeAccountFingerprint = "999******999" }
     if confirmations > 0 {
         if mode != "never-ready" && !(mode == "slow-ready" && elapsed < 1.2) {
             receipt.status = "query_only"; receipt.surfaceState = "query_only"; receipt.secureFieldCount = 0
@@ -127,9 +141,9 @@ private func observe(command: String) -> Observation {
         if mode == "password-error" { receipt.unlockFailureCategory = "trade_password_incorrect" }
     }
     let changed = valueWrites > 0 && confirmations == 0
-    return Observation(receipt: receipt, runningApplication: mode == "restart" && confirmations > 0 ? Running(22) : running, applicationElement: app,
-        primaryWindow: changed && mode == "window-changed" ? otherWindow : window,
-        secureFields: receipt.secureFieldCount == 0 ? [] : [changed && mode == "field-changed" ? otherField : field],
+    return Observation(receipt: receipt, runningApplication: (mode == "restart" && confirmations > 0) || (noticeDismissed && mode == "stale-pid-changed") ? Running(22) : running, applicationElement: app,
+        primaryWindow: (changed && mode == "window-changed") || (noticeDismissed && mode == "stale-window-changed") ? otherWindow : window,
+        secureFields: receipt.secureFieldCount == 0 ? [] : [(changed && mode == "field-changed") || (noticeDismissed && mode == "stale-field-changed") ? otherField : field],
         confirmButtons: mode == "semantic-busy" ? [button] : [])
 }
 '''
@@ -153,7 +167,8 @@ def run_unlock(executable, mode):
     result = subprocess.run([str(executable), mode], capture_output=True, text=True, timeout=3, check=True)
     assert "fixture-secret" not in result.stdout + result.stderr
     receipt, counters = result.stdout.splitlines()
-    return json.loads(receipt), counters.split(",")
+    from xiaocao.live.foundersc_native_ax import _one_receipt
+    return _one_receipt(receipt), counters.split(",")
 
 
 @pytest.mark.parametrize("mode", ["normal", "focus-delayed", "slow-ready"])
@@ -200,3 +215,18 @@ def test_unlock_failed_empty_read_is_not_proof_of_clearing(unlock_executable):
     receipt, counters = run_unlock(unlock_executable, "clear-read-failed")
     assert receipt["status"] == "trade_password_clear_failed"
     assert counters[1:3] == ["0", "0"]
+
+
+def test_stale_alert_recovery_rebinds_before_one_password_attempt(unlock_executable):
+    receipt, counters = run_unlock(unlock_executable, "stale-cleared")
+    assert receipt["status"] == "unlocked"
+    assert receipt["stale_auth_error_dismissed"] is True
+    assert counters[:3] == ["1", "1", "1"]
+
+
+@pytest.mark.parametrize("mode", ["stale-persistent", "stale-account-changed", "stale-pid-changed",
+                                 "stale-window-changed", "stale-field-changed"])
+def test_stale_alert_recovery_never_reads_secret_after_binding_changes(unlock_executable, mode):
+    receipt, counters = run_unlock(unlock_executable, mode)
+    assert receipt["status"] == "unlock_surface_unproven"
+    assert counters[:3] == ["0", "0", "0"]
