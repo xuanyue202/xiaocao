@@ -72,6 +72,12 @@ original EOD archive contains a nonterminal reconciliation receipt; report the
 remaining valid basis and exact historical gap without rewriting either file.
 Never add
 `--execute-sells` to the EOD call.
+The APP entrypoint durably queues a blocked-result WeCom notice after saving its
+original archive, including native login/read failures before a snapshot exists.
+If a code repair adds this delivery to an already terminated run, use
+`scripts/book_b_eod_alert.py --receipt <exact-original-archive>` under the original
+Automation/Thread identity. This notice-only recovery never queries APP or reruns
+EOD; uncertain delivery remains pending for exact reconciliation.
 After the original business process terminates, run
 `PYTHONPATH=src .venv/bin/python scripts/book_b_accounting.py statement` once to
 export cumulative JSON/CSV. Retain its dated mark or missing/stale status even if

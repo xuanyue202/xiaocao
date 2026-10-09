@@ -28,6 +28,7 @@ from xiaocao.live.foundersc_keychain import FounderscKeychainPreflight  # noqa: 
 from xiaocao.live.trading_runner import build_foundersc_native_execution  # noqa: E402
 from xiaocao.live.live_decision_support import calendar_provider, read_policy  # noqa: E402
 from xiaocao.live.eod_automation_gate import EodGateRejected, claim_eod_slot  # noqa: E402
+from book_b_eod_alert import notify_eod_blocker  # noqa: E402
 
 
 def _china_now() -> datetime:
@@ -54,6 +55,17 @@ def _write_json_atomic(path: Path, payload: dict) -> None:
         stream.flush()
         os.fsync(stream.fileno())
     os.replace(temporary, path)
+
+
+def _notify_blocked_eod(path: Path, payload: dict) -> None:
+    if payload.get("phase") != "eod" or payload.get("status") != "blocked":
+        return
+    try:
+        notify_eod_blocker(path, root=ROOT)
+    except Exception as exc:
+        # Keep the original business result and archived evidence unchanged.
+        print(json.dumps({"event": "eod_notice_failed", "reason": type(exc).__name__,
+                          "receipt_path": str(path)}, sort_keys=True), file=sys.stderr)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -237,6 +249,7 @@ def main(argv: list[str] | None = None) -> int:
             payload["automation_identity"] = identity
         _write_json_atomic(archive_path, payload)
         _write_json_atomic(run_path, payload)
+        _notify_blocked_eod(archive_path, payload)
         print(json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str))
         return 0 if payload["status"] in {"settled", "no_action", "observed", "executed"} else 2
     except Exception as exc:
@@ -256,6 +269,7 @@ def main(argv: list[str] | None = None) -> int:
         _write_json_atomic(archive_path, payload)
         if payload["reason"] != "LIVE_BOOK_B_CHECKPOINT_ALREADY_RUNNING":
             _write_json_atomic(run_path, payload)
+        _notify_blocked_eod(archive_path, payload)
         print(json.dumps(payload, ensure_ascii=False, sort_keys=True), file=sys.stderr)
         return 2
 

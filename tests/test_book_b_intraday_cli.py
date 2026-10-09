@@ -131,3 +131,25 @@ def test_unproved_calendar_blocks_before_secrets_or_app(entry, monkeypatch, caps
     assert payload["reason"] == "LIVE_BOOK_B_CALENDAR_UNPROVEN"
     assert json.loads(Path(payload["run_receipt_path"]).read_text()) == payload
     assert calls == []
+
+
+@pytest.mark.app_simulation
+def test_eod_login_failure_notifies_from_the_durable_original_receipt(entry, monkeypatch, capsys):
+    cli, calls, root = entry
+    notices = []
+
+    def failed_snapshot(**kwargs):
+        raise RuntimeError("NATIVE_AX_ACCOUNT_SURFACE_NOT_READY:client_login_required")
+
+    def notify(path, **kwargs):
+        payload = json.loads(path.read_text())
+        assert payload["status"] == "blocked"
+        assert payload["automation_identity"]["thread_id"] == "intraday-fixture"
+        notices.append(path)
+
+    monkeypatch.setattr(cli, "run_book_b_live_intraday", failed_snapshot)
+    monkeypatch.setattr(cli, "notify_eod_blocker", notify, raising=False)
+    assert cli.main(["--phase", "eod", "--state-dir", str(root)]) == 2
+    payload = json.loads(capsys.readouterr().err)
+    assert notices == [Path(payload["run_receipt_path"])]
+    assert calls == []
