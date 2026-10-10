@@ -531,3 +531,19 @@ to runner stage events. Read `brief_path` first, fetch missing fields from
 `request_path` only as needed, and select fields from the terminal artifact.
 Never print full candidate arrays, account tables, report-id arrays or source
 caches into the operator stream. Full detail stays in immutable artifacts.
+
+
+## Book T budget and historical corrections
+
+Operating Contract §4b/§6 governs the independent T sleeve. The production
+producer freezes the original T capital, exposure cap, held cost and cash.
+Never apply the total-capital 30% allocation a second time to T equity, resize
+a canonical control fill or reuse a post-control held lot as a new shadow fill.
+
+The shadow consumer resolves registered corrections under
+`output/research/book_t_v2_budget_repairs` and verifies source and derived hashes.
+Keep original freezes, v1 receipts and global lifecycle evidence unchanged.
+Historical correction inputs are research rehearsals and are excluded from
+both 5/20-day natural acceptance and strategy promotion; report their count
+separately. Missing/corrupt registration is a binding failure. Do not regenerate
+history from current market facts or rerun the formal T writer to repair it.

@@ -13,6 +13,7 @@ by the normal production path.
 
 from __future__ import annotations
 
+
 import copy
 import hashlib
 import json
@@ -22,6 +23,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
 
+from xiaocao.strategy.book_t_budget import budget_contract, constrain_shadow_fills
 from xiaocao.kol.publication import PublicationLedger, canonical_sha256
 from xiaocao.research.book_t_v2_lifecycle import (
     BookTV2EvidenceError,
@@ -31,7 +33,7 @@ from xiaocao.research.book_t_v2_lifecycle import (
     lifecycle_summary,
     validate_lifecycle,
 )
-from xiaocao.research.book_t_shadow import bind_book_t_shadow_input
+from xiaocao.research.book_t_shadow import bind_book_t_shadow_input, run_book_t_shadow
 from xiaocao.strategy.book_t_selector import select_book_t
 from xiaocao.strategy.theme_instrument_resolver import resolve_theme_instruments
 from xiaocao.strategy.trend_snapshot import build_trend_snapshot
@@ -632,8 +634,10 @@ def build_book_t_v2_shadow_day(
     plan = select_book_t(portfolio_value, snapshot, universe)
     plan_value = plan.to_dict()
 
+    budget = budget_contract(portfolio_value)
     assumptions = {
-        "budget_ratio": 0.30,
+        "budget_contract": budget,
+        "budget_ratio": budget["target_ratio"],
         "account_equity": float(portfolio_value.get("account_equity") or 100000.0),
         "fee_rate": float(
             portfolio_value.get("account", {}).get("fee_rate")
@@ -668,6 +672,7 @@ def build_book_t_v2_shadow_day(
         control_fills=control_fills,
         source_roles=_source_roles(snapshot_value),
     )
+    shadow_fills = constrain_shadow_fills(plan_value, portfolio_value, shadow_fills)
     control_selection["daily_semantics_sha256"] = _text(receipt["daily_semantics_sha256"])
     control_variant = {
         "selection": control_selection,
@@ -727,7 +732,9 @@ def build_book_t_v2_shadow_day(
         },
     }
     try:
-        return bind_book_t_shadow_input(body)
+        frozen = bind_book_t_shadow_input(body)
+        run_book_t_shadow(frozen)
+        return frozen
     except (ValueError, KeyError, TypeError) as exc:
         raise BookTV2ProducerError(f"producer assembled an invalid frozen input: {exc}") from exc
 

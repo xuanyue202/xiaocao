@@ -15,6 +15,7 @@ authorized".
 """
 from __future__ import annotations
 
+
 import copy
 import json
 import math
@@ -23,6 +24,9 @@ from datetime import date as calendar_date
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+from xiaocao.strategy.book_t_budget import (
+    budget_contract, constrain_shadow_fills, validate_control_budget,
+)
 from xiaocao.kol.publication import canonical_sha256
 from xiaocao.live.instrument_contract import (
     InstrumentContractError,
@@ -523,6 +527,11 @@ def _validate_etf_contract(
     }
 
 
+def validate_book_t_shadow_input(value: Mapping[str, Any]) -> dict[str, Any]:
+    """Validate immutable binding hashes without executing economic comparison."""
+    return _validate_bound_input(value)
+
+
 def _validate_fill_rows(
     variant: Mapping[str, Any],
     *,
@@ -651,7 +660,7 @@ def _validate_fill_rows(
                 raise BookTShadowError(f"{field_prefix}.fills[{index}].skip_reason is required")
         seen.add(code)
         normalized.append(item)
-    if filled_notional > account_equity * budget_ratio + 0.02:
+    if "budget_contract" not in assumptions and filled_notional > account_equity * budget_ratio + 0.02:
         raise BookTShadowError(f"{field_prefix}.fills exceed frozen theme budget")
     missing = sorted(expected - seen)
     if missing:
@@ -911,6 +920,9 @@ def run_book_t_shadow(value: Mapping[str, Any]) -> dict[str, Any]:
     market_hash = _text(market["market_input_sha256"])
     lifecycle_value = frozen.get("evidence_lifecycle")
     lifecycle = isinstance(lifecycle_value, Mapping)
+    if frozen.get("budget_repair") and (not lifecycle or lifecycle_value.get("run_mode") != "rehearsal"
+            or lifecycle_value.get("provenance", {}).get("is_rehearsal") is not True):
+        raise BookTShadowError("budget repair replay cannot claim natural evidence")
     control, control_fills, control_holds = _validate_variant(
         frozen["control"],
         name="control",
@@ -931,6 +943,26 @@ def run_book_t_shadow(value: Mapping[str, Any]) -> dict[str, Any]:
     )
 
     shadow_plan = _mapping(shadow.get("selection_plan"), "shadow.selection_plan")
+    if "budget_contract" in assumptions:
+        try:
+            portfolio = frozen["bindings"]["portfolio"]
+            budget = budget_contract(portfolio)
+            if canonical_sha256(portfolio) != shadow_plan["portfolio_sha256"] or canonical_sha256(
+                    frozen["bindings"]["selection_plan"]) != canonical_sha256(shadow_plan):
+                raise ValueError("Book T budget portfolio/plan binding mismatch")
+            if canonical_sha256(budget) != canonical_sha256(assumptions["budget_contract"]):
+                raise ValueError("Book T frozen budget contract mismatch")
+            if abs(float(assumptions["account_equity"]) - budget["account_equity"]) > .02 or abs(
+                    float(assumptions["budget_ratio"]) - budget["target_ratio"]) > 1e-9:
+                raise ValueError("Book T budget assumption mismatch")
+            if abs(float(shadow_plan["budget"]["budget_notional"]) - budget["target_budget"]) > .02:
+                raise ValueError("Book T selection target budget mismatch")
+            validate_control_budget(portfolio, control["control_receipt"], control["fills"])
+            constrained = constrain_shadow_fills(shadow_plan, portfolio, shadow["fills"])
+            if canonical_sha256(constrained) != canonical_sha256(shadow["fills"]):
+                raise ValueError("Book T shadow fill exceeds proved target/cash/exposure/slots")
+        except (ValueError, KeyError, TypeError) as exc:
+            raise BookTShadowError(str(exc)) from exc
     decision_fingerprint = _decision_fingerprint(shadow_plan)
     expected_codes = {_text(code) for code in _list(shadow.get("expected_fill_codes"), "shadow.expected_fill_codes")}
     filled_codes = {
@@ -1288,6 +1320,11 @@ def _coverage(runs: Sequence[Mapping[str, Any]], holds: Sequence[Mapping[str, An
     }
 
 
+def validate_book_t_lifecycle_events(events: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """Validate event integrity, protocol and stage ordering before deferral."""
+    return _validated_lifecycle_events(events)
+
+
 def evaluate_book_t_shadow(
     runs: Sequence[Mapping[str, Any]],
     *,
@@ -1369,15 +1406,16 @@ def evaluate_book_t_shadow(
             else _text(lifecycle.get("outcome_status"))
         )
         run["engineering"] = engineering
+    promotion_runs = [run for run in effective_runs if not run["frozen_input"].get("budget_repair")]
     shadow_holds = [
         row
-        for run in effective_runs
+        for run in promotion_runs
         for row in _mapping(run["shadow"], "run.shadow").get("holds", [])
         if _mapping(row, "run.shadow.hold").get("executable") is True
     ]
     control_holds = [
         row
-        for run in effective_runs
+        for run in promotion_runs
         for row in _mapping(run["control"], "run.control").get("holds", [])
         if _mapping(row, "run.control.hold").get("executable") is True
     ]
@@ -1393,10 +1431,10 @@ def evaluate_book_t_shadow(
         cache_only=True,
         min_holds=min_holds,
     )
-    coverage = _coverage(effective_runs, shadow_holds)
+    coverage = _coverage(promotion_runs, shadow_holds)
     valid_decision_fingerprints = {
         _text(_mapping(run.get("engineering"), "run.engineering").get("decision_fingerprint"))
-        for run in effective_runs
+        for run in promotion_runs
         if _mapping(run.get("engineering"), "run.engineering").get("valid_theme_decision") is True
         and (
             not lifecycle_mode
@@ -1553,6 +1591,7 @@ def evaluate_book_t_shadow(
             "burn_in_complete": trading_days >= int(min_burn_in_days),
             "strategy_floor_complete": trading_days >= int(min_strategy_days) and valid_decisions >= int(min_valid_decisions),
             "real_trading_days": len(real_lifecycle_rows) if lifecycle_mode else trading_days,
+            "budget_replay_days_excluded": len(ordered) - len(promotion_runs),
             "rehearsal_days_excluded": len(ordered) - len(real_lifecycle_rows) if lifecycle_mode else 0,
             "outcome_pending": outcome_pending,
             "outcome_matured": matured_real_days if lifecycle_mode else len(shadow_holds),

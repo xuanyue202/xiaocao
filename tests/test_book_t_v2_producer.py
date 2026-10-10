@@ -38,7 +38,7 @@ def _receipt(root, date_iso: str) -> None:
         "trades": live / "paper_trades.jsonl",
     }
     files["positions"].write_text("", encoding="utf-8")
-    files["account"].write_text('{"cash": 100000, "fee_rate": 0.0001}\n', encoding="utf-8")
+    files["account"].write_text('{"cash": 30000, "initial_capital": 30000, "fee_rate": 0.0001}\n', encoding="utf-8")
     files["trades"].write_text("", encoding="utf-8")
     semantics = {
         "as_of": date_iso,
@@ -93,7 +93,8 @@ def test_producer_builds_pending_shadow_input_from_injected_source_adapters(tmp_
         },
         "portfolio": {
             "as_of": date_iso,
-            "account_equity": 100000,
+            "account_equity": 30000,
+            "account": {"initial_capital": 30000, "cash": 30000},
             "positions": [],
             "formal_ledger_mutations": {"positions": 0, "account": 0, "trades": 0},
         },
@@ -121,7 +122,7 @@ def test_producer_builds_pending_shadow_input_from_injected_source_adapters(tmp_
     assert frozen["bindings"]["snapshot"]["snapshot_sha256"]
     assert frozen["bindings"]["universe"]["universe_sha256"]
     assert frozen["bindings"]["selection_plan"]["selection_plan_sha256"]
-    assert frozen["bindings"]["portfolio"]["account_equity"] == 100000
+    assert frozen["bindings"]["portfolio"]["account_equity"] == 30000
     assert frozen["evidence_lifecycle"]["outcome_status"] == "not_applicable"
     assert run["engineering"]["engineering_day_valid"] is True
     assert run["engineering"]["outcome_matured"] is False
@@ -159,7 +160,8 @@ def test_producer_rejects_control_artifact_changed_after_receipt(tmp_path) -> No
             run_mode="rehearsal",
             capsule={
                 "catalog": {"version": "test", "theme_registry": {}, "blocks": [], "etfs": [], "stocks": []},
-                "portfolio": {"account_equity": 100000, "positions": []},
+                "portfolio": {"account_equity": 30000,
+            "account": {"initial_capital": 30000, "cash": 30000}, "positions": []},
                 "market_input": {"market_date": date_iso, "is_trading_day": True, "trading_day_index": 1},
                 "publications": [],
                 "agent_draft": {"themes": []},

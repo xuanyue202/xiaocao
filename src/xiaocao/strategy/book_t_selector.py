@@ -24,7 +24,8 @@ from xiaocao.live.instrument_contract import (
     market_contract_verified,
 )
 
-from .params import TREND_BUDGET_RATIO, TREND_TOP_M
+from .params import TREND_TOP_M
+from .book_t_budget import target_ratio as sleeve_target_ratio
 from .theme_instrument_resolver import (
     ThemeInstrumentResolverError,
     ThemeInstrumentUniverse,
@@ -1514,7 +1515,7 @@ def select_book_t(
     positive margin after estimated replacement cost and risk difference.
     """
 
-    budget_ratio = float(TREND_BUDGET_RATIO)
+    budget_ratio = 1.0
     max_theme_slots = max(1, min(MAX_THEME_SLOTS, int(TREND_TOP_M)))
     portfolio_value, portfolio_sha, portfolio_blocker = _validated_portfolio(portfolio)
     snapshot_value, snapshot_sha, snapshot_error = _validated_snapshot(snapshot)
@@ -1572,6 +1573,11 @@ def select_book_t(
         )
 
     as_of = _text(snapshot_value.get("as_of"))
+    if account_equity is not None:
+        try:
+            budget_ratio = sleeve_target_ratio(portfolio_value, account_equity)
+        except ValueError as exc:
+            raise BookTSelectionError(str(exc)) from exc
     portfolio_positions = _portfolio_positions(portfolio_value)
     snapshot_themes, options, rejections = _collect_theme_options(
         snapshot_value,

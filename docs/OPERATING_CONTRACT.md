@@ -1,6 +1,6 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：4.37
+**版本**：4.38
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
 **关联实现**：`src/xiaocao/live/{safety,capital_keychain,foundersc_native_ax,foundersc_native_broker,trading_execution,book_b_live_lifecycle,book_b_live_intraday}.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`native/foundersc_ax_executor/`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{book_b_live_morning,book_b_live_intraday,live_monitor,research_mode_switch_replay}.py`
@@ -467,7 +467,9 @@ APP 在用户明确批准的动态资金政策下，以账户绑定的资金划�
 
 - **建仓**：`paper_record.py --trend-only` 调 `strategy.trend_rules.generate_trend_picks`，从当前主线大类中选少量大票/中军候选，写入 `positions.jsonl` 的 `book="T"` 行；同 code 可同时有 B/T 两行，互不阻塞、互不 net。候选分为 `aligned / neutral / external`：电子、半导体、存储、光电、元器件、通信、机器人等与当前小草主线相关者优先；中性候选只作保持趋势仓位的兜底；银行/保险/证券/医药/白酒等外部旧方向是 `external`，不得作为新趋势买入。
 - **吕晓彤“马车”参考信号**：Book T 生成候选时，只读 `output/live/kol_daily/publications/events.jsonl` 中已经取得 `publication_receipt`（`published / superseded`）的最新 `current` “马车”长期观点，把完整核心推荐池、来源报告/观点身份、来源时点、候选命中主题和“命中优先”的影子名次写入 Book-T 候选、成交和持仓遥测。该因子固定为 `authority=shadow_only`：**不得**改变确定性候选顺序、`aligned / neutral / external` 资格、成交、仓位、换股或退出；因此创新药等现行 `external` 方向即使命中“马车”也不能越权建仓。缺少已发布当前观点或本地账本不可用时记录 `unavailable` 并按原 Book-T 规则继续。只有通过 `research_run.py` 护栏并经 §10 证据与通知门，才可把该影子证据升级为排序或资格规则。
-- **账户**：`paper_account_T.json`，默认初始资金 = `initial_capital × TREND_BUDGET_RATIO`；统一 `paper_trades.jsonl` 记录 `book:"T"`。
+- **账户**：`paper_account_T.json`，默认初始资金 = 总本金 `initial_capital × TREND_BUDGET_RATIO`，只划分一次；统一 `paper_trades.jsonl` 记录 `book:"T"`。v2 与 v1 使用同一独立 T 袖子及原敞口上限，不能再把 T 账户权益乘 30%。目标预算取 T 成本权益与 T 初始本金×原敞口上限的较小值；实际新增含费金额受现金约束，存量成本占用敞口，原三个席位不扩大。成对换仓只能凭原 SELL/仓位转换证据释放现金、成本和席位。
+- **v2 预算证据**：生产组合在 v1 写者之后冻结；控制成交保持原样并按原收据与成交后组合反推验证，v2 不重复引用已持有的同一控制成交。新影子成交必须同时符合主题及表达目标、现金、累计敞口与席位；不够则明确 blocked，不缩放或补造成交。
+- **v2 历史预算修复**：`scripts/repair_book_t_budget.py --input <原冻结路径>` 只使用原冻结 bindings、行情与收据，在 `output/research/book_t_v2_budget_repairs/<原input hash>/` 登记可追溯修复版本。原冻结、成交、账户、仓位、收据和全局生命周期保持原样；修复文件绑定原字节、输入、生命周期与保留事件哈希。累计消费者和 soak 验证登记后解析新版本，缺失/冲突/坏哈希拒绝。修复回放使用独立 rehearsal 身份，原事件明确保留并延期，不复制作新结果；单日历史反事实可比较，但不计入自然 5/20 日验收或策略晋级证据。新交易日按新口径累积自然证明。
 - **早盘故障隔离**：morning-execute 的 Book-B freeze/记账失败只停止 B 分支；同一原进程继续执行独立 Book-T 检查和成功后的可选影子消费，最终保留 B 的失败退出码。共同交易日历失败仍停止全部执行，T 仍走原行情、换仓、账户锁与事务恢复门。T 自身失败禁止输出成功控制回执和启动其影子消费；持仓未变不等于检查完成。
 - **状态快照一致性**：`status.py` 的持仓数量只取 `positions.jsonl` open T 行。`paper_holdings_T.json` 只有在日期、`(code,entry_date,shares)` 身份集和 account totals 全部匹配时才有估值权；否则 `equity` 降级为 cash + open entry cost，`unrealized_pnl=N/A` 并显式给出 `stale/mismatch/missing`，禁止跨版本拼接。
 - **出场 / 换股**：`live_monitor.py --book T` 和 `settle_book_t.py` 只认冻结趋势参数：`TREND_TRAIL_DD` 宽回撤；方向错配和 `TREND_REBALANCE_R` 低换手到期都不在 EOD 单边卖出。已持仓若被分类为 `external` 且过 T+1，或达到低换手 rebalance 周期，下一次 morning 只有在 `paper_record.py --trend-only` 已找到可成交替代候选时，才按 `TREND_POSTURE_MISMATCH` / `TREND_REBALANCE_R` 做成对 SELL+BUY；无替代则继续持有，避免趋势袖子空仓断档。普通排名变化不触发换仓，避免手续费和噪音换手。**不得调用** Book B 的 `strong_hold_reason` / composite 逻辑，也不得让“方向还在”这类皮层判断抑制 B 的止损。
@@ -547,7 +549,7 @@ APP 在用户明确批准的动态资金政策下，以账户绑定的资金划�
   绕过该分配器。
 - 存在至少一个 `ACTIVE` 候选时，批次目标总仓位固定 50%：1 只为 50%，2 只各 25%，3 只各约 16.7%；`ACTIVE + PROVISIONAL` 时先给临时模式约 16.7%，余量给 ACTIVE。仅 `PROVISIONAL` 时每只约 16.7%，空槽不重分配。每模式每日最多 1 只，单票上限 50%，整 100 股，单边费率 1bp；联合分配器先最大化可表达的不同模式数，再看排序、目标偏差和资金利用率。
 - 被 quality-governor 过滤的 slot **留现金、不再分配**（保守）。
-- Book T 默认预算为独立 T 账户 `TREND_BUDGET_RATIO=30%`、目标 `TREND_TOP_M=3` 个 slot；这只是 paper 仪器参数，不是已验证 alpha。Book T 的目标是“趋势袖子尽量保持仓位”，不是每日追排名；换股要有主线错配或 rebalance 到期证据，并记录估算往返手续费。
+- Book T 默认从总本金以 `TREND_BUDGET_RATIO=30%` 划出独立 T 账户，原总敞口上限默认 T 初始本金的 100%；目标 `TREND_TOP_M=3` 个 slot；这只是 paper 仪器参数，不是已验证 alpha。Book T 的目标是“趋势袖子尽量保持仓位”，不是每日追排名；换股要有主线错配或 rebalance 到期证据，并记录估算往返手续费。
 
 ## 7. Quality Governor（默认 shadow）
 
@@ -638,6 +640,7 @@ APP 在用户明确批准的动态资金政策下，以账户绑定的资金划�
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| 4.38 | 2026-10-10 | 用户确认独立 T 袖子同预算修复；取消 v2 重复 30% 切分，校验存量/换仓/现金，新增不可变历史修复版本并隔离自然验收。 |
 | 4.37 | 2026-10-09 | 家庭长桥 API 缺失首观测归零、第二观测归档；消费者仅认可完整回执覆盖且零数量/金额的待归档行，保持账户、版本、来源及时效校验。 |
 | 4.36 | 2026-10-08 | EOD 对新鲜零成交旧 SELL 仍执行精确对账，保留未终态回执与严格结算门；晨间原有证明复用规则不变。 |
 | 4.35 | 2026-10-08 | 历史查询要求同捕获日期范围和分页完整性证明，缺失明确 UNKNOWN；当前观测与历史事件引用分离，保留原订单与结算保护。 |

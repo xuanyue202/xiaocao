@@ -37,9 +37,11 @@ from xiaocao.research.book_t_shadow import (  # noqa: E402
     BookTShadowError,
     evaluate_book_t_shadow,
     run_book_t_shadow,
+    validate_book_t_shadow_input,
     write_book_t_shadow_artifacts,
 )
 from xiaocao.research.book_t_v2_lifecycle import read_events, validate_lifecycle  # noqa: E402
+from xiaocao.research.book_t_budget_repair import resolve_budget_input, partition_repair_events  # noqa: E402
 from xiaocao.kol.publication import canonical_sha256  # noqa: E402
 
 
@@ -68,7 +70,7 @@ def _load_historical_days(output_dir: Path) -> list[dict[str, Any]]:
 
     if not output_dir.exists():
         return []
-    historical: list[dict[str, Any]] = []
+    historical: dict[str, dict[str, Any]] = {}
     for child in sorted(output_dir.iterdir(), key=lambda path: path.name):
         if not child.is_dir():
             continue
@@ -102,8 +104,12 @@ def _load_historical_days(output_dir: Path) -> list[dict[str, Any]]:
             raise BookTShadowError(f"frozen input manifest count mismatch: {manifest_path}")
         if manifest.get("formal_ledger_mutations") != {"positions": 0, "account": 0, "trades": 0}:
             raise BookTShadowError(f"historical shadow artifact claims formal ledger mutation: {manifest_path}")
-        historical.extend(dict(day) for day in payload)
-    return historical
+        for day in payload:
+            digest = str(day.get("input_sha256") or "")
+            if not digest or (digest in historical and canonical_sha256(historical[digest]) != canonical_sha256(day)):
+                raise BookTShadowError("historical frozen input identity is missing or conflicting")
+            historical.setdefault(digest, dict(day))
+    return list(historical.values())
 
 
 def _merge_days(days: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -112,6 +118,11 @@ def _merge_days(days: list[dict[str, Any]]) -> list[dict[str, Any]]:
     by_hash: dict[str, dict[str, Any]] = {}
     by_date: dict[str, str] = {}
     for day in days:
+        supplied_hash = str(day.get("input_sha256") or "")
+        if supplied_hash in by_hash:
+            if canonical_sha256(by_hash[supplied_hash]) != canonical_sha256(day):
+                raise BookTShadowError("duplicate frozen input hash has conflicting payload")
+            continue
         run = run_book_t_shadow(day)
         digest = str(run["input_sha256"])
         market_date = str(run["market_date"])
@@ -126,7 +137,7 @@ def _merge_days(days: list[dict[str, Any]]) -> list[dict[str, Any]]:
         by_hash[digest]
         for digest in sorted(
             by_hash,
-            key=lambda value: str(run_book_t_shadow(by_hash[value])["market_date"]),
+            key=lambda value: str(by_hash[value]["as_of"]),
         )
     ]
 
@@ -153,12 +164,12 @@ def _load_event_frozen_days(events: list[dict[str, Any]], *, through: str,
         frozen = _read_json(path)
         if not isinstance(frozen, dict):
             raise BookTShadowError(f"original lifecycle input is invalid: {path}")
-        run = run_book_t_shadow(frozen)  # Validates the full frozen input hash.
+        validated = validate_book_t_shadow_input(frozen)  # Verify original before resolving correction.
         lifecycle = validate_lifecycle(frozen.get("evidence_lifecycle") or {})
-        if (str(run["market_date"]) != day or str(lifecycle["decision_id"]) != decision_id
+        if (str(validated["as_of"])[:10] != day or str(lifecycle["decision_id"]) != decision_id
                 or str(lifecycle["as_of"])[:10] != day):
             raise BookTShadowError(f"original lifecycle decision binding mismatch: {path}")
-        recovered[decision_id] = frozen
+        recovered[decision_id] = resolve_budget_input(root, frozen)
     return list(recovered.values())
 
 
@@ -368,14 +379,17 @@ def main() -> int:
         input_path = Path(args.input)
         output_dir = Path(args.output_dir)
         new_days = _load_days(input_path)
-        _verify_control_receipts(new_days)
+        new_days = [resolve_budget_input(ROOT, day) for day in new_days]
+        for day in new_days:
+            _verify_control_receipts([day], check_current_artifacts=not bool(day.get("budget_repair")))
         lifecycle_events = _load_lifecycle_events()
         recovered_days = _load_event_frozen_days(lifecycle_events,
             through=max(str(day.get("as_of") or "")[:10] for day in new_days))
         _verify_control_receipts(recovered_days, check_current_artifacts=False)
         frozen_inputs = _merge_days(
-            _load_historical_days(output_dir) + recovered_days + new_days
+            [resolve_budget_input(ROOT, day) for day in _load_historical_days(output_dir)] + recovered_days + new_days
         )
+        lifecycle_events, deferred_events = partition_repair_events(frozen_inputs, lifecycle_events)
         runs = [run_book_t_shadow(day) for day in frozen_inputs]
         evaluation = evaluate_book_t_shadow(
             runs,
@@ -385,6 +399,7 @@ def main() -> int:
             n_tried=args.n_tried,
             lifecycle_events=lifecycle_events,
         )
+        evaluation["deferred_original_event_sha256"] = [event["event_id"] for event in deferred_events]
         run_id = args.run_id or f"{runs[-1]['market_date']}-book-t-v2-shadow"
         paths = write_book_t_shadow_artifacts(
             runs,

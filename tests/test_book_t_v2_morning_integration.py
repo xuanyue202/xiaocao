@@ -34,7 +34,8 @@ def _write_rehearsal_capsule(path: Path) -> None:
                 },
                 "portfolio": {
                     "as_of": REHEARSAL_DATE,
-                    "account_equity": 100000,
+                    "account_equity": 30000,
+                    "account": {"initial_capital": 30000, "cash": 30000},
                     "positions": [],
                     "formal_ledger_mutations": {
                         "positions": 0,
@@ -134,7 +135,7 @@ except Exception:
         "", encoding="utf-8"
     )
     (tmp_path / "output" / "live" / "paper_account_T.json").write_text(
-        '{"cash": 100000, "fee_rate": 0.0001}\n', encoding="utf-8"
+        '{"cash": 30000, "initial_capital": 30000, "fee_rate": 0.0001}\n', encoding="utf-8"
     )
     (tmp_path / "output" / "live" / "paper_trades.jsonl").write_text(
         "", encoding="utf-8"
