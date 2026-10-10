@@ -18,6 +18,9 @@ export PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 if [ "${XIAOCAO_DAILY_SNAPSHOT:-}" != "${BASH_SOURCE[0]}" ]; then
   exec "$PY" -m xiaocao.live.runtime_evidence launch --script "${BASH_SOURCE[0]}" --root "$ROOT" -- "$@"
 fi
+# Keep a dedicated operator stream outside command substitution and log redirects.
+exec 3>&1
+export XIAOCAO_DAILY_EVENT_FD=3
 cd "$ROOT" || exit 1
 export PYTHONPATH="$XIAOCAO_DAILY_HELPER:$ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 run_python() {

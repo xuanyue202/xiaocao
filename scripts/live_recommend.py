@@ -40,7 +40,7 @@ sys.path.insert(0, str(ROOT / "kronos_screen" / "scripts"))
 
 from xiaocao.api.cache import SQLiteCache  # noqa: E402
 from xiaocao.api.client import XiaocaoClient  # noqa: E402
-from xiaocao.api.errors import ApiAuthError, ApiError, ApiNotFoundError, ApiSchemaError  # noqa: E402
+from xiaocao.api.errors import ApiAuthError, ApiError, ApiNotFoundError, ApiSchemaError, ApiSourceNotReadyError  # noqa: E402
 from xiaocao.config import load_settings  # noqa: E402
 from xiaocao.datasource.api_source import ApiDataSource  # noqa: E402
 from xiaocao.live import agent_signals, intelligence, intelligence_evidence, intelligence_policy  # noqa: E402
@@ -618,9 +618,11 @@ def _run_strategy_when_ready(
             sources_ready = bool(observations) and all(
                 row.get("status") in {"populated", "empty_confirmed"} for row in observations)
             missing_prices = price_probe(actives) if price_probe is not None and sources_ready else []
-        except (ApiNotFoundError, ApiSchemaError):
+        except ApiNotFoundError:
             raise
         except ApiError as exc:
+            if isinstance(exc, ApiSchemaError) and not isinstance(exc, ApiSourceNotReadyError):
+                raise
             category = getattr(exc, "failure_category", None) or type(exc).__name__
             if isinstance(exc, ApiAuthError) and category not in {
                     "MARKET_LOGIN_CAPTCHA_REQUIRED", "MARKET_LOGIN_BUSY", "MARKET_LOGIN_COOLDOWN"}:

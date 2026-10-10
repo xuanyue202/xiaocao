@@ -50,6 +50,22 @@ from xiaocao.runner_recovery import DependencyRecovery
 _OUTPUT_LOCK = threading.Lock()
 
 
+def _automatic_dependency_retry(failure: dict) -> bool:
+    evidence = failure.get("evidence") or {}
+    if (evidence.get("state") != "not_attempted"
+            or (evidence.get("user_action") or {}).get("required")
+            or evidence.get("password_action_attempted") is not False
+            or evidence.get("confirmation_pressed") is not False):
+        return False
+    if failure.get("code") == "NATIVE_AX_UNLOCK_NOT_ATTEMPTED":
+        return True
+    return (failure.get("code") == "NATIVE_AX_KEYCHAIN_READ_TIMEOUT"
+            and evidence.get("helper_status") == "not_invoked"
+            and evidence.get("failure_category") == "keychain_pre_action"
+            and evidence.get("password_action_attempted") is False
+            and evidence.get("confirmation_pressed") is False)
+
+
 def _emit_json(payload: dict) -> None:
     # Delivery and execution events share stdout. Keep each JSON line intact.
     with _OUTPUT_LOCK:
@@ -653,7 +669,9 @@ def _run(args, notices):
     def recovery_event(event):
         failures = event.get("failures") or []
         _emit_json({k: event.get(k) for k in ("event", "status", "request_path", "request_sha256", "sequence")}
-            | {"reason": failures[-1]["code"] if failures else None})
+            | {"reason": failures[-1]["code"] if failures else None,
+               "recovery_kind": ((failures[-1].get("evidence") or {}).get("user_action") or {}).get("recovery_kind")
+               if failures else None})
 
     recovery = DependencyRecovery(
         root=Path(args.state_dir) / "runs" / "dependencies",
@@ -672,9 +690,7 @@ def _run(args, notices):
         evidence=lambda: getattr(broker, "credential_health", {}),
         failure_evidence=lambda exc: {**getattr(broker, "credential_health", {}),
             "user_action": dependency_user_action(str(exc), getattr(broker, "credential_health", {}))},
-        automatic_retry=lambda failure: (failure.get("code") == "NATIVE_AX_UNLOCK_NOT_ATTEMPTED"
-            and (failure.get("evidence") or {}).get("state") == "not_attempted"
-            and not ((failure.get("evidence") or {}).get("user_action") or {}).get("required")),
+        automatic_retry=_automatic_dependency_retry,
     )
     def live_heartbeat():
         return read_live_heartbeat() if args.resume_plan_id else recovery.run(read_live_heartbeat)

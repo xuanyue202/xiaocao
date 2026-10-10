@@ -377,6 +377,25 @@ the trading runner. On macOS the relay uses the native curl TLS stack, keeping
 credentials/body on stdin and preserving the configured TLS verification policy.
 
 The single authentication-only market probe runs at this preparation boundary.
+Recovery events from the producer and paper freeze wait reach the operator
+stream immediately through the daily supervisor, even while detailed output
+is logged or the shell waits for its result. On an event, recover the exact
+original dependency; read its cited request instead of starting another run.
+When the latest bound producer has a failed terminal and no original bundle,
+the paper consumer records producer failure and proceeds with independent
+Book T once. An active producer or a committed bundle still follows the
+original wait/repair path; failed data never becomes NONE.
+
+On `dependency_recovery_wait` with `recovery_kind=app_client_login`, keep the
+original runner alive and follow the first-client-login sequence in
+`foundersc-native-ax.md` immediately. The authorized morning workflow includes
+saved-password fill and visual CAPTCHA completion; routine client login is
+agent recovery. Preserve the exact request and signal its recheck only after
+same-account native readiness is proved. Missing credentials, macOS permission,
+actual credential rejection or uncertain password action retain human-only
+handling. Typed Keychain read timeout before helper invocation retries every
+two seconds only with durable no-password/no-confirmation evidence.
+
 If it reports `MARKET_LOGIN_REQUIRES_USER` or another authentication block,
 preserve the original runner's wait. For `MARKET_LOGIN_CAPTCHA_REQUIRED`, the
 current client has not submitted the saved password: run the local

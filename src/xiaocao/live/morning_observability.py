@@ -56,16 +56,18 @@ def dependency_user_action(reason: object, health: dict | None = None) -> dict:
         'NATIVE_AX_KEYCHAIN_READ_FAILED': '请检查本机保存的 APP 交易凭据是否可读取。',
         'NATIVE_AX_KEYCHAIN_SECRET_EMPTY': '请补充本机保存的 APP 交易凭据。',
         'NATIVE_AX_UNLOCK_UNPROVEN_NO_RETRY': '请确认 APP 当前登录状态；系统不会再次尝试密码。',
+        'NATIVE_AX_CREDENTIAL_HEALTH_UNPROVEN': '请核验 APP 的账户绑定和上次凭据动作记录。',
         'screen_locked': '请解锁 macOS，随后系统重新核验 APP。',
         'screen_lock_state_unavailable': '请恢复可核验的 macOS 登录状态，随后系统重新核验 APP。',
         'accessibility_denied': '请为 Codex 或终端授予 macOS 辅助功能权限。',
-        'client_login_required': '请完成 APP 登录或当前验证码验证。',
     }
     for atom in atoms:
         if atom in requests:
             return {'required': True, 'request': requests[atom]}
     if health.get('state') in {'attempt_claimed', 'unproven_no_retry'}:
         return {'required': True, 'request': requests['NATIVE_AX_UNLOCK_UNPROVEN_NO_RETRY']}
+    if 'client_login_required' in atoms or 'app_absent' in atoms:
+        return {'required': False, 'request': None, 'recovery_kind': 'app_client_login'}
     return {'required': False, 'request': None}
 
 

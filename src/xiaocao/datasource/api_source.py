@@ -7,7 +7,7 @@ import json
 
 from xiaocao.api.catalog import STOCK_GROUPS, resolve_group
 from xiaocao.api.client import XiaocaoClient
-from xiaocao.api.errors import ApiSchemaError
+from xiaocao.api.errors import ApiSchemaError, ApiSourceNotReadyError
 
 
 GROUPS = {key: item.value for key, item in STOCK_GROUPS.items()}
@@ -38,6 +38,13 @@ class ApiDataSource:
                     continue
                 observed_date = row.get("tradeDate") or row.get("trade_date")
                 if observed_date and str(observed_date).replace("-", "")[:8] != date.replace("-", "")[:8]:
+                    try:
+                        observed_day = datetime.strptime(str(observed_date).replace("-", "")[:8], "%Y%m%d").date()
+                        requested_day = datetime.strptime(date.replace("-", "")[:8], "%Y%m%d").date()
+                    except ValueError as exc:
+                        raise ApiSchemaError("MORNING_SOURCE_DATE_INVALID:" + kind) from exc
+                    if observed_day < requested_day:
+                        raise ApiSourceNotReadyError("MORNING_SOURCE_DATE_MISMATCH:" + kind)
                     raise ApiSchemaError("MORNING_SOURCE_DATE_MISMATCH:" + kind)
         except Exception as exc:
             self.observations.append({"source": kind, "requested_date": date,

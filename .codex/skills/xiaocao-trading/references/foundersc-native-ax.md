@@ -40,7 +40,7 @@ steps from an earlier receipt.
 | `launch_foundersc` | Run the returned fixed-bundle command once, wait for a stable window, rerun bootstrap. |
 | `grant_accessibility_to_codex_or_terminal` | Human blocker; rerun after the permission is granted. |
 | `configure_trade_keychain` | Human interactive TTY only; do not run in Automation or transfer the item. |
-| `fill_login_password_then_solve_captcha` | Requires current user authorization. Run the returned fill once, then fresh screenshot -> exactly four digits -> field readback -> one login press. Only an explicit transport timeout gets one retry. |
+| `fill_login_password_then_solve_captcha` | The authorized morning recovery includes this step. Run the returned fill once, then fresh screenshot -> exactly four digits -> field readback -> one login press; prove same-account readiness before signalling the original runner. |
 | `unlock_trade_once` | Requires current user authorization. Run the returned command once. Unknown, mismatch, or `unlock_unproven` never retries. |
 | `open_ordinary_trade_surface_then_reprobe` | Navigate without touching code/price/quantity/submit controls, then rerun. |
 | `none` | Helper foundation is ready. The live runner must still prove native positions/orders/trades, the account-bound funds summary embedded in the positions capture, and order-page capabilities before `supports_submit=true`. |
@@ -76,11 +76,22 @@ readback length must also match the supplied secret; a silent AX no-op fails.
 `client_login_password_filled` means ready for CAPTCHA, not authenticated;
 `client_login_notice_dismissed` records that bounded validation-notice action.
 
-Codex visual recognition may handle CAPTCHA in this slow recovery path when the
-user authorizes it. Require a fresh screenshot, exactly four recognized digits,
-field readback, and one login press. Permit at most one retry for an explicit
-transport timeout; never loop on password/CAPTCHA or unknown outcomes. This
-agent-assisted recovery is outside the millisecond order hot path.
+The authorized morning recovery includes Codex visual CAPTCHA recognition.
+Before any saved-password fill, require the original runner's account-bound
+canonical credential-health readback to permit `app_client_login`. A persisted
+`attempt_claimed`/`unproven_no_retry`, damaged record or mismatched account permits
+readback only; bootstrap and the raw fill helper do not clear that fence.
+Use `remote-bootstrap --table-audit`; if absent, launch the returned fixed
+bundle and re-probe. On the bound login page execute the returned
+`fill-login-keychain --acknowledge-local-password-fill` once. Require a fresh
+screenshot, exactly four recognized digits, field readback, and one login
+press. Re-probe after authentication, open ordinary trade through read-only
+navigation if needed, and prove the same-account ready surface. Signal the
+exact original dependency request once; the runner performs its own readback.
+Keep GUI actions under the existing APP session guard. Unknown, rejected or
+uncertain login outcomes require readback and retain their action fence.
+This recovery stays outside the order hot path; saved credentials and routine
+CAPTCHA do not by themselves require a new user confirmation.
 
 `unlock-keychain --acknowledge-local-passguard-input` is an explicit
 single-attempt local capability. It may read only the fixed

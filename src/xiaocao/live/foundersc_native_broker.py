@@ -683,6 +683,16 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
     ) -> dict[str, Any]:
         payload = self.native.probe(table_audit=True).as_dict()
         surface = str(payload.get("surface_state") or payload.get("status") or "")
+        if surface in {"client_login_required", "app_absent"}:
+            # A fresh adapter must recover the previous process's attempt fence
+            # before emitting a route that can authorize another login action.
+            prior = self._previous_credential_health()
+            if prior and prior.get("state") not in {
+                "attempt_claimed", "unproven_no_retry", "not_attempted",
+                "not_checked_session_already_ready", "verified_by_single_unlock",
+                "verified_by_account_bound_readback",
+            }:
+                raise FounderscNativeAXError("NATIVE_AX_CREDENTIAL_HEALTH_UNPROVEN")
         credential_health = {
             "trade_account_fingerprint": self.expected_fund_account_fingerprint,
             "state": "not_checked_session_already_ready",

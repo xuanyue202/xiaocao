@@ -32,6 +32,10 @@ class ApiSchemaError(ApiError):
     pass
 
 
+class ApiSourceNotReadyError(ApiSchemaError):
+    """A dated source still serves an older session; never consume its rows."""
+
+
 class NoTradeDayError(XiaocaoError):
     pass
 

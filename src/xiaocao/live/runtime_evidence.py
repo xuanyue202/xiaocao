@@ -148,7 +148,8 @@ def append_event(path: Path, row: dict[str, Any]) -> None:
         stream.write(json.dumps(row, ensure_ascii=False) + '\n')
 
 
-def stream_process(args: list[str], *, cwd: Path, env: dict[str, str], output_path: Path | None = None) -> int:
+def stream_process(args: list[str], *, cwd: Path, env: dict[str, str], output_path: Path | None = None,
+                   operator_fd: int | None = None) -> int:
     """Forward sanitized streams; detailed output is retained separately."""
     with output_path.open('a', encoding='utf-8') if output_path else open(os.devnull, 'w') as evidence:
         process = None
@@ -184,6 +185,13 @@ def stream_process(args: list[str], *, cwd: Path, env: dict[str, str], output_pa
                 with lock:
                     evidence.write(clean)
                     evidence.flush()
+                    if operator_fd is not None:
+                        event = recovery_event_line(clean)
+                        if event is not None:
+                            try:
+                                os.write(operator_fd, event.encode('utf-8'))
+                            except OSError:
+                                pass  # Local evidence and the original command remain authoritative.
                     try:
                         target.write(clean)
                         target.flush()
@@ -202,6 +210,21 @@ def stream_process(args: list[str], *, cwd: Path, env: dict[str, str], output_pa
             for signum, previous in previous_handlers.items():
                 signal.signal(signum, previous)
     return 128 - result if result < 0 else result
+
+
+def recovery_event_line(line: str) -> str | None:
+    """Project only recovery routing fields; never forward full business payloads."""
+    try:
+        row = json.loads(line)
+    except ValueError:
+        return None
+    if not isinstance(row, dict) or not isinstance(row.get('event'), str) or row['event'] not in {
+            'market_dependency_recovery_wait', 'morning_bundle_repair_required'}:
+        return None
+    fields = ('event', 'trade_date', 'status', 'reason', 'failure_category',
+              'request_path', 'request_sha256', 'recovery_command')
+    return json.dumps({key: redact(row[key])[:512] for key in fields
+                       if isinstance(row.get(key), str)}, ensure_ascii=False) + '\n'
 
 
 def business_environment(env: dict[str, str], root: Path) -> dict[str, str]:
@@ -256,7 +279,8 @@ def command(args: list[str]) -> int:
     output.parent.mkdir(exist_ok=True)
     try:
         result = stream_process([os.environ['XIAOCAO_DAILY_PYTHON'], *args], cwd=root,
-                                env=business_environment(dict(os.environ), root), output_path=output)
+                                env=business_environment(dict(os.environ), root), output_path=output,
+                                operator_fd=3 if os.environ.get('XIAOCAO_DAILY_EVENT_FD') == '3' else None)
         reason = 'process_exit' if result else 'completed'
     except OSError as exc:
         result, reason = 127, f'process_start_{type(exc).__name__}'

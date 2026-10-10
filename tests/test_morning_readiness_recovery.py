@@ -107,6 +107,44 @@ def test_explicit_stale_source_date_is_rejected():
         source.get_industry_block_rank("2026-10-09")
 
 
+def test_old_source_date_waits_in_original_capture_until_today_arrives(monkeypatch):
+    from xiaocao.datasource.api_source import ApiDataSource
+    elapsed = [0.0]
+    calls = []
+    def fetch(*args):
+        calls.append(elapsed[0])
+        return [{"tradeDate": "20261008" if elapsed[0] < 6 else "20261009"}]
+    source = ApiDataSource(SimpleNamespace(get_industry_block_rank=fetch))
+    monkeypatch.setattr(recommend, "_today_iso", lambda: "2026-10-09")
+    monkeypatch.setattr(recommend._time, "monotonic", lambda: elapsed[0])
+    monkeypatch.setattr(recommend._time, "sleep", lambda seconds: elapsed.__setitem__(0, elapsed[0] + seconds))
+    def strategy(date, source, **kwargs):
+        source.get_industry_block_rank(date)
+        return [{"code": "A", "mode": "test"}]
+    monkeypatch.setattr(recommend, "run_strategy", strategy)
+    rows, _ = recommend._run_strategy_when_ready("2026-10-09", source,
+        timeout_sec=-1, poll_sec=2, confirm_sec=0, stable_samples=1, price_probe=lambda _: [])
+    assert calls == [0, 2, 4, 6]
+    assert rows[0]["code"] == "A"
+    assert source.readiness["sources"][0]["status"] == "populated"
+
+
+def test_real_schema_failure_still_stops_capture_without_retry(monkeypatch):
+    import pytest
+    from xiaocao.api.errors import ApiSchemaError
+    from xiaocao.datasource.api_source import ApiDataSource
+    def fetch(*args):
+        raise ApiSchemaError("invalid response shape")
+    source = ApiDataSource(SimpleNamespace(get_industry_block_rank=fetch))
+    monkeypatch.setattr(recommend, "_today_iso", lambda: "2026-10-09")
+    monkeypatch.setattr(recommend._time, "sleep", lambda _: pytest.fail("schema damage must not retry"))
+    monkeypatch.setattr(recommend, "run_strategy", lambda date, source, **kwargs:
+                        source.get_industry_block_rank(date))
+    with pytest.raises(ApiSchemaError, match="invalid response shape"):
+        recommend._run_strategy_when_ready("2026-10-09", source,
+            timeout_sec=-1, poll_sec=2, price_probe=lambda _: [])
+
+
 def test_ranking_subset_keeps_unranked_universe_visible_without_blocking():
     from xiaocao.datasource.api_source import ApiDataSource
     source = ApiDataSource(SimpleNamespace(sort_v2=lambda *a, **k: ["A"]))
