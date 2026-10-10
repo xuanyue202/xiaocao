@@ -411,8 +411,19 @@ Historical scope is observed from the two actual date controls and a unique
 visible total count in the same native capture. Positive results qualify only
 when every parsed row belongs to the exact observed day and the complete row
 rectangles fit both the table and window. An empty result has no native response
-completion witness and remains incomplete. The requested date does not set
-controls; historical orders and trades retain independent date ranges. Preserve
+completion witness and remains incomplete. An exact requested date sets both
+account/window-bound AX date controls and commits each by clicking its unique
+AX-bound increment/decrement arrows, with bounded readback before querying.
+The helper first selects the day segment; a retained year/month selection can
+clamp at the APP's maximum date. Each click requires fresh arrow geometry,
+the same account/window and an active, unlocked Founder surface.
+The day step moves backwards first, then restores, so today's maximum date
+never requires an out-of-range future step.
+This APP advertises AX step/press actions but returns attributeUnsupported;
+the helper uses the arrows' actual geometry. AX assignment alone updates the
+display but leaves this APP's query model stale. Both endpoints must return to
+the exact target; missing/ineffective actions or changed identity block the
+query. Historical orders and trades retain independent date ranges. Preserve
 UNKNOWN until the exact order has explicit terminal evidence.
 
 An exact native confirmed action plus the account-bound prepared tuple and unique

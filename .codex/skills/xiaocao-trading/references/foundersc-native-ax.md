@@ -422,8 +422,17 @@ time, all pages and the complete row count. Post-capture row filtering, a reques
 date or a visible empty table alone never proves coverage. The helper observes
 the actual two date controls before and after capture. An exact requested date
 sets both unique account/page-bound AX date controls, proves their readback,
-then refreshes. Unsupported setters or changed targets fail explicitly; the
-requested date itself never supplies coverage proof. A positive capture can prove coverage when all rows match
+commits each control through its unique AX-bound increment/decrement arrows
+(this APP's advertised AX actions return attributeUnsupported), waits for the
+actual changes with bounded readback,
+restores both exact dates, then refreshes. AX assignment alone changes the
+display without updating this APP's query model. Missing/ineffective control
+arrows, unsupported setters or changed targets fail explicitly. The helper
+selects the day segment first and revalidates unique arrow geometry,
+account/window identity and Founder foreground before every click. A retained
+year/month selection can clamp at the APP's maximum date. The requested date
+itself never supplies coverage proof. The day step moves backwards first,
+then restores, so the maximum date remains queryable. A positive capture can prove coverage when all rows match
 that exact day, the uniquely observed total equals all fully visible parsed/AX
 rows, and those rows fit the table and window. Empty captures remain incomplete
 until a native response-binding witness proves query completion. Scrolled,

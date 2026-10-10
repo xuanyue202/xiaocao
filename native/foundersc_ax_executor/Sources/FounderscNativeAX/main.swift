@@ -4,7 +4,7 @@ import Foundation
 import Vision
 
 private let schemaVersion = 2
-private let helperVersion = 14
+private let helperVersion = 15
 private let bundleIdentifier = "com.fzzq.Mac2020"
 private let maximumDepth = 12
 private let maximumNodes = 1_000
@@ -1019,6 +1019,45 @@ private func observedHistoryDates(_ observation: Observation) -> HistoryDateRang
     return HistoryDateRange(start: controls[0].1, end: controls[1].1)
 }
 
+private func sameWindowBounds(_ left: Bounds?, _ right: Bounds?) -> Bool {
+    guard let left, let right else { return false }
+    return left.x == right.x && left.y == right.y && left.width == right.width && left.height == right.height
+}
+
+private func historyDateArrowPoints(_ element: AXUIElement, window: Bounds) -> (day: CGPoint, up: CGPoint, down: CGPoint)? {
+    let steppers = (attribute(element, kAXChildrenAttribute) as? [AXUIElement] ?? [])
+        .filter { stringAttribute($0, kAXRoleAttribute) == "AXIncrementor" }
+    guard steppers.count == 1, let control = bounds(of: element),
+          let stepper = bounds(of: steppers[0]) else { return nil }
+    let arrows = (attribute(steppers[0], kAXChildrenAttribute) as? [AXUIElement] ?? [])
+        .filter { stringAttribute($0, kAXRoleAttribute) == "AXButton" }
+    let increment = arrows.filter { stringAttribute($0, kAXSubroleAttribute) == "AXIncrementArrow" }
+    let decrement = arrows.filter { stringAttribute($0, kAXSubroleAttribute) == "AXDecrementArrow" }
+    func contains(_ outer: Bounds, _ inner: Bounds) -> Bool {
+        return inner.width > 0 && inner.height > 0 && inner.x >= outer.x && inner.y >= outer.y
+            && inner.x + inner.width <= outer.x + outer.width
+            && inner.y + inner.height <= outer.y + outer.height
+    }
+    guard increment.count == 1, decrement.count == 1,
+          let up = bounds(of: increment[0]), let down = bounds(of: decrement[0]),
+          // NSDatePicker's AX text bounds omit the stepper's outer bezel.
+          contains(window, control), contains(window, stepper),
+          contains(Bounds(x: control.x - 8, y: control.y - 8,
+                          width: control.width + 16, height: control.height + 16), stepper),
+          stepper.x >= control.x + control.width * 0.7,
+          contains(stepper, up), contains(stepper, down),
+          up.y + up.height <= down.y else { return nil }
+    // In this APP's yyyy/M/d picker the day is immediately left of the
+    // stepper. Select it explicitly; a retained year/month selection can
+    // clamp at the maximum date and cannot be reversed to the target.
+    let day = CGPoint(x: stepper.x - min(16, control.height * 0.8),
+                      y: control.y + control.height / 2)
+    guard day.x > control.x, day.x < stepper.x,
+          day.y >= control.y, day.y <= control.y + control.height else { return nil }
+    return (day, CGPoint(x: up.x + up.width / 2, y: up.y + up.height / 2),
+            CGPoint(x: down.x + down.width / 2, y: down.y + down.height / 2))
+}
+
 private func setHistoryDates(_ observation: Observation, target: String, fingerprint: String) -> Bool {
     let formatter = DateFormatter()
     formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -1051,13 +1090,36 @@ private func setHistoryDates(_ observation: Observation, target: String, fingerp
           controls[0].1.x + controls[0].1.width < controls[1].1.x,
           abs(controls[0].1.y - controls[1].1.y) < 3,
           controls.allSatisfy({ isSettable($0.0, kAXValueAttribute) }) else { return false }
-    for (element, _) in controls {
+    func stillBound() -> Bool {
         let current = observe(command: "read-query")
-        guard current.runningApplication?.processIdentifier == pid,
-              current.receipt.tradeAccountFingerprintCount == 1,
-              current.receipt.tradeAccountFingerprint == fingerprint,
-              let currentWindow = current.primaryWindow, CFEqual(currentWindow, window),
-              observedHistoryDates(current) != nil else { return false }
+        return current.runningApplication?.processIdentifier == pid
+            && current.receipt.appActive && current.receipt.screenLocked == false
+            && current.receipt.tradeAccountFingerprintCount == 1
+            && current.receipt.tradeAccountFingerprint == fingerprint
+            && current.primaryWindow.map { CFEqual($0, window) } == true
+            && sameWindowBounds(current.receipt.windowBounds, windowBounds)
+            && observedHistoryDates(current) != nil
+    }
+    func clickBoundDatePoint(
+        _ element: AXUIElement, expected: (day: CGPoint, up: CGPoint, down: CGPoint), target: CGPoint
+    ) -> Bool {
+        guard stillBound(), let fresh = historyDateArrowPoints(element, window: windowBounds),
+              fresh.day == expected.day, fresh.up == expected.up, fresh.down == expected.down else { return false }
+        return postSingleLeftClick(at: target)
+    }
+    func waitForValue(_ element: AXUIElement, matching: (CFTypeRef) -> Bool) -> Bool {
+        // The native click returns before NSDatePicker processes its action.
+        // Poll only the readback; never repeat a control action or query.
+        for _ in 0..<20 {
+            guard stillBound() else { return false }
+            if let value = attribute(element, kAXValueAttribute), matching(value) { return true }
+            usleep(25_000)
+        }
+        return false
+    }
+    for (element, _) in controls {
+        guard stillBound() else { return false }
+        guard let arrows = historyDateArrowPoints(element, window: windowBounds) else { return false }
         let oldValue = attribute(element, kAXValueAttribute)
         let value: CFTypeRef
         if oldValue is Date { value = date as NSDate }
@@ -1068,6 +1130,19 @@ private func setHistoryDates(_ observation: Observation, target: String, fingerp
             value = wire.string(from: date) as CFString
         } else { return false }
         guard AXUIElementSetAttributeValue(element, kAXValueAttribute as CFString, value) == .success else { return false }
+        // NSDatePicker's AX setter updates its display but bypasses the APP's
+        // query-model action. A reversible native step commits that model.
+        // No query occurs at the intermediate date; both endpoints must be
+        // restored and read back before the caller can press query.
+        // This APP advertises AXIncrement/AXPress but returns
+        // attributeUnsupported. Click only the uniquely AX-bound arrows.
+        guard let assigned = attribute(element, kAXValueAttribute),
+              clickBoundDatePoint(element, expected: arrows, target: arrows.day),
+              // Step backwards first so today's maximum date also works.
+              clickBoundDatePoint(element, expected: arrows, target: arrows.down),
+              waitForValue(element, matching: { !CFEqual(assigned, $0) }),
+              clickBoundDatePoint(element, expected: arrows, target: arrows.up),
+              waitForValue(element, matching: { CFEqual(assigned, $0) }) else { return false }
     }
     let after = observe(command: "read-query")
     return after.runningApplication?.processIdentifier == pid
@@ -3483,6 +3558,39 @@ private func performCancel(arguments: [String], selectionProbeOnly: Bool) -> Rec
     return receipt
 }
 
+private func refreshHistoryQuery(
+    original: Observation, current: Observation, fingerprint: String, requestedDate: String
+) -> Observation? {
+    guard let originalWindow = original.primaryWindow,
+          let originalPID = original.runningApplication?.processIdentifier,
+          let originalBounds = original.receipt.windowBounds else { return nil }
+    func matches(_ observation: Observation) -> Bool {
+        return ["trade_ready", "query_only"].contains(observation.receipt.surfaceState)
+            && observation.receipt.appActive && observation.receipt.screenLocked == false
+            && observation.receipt.tradeAccountFingerprintCount == 1
+            && observation.receipt.tradeAccountFingerprint == fingerprint
+            && observation.runningApplication?.processIdentifier == originalPID
+            && observation.primaryWindow.map { CFEqual($0, originalWindow) } == true
+            && sameWindowBounds(observation.receipt.windowBounds, originalBounds)
+            && (requestedDate.isEmpty || observedHistoryDates(observation)
+                == HistoryDateRange(start: requestedDate, end: requestedDate))
+    }
+    guard matches(current),
+          let dates = observedHistoryDates(current),
+          let capture = captureFounderWindow(pid: originalPID, windowBounds: originalBounds) else { return nil }
+    let refresh = guardedHistoryRefreshPoint(
+        tokens: recognizeText(image: capture.0, screenBounds: capture.1), window: originalBounds
+    )
+    // OCR can outlive the identity/date observation that preceded it.
+    let beforeClick = observe(command: "read-query")
+    guard matches(beforeClick), observedHistoryDates(beforeClick) == dates,
+          refresh.count == 1, let point = refresh.point,
+          postSingleLeftClick(at: point) else { return nil }
+    usleep(500_000)
+    let after = observe(command: "read-query", auditTables: true)
+    return matches(after) && observedHistoryDates(after) == dates ? after : nil
+}
+
 private func readQuery(arguments: [String]) -> Receipt {
     let started = DispatchTime.now()
     let initial = observe(command: "read-query")
@@ -3576,31 +3684,11 @@ private func readQuery(arguments: [String]) -> Receipt {
         }
         if arguments.contains("--refresh-history-query"),
            ["history-orders", "history-trades"].contains(kind) {
-            guard let refreshRunning = finalObservation.runningApplication,
-                  let refreshBounds = finalObservation.receipt.windowBounds,
-                  let refreshCapture = captureFounderWindow(
-                    pid: refreshRunning.processIdentifier,
-                    windowBounds: refreshBounds
-                  ) else { break }
-            let refreshTokens = recognizeText(
-                image: refreshCapture.0,
-                screenBounds: refreshCapture.1
-            )
-            let refresh = guardedHistoryRefreshPoint(
-                tokens: refreshTokens,
-                window: refreshBounds
-            )
-            guard refresh.count == 1,
-                  let refreshPoint = refresh.point,
-                  postSingleLeftClick(at: refreshPoint) else { break }
-            usleep(500_000)
-            finalObservation = observe(command: "read-query", auditTables: true)
-            guard ["trade_ready", "query_only"].contains(
-                finalObservation.receipt.surfaceState
-            ),
-                  finalObservation.receipt.tradeAccountFingerprintCount == 1,
-                  finalObservation.receipt.tradeAccountFingerprint
-                    == expectedFingerprint else { break }
+            guard let refreshed = refreshHistoryQuery(
+                original: initial, current: finalObservation,
+                fingerprint: expectedFingerprint, requestedDate: requestedDate
+            ) else { break }
+            finalObservation = refreshed
         }
         if !requestedDate.isEmpty,
            observedHistoryDates(finalObservation) != HistoryDateRange(start: requestedDate, end: requestedDate) { break }
