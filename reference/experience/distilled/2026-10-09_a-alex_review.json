@@ -1,0 +1,383 @@
+{
+  "date": "2026-10-09",
+  "kind": "公众号投资观点复盘",
+  "author": "A也叫艾利克斯",
+  "source": "《ARR少了200亿？！》，微信公众号，2026-10-09 15:45+08:00",
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_wechat_official/evidence/5729b325f3d02dd52db32aaa644e55a78824a4dbc86a64639210fd62bce363f9.md",
+      "sha256": "4d9aac846be7a7d3934e90d682e30e49934a53f6505ed40c10206784c6f1530e",
+      "size": 14004
+    }
+  ],
+  "authority": 0,
+  "knowledge_status": "reusable_knowledge",
+  "summary": "可复用内容是一组候选研究框架：比较私营AI公司前先统一净、毛收入定义；把收入基数变化传导到资本开支、数据中心建设与供应商估值；用订单、交期、有效产能和现金流区分股价波动与实物供需；把政策传闻、公司回应、正式规则和客户执行分层；在宽基托举后用多日趋势与市场广度确认是否反转。候选知识已按单对象回执完成一次实际入库：新增XH-216、XH-217，并为XH-123、XH-204合并2026年10月9日复现来源；它们仍不会自动修改策略、参数、全局姿态或账户。",
+  "posture": {
+    "regime": "作者判断A股短期仍在下降通道；美国AI硬件股价格转弱，而光通信产业端仍声称供给紧张，价格与实物信号背离。",
+    "dominant_style": "短期减少追涨，等待趋势、市场广度和估值锚稳定；中长期继续核验AI硬件订单、交期、产能和现金流。",
+    "risk": [
+      "宽基ETF托举可能只减慢跌速，不能直接当作反转。",
+      "私营AI公司ARR、亏损和估值口径不统一，二手材料容易形成错误估值锚。",
+      "资本开支先行、收入验证滞后会放大高估值资产对预期变化的敏感度。",
+      "原产地政策尚未正式生效，但客户问询和其他机构路径仍可能提前影响供应链。"
+    ],
+    "style_ranking": [
+      "趋势与风险预算确认",
+      "官方材料支持的AI硬件需求",
+      "有订单和长交期证据的供给约束",
+      "私营AI估值叙事",
+      "未经正式文件确认的政策传闻"
+    ]
+  },
+  "regime_call": {
+    "horizon": "A股姿态为数日至一周；AI资本开支、光通信扩产与政策为2027至2030年的中长期观察。",
+    "call": "短线风险偏防守；中长期需求仍可能强，但估值、盈利兑现和政策路径都需要更高证据门槛。",
+    "what_would_falsify": [
+      "A股主要指数放量突破下降通道并连续修复市场广度。",
+      "统一口径后的AI收入、资本开支和硬件订单持续强于此前预期。",
+      "光通信订单取消、交期缩短、售价或产能利用率明显下降。",
+      "正式政策明确排除相关原产地比例要求，且客户不再提出等效约束。"
+    ]
+  },
+  "directions": [
+    {
+      "direction": "A股宽基与成长风格",
+      "stance": "短期谨慎",
+      "horizon": "数日至一周",
+      "logic": "作者把午后宽基放量解释为减慢下降速度，而非反转确认。",
+      "triggers": [
+        "放量突破下降通道",
+        "上涨家数和成交持续改善"
+      ],
+      "falsifiers": [
+        "托举后继续创新低",
+        "市场广度未修复"
+      ],
+      "uncertainties": [
+        "没有逐分钟ETF净申购和资金身份回读"
+      ]
+    },
+    {
+      "direction": "AI算力与半导体估值",
+      "stance": "需求未证伪但估值敏感度上升",
+      "horizon": "2026年第四季度至2027年",
+      "logic": "OpenAI的500亿与市场700亿美元ARR差异主要涉及净毛口径，但25%至30%的基数下修仍会影响采购、建设和估值模型。",
+      "triggers": [
+        "统一口径收入继续高增",
+        "资本开支和订单维持"
+      ],
+      "falsifiers": [
+        "采购或建设计划实质下调",
+        "自由现金流无法支撑估值"
+      ],
+      "uncertainties": [
+        "私营公司原始财务文件未公开"
+      ]
+    },
+    {
+      "direction": "光通信上游与高速光模块",
+      "stance": "产业景气偏强但仍待一手确认",
+      "horizon": "2026至2029年",
+      "logic": "文章引用售罄到2029年初、供给缺口、12倍扩产和3至5年建设周期，指向近端有效产能约束。",
+      "triggers": [
+        "售罄期和长交期维持",
+        "客户资本支持和采购承诺兑现"
+      ],
+      "falsifiers": [
+        "订单取消",
+        "交期明显缩短",
+        "新技术替代或扩产提前"
+      ],
+      "uncertainties": [
+        "东京采访完整记录和产品分母未获得系统核验"
+      ]
+    },
+    {
+      "direction": "AI硬件总需求",
+      "stance": "官方公司材料提供方向性支持",
+      "horizon": "未来数季",
+      "logic": "英伟达对Lumentum与Coherent各投资20亿美元并签多年合作，台积电9月和前三季度收入同比高增。",
+      "triggers": [
+        "后续月收入、指引和采购兑现"
+      ],
+      "falsifiers": [
+        "资本开支、订单或公司指引下修"
+      ],
+      "uncertainties": [
+        "单月台积电收入无法拆分光通信各环节利润"
+      ]
+    },
+    {
+      "direction": "AI供应链原产地政策",
+      "stance": "传闻未生效，中期继续跟踪",
+      "horizon": "2028至2029年潜在窗口",
+      "logic": "文章引用东山回应否认65%比例已正式生效，同时保留其他美国机构形成等效限制的可能性。",
+      "triggers": [
+        "正式规则",
+        "客户原产地问询",
+        "产能迁移"
+      ],
+      "falsifiers": [
+        "正式文件排除相关限制",
+        "政策路径停止"
+      ],
+      "uncertainties": [
+        "完整公司交流记录和政策原文未取得"
+      ]
+    }
+  ],
+  "stocks": [
+    {
+      "asset": "Lumentum Holdings Inc.",
+      "ticker": "LITE.US",
+      "role": "光通信供给约束样本",
+      "view": "产业观察，不构成买入推荐。",
+      "horizon": "2026至2029年",
+      "triggers": [
+        "订单、交期、售价和产能利用率持续强"
+      ],
+      "falsifiers": [
+        "订单取消或交期缩短"
+      ],
+      "uncertainties": [
+        "采访与扩产数字未取得完整一手记录"
+      ]
+    },
+    {
+      "asset": "Coherent Corp.",
+      "ticker": "COHR.US",
+      "role": "英伟达战略合作对象",
+      "view": "官方合作支持需求方向，但不等于盈利已经兑现。",
+      "horizon": "未来数季至数年",
+      "triggers": [
+        "采购和产能权利落地"
+      ],
+      "falsifiers": [
+        "合作或订单下调"
+      ],
+      "uncertainties": [
+        "文章没有公司独立估值框架"
+      ]
+    },
+    {
+      "asset": "NVIDIA Corporation",
+      "ticker": "NVDA.US",
+      "role": "AI硬件资本与采购信号提供者",
+      "view": "官方公告确认两笔投资和多年合作。",
+      "horizon": "未来数季至数年",
+      "triggers": [
+        "采购承诺和产能转化"
+      ],
+      "falsifiers": [
+        "资本开支下调"
+      ],
+      "uncertainties": [
+        "投资回报和采购节奏未在文章展开"
+      ]
+    },
+    {
+      "asset": "Taiwan Semiconductor Manufacturing Company",
+      "ticker": "TSM.US/2330.TW",
+      "role": "AI硬件需求的收入旁证",
+      "view": "官方月营收支持总需求方向，不能单独证明光通信各细分盈利。",
+      "horizon": "未来数季",
+      "triggers": [
+        "月营收与指引延续"
+      ],
+      "falsifiers": [
+        "月营收连续转弱或指引下修"
+      ],
+      "uncertainties": [
+        "AI贡献无法由单月总收入单独拆分"
+      ]
+    },
+    {
+      "asset": "东山精密",
+      "ticker": null,
+      "role": "供应链政策回应样本",
+      "view": "文章引用公司否认65%比例已正式生效；本包未完成权威证券映射。",
+      "horizon": "2028至2029年潜在政策窗口",
+      "triggers": [
+        "正式政策或客户问询"
+      ],
+      "falsifiers": [
+        "政策明确停止"
+      ],
+      "uncertainties": [
+        "完整交流记录和正式政策未取得"
+      ]
+    }
+  ],
+  "method_principles": [
+    {
+      "principle": "统一收入定义后再比较规模与估值",
+      "explanation": "净ARR与包含云渠道全部销售的毛ARR不可直接比较。",
+      "testable_use": "为每个数字记录定义、来源、确认状态和可比口径。"
+    },
+    {
+      "principle": "把估值锚变化传导到产业预算",
+      "explanation": "收入基数变化会影响下一年度算力采购、数据中心建设和供应商收入假设。",
+      "testable_use": "建立收入情景到资本开支、GPU、光模块和PCB需求的敏感性矩阵。"
+    },
+    {
+      "principle": "价格与实物供需分开验证",
+      "explanation": "股价回吐可以与多年售罄、长交期和扩产受限同时存在。",
+      "testable_use": "并列跟踪价格、订单取消率、交期、产能利用率、售价和客户资金。"
+    },
+    {
+      "principle": "按政策状态机管理不确定性",
+      "explanation": "传闻、公司回应、正式规则、客户执行和供应链迁移不是同一状态。",
+      "testable_use": "记录各状态首次出现的时间、适用产品与实际影响。"
+    },
+    {
+      "principle": "宽基托举后等待多日确认",
+      "explanation": "下降趋势中的资金托举可能只改变速度。",
+      "testable_use": "比较托举后1、3、5日的指数斜率、市场广度和成交持续性。"
+    }
+  ],
+  "exit_lessons": [
+    {
+      "lesson": "趋势未确认前不把盘中托举视为反转",
+      "observable_trigger": "下降通道延续且市场广度无持续修复",
+      "research_implication": "降低短线进攻假设优先级，等待结构修复。"
+    },
+    {
+      "lesson": "AI收入或采购下修时重算硬件链估值",
+      "observable_trigger": "统一口径后的收入、采购或数据中心计划下修",
+      "research_implication": "重算供应商收入、产能利用率和估值容忍度。"
+    },
+    {
+      "lesson": "供给稀缺需要订单和交期持续证明",
+      "observable_trigger": "订单取消、交期缩短、售价走弱或扩产提前",
+      "research_implication": "削弱稀缺溢价假设。"
+    }
+  ],
+  "decision_trace": [
+    {
+      "step": 1,
+      "observation": "作者判断A股仍在下降通道，宽基托举只改变速度。",
+      "inference": "短线先防守并等待结构确认。",
+      "boundary": "系统只核验指数收盘轨迹，未核验ETF净申购和资金身份。"
+    },
+    {
+      "step": 2,
+      "observation": "OpenAI的500亿和700亿美元ARR存在净毛口径差异。",
+      "inference": "差额不能直接解释为业务少了200亿，但估值锚仍需重算。",
+      "boundary": "私营公司完整财务文件未取得。"
+    },
+    {
+      "step": 3,
+      "observation": "Lumentum供给约束叙事与英伟达合作、台积电收入增长同时出现。",
+      "inference": "单日股价下跌尚未证伪AI硬件需求。",
+      "boundary": "Lumentum具体数字尚无完整一手核验。"
+    },
+    {
+      "step": 4,
+      "observation": "65%原产地比例尚未生效，作者保留其他政策路径。",
+      "inference": "当前不按已生效规则处理，同时跟踪客户和正式政策。",
+      "boundary": "政策机构、规则文本和适用产品未明确。"
+    }
+  ],
+  "judgment_heuristics": [
+    {
+      "heuristic": "数字冲突先检查定义",
+      "when_to_use": "同一私营公司收入或ARR差异明显时",
+      "failure_mode": "定义差异也可能同时伴随真实增长下修。"
+    },
+    {
+      "heuristic": "单日价格弱不等于产业需求弱",
+      "when_to_use": "价格与订单、交期或资本开支证据冲突时",
+      "failure_mode": "价格可能领先反映订单拐点。"
+    },
+    {
+      "heuristic": "长期供给约束看建设周期和客户资金",
+      "when_to_use": "厂商声称多年售罄并扩产时",
+      "failure_mode": "技术替代、需求取消或竞争者扩产会削弱稀缺性。"
+    },
+    {
+      "heuristic": "政策按状态机而非二元判断",
+      "when_to_use": "同时存在传闻、公司回应和多机构权限时",
+      "failure_mode": "非正式采购要求可能先于公开规则。"
+    }
+  ],
+  "hypotheses": [
+    {
+      "claim": "比较私营AI公司的收入规模与估值前，先统一净ARR、毛ARR及渠道分成口径，可能减少资本开支与供应商收入预测的系统性偏差。",
+      "implied_rule": "只有口径可比后才允许把收入增速输入资本开支和估值模型。",
+      "falsifiable_test": "收集私营AI公司口径澄清事件，比较澄清前后资本开支预测、供应商盈利预期和AI硬件指数的修正幅度。",
+      "expected_effect": "减少由口径误配造成的估值和需求误判。",
+      "status": "candidate",
+      "authority": 0
+    },
+    {
+      "claim": "出口市场准入风险要以正式政策、受影响产品、收入暴露和订单替代共同评估，而不能只看限制新闻。",
+      "implied_rule": "在正式规则、产品范围、收入暴露和替代路径至少三项可核验前，不把政策传闻直接转成交易方向。",
+      "falsifiable_test": "回测历史出口限制事件中，正式规则与实际订单变化对相关公司相对收益的解释力是否显著高于首次传闻。",
+      "expected_effect": "降低政策传闻造成的误判。",
+      "status": "candidate_recurrence",
+      "authority": 0,
+      "existing_id": "XH-123"
+    },
+    {
+      "claim": "用预设的多日复核窗口代替单日表现归因，可能减少追涨杀跌，但只有配套失效条件时才不会增加亏损拖延。",
+      "implied_rule": "宽基托举或单日回撤后，在预设1、3、5日窗口同时检查趋势、广度和成交，并执行事先写明的失效条件。",
+      "falsifiable_test": "比较单日反应与预设多日复核在托举事件后的换手、最大不利波动和风险调整收益。",
+      "expected_effect": "减少把减速误认作反转，同时控制拖延止损。",
+      "status": "candidate_recurrence",
+      "authority": 0,
+      "existing_id": "XH-204"
+    },
+    {
+      "claim": "当硬件供应商同时披露多年售罄、三至五年扩产周期和客户资本支持时，近端有效产能与交期可能比单日股价更能解释未来数季收入。",
+      "implied_rule": "供给稀缺判断必须同时验证订单、交期、有效产能、客户资金和取消率，不能只看股价或扩产公告。",
+      "falsifiable_test": "建立光通信供应商季度面板，比较股价、订单取消、交期、产能利用率与随后收入和毛利的预测力。",
+      "expected_effect": "区分价格波动与真实供需拐点。",
+      "status": "candidate",
+      "authority": 0
+    }
+  ],
+  "timing_notes": [
+    "A股下降通道判断属于2026年10月9日收盘后的短期姿态。",
+    "OpenAI收入基数变化主要影响2027年采购、建设和估值推演。",
+    "Lumentum售罄与扩产假设延伸至2029年初。",
+    "3.2T与原产地政策风险位于2028至2030年前后，不能提前当作现行限制。"
+  ],
+  "typo_corrections": [
+    {
+      "location": "图片1文字转写",
+      "issue": "此前图片文字转写把同比基数年份读错；这不是来源原文支持的事实。",
+      "correction": "按绑定原图复核为约2024年9月40亿美元、2024年12月60亿美元、2025年6月100亿美元、2025年7月120亿美元、2025年12月200亿美元；保留插值属性。",
+      "basis": "market_evidence_revision2的绑定原图复核。"
+    },
+    {
+      "location": "图片3供给缺口",
+      "issue": "图中70%柱标2026年，正文写2027年。",
+      "correction": "保留图文冲突，不自行选定其一。",
+      "basis": "完整来源正文与图片文字记录。"
+    }
+  ],
+  "action_summary": {
+    "posture_update": "记录一个待后续综合的短期防守样本：下降通道中的宽基托举需要多日趋势和市场广度确认；不直接更新正式姿态。",
+    "playbook_update": "候选方法包括净毛口径校准、价格与实物供需分层和政策状态机；本草稿不修改正式playbook。",
+    "hypothesis_update": "单对象候选入库已完成并有回执：/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_wechat_official/analysis_requests/.semantic_delegation/b583584c9f3f3d9babe137ad5d5e5ad8d8124ff24a328c248dee9803bee96498/context-35c74a68711df26110de8d458dbe23bd19f3b371b272f6a4e92b560b5d1c3213/knowledge_ingest_receipt.json，SHA-256=45da566f91767529a6d02457356466795fc6e7cd43b8db30351bfb30af5ac771；新增XH-216、XH-217，XH-123、XH-204已合并2026年10月9日复现来源；do_not_reingest=true。",
+    "audit_evidence": "完整来源SHA-256为4d9aac846be7a7d3934e90d682e30e49934a53f6505ed40c10206784c6f1530e，逐段语义草稿覆盖76个稳定segment。",
+    "instrumentation_todo": "后续研究需补宽基ETF盘中流向、AI收入定义表、Lumentum订单与交期、客户资金、正式政策状态和供应链地域占比。",
+    "routing": [
+      "candidate_ingest_receipt:/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_wechat_official/analysis_requests/.semantic_delegation/b583584c9f3f3d9babe137ad5d5e5ad8d8124ff24a328c248dee9803bee96498/context-35c74a68711df26110de8d458dbe23bd19f3b371b272f6a4e92b560b5d1c3213/knowledge_ingest_receipt.json#sha256=45da566f91767529a6d02457356466795fc6e7cd43b8db30351bfb30af5ac771",
+      "candidate_ingest_completed_once",
+      "new_candidate_ids:XH-216,XH-217",
+      "recurrence_ids:XH-123,XH-204",
+      "do_not_reingest",
+      "final_distillation_copy_pending_parent",
+      "action_index_refresh_pending_parent",
+      "no_posture_or_parameter_change",
+      "no_business_effect"
+    ]
+  },
+  "generation_decision": {
+    "generated": true,
+    "reason": "来源包含可跨事件复用、可证伪且已与当前候选库核对的判断框架。",
+    "limitations": "关键私营公司财务、Lumentum采访、政策和供应链比例仍缺完整一手核验。"
+  }
+}
