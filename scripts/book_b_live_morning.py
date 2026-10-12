@@ -210,7 +210,9 @@ def _validate_preflight_continuation(path: Path, state_dir: Path, trade_date: st
             or not prior.get("state_path")
             or Path(prior["state_path"]).resolve() != state_dir.resolve()
             or prior.get("trade_date") != trade_date
-            or prior.get("status") != "blocked" or prior.get("failed_stage") != "preflight"
+            or prior.get("status") != "blocked"
+            or prior.get("failed_stage") not in {"preflight", "review_account"}
+            or prior.get("recovery_of") is not None
             or prior.get("plan_count") != 0
             or prior.get("persisted_plan_ids") != [] or prior.get("execution_receipts") != []
             or prior.get("preparation_receipts") != []

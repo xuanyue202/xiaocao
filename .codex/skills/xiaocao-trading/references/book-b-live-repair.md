@@ -36,6 +36,10 @@ protective exit through the dedicated sell-only path, mark the omitted facts
 unproven, and cap the new order by both APP sellable and durable owned shares.
 Never promote a partial sell-only observation to BUY/NAV/EOD authority.
 
+## Prior-day SELL deferral (2026-10-12 user authorization)
+
+For the current dynamic APP capital policy, independent new BUYs use fresh account-bound available cash and proved current owned-lot marks. Prior-day SELL history/zero-fill proof is post-batch reconciliation, never a global opening dependency. Keep the old UNKNOWN/claim/order identity and same-code BUY fence before intent binding; current BUY, same-day SELL, missing identity and uncertain cash reserves still block. Record deferred_prior_day_sell_plan_ids and let the same owner perform exact readback after business; EOD remains strict. An original blocked preflight or read-only review_account receipt with zero intents/preparations/execution receipts may claim one continuation under its exact original absolute deadline. A receipt with recovery_of cannot become another continuation source; consumed or uncertain claims stay fenced.
+
 ## Ownership and outcome classes
 
 For `morning_bundle_repair_required`, inspect only its exact request and original
@@ -51,7 +55,7 @@ reported gap. Trade claims and historical UNKNOWN remain separate reconciliation
 Run the full live-morning command exactly once. The started task owns repair;
 do not defer a recoverable problem to the next Automation.
 
-If that original process has already terminated at preflight with zero plans,
+If that original process has already terminated at preflight or read-only review_account with zero plans,
 preparations and execution receipts, the same dated owner may continue using
 `CODEX_AUTOMATION_ID=xiaocao-book-b-live-morning PYTHONPATH=src .venv/bin/python scripts/book_b_live_morning.py --date YYYY-MM-DD --route native-app --resume-preflight-receipt <exact runs/history receipt>`.
 This validates the canonical archive, state directory, date and task identity,

@@ -2,6 +2,10 @@
 
 Read this file only for the daily morning recommendation/paper-book branch.
 
+## Prior-day SELL deferral (2026-10-12 user authorization)
+
+For the current dynamic APP capital policy, independent new BUYs use fresh account-bound available cash and proved current owned-lot marks. Prior-day SELL history/zero-fill proof is post-batch reconciliation, never a global opening dependency. Keep the old UNKNOWN/claim/order identity and same-code BUY fence before intent binding; current BUY, same-day SELL, missing identity and uncertain cash reserves still block. Record deferred_prior_day_sell_plan_ids and let the same owner perform exact readback after business; EOD remains strict. An original blocked preflight or read-only review_account receipt with zero intents/preparations/execution receipts may claim one continuation under its exact original absolute deadline. A receipt with recovery_of cannot become another continuation source; consumed or uncertain claims stay fenced.
+
 ## Execute
 
 Scheduler wakes are preparation only: producer and paper wake at 09:18; APP
@@ -110,8 +114,9 @@ observation/journal hashes and distinguish marked NAV from exit-fee NAV. Cash
 classification and statement work reads `docs/BOOK_B_ACCOUNTING.md` after the
 time-critical runner start. Routine tasks consume proved facts without classifying
 balance differences as capital.
-An old zero-fill SELL with exact fresh order/trade/holding proof may remain
-reconcile-only while other codes proceed; block a new BUY in that SELL's code.
+A prior-day SELL remains reconcile-only while independent codes proceed under
+the current dynamic capital policy; historical zero-fill proof is deferred,
+and a new BUY in that SELL's code stays blocked.
 The
 complete allocation capsule binds its capital
 basis source, NAV, cash, exposure and broker summary under one canonical hash,

@@ -209,6 +209,35 @@ def test_preflight_continuation_preserves_original_budget_and_claims_once(tmp_pa
 
 
 @pytest.mark.app_simulation
+def test_original_no_effect_account_failure_preserves_continuation_deadline(tmp_path):
+    from datetime import datetime
+    cli = importlib.import_module('scripts.book_b_live_morning')
+    state, path, receipt = _preflight_archive(tmp_path)
+    receipt['failed_stage'] = 'review_account'
+    path.write_text(json.dumps(receipt))
+    binding = cli._validate_preflight_continuation(path, state, '2026-10-08',
+        now=datetime.fromisoformat('2026-10-08T09:10:00+08:00'))
+    assert binding['deadline'] == receipt['preparation_deadline']
+
+
+@pytest.mark.app_simulation
+@pytest.mark.parametrize('case', ['derived_receipt', 'preparation', 'execution'])
+def test_account_continuation_rejects_derived_or_effectful_receipt(tmp_path, case):
+    from datetime import datetime
+    cli = importlib.import_module('scripts.book_b_live_morning')
+    state, path, receipt = _preflight_archive(tmp_path)
+    receipt['failed_stage'] = 'review_account'
+    if case == 'derived_receipt':
+        receipt['recovery_of'] = '2026-10-08-abcdef012345'
+    else:
+        receipt['preparation_receipts' if case == 'preparation' else 'execution_receipts'] = [{'status': 'unproven'}]
+    path.write_text(json.dumps(receipt))
+    with pytest.raises(ValueError, match='CONTINUATION_BINDING_UNPROVEN'):
+        cli._validate_preflight_continuation(path, state, '2026-10-08',
+            now=datetime.fromisoformat('2026-10-08T09:10:00+08:00'))
+
+
+@pytest.mark.app_simulation
 @pytest.mark.parametrize('case', ['copied', 'foreign_owner', 'effects', 'expired', 'naive', 'missing_budget', 'missing_deadline', 'bad_state', 'terminal'])
 def test_preflight_continuation_rejects_unproved_or_consumed_original(tmp_path, case):
     from datetime import datetime

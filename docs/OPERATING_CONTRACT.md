@@ -1,6 +1,6 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：4.38
+**版本**：4.39
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
 **关联实现**：`src/xiaocao/live/{safety,capital_keychain,foundersc_native_ax,foundersc_native_broker,trading_execution,book_b_live_lifecycle,book_b_live_intraday}.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`native/foundersc_ax_executor/`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{book_b_live_morning,book_b_live_intraday,live_monitor,research_mode_switch_replay}.py`
@@ -89,10 +89,10 @@ remote writer 对新报告只做一次完整语义工作：同一经校验的 se
 
 正式恢复用`--resume-plan-id`和`--recovery-action resume|reconcile|close`，不重跑生产器或修改计划经济字段。已提交/未知副作用只对账，未提交计划可恢复或正式关闭，真正到期的无claim计划仍可关闭。保留失败进度、各阶段时间和恢复历史，用于事后定位耗时，不再围绕时钟增加交易门。
 
-原进程已在 preflight 终止且没有计划、准备或执行回执时，同日原任务可用
+原进程已在 preflight 或只读 review_account 终止且没有计划、准备或执行回执时，同日原任务可用
 `--resume-preflight-receipt <原 runs/history 回执>` 接回原生产者批次。入口绑定
 原归档、状态目录、日期与任务身份，在原生动作前持久化唯一续跑 claim；继续
-原回执的准备预算和绝对截止时点，不重新计时或退还初始化耗时。旧回执缺
+原回执的准备预算和绝对截止时点，不重新计时或退还初始化耗时。续跑产生的 recovery_of 回执不能再次作为来源；原 claim 只允许一次续跑。旧回执缺
 这些字段时必须显式提供已证明的原预算与绝对截止时点。
 已有 BUY intent 或 completed/no_action 终态禁止该入口，改用原计划恢复。
 精确且新鲜的旧 SELL 零成交证明可复用，原 UNKNOWN 状态与同代码 BUY 禁止保持。
@@ -100,6 +100,8 @@ remote writer 对新报告只做一次完整语义工作：同一经校验的 se
 盘中监控在账户锁内核验完整意图/事件链后，可将尚无claim、订单、成交或不确定副作用的BUY保留给原任务，并在回执`deferred_buy_plan_ids`中列明；它不阻塞已有持仓监控和原策略授权退出。账户与状态读取后重新核验；未结SELL及可能副作用仍先对账。该例外不释放BUY资金预留、不代替原任务恢复，也不绕过最终结算的未结计划检查。AX清空采用短间隔可读空值确认，等待预算400–900毫秒、含AX调用的轮询预算3秒；解锁就绪轮询也缩为3秒，就绪即返回，不增加长时间稳定空值等待。
 
 来源的日期、观察时点、行数、hash、缺失/空响应和有界确认窗口继续保留；不把稳定结果冒充数据齐全。remote writer 的语义输入仍完整读取正文；交易消费者的 `projection` 只含已发布观点、评估、关系、必要历史端点与覆盖质量，不含正文。正式决策发布仍绑定当前完整context/hash，并仅对被引用报告精确补读和远端验证，不以投影代替来源证明。
+
+**2026-10-12 用户明确修订旧 SELL 依赖**：当前 APP 动态资金政策的晨间独立 BUY，以新鲜账户绑定的可用资金、当前已证明自有 lot 标记和原分配/风险/行情/订单门推进。前日 SELL 的历史零成交或终态查询不再是其他代码新 BUY 的前置依赖，晨间在回执列出 `deferred_prior_day_sell_plan_ids`；原任务在本批终态后精确回读，EOD 仍核验全部未终态计划。旧 SELL 始终保留 UNKNOWN/reconcile_only、原 claim 和订单身份；同代码新 BUY 在 intent 绑定前禁止。当前 BUY、同日 SELL、不明意图及不确定资金预留仍阻断，禁止以可用资金为由重放旧单、扩大授权、解除实际风险暂停或伪造结算。
 
 ### 1c. 开盘准备与上下文预算（2026-09-17）
 
@@ -248,7 +250,7 @@ APP 在用户明确批准的动态资金政策下，以账户绑定的资金划�
   不调用或等待 `auto_daily.sh morning-execute`，不读取模拟成交，也不写
   canonical paper ledger。该 seam 只走方正证券原生 App；不得初始化、登录或
   调用 OpenCLI 作为账户、资产、持仓、委托、成交、填单、提交或对账的一部分。
-  全新 BUY 的 allocation 从同账户当日原生持仓页面直接读取可用资金，绑定完整表结构、实际可用字段及自有 lot 标记。已有可信结算后，当前 ownership chain 即使因后来已证明的成交变化，也可重放全部 hash-bound 自有成交并用当日 APP 持仓标记当前 Book-B lot；当前动态 NAV/自有敞口按§6验证；未迁移历史策略仍取旧结算与当前 NAV 较低者、敞口较高者。风险回执保留真实缺失结算日期和降级原因。前日自有 SELL 只有在当日精确委托、成交与持仓回读证明零成交，且原 lot 仍足额持有或后来独立成交已清空原 lot 并由 APP 证明当前该股零持仓时，才不全局阻断其他代码的新 BUY；旧单仍未决、仅精确对账，同股新 BUY 继续阻断。余额、可取、混合总资产等审计字段不作为全新 BUY 的前置门。恢复和完整生命周期对账仍要求下述完整快照及恒等式。原生 App 没有 mock/live 数据
+  全新 BUY 的 allocation 从同账户当日原生持仓页面直接读取可用资金，绑定完整表结构、实际可用字段及自有 lot 标记。已有可信结算后，当前 ownership chain 即使因后来已证明的成交变化，也可重放全部 hash-bound 自有成交并用当日 APP 持仓标记当前 Book-B lot；当前动态 NAV/自有敞口按§6验证；未迁移历史策略仍取旧结算与当前 NAV 较低者、敞口较高者。风险回执保留真实缺失结算日期和降级原因。前日自有 SELL 按§1b的2026-10-12修订延后历史查询，不全局阻断当前动态资金政策下其他代码的新 BUY；新鲜零成交证明可复用但不是该路径的前置门。旧单仍未决、仅精确对账，同股新 BUY 继续阻断。余额、可取、混合总资产等审计字段不作为全新 BUY 的前置门。恢复和完整生命周期对账仍要求下述完整快照及恒等式。原生 App 没有 mock/live 数据
   namespace，完成或失败后必须记录
   `native_environment_restore_not_applicable`，不得伪造恢复 mock。非空 freeze 还必须绑定实际同日 snapshot 的 canonical
   SHA-256 与行数，且 digest/run id/producer strategy Git SHA 必须由 queue producer 在冻结时写入 manifest。
@@ -640,6 +642,7 @@ APP 在用户明确批准的动态资金政策下，以账户绑定的资金划�
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| 4.39 | 2026-10-12 | 用户要求旧 SELL 历史对账移到开盘批次之后；独立 BUY 消费新鲜可用现金/自有标记，保留同股禁买、旧 UNKNOWN、当前 BUY/SELL 与 EOD 门。只读 review_account 零副作用失败可原 owner 一次续跑，派生回执不可链式续跑。 |
 | 4.38 | 2026-10-10 | 用户确认独立 T 袖子同预算修复；取消 v2 重复 30% 切分，校验存量/换仓/现金，新增不可变历史修复版本并隔离自然验收。 |
 | 4.37 | 2026-10-09 | 家庭长桥 API 缺失首观测归零、第二观测归档；消费者仅认可完整回执覆盖且零数量/金额的待归档行，保持账户、版本、来源及时效校验。 |
 | 4.36 | 2026-10-08 | EOD 对新鲜零成交旧 SELL 仍执行精确对账，保留未终态回执与严格结算门；晨间原有证明复用规则不变。 |

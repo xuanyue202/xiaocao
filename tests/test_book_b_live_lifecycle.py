@@ -234,6 +234,30 @@ def test_prior_day_unknown_sell_read_is_deferred_during_exit_window(tmp_path: Pa
     assert store.current(old.plan_id).state == ExecutionState.UNKNOWN
 
 
+@pytest.mark.app_simulation
+@pytest.mark.parametrize("side,trade_date", [("BUY", "2026-08-31"),
+    ("BUY", "2026-09-01"), ("SELL", "2026-09-01")])
+def test_morning_old_sell_deferral_preserves_other_uncertainty(tmp_path, side, trade_date):
+    from xiaocao.live.book_b_live_lifecycle import deferred_prior_day_sell_ids
+    from xiaocao.live.book_b_live_morning import _uncertain_execution_plan_ids
+    old = _bind_plan_intent(tmp_path, _plan(side="SELL", lot_id="old-lot", trade_date="2026-08-31"))
+    other = _bind_plan_intent(tmp_path, replace(
+        _plan(side=side, lot_id="other-lot", trade_date=trade_date),
+        plan_id="other-uncertain-plan"))
+    store = ExecutionStore(tmp_path / "events.jsonl")
+    for plan in (old, other):
+        store.append(plan=plan, receipt=ExecutionReceipt(
+            plan.plan_id, plan.plan_hash, ExecutionState.UNKNOWN,
+            remaining_shares=plan.shares, next_action="reconcile_only"))
+    assert deferred_prior_day_sell_ids(tmp_path, trade_date="2026-09-01") == (old.plan_id,)
+    assert _uncertain_execution_plan_ids(tmp_path, trade_date="2026-09-01",
+        defer_prior_day_sells=True) == (other.plan_id,)
+    assert set(_uncertain_execution_plan_ids(tmp_path, trade_date="2026-09-01")) == {old.plan_id, other.plan_id}
+    assert old.code in unresolved_prior_sell_codes(tmp_path, trade_date="2026-09-01")
+    assert store.current(old.plan_id).state == ExecutionState.UNKNOWN
+    assert store.current(old.plan_id).next_action == "reconcile_only"
+
+
 def _record_fill(
     state_dir: Path,
     plan: TradePlan,
