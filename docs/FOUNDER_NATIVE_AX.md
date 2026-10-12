@@ -2,6 +2,15 @@
 
 Status: **production-capable Book-B route, fail-closed**.
 
+For the user's authorized rejected/stale-session rebuild, follow
+[the original-owner recovery sequence](../.codex/skills/xiaocao-trading/references/morning-session-recovery.md).
+The native `terminate-rejected-session --allow-session-reset` atom terminates
+only one same-account fixed Founder process on an unlocked machine. It does
+not read credentials, force-kill another app, or retry an order. Python binds
+it to one durable original request and deadline, then separately claims saved
+password fill and one visual CAPTCHA login; actual account readiness closes
+the credential fence. Unknown actions/account locks retain their protection.
+
 Deployment context and experiment standards: `OPERATING_CONTRACT.md` §1a
 records the user's 2026-09-12 clarification that the current APP connects to a
 black-box simulation service, separate from local digital simulation. Legacy

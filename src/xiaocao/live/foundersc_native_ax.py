@@ -623,6 +623,10 @@ class FounderscNativeAXClient:
             keychain_timeout_seconds=keychain_timeout_seconds,
         )
 
+    def terminate_rejected_session(self, *, expected_fingerprint: str) -> NativeAXReceipt:
+        return self._run("terminate-rejected-session", ["--allow-session-reset",
+            "--expected-fingerprint", expected_fingerprint])
+
     def unlock_from_keychain(
         self,
         *,

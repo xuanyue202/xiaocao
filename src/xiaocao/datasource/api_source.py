@@ -4,6 +4,8 @@ from typing import Any
 from datetime import datetime, timezone
 import hashlib
 import json
+import copy
+import time
 
 from xiaocao.api.catalog import STOCK_GROUPS, resolve_group
 from xiaocao.api.client import XiaocaoClient
@@ -21,16 +23,51 @@ class ApiDataSource:
         self.observations: list[dict[str, Any]] = []
         self.readiness: dict[str, Any] = {}
         self._observe_enabled = False
+        self._requests = {}
+        self._validated = {}
 
-    def begin_observation(self, attempt: int) -> None:
+    def begin_observation(self, attempt: int, *, retry_missing: bool = False) -> None:
+        retained = {k:v for k,v in self._validated.items()
+                    if v[1].get("status") in {"populated", "empty_confirmed"}
+                    and 0 <= (datetime.now(timezone.utc) - datetime.fromisoformat(v[1]["completed_at"])).total_seconds() <= 60} if retry_missing else {}
         self._observe_enabled = True
         self.observations = []
         self.readiness = {"attempt": attempt, "sources": self.observations}
+        self._requests = {}
+        self._validated = retained
 
-    def _observe(self, kind: str, date: str, fetch, *, requested_codes=None):
+    def revalidate_observation(self, attempt: int) -> bool:
+        previous = dict(self._requests)
+        previous_records = dict(self._validated)
+        self.begin_observation(attempt)
+        unchanged = True
+        for key, (kind, day, fetch, codes, cache_key, expected) in previous.items():
+            self._observe(kind, day, fetch, requested_codes=codes, cache_key=cache_key)
+            record = self.observations[-1]
+            if record.get("response_sha256") == expected:
+                record.update({k:v for k,v in previous_records[key][1].items()
+                               if k in {"ranked_requested_count", "unranked_codes", "status"}})
+            unchanged = unchanged and record.get("response_sha256") == expected
+        self.readiness["confirmation"] = {"unchanged": unchanged, "request_count": len(previous)}
+        return bool(previous) and unchanged
+
+    def reuse_validated_observation(self):
+        # A changed universe can reuse just-confirmed input responses by exact
+        # query key while exposing only the inputs actually used by the rerun.
+        self.observations.clear()
+        self._requests.clear()
+
+    def _observe(self, kind: str, date: str, fetch, *, requested_codes=None, cache_key=()):
         if not self._observe_enabled:
             return fetch()
         stamp = datetime.now(timezone.utc).isoformat()
+        key = (kind, date, tuple(requested_codes or ()), tuple(cache_key))
+        if key in self._validated:
+            rows, record, request = self._validated[key]
+            self.observations.append(copy.deepcopy(record))
+            self._requests[key] = request
+            return copy.deepcopy(rows)
+        started = time.monotonic()
         try:
             rows = fetch()
             for row in rows:
@@ -63,7 +100,13 @@ class ApiDataSource:
             "row_count": len(rows), "missing_codes": missing,
             "response_sha256": hashlib.sha256(json.dumps(rows, sort_keys=True, ensure_ascii=False,
                                                         default=str).encode()).hexdigest(),
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+            "elapsed_seconds": round(time.monotonic() - started, 6),
         })
+        record = self.observations[-1]
+        request = (kind, date, fetch, tuple(requested_codes or ()), tuple(cache_key), record["response_sha256"])
+        self._requests[key] = request
+        self._validated[key] = (copy.deepcopy(rows), record, request)
         return rows
 
     def get_pool(self, date: str, group: str | int) -> list[str]:
@@ -75,9 +118,9 @@ class ApiDataSource:
         output: list[dict[str, Any]] = []
         for i in range(0, len(codes), 80):
             output.extend(
-                self._observe("stock_index", date, lambda: self.client.get_xiao_cao_index_v2(
+                self._observe("stock_index", date, lambda chunk=tuple(codes[i : i + 80]): self.client.get_xiao_cao_index_v2(
                     date,
-                    codes[i : i + 80],
+                    list(chunk),
                     self.hpqb_state,
                     self.lpdx_state,
                 ), requested_codes=codes[i : i + 80])
@@ -112,15 +155,15 @@ class ApiDataSource:
         descending: bool = True,
         target_type: int | str = "stock",
     ) -> list[str]:
-        rows = self._observe(f"sort:{sort_id}", date, lambda: self.client.sort_v2(
-            codes,
+        rows = self._observe(f"sort:{sort_id}", date, lambda selected=tuple(codes): self.client.sort_v2(
+            list(selected),
             sort_id=sort_id,
             sort_type=descending,
             type_=target_type,
             date=date,
             hpqb_state=self.hpqb_state,
             lpdx_state=self.lpdx_state,
-        ))
+        ), cache_key=(tuple(codes), descending, target_type))
         result = []
         for row in rows:
             if isinstance(row, str):
@@ -146,10 +189,10 @@ class ApiDataSource:
         return filtered or list(codes)
 
     def get_industry_block_rank(self, date: str, model: int = 1) -> list[dict[str, Any]]:
-        return self._observe("industry_rank", date, lambda: self.client.get_industry_block_rank(date, model))
+        return self._observe("industry_rank", date, lambda: self.client.get_industry_block_rank(date, model), cache_key=(model,))
 
     def get_block_category_rank(self, date: str, model: int = 0) -> list[dict[str, Any]]:
-        return self._observe("category_rank", date, lambda: self.client.get_block_category_rank_v3(date, model))
+        return self._observe("category_rank", date, lambda: self.client.get_block_category_rank_v3(date, model), cache_key=(model,))
 
     def get_direction_codes(
         self,
@@ -162,7 +205,7 @@ class ApiDataSource:
             blockCodeList=block_code or "",
             industryBlockCodeList=block_code or "",
             categoryCodeList=category_code or "",
-        ))
+        ), cache_key=(block_code, category_code))
         return _extract_codes(result)
 
 

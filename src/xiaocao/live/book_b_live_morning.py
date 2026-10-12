@@ -25,7 +25,7 @@ from .book_b_allocation import BookBAllocationFacts, allocate_frozen_rows, valid
 from .account_risk import AccountRiskReceipt
 from . import kol_policy
 from .live_decision_support import (
-    bind_plan_audit, buy_cap, evaluate_live_risk, read_plan_audit, read_policy,
+    bind_plan_audit, buy_cap, digest, evaluate_live_risk, read_plan_audit, read_policy,
 )
 from xiaocao.strategy.mode_switch import plan_board_lot_orders
 from .book_b_live_lifecycle import (
@@ -2027,7 +2027,12 @@ def run_book_b_live_morning(
                                 if current.date().isoformat() == config.trade_date else 0.0,
                         }
                         enter("review")
-                        review_receipt = review_rendezvous(request)
+                        # KOL cannot increase a hard account-risk cap. Finish
+                        # the deterministic no-buy without spending its window
+                        # on a supporting model wait.
+                        review_receipt = (review_rendezvous(request) if review_risk.deploy_factor > 0
+                            else {"status": "deferred", "reason": "ACCOUNT_RISK_BLOCKS_NEW_BUY",
+                                  "request_sha256": digest(request), "supporting_health": "degraded"})
                         if not isinstance(review_receipt, dict):
                             raise ValueError("LIVE_REVIEW_RENDEZVOUS_RECEIPT_INVALID")
                         if now() >= deadline:

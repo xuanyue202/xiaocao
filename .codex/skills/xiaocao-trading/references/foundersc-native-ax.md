@@ -30,6 +30,11 @@ read `guidance.status` and `guidance.next_action` before acting.
 
 ## Mandatory Agent state machine
 
+On `dependency_recovery_wait` with `recovery_kind=app_session_reset`, read
+[the session recovery branch](morning-session-recovery.md) and complete it in
+the original owner. This distinct, claim-bound generation replaces endless
+pre-secret polling; ordinary unknown password actions retain their fence.
+
 After every permitted action, rerun `remote-bootstrap`; never chain remembered
 steps from an earlier receipt.
 

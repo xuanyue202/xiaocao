@@ -54,6 +54,7 @@ def _automatic_dependency_retry(failure: dict) -> bool:
     evidence = failure.get("evidence") or {}
     if (evidence.get("state") != "not_attempted"
             or (evidence.get("user_action") or {}).get("required")
+            or (evidence.get("user_action") or {}).get("recovery_kind") == "app_session_reset"
             or evidence.get("password_action_attempted") is not False
             or evidence.get("confirmation_pressed") is not False):
         return False
@@ -677,7 +678,8 @@ def _run(args, notices):
 
     recovery = DependencyRecovery(
         root=Path(args.state_dir) / "runs" / "dependencies",
-        identity={**runner_identity(args.automation_id, "scripts/book_b_live_morning.py"), "trade_date": trade_date},
+        identity={**runner_identity(args.automation_id, "scripts/book_b_live_morning.py"), "trade_date": trade_date,
+                  "preparation_deadline": absolute_preparation_deadline.isoformat()},
         deadline=preparation_deadline,
         boundary=datetime.fromisoformat(trade_date + "T09:24:00+08:00"),
         # These callbacks only read readiness / perform one fenced unlock.

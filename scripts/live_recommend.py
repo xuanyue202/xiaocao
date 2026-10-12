@@ -591,6 +591,10 @@ def _run_strategy_when_ready(
     last_fingerprint: tuple[tuple[object, object, object], ...] | None = None
     stable_seen = 0
     last_failure_category = None
+    confirm_inputs = False
+    previous_rows, previous_actives = [], []
+    last_price_probe = float('-inf')
+    price_observed_at = None
     def finish(selected_rows, selected_actives, reason, selected_evidence=None):
         if hasattr(source, "readiness"):
             last_observation = source.readiness
@@ -609,21 +613,42 @@ def _run_strategy_when_ready(
         if not _is_today_live_run(date_iso):
             raise RuntimeError("MORNING_CAPTURE_SESSION_CHANGED")
         attempt += 1
-        if hasattr(source, "begin_observation"):
-            source.begin_observation(attempt)
+        iteration_started = _time.monotonic()
+        confirmed = False
         try:
-            rows = run_strategy(date_iso, source, profile="validated_v5", adaptive_modes=False)
-            actives = [r for r in rows if r.get("adaptive_active") in (True, None)]
+            if confirm_inputs and hasattr(source, "revalidate_observation"):
+                confirmed = source.revalidate_observation(attempt)
+                if not confirmed:
+                    source.reuse_validated_observation()
+            elif hasattr(source, "begin_observation"):
+                if isinstance(source, ApiDataSource):
+                    source.begin_observation(attempt, retry_missing=attempt > 1)
+                else:
+                    source.begin_observation(attempt)
+            if confirmed:
+                rows, actives = previous_rows, previous_actives
+            else:
+                rows = run_strategy(date_iso, source, profile="validated_v5", adaptive_modes=False)
+                actives = [r for r in rows if r.get("adaptive_active") in (True, None)]
             observations = getattr(source, "readiness", {}).get("sources", [])
             sources_ready = bool(observations) and all(
                 row.get("status") in {"populated", "empty_confirmed"} for row in observations)
-            missing_prices = price_probe(actives) if price_probe is not None and sources_ready else []
+            reuse_prices = confirmed and _time.monotonic() - last_price_probe <= 60
+            missing_prices = []
+            if price_probe is not None and sources_ready and not reuse_prices:
+                missing_prices = price_probe(actives)
+                if not missing_prices:
+                    last_price_probe = _time.monotonic()
+                    price_observed_at = datetime.now(A_SHARE_TZ).isoformat()
         except ApiNotFoundError:
             raise
         except ApiError as exc:
             if isinstance(exc, ApiSchemaError) and not isinstance(exc, ApiSourceNotReadyError):
                 raise
             category = getattr(exc, "failure_category", None) or type(exc).__name__
+            print(json.dumps({"event": "morning_capture_iteration", "attempt": attempt,
+                "elapsed_seconds": round(_time.monotonic()-iteration_started, 6),
+                "status": "waiting", "failure_category": category}), file=sys.stderr, flush=True)
             if isinstance(exc, ApiAuthError) and category not in {
                     "MARKET_LOGIN_CAPTCHA_REQUIRED", "MARKET_LOGIN_BUSY", "MARKET_LOGIN_COOLDOWN"}:
                 raise
@@ -636,6 +661,7 @@ def _run_strategy_when_ready(
             if _time.monotonic() >= deadline:
                 raise
             _time.sleep(min(max(0.2, poll_sec), deadline - _time.monotonic()))
+            confirm_inputs = False
             continue
 
         # Equal signal coverage should retain the most recent observation and
@@ -646,11 +672,20 @@ def _run_strategy_when_ready(
             best_readiness = dict(getattr(source, "readiness", {}))
 
         capture_ready = price_probe is None or (sources_ready and not missing_prices)
+        confirm_inputs = bool(capture_ready and sources_ready)
+        previous_rows, previous_actives = rows, actives
+        print(json.dumps({"event": "morning_capture_iteration", "attempt": attempt,
+            "elapsed_seconds": round(_time.monotonic()-iteration_started, 6),
+            "confirmation_reused_strategy": confirmed, "sources_ready": sources_ready,
+            "signal_count": len(rows), "active_count": len(actives), "unpriced_count": len(missing_prices),
+            "unresolved_sources": [r.get("source") for r in observations if r.get("status") not in {"populated", "empty_confirmed"}]}),
+            file=sys.stderr, flush=True)
         if price_probe is not None:
             source.readiness["price_enrichment"] = {
                 "status": "complete" if sources_ready and not missing_prices else "waiting",
                 "active_count": len(actives), "priced_count": len(actives) - len(missing_prices),
-                "unpriced_codes": missing_prices}
+                "unpriced_codes": missing_prices, "observed_at": price_observed_at,
+                "reused": reuse_prices}
 
         if actives or capture_ready and sources_ready:
             now = _time.monotonic()
@@ -1151,8 +1186,31 @@ def main() -> None:
     _ENTRY_DETAIL_CACHE.clear()
 
     date_iso = _resolve_date(args.date)
-    _wait_for_recommendation_start(date_iso)
     OUT_DIR.mkdir(parents=True, exist_ok=True)
+    preparation = None
+    if (os.environ.get("CODEX_AUTOMATION_ID") == "xiaocao-daily-morning"
+            and not args.no_kronos and _seconds_until_recommendation_start(date_iso, datetime.now(A_SHARE_TZ)) > 30):
+        deadline = f"{date_iso}T09:24:45+08:00"
+        try:
+            with (OUT_DIR / f"morning_score_preparation_{date_iso}.log").open("a") as log:
+                preparation = subprocess.Popen([sys.executable, str(ROOT / "scripts/prepare_morning_scores.py"),
+                    "--date", date_iso, "--deadline", deadline], cwd=ROOT,
+                    stdout=log, stderr=log, start_new_session=True)
+        except OSError:
+            print('[K/P preparation unavailable: launch failed]', file=sys.stderr)
+    try:
+        _wait_for_recommendation_start(date_iso)
+    finally:
+        if preparation is not None and preparation.poll() is None:
+            import signal
+            try:
+                os.killpg(preparation.pid, signal.SIGTERM)
+                preparation.wait(timeout=5)
+            except ProcessLookupError:
+                pass
+            except subprocess.TimeoutExpired:
+                os.killpg(preparation.pid, signal.SIGKILL)
+                preparation.wait(timeout=5)
 
     client = _client()
     source = ApiDataSource(client, hpqb_state=0, lpdx_state=0)
@@ -1163,16 +1221,17 @@ def main() -> None:
     # We run once and label each signal as "in v5" / "in v6" — they're all in
     # both. The differentiation is in the STOP price computed below.
     entry_prices = {}
+    entry_price_times = {}
     def price_probe(active_rows):
         missing = []
-        entry_prices.clear()
-        _ENTRY_DETAIL_CACHE.clear()
         for row in active_rows:
             code = str(row.get("code") or "")
             if not code:
                 raise RuntimeError("MORNING_CAPTURE_CODE_MISSING")
-            if code not in entry_prices:
+            if code not in entry_prices or not entry_prices[code][0] or _time.monotonic() - entry_price_times[code] > 60:
+                _ENTRY_DETAIL_CACHE.pop((date_iso, code), None)
                 entry_prices[code] = _entry_price(client, code, date_iso)
+                entry_price_times[code] = _time.monotonic()
             if not entry_prices[code][0]:
                 missing.append(code)
         return sorted(set(missing))
@@ -1332,13 +1391,17 @@ def main() -> None:
 
     if not args.no_kronos:
         try:
-            _load_screen_module("secondary_screen").score(
-                candidates,
-                client,
-                date_iso,
-                top_n=max(1, args.kronos_top_n),
-            )
+            kp_started = _time.monotonic()
+            if os.environ.get("CODEX_AUTOMATION_ID") == "xiaocao-daily-morning":
+                from xiaocao.live.morning_score_cache import apply_scores, load_scores
+                kp_health = apply_scores(candidates, load_scores(ROOT, date_iso), top_n=max(1, args.kronos_top_n))
+                print(json.dumps({"event": "morning_kp_preparation", **kp_health}), file=sys.stderr)
+                source.readiness["kp_preparation"] = kp_health
+            else:
+                _load_screen_module("secondary_screen").score(
+                    candidates, client, date_iso, top_n=max(1, args.kronos_top_n))
             kp_stars = [c for c in candidates if c.get("kp_star")]
+            source.readiness.setdefault("stages", {})["kp_seconds"] = round(_time.monotonic()-kp_started, 6)
         except Exception as e:  # missing model / torch / API — degrade gracefully
             print(f"[Kronos K→P skipped: {type(e).__name__}: {e}]", file=sys.stderr)
 
@@ -1346,6 +1409,10 @@ def main() -> None:
     # outputs, not part of the optional K→P overlay.  Missing K/P scores fall
     # back to neutral percentiles inside select_executable_candidates().
     try:
+        capture_started = _time.monotonic()
+        def publish_original(raw):
+            source.readiness.setdefault("stages", {})["original_capture_seconds"] = round(_time.monotonic()-capture_started, 6)
+            _publish_original_batch(date_iso, source.readiness, script_entered_at, raw)
         _load_screen_module("capture_signals").capture(
             candidates,
             client,
@@ -1353,11 +1420,16 @@ def main() -> None:
             is_live=_is_today_live_run(date_iso),
             top_n=max(1, args.kronos_top_n),
             out=OUT_DIR / "signal_snapshots.jsonl",
-            on_captured=lambda raw: _publish_original_batch(date_iso, source.readiness, script_entered_at, raw),
+            on_captured=publish_original,
+            enrich_auction=os.environ.get("CODEX_AUTOMATION_ID") != "xiaocao-daily-morning",
         )
         vb_stars = [c for c in candidates if c.get("vb_star")]
         mode_stars = [c for c in candidates if c.get("mode_star")]
         mode_exec_stars = [c for c in candidates if c.get("mode_exec_star")]
+        print(json.dumps({"event": "morning_capture_support_complete",
+            "elapsed_seconds": round(_time.monotonic()-capture_started, 6),
+            "original_capture_seconds": source.readiness.get("stages", {}).get("original_capture_seconds")}),
+            file=sys.stderr, flush=True)
     except Exception as e:
         raise RuntimeError(
             f"required signal capture failed: {type(e).__name__}: {e}"
@@ -1642,7 +1714,8 @@ def main() -> None:
 def _publish_original_batch(date_iso: str, readiness: dict, entered_at: str, snapshot: bytes) -> None:
     if os.environ.get("CODEX_AUTOMATION_ID") != "xiaocao-daily-morning":
         return
-    revision = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT,
+    revision = os.environ.get("XIAOCAO_DAILY_SOURCE_REVISION") or subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=ROOT,
         text=True, capture_output=True, check=True, timeout=5).stdout.strip()
     cached = _load_stock_sentiment_map(date_iso)
     rows = []
@@ -1661,7 +1734,7 @@ def _publish_original_batch(date_iso: str, readiness: dict, entered_at: str, sna
             rows.append(row)
     payload = ("\n".join(json.dumps(r, ensure_ascii=False, sort_keys=True, default=str) for r in rows)
         + ("\n" if rows else "")).encode()
-    timing = {"configured_slot": f"{date_iso}T09:23:00+08:00", "script_entered_at": entered_at,
+    timing = {"configured_slot": f"{date_iso}T09:18:00+08:00", "script_entered_at": entered_at,
         "scheduler_dispatched_at": None, "task_started_at": None,
         "scheduler_timing_proof": "unavailable"}
     result = publish_captured_batch(OUT_DIR, date_iso, snapshot=payload,

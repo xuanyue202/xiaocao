@@ -72,10 +72,11 @@ def source_manifest(root: Path) -> dict[str, str]:
     """Hash source/config names only; private/runtime files and env are excluded."""
     paths = {root / 'scripts/auto_daily.sh', root / 'pyproject.toml',
              root / 'docs/OPERATING_CONTRACT.md'}
-    for name in ('scripts', 'src/xiaocao', 'kronos_screen/scripts'):
+    for name in ('scripts', 'src/xiaocao', 'kronos_screen/scripts', 'native', 'Kronos'):
         folder = root / name
         if folder.exists():
-            paths.update(p for p in folder.rglob('*') if p.suffix in {'.py', '.sh', '.swift'})
+            paths.update(p for p in folder.rglob('*') if p.suffix in {'.py', '.sh', '.swift'}
+                         or name in {'src/xiaocao', 'Kronos'} and p.suffix == '.json')
     return {str(p.relative_to(root)): sha256(p) for p in sorted(paths)
             if p.is_file() and not p.is_symlink()}
 
@@ -319,6 +320,15 @@ def _launch(script: Path, root: Path, args: list[str], market_date: str) -> int:
     stable_script.chmod(0o400)
     hashes = source_manifest(root)
     automation = args[0] if args else 'unknown'
+    deployment_root = root
+    revision = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=root,
+                              capture_output=True, text=True, timeout=5)
+    pinned_revision = revision.stdout.strip() if revision.returncode == 0 else ''
+    if automation in {'morning-prerecommend', 'morning-execute'}:
+        from .runtime_snapshot import freeze_runtime
+        root = freeze_runtime(root, run_dir / 'runtime', hashes)
+        if source_manifest(root) != hashes:
+            raise ValueError('RUNTIME_SNAPSHOT_MANIFEST_MISMATCH')
     # Freeze the observer as well: future Python source edits cannot break or
     # bypass the command boundary that checks the original source manifest.
     helper_root = run_dir / 'observer'
@@ -336,6 +346,8 @@ def _launch(script: Path, root: Path, args: list[str], market_date: str) -> int:
                 'initial_inputs': operational_inputs(root, market_date), 'python_version': sys.version.split()[0],
                 'observer_hashes': {p.name: sha256(p) for p in helper_package.glob('*.py')},
                 'automation_id': os.environ.get('CODEX_AUTOMATION_ID'), 'thread_id': os.environ.get('CODEX_THREAD_ID')}
+    manifest.update(execution_root=str(root), deployment_root=str(deployment_root),
+                    git_revision=pinned_revision, behavior_snapshot=root != deployment_root)
     # The exact contract/config source digest and interpreter version are in the manifest.
     write_json(run_dir / 'manifest.json', manifest)
     events_path = run_dir / 'events.jsonl'
@@ -345,6 +357,7 @@ def _launch(script: Path, root: Path, args: list[str], market_date: str) -> int:
            'XIAOCAO_DAILY_RUN_DIR': str(run_dir), 'XIAOCAO_DAILY_RUN_ID': run_id,
            'XIAOCAO_DAILY_PYTHON': str(root / '.venv/bin/python'),
            'XIAOCAO_DAILY_HELPER': str(helper_root), 'XIAOCAO_DAILY_LOG': str(log_path)}
+    env.update(XIAOCAO_DEPLOYMENT_ROOT=str(deployment_root), XIAOCAO_DAILY_SOURCE_REVISION=pinned_revision)
     process_exit = 127
     failure_reason = 'process_start_failed'
     try:
@@ -409,6 +422,8 @@ def _launch(script: Path, root: Path, args: list[str], market_date: str) -> int:
                     finalization={'context_pack_exit_code': context_exit, 'snapshot_error': finalization_error},
                     evidence={'manifest_path': str(run_dir / 'manifest.json'), 'events_path': str(events_path), 'events_sha256': sha256(events_path),
                               'log_path': str(log_path), 'console_path': str(run_dir / 'console.log')})
+    if root != deployment_root:
+        snapshot['deployment_source_changes'] = source_changes(deployment_root, hashes)
     write_json(run_dir / 'terminal.json', snapshot)
     try:
         run_flow.write_snapshot(root / f'output/live/run_flow_{market_date}_{automation}.json', snapshot)

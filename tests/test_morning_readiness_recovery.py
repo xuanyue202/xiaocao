@@ -203,3 +203,88 @@ def test_nonfinite_or_negative_quote_is_not_a_ready_entry(monkeypatch):
             second_line_detail_info=lambda code: {code: {"code": code, "tradeDate": "2026-10-09", "open": price}},
             date_kline=lambda *a, **k: [], stock_call_auction=lambda *a: [])
         assert recommend._entry_price(client, "A", "2026-10-09")[0] is None
+
+
+def test_stable_raw_inputs_confirm_without_repeating_strategy_or_prices(monkeypatch):
+    from xiaocao.datasource.api_source import ApiDataSource
+    elapsed, calls, prices, reads = [0.0], [], [], []
+    source = ApiDataSource(SimpleNamespace(get_industry_block_rank=lambda *a:
+        reads.append(elapsed[0]) or [{"tradeDate": "20261009", "name": "stable"}]))
+    monkeypatch.setattr(recommend, "_today_iso", lambda: "2026-10-09")
+    monkeypatch.setattr(recommend._time, "monotonic", lambda: elapsed[0])
+    monkeypatch.setattr(recommend._time, "sleep", lambda seconds: elapsed.__setitem__(0, elapsed[0]+seconds))
+    def strategy(day, source, **kwargs):
+        calls.append(elapsed[0]); source.get_industry_block_rank(day)
+        return [{"code": "A", "mode": "stable"}]
+    monkeypatch.setattr(recommend, "run_strategy", strategy)
+    result, _ = recommend._run_strategy_when_ready("2026-10-09", source, timeout_sec=-1,
+        poll_sec=2, confirm_sec=0, price_probe=lambda _: prices.append(elapsed[0]) or [])
+    assert calls == prices == [0.0] and reads == [0.0, 2.0]
+    assert result[0]["code"] == "A" and source.readiness["price_enrichment"]["reused"]
+
+
+def test_changed_confirmation_rebuilds_from_validated_inputs_without_double_fetch():
+    from xiaocao.datasource.api_source import ApiDataSource
+    responses = iter([[{"value": 1}], [{"value": 2}]])
+    calls = []
+    source = ApiDataSource(SimpleNamespace(get_industry_block_rank=lambda *a:
+        calls.append(a) or next(responses)))
+    source.begin_observation(1)
+    assert source.get_industry_block_rank("2026-10-09")[0]["value"] == 1
+    assert not source.revalidate_observation(2)
+    source.reuse_validated_observation()
+    assert source.get_industry_block_rank("2026-10-09")[0]["value"] == 2
+    assert len(calls) == 2 and len(source.readiness["sources"]) == 1
+
+
+def test_chunk_confirmation_retains_each_original_requested_code_range():
+    from xiaocao.datasource.api_source import ApiDataSource
+    seen = []
+    def fetch(day, codes, *args):
+        seen.append(tuple(codes)); return [{"code": code} for code in codes]
+    source = ApiDataSource(SimpleNamespace(get_xiao_cao_index_v2=fetch))
+    codes = [str(i) for i in range(90)]
+    source.begin_observation(1); source.get_stock_index("2026-10-09", codes)
+    assert source.revalidate_observation(2)
+    assert seen == [tuple(codes[:80]), tuple(codes[80:])] * 2
+
+
+def test_partial_retry_retains_complete_sources_and_retries_missing_only():
+    from xiaocao.datasource.api_source import ApiDataSource
+    calls = {"good": 0, "late": 0}
+    def fetch(name):
+        calls[name] += 1
+        return [{"name": name}] if name == "good" or calls[name] > 1 else []
+    source = ApiDataSource(SimpleNamespace())
+    source.begin_observation(1)
+    source._observe("good", "2026-10-09", lambda: fetch("good"))
+    source._observe("late", "2026-10-09", lambda: fetch("late"))
+    source.begin_observation(2, retry_missing=True)
+    source._observe("good", "2026-10-09", lambda: fetch("good"))
+    source._observe("late", "2026-10-09", lambda: fetch("late"))
+    assert calls == {"good": 1, "late": 2}
+    assert all(row["status"] == "populated" for row in source.observations)
+
+
+def test_expired_populated_pool_can_change_while_detail_is_missing():
+    from xiaocao.datasource.api_source import ApiDataSource
+    from datetime import timezone
+    codes = [["A"]]
+    source = ApiDataSource(SimpleNamespace(get_code_list_v2=lambda *args: codes[0]))
+    source.begin_observation(1)
+    assert source.get_pool("2026-10-09", "jingwang") == ["A"]
+    for _, record, _ in source._validated.values():
+        record["completed_at"] = (datetime.now(timezone.utc)-timedelta(seconds=61)).isoformat()
+    codes[0] = ["B"]
+    source.begin_observation(2, retry_missing=True)
+    assert source.get_pool("2026-10-09", "jingwang") == ["B"]
+
+
+def test_changed_universe_rebuilds_confirmation_requests_from_used_inputs():
+    from xiaocao.datasource.api_source import ApiDataSource
+    source = ApiDataSource(SimpleNamespace())
+    source.begin_observation(1)
+    source._observe("detail-A", "2026-10-09", lambda: [{"code": "A"}])
+    source.reuse_validated_observation()
+    source._observe("detail-B", "2026-10-09", lambda: [{"code": "B"}])
+    assert {key[0] for key in source._requests} == {"detail-B"}

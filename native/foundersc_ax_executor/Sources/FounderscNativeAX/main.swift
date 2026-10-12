@@ -4,7 +4,7 @@ import Foundation
 import Vision
 
 private let schemaVersion = 2
-private let helperVersion = 15
+private let helperVersion = 16
 private let bundleIdentifier = "com.fzzq.Mac2020"
 private let maximumDepth = 12
 private let maximumNodes = 1_000
@@ -2106,6 +2106,14 @@ private func observe(command: String, auditTables: Bool = false) -> Observation 
         let primaryArea = primaryWindow.flatMap { bounds(of: $0) }
             .map { $0.width * $0.height } ?? 0
         for window in windows {
+            guard let primaryWindow else { continue }
+            // A separate login window can contain another account's error.
+            // Only the target itself or an AX-attached sheet belongs to it.
+            let parent = attribute(window, kAXParentAttribute)
+            let sheets = attribute(primaryWindow, "AXSheets") as? [AXUIElement] ?? []
+            guard CFEqual(window, primaryWindow)
+                || parent.map({ CFEqual($0, primaryWindow) }) == true
+                || sheets.contains(where: { CFEqual($0, window) }) else { continue }
             let box = bounds(of: window)
             let area = box.map { $0.width * $0.height } ?? 0
             let role = stringAttribute(window, kAXRoleAttribute)
@@ -3591,6 +3599,51 @@ private func refreshHistoryQuery(
     return matches(after) && observedHistoryDates(after) == dates ? after : nil
 }
 
+private func terminateRejectedSession(arguments: [String]) -> Receipt {
+    let original = observe(command: "terminate-rejected-session")
+    var receipt = original.receipt
+    receipt.action = ActionResult(attempted: false, succeeded: false, requiresUserInput: false,
+        confirmPressed: false, confirmationMode: "none", unlockPathProven: false)
+    let expected = option("--expected-fingerprint", in: arguments)
+    let apps = NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier)
+    guard arguments.contains("--allow-session-reset"), validFingerprint(expected),
+          receipt.accessibilityTrusted, receipt.screenLocked == false,
+          receipt.tradeAccountFingerprintCount == 1, receipt.tradeAccountFingerprint == expected,
+          ["authentication_required", "client_login_required"].contains(receipt.surfaceState),
+          !["account_locked", "attempt_budget_exhausted"].contains(receipt.unlockFailureCategory ?? ""),
+          receipt.unlockRemainingAttempts.map({ $0 > 1 }) ?? true,
+          apps.count == 1, let app = apps.first,
+          original.runningApplication?.processIdentifier == app.processIdentifier else {
+        receipt.status = "session_reset_unproven"
+        receipt.reason = "one bound unlocked-machine rejected session was not proven"
+        return receipt
+    }
+    let fresh = observe(command: "terminate-rejected-session")
+    guard fresh.receipt.screenLocked == false,
+          fresh.receipt.accessibilityTrusted,
+          ["authentication_required", "client_login_required"].contains(fresh.receipt.surfaceState),
+          !["account_locked", "attempt_budget_exhausted"].contains(fresh.receipt.unlockFailureCategory ?? ""),
+          fresh.receipt.unlockRemainingAttempts.map({ $0 > 1 }) ?? true,
+          fresh.receipt.tradeAccountFingerprintCount == 1, fresh.receipt.tradeAccountFingerprint == expected,
+          fresh.runningApplication?.processIdentifier == app.processIdentifier,
+          let originalWindow = original.primaryWindow, let freshWindow = fresh.primaryWindow,
+          CFEqual(originalWindow, freshWindow) else {
+        receipt.status = "session_reset_unproven"
+        receipt.reason = "account or process changed before termination"
+        return receipt
+    }
+    let accepted = app.terminate()
+    for _ in 0..<40 {
+        if app.isTerminated { break }
+        RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05))
+    }
+    receipt.action = ActionResult(attempted: true, succeeded: accepted && app.isTerminated,
+        requiresUserInput: false, confirmPressed: false, confirmationMode: "none", unlockPathProven: false)
+    receipt.status = receipt.action?.succeeded == true ? "session_terminated" : "session_reset_unproven"
+    receipt.reason = "fixed bundle termination only; authentication and orders remain unproved"
+    return receipt
+}
+
 private func readQuery(arguments: [String]) -> Receipt {
     let started = DispatchTime.now()
     let initial = observe(command: "read-query")
@@ -4777,6 +4830,8 @@ case "probe":
     emit(observe(command: command, auditTables: arguments.contains("--table-audit")).receipt)
 case "check-dialogs":
     emit(checkDialogs(arguments: arguments))
+case "terminate-rejected-session":
+    emit(terminateRejectedSession(arguments: arguments))
 case "focus-unlock":
     emit(focusUnlock())
 case "fill-client-login-stdin":

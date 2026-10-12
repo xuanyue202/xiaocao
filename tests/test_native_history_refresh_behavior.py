@@ -16,7 +16,7 @@ def refresh_executable(tmp_path_factory):
         pytest.skip("Swift compiler required")
     source = (Path(__file__).resolve().parents[1] / "native/foundersc_ax_executor/Sources/FounderscNativeAX/main.swift").read_text()
     routines = source[source.index("private func sameWindowBounds("):source.index("private func historyDateArrowPoints(")]
-    routines += source[source.index("private func refreshHistoryQuery("):source.index("private func readQuery(")]
+    routines += source[source.index("private func refreshHistoryQuery("):source.index("private func terminateRejectedSession(")]
     harness = r'''
 import Foundation
 private struct Bounds { let x: Double; let y: Double; let width: Double; let height: Double }

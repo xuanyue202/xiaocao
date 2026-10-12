@@ -1,5 +1,19 @@
 # Morning automation
 
+Morning producer/paper children execute one verified behavior snapshot while
+sharing the original output, account and ledger locks. Read source_integrity
+for the executed snapshot; deployment_source_changes records other writers.
+Prewake producer preparation may compute strictly prior-day K/P scores for the
+previous immutable universe, ending before capture. The hot path consumes a
+hash/model/date-bound score archive; missing scores stay neutral and degraded,
+never remove a candidate. Auction contrast enrichment follows original bundle
+publication and cannot rewrite its economic fields.
+
+For `app_session_reset`, load [session recovery](morning-session-recovery.md).
+For latest APP settlement gaps, use Operating Contract §2a's approved complete
+current-mark path. A conservative cash/NAV bound does not prove economic loss
+or create a new peak/pause. EOD and exact old order reconciliation remain strict.
+
 Read this file only for the daily morning recommendation/paper-book branch.
 
 ## Prior-day SELL deferral (2026-10-12 user authorization)

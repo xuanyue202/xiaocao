@@ -6,9 +6,9 @@ APP capital allocation is a separate account-bound journal. It preserves the
 original fill replay and unitizes approved flows before risk evaluation; raw
 strategy NAV and the funding head remain explicit alongside normalized NAV.
 The historical writer did not guarantee daily settlements. Validate every
-existing file and require the calendar's latest completed day, except when a
-freshly reconciled prior-day own SELL proves zero fill and explains the first
-missing date; disclose
+existing file; approved dynamic-capital current marks can bridge a latest-day
+gap without inventing a settlement. Legacy accounts retain the separately
+proved zero-fill SELL exception. Disclose
 intermediate gaps without treating unknown historical highs as zero or new
 capital. High water means the seed, validated settlements and observed marks.
 """
@@ -155,7 +155,8 @@ def _verify_nav(payload: dict, cash_by_head: dict, state_dir: Path | None = None
 
 def load_live_nav_history(state_dir: Path, *, asof: datetime,
                           trading_dates: Iterable[str], diagnostics: dict | None = None,
-                          proven_sell_gap_dates: Iterable[str] = ()) -> list[NavObservation]:
+                          proven_sell_gap_dates: Iterable[str] = (),
+                          allow_current_mark_gap: bool = False) -> list[NavObservation]:
     """Verify EVERY immutable settlement, including old hashes and chronology."""
     root = Path(state_dir)
     days = sorted(set(trading_dates))
@@ -217,7 +218,7 @@ def load_live_nav_history(state_dir: Path, *, asof: datetime,
             "excluded_nonterminal_settlements": excluded,
             "supporting_health": "degraded" if gaps else "healthy"})
     latest_gap_start = next((day for day in required if day > history[-1].date), None)
-    if history[-1].date != expected and latest_gap_start not in set(proven_sell_gap_dates):
+    if history[-1].date != expected and latest_gap_start not in set(proven_sell_gap_dates) and not allow_current_mark_gap:
         raise ValueError("LIVE_RISK_LATEST_SETTLEMENT_REQUIRED:" + expected)
     return history
 
@@ -282,7 +283,8 @@ def _evaluate_live_risk_locked(state_dir: Path, *, now: datetime,
                     proven_gap_dates = tuple(str(intents[plan_id]["trade_date"]) for plan_id in proven_sells)
                 history = load_live_nav_history(root, asof=now, trading_dates=days,
                                                 diagnostics=history_diagnostics,
-                                                proven_sell_gap_dates=proven_gap_dates)
+                                                proven_sell_gap_dates=proven_gap_dates,
+                                                allow_current_mark_gap=True)
                 if account_snapshot_provider is not None:
                     snapshot = account_snapshot_provider()
                     if now_provider is not None:
@@ -295,7 +297,8 @@ def _evaluate_live_risk_locked(state_dir: Path, *, now: datetime,
                             expected = completed_date
                             history = load_live_nav_history(root, asof=now, trading_dates=days,
                                                             diagnostics=history_diagnostics,
-                                                            proven_sell_gap_dates=proven_gap_dates)
+                                                            proven_sell_gap_dates=proven_gap_dates,
+                                                            allow_current_mark_gap=True)
                     account = project_book_b_live_account(root, snapshot,
                                 trade_date=now.astimezone(_CHINA).date().isoformat(), now=now)
                 if not isinstance(account, BookBLiveAccountState) or account.logical_account_id != "primary":
@@ -304,6 +307,9 @@ def _evaluate_live_risk_locked(state_dir: Path, *, now: datetime,
                     accounting_status = account.accounting.get("status")
                     if accounting_status == "unavailable":
                         raise ValueError("LIVE_RISK_ACCOUNTING_UNAVAILABLE")
+                    if accounting_status not in {"reconciled", "cash_discrepancy_tolerated", "cash_reconciliation_required",
+                                                  "cash_reserve_reconciliation_required"}:
+                        raise ValueError("LIVE_RISK_NAV_OBSERVATION_INCOMPLETE")
                     if accounting_status == "cash_reserve_reconciliation_required":
                         from .book_b_capital import has_open_buy_with_possible_effect
                         if has_open_buy_with_possible_effect(root):
@@ -311,6 +317,9 @@ def _evaluate_live_risk_locked(state_dir: Path, *, now: datetime,
                         # A bare immutable intent reserves buying power but has
                         # no broker effect. Keep accounting PnL unproved while
                         # verifying this fresh account-bound conservative mark.
+                if not account.capital_policy_id:
+                    history = load_live_nav_history(root, asof=now, trading_dates=days,
+                        diagnostics=history_diagnostics, proven_sell_gap_dates=proven_gap_dates)
                 cash_by_head, _ = _ownership_cash(root)
                 if account.accounting is not None:
                     from .book_b_accounting import verify_observation
@@ -318,15 +327,23 @@ def _evaluate_live_risk_locked(state_dir: Path, *, now: datetime,
                 if account.ownership_head_sha256 != next(reversed(cash_by_head)):
                     raise ValueError("LIVE_RISK_CURRENT_OWNERSHIP_CHANGED")
                 normalized_nav = _verify_nav(account.as_dict(), cash_by_head, root)
+                mark_status = ("conservative_bound" if account.accounting and
+                    account.accounting["status"] in {"cash_reconciliation_required", "cash_reserve_reconciliation_required"}
+                    else "reconciled")
                 mark = NavObservation(account.trade_date, normalized_nav, "live:B", _CAPITAL,
-                                      0.0, NAV_BASIS, "reconciled", account.broker_snapshot_observed_at,
+                                      0.0, NAV_BASIS, mark_status, account.broker_snapshot_observed_at,
                                       digest(account.as_dict()))
             except (OSError, sqlite3.Error, ValueError, TypeError, KeyError, RuntimeError) as exc:
                 error = str(exc) or type(exc).__name__
             receipt = evaluate_account_risk(history, current_nav=mark, asof=now, account_id="live:B",
                         initial_capital=_CAPITAL, expected_settlement_date=expected, previous_receipt=previous,
                         allow_proven_sell_gap=bool(mark is not None and proven_gap_dates and history
-                                                   and history[-1].date != expected))
+                                                   and history[-1].date != expected),
+                        allow_current_mark_gap=bool(mark is not None and account.capital_policy_id
+                                                    and history and history[-1].date != expected))
+            if (not error and history and history[-1].date != expected and not proven_gap_dates
+                    and not (mark is not None and account.capital_policy_id)):
+                error = "LIVE_RISK_LATEST_SETTLEMENT_REQUIRED:" + expected
             if error:
                 receipt = replace(receipt, status="BLOCKED", deploy_factor=0.0, nav=None,
                                   drawdown_pct=None, review_required=True,
@@ -343,6 +360,8 @@ def _evaluate_live_risk_locked(state_dir: Path, *, now: datetime,
                 receipt = replace(receipt, risk_nav_basis="unitized_original_capital",
                     strategy_nav=account.settled_nav,
                     capital_flow_head_sha256=account.capital_flow_head_sha256)
+            if mark is not None and mark.status == "conservative_bound":
+                receipt = replace(receipt, risk_nav_basis="conservative_unitized_bound_capped_at_verified_peak")
             event = {"receipt": receipt.as_dict(), "previous_hash": head,
                      "history_coverage": history_diagnostics,
                      "capital_basis": ({"raw_strategy_nav": account.settled_nav,

@@ -49,6 +49,17 @@ def dependency_user_action(reason: object, health: dict | None = None) -> dict:
     """Only explicit typed failures require a human; unknown counters do not."""
     health = health or {}
     atoms = str(reason or '').split(':')
+    pre_secret_session_conflict = (health.get('state') == 'not_attempted'
+        and health.get('password_action_attempted') is False
+        and health.get('confirmation_pressed') is False
+        and health.get('failure_category') == 'trade_password_incorrect')
+    proved_rejection = (health.get('state') == 'unproven_no_retry'
+        and health.get('password_action_attempted') is True
+        and health.get('confirmation_pressed') is True
+        and health.get('failure_category') == 'trade_password_incorrect'
+        and type(health.get('remaining_attempts')) is int and health['remaining_attempts'] > 1)
+    if pre_secret_session_conflict or proved_rejection:
+        return {'required': False, 'request': None, 'recovery_kind': 'app_session_reset'}
     requests = {
         'FOUNDER_NATIVE_TRADE_KEYCHAIN_NOT_READY': '请配置或授权读取本机保存的 APP 交易凭据。',
         'FOUNDER_TRADE_ACCOUNT_FINGERPRINT_MISSING': '请确认本机保存的 APP 交易账户。',

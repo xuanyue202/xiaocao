@@ -19,6 +19,7 @@ flagged is_live=false.
 """
 from __future__ import annotations
 import json
+import hashlib
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -141,23 +142,7 @@ def _replace_day_rows(out: Path, date_iso, is_live, new_lines, *, book: str = "B
     atomic_write(out, ("\n".join(lines) + ("\n" if lines else "")).encode())
 
 
-def capture(candidates, client, date_iso, is_live, top_n=3, out=OUT, book="B", on_captured=None):
-    """Attach auction features + A/B variant flags to candidates; write snapshot.
-    Variant A = existing kp_star (pure K->P top-N by P).
-    Variant B = FORCED CONTRAST: among K-survivors, compute a continuous
-    auction-quality score q = rank(auc_buy_residual_ratio)/2 + rank(auc_pct)/2;
-    if the auction-worst A pick scores below the best non-A survivor's q, swap
-    it out for that survivor (highest P among non-A). This guarantees A != B
-    whenever the auction signal actually disagrees, so forward A/B accumulates
-    informative contrast (the old W=0.25 rank tiebreak never changed a pick).
-    Idempotent per (date, is_live)."""
-    if not candidates:
-        if on_captured:
-            on_captured(b"")
-        _replace_day_rows(out, date_iso, is_live, [], book=str(book or "B"))
-        return candidates
-    for c in candidates:
-        c.update(ensure_quality_fields(c))
+def enrich_auction_candidates(candidates, client, date_iso):
     for c in candidates:
         c.update(auction_features(client, c["code"], date_iso))
     surv = [c for c in candidates if c.get("kp_keep")]
@@ -191,6 +176,30 @@ def capture(candidates, client, date_iso, is_live, top_n=3, out=OUT, book="B", o
             c["vb_swap"] = swapped
     for c in candidates:
         c.setdefault("vb_rank", 9999); c.setdefault("vb_star", False)
+
+
+def capture(candidates, client, date_iso, is_live, top_n=3, out=OUT, book="B", on_captured=None, enrich_auction=True):
+    """Attach auction features + A/B variant flags to candidates; write snapshot.
+    Variant A = existing kp_star (pure K->P top-N by P).
+    Variant B = FORCED CONTRAST: among K-survivors, compute a continuous
+    auction-quality score q = rank(auc_buy_residual_ratio)/2 + rank(auc_pct)/2;
+    if the auction-worst A pick scores below the best non-A survivor's q, swap
+    it out for that survivor (highest P among non-A). This guarantees A != B
+    whenever the auction signal actually disagrees, so forward A/B accumulates
+    informative contrast (the old W=0.25 rank tiebreak never changed a pick).
+    Idempotent per (date, is_live)."""
+    if not candidates:
+        if on_captured:
+            on_captured(b"")
+        _replace_day_rows(out, date_iso, is_live, [], book=str(book or "B"))
+        return candidates
+    for c in candidates:
+        c.update(ensure_quality_fields(c))
+    if enrich_auction:
+        enrich_auction_candidates(candidates, client, date_iso)
+    else:
+        for c in candidates:
+            c.update(auc_status="deferred_support", vb_rank=9999, vb_star=False)
     _assign_mode_rotation_star(candidates, top_n=top_n)
     select_executable_candidates(candidates, top_n=top_n)
 
@@ -299,5 +308,29 @@ def capture(candidates, client, date_iso, is_live, top_n=3, out=OUT, book="B", o
         new_lines.append(json.dumps(rec, ensure_ascii=False, default=str))
     if on_captured:
         on_captured(("\n".join(new_lines) + "\n").encode())
-    _replace_day_rows(out, date_iso, is_live, new_lines, book=str(book or "B"))
+    if not enrich_auction:
+        # Original execution bytes are already committed. Auction contrast is
+        # derived research support; keep the original fields and timestamp.
+        try:
+            enrich_auction_candidates(candidates, client, date_iso)
+            support_at = datetime.now().isoformat(timespec="seconds")
+            support_keys = ("vb_rank", "vb_star", "vb_score", "vb_swap", "auc_date", "auc_pct",
+                            "auc_match_vol", "auc_amt", "auc_residual_imb", "auc_buy_residual_ratio", "auc_status")
+            by_code = {c["code"]: c for c in candidates}
+            original_hash = hashlib.sha256(("\n".join(new_lines)+"\n").encode()).hexdigest()
+            enriched = []
+            for line in new_lines:
+                row = json.loads(line)
+                row.update({key: by_code[row["code"]].get(key) for key in support_keys})
+                row.update(support_enriched_at=support_at, original_capture_sha256=original_hash)
+                enriched.append(json.dumps(row, ensure_ascii=False, default=str))
+            new_lines = enriched
+        except Exception as exc:
+            print(f"[auction support degraded: {type(exc).__name__}]", file=sys.stderr)
+    try:
+        _replace_day_rows(out, date_iso, is_live, new_lines, book=str(book or "B"))
+    except OSError:
+        if enrich_auction or on_captured is None:
+            raise
+        print("[derived snapshot delivery degraded]", file=sys.stderr)
     return candidates
