@@ -30,7 +30,9 @@ from .capture import (
     resolve_xiaoetong_h5_page,
     _safe_candidate,
 )
-from .enrichment_types import EnrichmentDiagnosticError, EnrichmentError
+from .enrichment_types import (
+    EnrichmentDiagnosticError, EnrichmentError, NativePlaybackInputTimeout,
+)
 from .xiaocao_live import (
     DEFAULT_DECISION_OUTPUT,
     DEFAULT_NETDISK_OUTPUT,
@@ -1270,6 +1272,14 @@ class XiaocaoWechatLiveSubscription:
         ):
             raise EnrichmentError("browser response is not bound to the request")
 
+    def _exchange_browser(self, request: dict[str, Any], item: dict[str, Any]) -> dict[str, Any]:
+        try:
+            return self.browser_exchange(request)
+        except NativePlaybackInputTimeout as exc:
+            # Keep the original manifest bindings; never create or reset a claim.
+            exc.waiting_items = [{**item, "stage": exc.diagnostic_stage}]
+            raise
+
     def _waiting(self, item: dict[str, Any], state: dict[str, Any]) -> dict[str, Any]:
         status = str(state.get("status") or item.get("status") or "waiting")
         stage = (
@@ -1716,7 +1726,7 @@ class XiaocaoWechatLiveSubscription:
             )
         else:
             self.capture_driver.prepare_playback(item["identity"], item["capture_job_id"])
-        response = self.browser_exchange(request)
+        response = self._exchange_browser(request, item)
         self._validate_browser_response(request, response)
         if (
             response.get("playback_surface")
@@ -1887,7 +1897,7 @@ class XiaocaoWechatLiveSubscription:
             "arm before executing its one launch_command. If no launch plan is "
             "available, resolve the supplied URL only to a stable identity. "
         ) + request["instructions"]
-        response = self.browser_exchange(request)
+        response = self._exchange_browser(request, item)
         self._validate_browser_response(request, response)
         observed_page_state = str(
             response.get("page_state") or "unknown"

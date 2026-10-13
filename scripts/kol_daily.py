@@ -45,6 +45,7 @@ from xiaocao.kol.claim_coverage import build_claim_extraction_request
 from xiaocao.kol.enrichment_types import (
     EnrichmentDiagnosticError,
     EnrichmentError,
+    NativePlaybackInputTimeout,
     validate_decision_completion,
 )
 from xiaocao.kol.household import LiangHuiMcpClient
@@ -664,7 +665,7 @@ def _read_native_agent_line(descriptor: int, *, timeout: float = 20 * 60) -> str
     while True:
         remaining = deadline - monotonic()
         if remaining <= 0 or not select.select([descriptor], [], [], remaining)[0]:
-            raise DailyError("native playback input timed out; original capture binding preserved")
+            raise NativePlaybackInputTimeout()
         chunk = os.read(descriptor, 4096)
         if not chunk:
             return b"".join(chunks).decode("utf-8")
@@ -1236,6 +1237,19 @@ def _read_agent_json(request: dict[str, Any]) -> dict[str, Any]:
     return value
 
 
+def _native_playback_timeout_result(exc: NativePlaybackInputTimeout) -> dict[str, Any]:
+    return {
+        "status": "waiting",
+        "failure": {
+            "category": exc.diagnostic_category,
+            "code": exc.diagnostic_code,
+            "stage": exc.diagnostic_stage,
+            "retryable": True,
+        },
+        "waiting_items": exc.waiting_items,
+    }
+
+
 def _video_publication_context(
     item: dict[str, Any],
     state: dict[str, Any],
@@ -1478,6 +1492,8 @@ def _standalone_writer_result(adapter: str, runner) -> dict[str, Any]:
                 },
             }],
         }
+    except NativePlaybackInputTimeout as exc:
+        outcome = _native_playback_timeout_result(exc)
     except EnrichmentDiagnosticError as exc:
         outcome = {
             "status": "waiting",
@@ -1543,6 +1559,8 @@ def _classified_source(name: str, runner):
                 code="semantic_input_unavailable",
                 stage="semantic_input",
             ) from exc
+        except NativePlaybackInputTimeout as exc:
+            return _native_playback_timeout_result(exc)
         except DailyError:
             raise
         except EnrichmentError as exc:

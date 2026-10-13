@@ -65,6 +65,14 @@ including partial JSON. A timeout releases execution ownership when the source
 returns; it retains the original capture and claims and is Agent-owned repair,
 not evidence of a Mac lock or a provider outcome. Semantic, upload and mailbox
 inputs keep their existing lifetime; this bound does not cancel downloads.
+The diagnostic is `category=input_error`, `code=native_playback_input_timeout`,
+`stage=native_playback_input`; keep the same-item continuation after repair
+validation. Reconcile the retained PTY before native launch if entry repair has
+consumed the input deadline; a saved bridge target does not keep stdin alive.
+Older timeouts recorded as `code_error/unhandled_source_exception/source_run`
+retain their original fingerprint. Validate its pushed repair through the
+repository-owned source-run profile before the narrow continuation; do not
+rewrite the old failure or rerun the hourly gate.
 
 If Computer Use actually reports the Mac locked at native activation, return
 the `activate_xiaoetong_mini_program` request's same action/subscription and

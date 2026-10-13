@@ -1910,8 +1910,8 @@ def test_wechat_mini_program_authorization_keeps_login_and_consent_distinct(
 
 def test_native_input_timeout_retains_original_capture_for_same_item_resume(tmp_path):
     import os
-    from scripts.kol_daily import _read_native_agent_line
-    from xiaocao.kol.daily import DailyError
+    from scripts.kol_daily import _read_native_agent_line, _classified_source
+    from xiaocao.kol.writer_progress import normalize_source_result
 
     payload = _history("[2026-08-09 16:42] 小花: "
         "https://app6ums63as6516.h5.xiaoeknow.com/v4/course/alive/l_6a75cf66e4b0694c5bf6d228")
@@ -1938,12 +1938,20 @@ def test_native_input_timeout_retains_original_capture_for_same_item_resume(tmp_
         history_reader=lambda: payload, browser_exchange=exchange, capture_driver=driver,
         clock=lambda: datetime.fromisoformat("2026-08-09T23:00:00+08:00"))
     try:
-        with pytest.raises(DailyError):
-            subscription.run_once(opencli_session="xiaocao-lv-subscription")
+        result = _classified_source("xiaocao_wechat_live", lambda:
+            subscription.run_once(opencli_session="xiaocao-lv-subscription"))()
+        assert result["failure"]["code"] == "native_playback_input_timeout"
     finally:
         os.close(read_fd)
         os.close(write_fd)
     original = next(iter(subscription._load()["items"].values()))
+    assert result["waiting_items"][0]["identity"] == original["identity"]
+    assert result["waiting_items"][0]["capture_job_id"] == original["capture_job_id"]
+    progress = normalize_source_result("xiaocao_wechat_live", result,
+        failure_revision="1" * 40, provider_contract_version="xiaocao_writer_v1")
+    assert progress.status == "repair_required"
+    assert progress.details["narrow_resume_surface"] == f"xiaocao_wechat_live:{original['identity']}"
+    assert progress.details["targeted_test_profile"] == "kol_xiaocao_wechat_live_native_playback_input"
     subscription.run_once(opencli_session="xiaocao-lv-subscription", only_identity=original["identity"])
     resumed = subscription._load()["items"][original["identity"]]
     assert resumed["capture_job_id"] == original["capture_job_id"]
