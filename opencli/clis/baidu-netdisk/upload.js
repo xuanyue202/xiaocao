@@ -221,7 +221,18 @@ async function inspectTarget(page, input, { retainPage = false } = {}) {
           .some(node => (node.textContent || '').includes(target)),
         targetUiRows: [...document.querySelectorAll('[title], span')]
           .filter(node => node.getAttribute('title') === target || (node.children.length === 0 && node.textContent?.trim() === target))
-          .map(node => ({className: node.parentElement?.className || '', text: node.parentElement?.parentElement?.innerText?.slice(0, 500) || ''})),
+          .map(node => {
+            const row = node.closest('.file-list');
+            return {
+              className: node.parentElement?.className || '',
+              text: node.parentElement?.parentElement?.innerText?.slice(0, 500) || '',
+              rowClassName: row?.className || '',
+              rowText: row?.innerText?.slice(0, 500) || '',
+              progressWidths: row ? [...row.querySelectorAll('[style]')]
+                .map(element => element.style.width)
+                .filter(width => /^[0-9]+(?:[.][0-9]+)?%$/.test(width)).slice(0, 10) : [],
+            };
+          }),
         transferQueue: (() => {
           const panels = [...document.querySelectorAll('.uploader-list')];
           const panel = panels.length === 1 ? panels[0] : null;
