@@ -283,6 +283,21 @@ initial evaluations; maintenance appends evaluations/relations. Do not pause for
 Trading tasks compose their rebuildable compact projection from these published
 records. Empty/unchanged sweeps remain silent and do not refresh history.
 
+For a renamed reupload whose ASR differs, do not infer a new source event from
+the filename or use a fuzzy transcript score to reuse effects. The fixed analyst
+must read both complete sources and supply `source_event_equivalence=same_event`
+with no material differences and exact, exhaustive claim-to-claim quote matches.
+Both canonical bundles require parent acceptance. Before dispatch, save
+`source_event_alias_readback.json` beside the current bundle, bound to its SHA,
+the immutable prior bundle/result and fresh authoritative report/write-status
+readbacks. The deterministic alias verifier also checks the publication ledger,
+all published records, delivered reminder, paper receipt and knowledge bytes.
+Reuse is currently bounded to prior and current Book KOL-US no-trade intents.
+Missing or changed proof stops the exact object; never fall through to a new
+publication. A verified alias preserves the canonical source binding, gives the
+new intake its own completion claim/receipt and terminal, and creates no new
+report, reminder, trade or knowledge ingestion.
+
 When that projection reports a content-hash-bound `classification_backfill`
 manifest, the remote writer owns the exact listed viewpoint IDs. Reuse the
 already-published viewpoint, evaluation and cited evidence; do not reread every

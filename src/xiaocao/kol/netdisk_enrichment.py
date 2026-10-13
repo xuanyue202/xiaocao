@@ -4644,6 +4644,10 @@ class NetdiskEnrichmentService:
                     "semantic duplicate requires one decision item"
                 )
             item = items[0]
+            source_event_alias = (
+                isinstance(reconciliation, dict)
+                and reconciliation.get("proof_kind") == "accepted_source_event_alias"
+            )
             evidence_path = Path(
                 str(item.get("evidence_path") or "")
             ).expanduser().resolve()
@@ -4694,7 +4698,7 @@ class NetdiskEnrichmentService:
                 "position_risk_budget",
                 "named_asset_inventory",
             }
-            if (
+            if not source_event_alias and (
                 not isinstance(coverage, list)
                 or {row.get("row_id") for row in coverage if isinstance(row, dict)}
                 != required_coverage
@@ -4748,7 +4752,16 @@ class NetdiskEnrichmentService:
                 autojunk=False,
             ).ratio()
             containment = current_text in prior_text or prior_text in current_text
-            if (
+            if source_event_alias:
+                from .source_event_alias import verify_source_event_alias
+
+                checked = verify_source_event_alias(
+                    bundle_file, reconciliation.get("alias_proof"),
+                    Path(decision_output_dir).expanduser().resolve(),
+                )
+                if checked != reconciliation:
+                    raise EnrichmentError("source event alias reconciliation changed")
+            elif (
                 len(current_text) < 2_000
                 or len(prior_text) < 2_000
                 or similarity < 0.995
@@ -4782,6 +4795,27 @@ class NetdiskEnrichmentService:
                     "建议和既有 Book KOL-US 纸面结果，未产生新副作用。"
                 ),
             }
+            if source_event_alias:
+                old_terminal = reconciliation["prior_daily_terminal"]
+                result_item["daily_terminal"] = {
+                    **old_terminal,
+                    "event_id": item["source_identity"],
+                    "source_binding": {
+                        "source_identity": item["source_identity"],
+                        "publication_version": item["source_version_key"],
+                    },
+                    "reconciled_existing": True,
+                    "source_event_alias": {
+                        "canonical_source_binding": old_terminal["source_binding"],
+                        "canonical_event_id": old_terminal["event_id"],
+                        "proof_sha256": reconciliation_sha,
+                        "new_external_side_effect_count": 0,
+                    },
+                }
+                result_item["decision_reason"] = (
+                    "完整双源复核确认同一直播重新上传、无新增投资观点；"
+                    "复用已发布报告、已送达提醒、既有纸面不交易和知识凭证。"
+                )
             result = {
                 "status": "completed",
                 "items": [result_item],
@@ -4798,6 +4832,16 @@ class NetdiskEnrichmentService:
                 },
                 "processed_at": self._time().isoformat(timespec="seconds"),
             }
+            if source_event_alias:
+                result["semantic_duplicate_reconciliation"] = {
+                    "proof_kind": "accepted_source_event_alias",
+                    "prior_evidence_path": str(prior_path),
+                    "prior_evidence_sha256": prior_sha,
+                    "proof_sha256": reconciliation_sha,
+                    "side_effects_reused": ["gray_report", "household_notification",
+                                            "book_kol_us", "knowledge"],
+                    "new_external_side_effect_count": 0,
+                }
             validated_notification, validated_paper = (
                 validate_decision_completion(result)
             )

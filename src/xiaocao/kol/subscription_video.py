@@ -5576,6 +5576,21 @@ class SubscriptionVideoService:
         ):
             return None
         decision_item = bundle_items[0]
+        equivalence = decision_item.get("source_event_equivalence") or {}
+        if equivalence.get("status") == "same_event":
+            from .source_event_alias import verify_source_event_alias
+
+            proof_path = bundle_file.with_name("source_event_alias_readback.json")
+            if not proof_path.is_file():
+                raise EnrichmentError("same-event reupload needs existing-effect readbacks before dispatch")
+            proof = json.loads(proof_path.read_text(encoding="utf-8"))
+            reconciliation = verify_source_event_alias(
+                bundle_file, proof, Path(decision_output_dir).expanduser().resolve(),
+            )
+            artifact_dir = self.output_dir / "artifacts" / item["version_key"]
+            reconciliation_path = artifact_dir / "semantic_duplicate_input.json"
+            _atomic_write_json(reconciliation_path, reconciliation)
+            return reconciliation_path
         expected_title = f"{item['author']}{PurePosixPath(item['name']).stem}"
         if (
             decision_item.get("author") != item["author"]
