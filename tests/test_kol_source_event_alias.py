@@ -78,6 +78,20 @@ def alias_case(tmp_path, monkeypatch):
              "prior_result": result_ref, "report_readback": write("report.json", report),
              "publication_readback": write("receipt.json", receipt),
              "observed_at": datetime.now(timezone.utc).isoformat()}
+    for prefix in ["current", "prior"]:
+        context = tmp_path / prefix
+        context.mkdir()
+        (context / "dispatch.json").write_text(json.dumps({"agent_id": "analyst"}))
+        proof[f"{prefix}_packet"] = write(f"{prefix}/packet.json", {
+            "analysis_request": request,
+            "expected_outputs": {"semantic_draft.json": str(context / "draft.json")},
+        })
+        proof[f"{prefix}_review"] = write(f"{prefix}/review.json", {"decision": "accepted"})
+    def accepted(*args, **kwargs):
+        review = json.loads(kwargs["semantic_review"].read_text())
+        return {"status": "verified", "semantic_acceptance": {
+            "status": "parent_accepted" if review["decision"] == "accepted" else "changes_required"}}
+    monkeypatch.setattr(aliases, "verify_delegated_result", accepted)
     snapshots = {"p": {"completed": True, "publish_receipt": receipt, "artifact": {"records": records}}}
     monkeypatch.setattr(aliases.PublicationLedger, "status_snapshot", lambda self: deepcopy(snapshots))
     validated_calls = []
@@ -234,4 +248,12 @@ def test_alias_rejects_real_receipts_from_other_objects_and_terminal_mismatch(al
         row["daily_terminal"]["knowledge_effect"]["distillation_sha256"] = "foreign"
     c.proof["prior_result"] = c.write("result.json", result)
     with pytest.raises(EnrichmentError):
+        aliases.verify_source_event_alias(c.path, c.proof, c.decisions)
+
+
+@pytest.mark.parametrize("prefix", ["current", "prior"])
+def test_alias_rejects_structurally_valid_but_parent_rejected_source(alias_case, prefix):
+    c = alias_case
+    c.proof[f"{prefix}_review"] = c.write(f"{prefix}/review.json", {"decision": "changes_required"})
+    with pytest.raises(EnrichmentError, match="parent acceptance"):
         aliases.verify_source_event_alias(c.path, c.proof, c.decisions)

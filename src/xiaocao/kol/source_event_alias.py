@@ -11,6 +11,7 @@ from typing import Any
 from .enrichment_types import EnrichmentError, validate_decision_completion
 from .publication import PublicationLedger, manifest_sha256, record_content_sha256
 from .semantic_bundle import read_validated_bundle
+from .semantic_delegation import verify_result as verify_delegated_result
 
 
 def _reference(ref: Any) -> tuple[Path, bytes]:
@@ -35,6 +36,24 @@ def _rows(path: Path) -> list[dict[str, Any]]:
     return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
 
 
+def _accepted(bundle_file: Path, proof: dict[str, Any], prefix: str,
+              expected_request: dict[str, str] | None = None) -> None:
+    packet_path, packet = _json(proof.get(f"{prefix}_packet"))
+    review_path, _ = _json(proof.get(f"{prefix}_review"))
+    if expected_request is not None and packet.get("analysis_request") != expected_request:
+        raise EnrichmentError("source event alias prior review changes the analyst-bound request")
+    dispatch = json.loads(packet_path.with_name("dispatch.json").read_text())
+    result = verify_delegated_result(
+        packet["analysis_request"]["path"], packet_path=packet_path,
+        bundle_path=bundle_file, agent_id=dispatch["agent_id"],
+        semantic_draft=packet["expected_outputs"]["semantic_draft.json"],
+        semantic_review=review_path,
+    )
+    if (result.get("status") != "verified"
+            or result.get("semantic_acceptance", {}).get("status") != "parent_accepted"):
+        raise EnrichmentError("source event alias requires independent parent acceptance of both sources")
+
+
 def verify_source_event_alias(
     bundle_file: Path, proof: dict[str, Any], decision_output_dir: Path,
 ) -> dict[str, Any]:
@@ -50,12 +69,14 @@ def verify_source_event_alias(
         raise EnrichmentError("source event alias lacks accepted full-source equivalence")
     if proof.get("bundle_sha256") != hashlib.sha256(bundle_file.read_bytes()).hexdigest():
         raise EnrichmentError("source event alias proof is not bound to the accepted bundle")
+    _accepted(bundle_file, proof, "current")
     prior_request_path, prior_request = _json(equivalence.get("prior_request"))
     prior_evidence_path, prior_evidence = _reference(equivalence.get("prior_evidence"))
     current_text = Path(item["evidence_path"]).read_text()
     prior_text = prior_evidence.decode("utf-8")
     prior_bundle_path, _ = _json(proof.get("prior_bundle"))
     prior_receipt, prior_bundle = read_validated_bundle(prior_bundle_path)
+    _accepted(prior_bundle_path, proof, "prior", equivalence["prior_request"])
     prior = prior_bundle["items"][0]
     if (prior_request.get("source_identity") != prior_receipt.bindings.get("source_identity")
             or prior_request.get("source_version_key") != prior_receipt.bindings.get("source_version_key")
