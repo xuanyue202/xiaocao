@@ -37,3 +37,16 @@ This flow only rebuilds authentication. It neither cancels nor retries orders,
 changes capital permissions, adopts manual fills, or proves a trade/settlement.
 
 If a newly confirmed client Login has already auto-locked, finish may claim one separate saved-password unlock only for the same fresh rebuilt account/session, original request and confirmed Login attempt, with no rejection, unknown credential fence or exhausted budget. The unlock has its own linked durable claim; it never presses client Login again. Unproved unlock cannot be replayed. Final readiness still requires the account-bound ordinary trade page.
+
+The native reset precondition includes a strictly bound same-account secondary
+client-login password-error sheet. Helper 17 acknowledges only its exact known
+alert button once, proves a complete modal-free graph and refreshes account/PID/
+budget before quitting. A residual/new/unknown modal or incomplete AX graph
+blocks termination. Preserve the structured native reset evidence; never infer
+an old missing result from a later successful maintenance repair.
+
+For explicitly user-authorized authentication-only daytime validation, use
+`XIAOCAO_APP_AUTHENTICATION_TEST=1` and only `app_authentication` tests. Both
+Python and native dispatch restrict this mode to authentication and read-only
+navigation/query; it grants no order preparation, submission, confirmation or
+cancellation authority and retains the shared APP session lease.

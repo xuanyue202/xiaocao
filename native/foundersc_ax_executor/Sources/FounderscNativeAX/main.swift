@@ -4,7 +4,7 @@ import Foundation
 import Vision
 
 private let schemaVersion = 2
-private let helperVersion = 16
+private let helperVersion = 17
 private let bundleIdentifier = "com.fzzq.Mac2020"
 private let maximumDepth = 12
 private let maximumNodes = 1_000
@@ -221,6 +221,17 @@ private struct Receipt: Codable {
     var unlockSurface: UnlockSnapshot? = nil
     var unlockEvidence: UnlockEvidence? = nil
     var secondaryClientLoginDiagnostic: [String]? = nil
+    var sessionResetEvidence: SessionResetEvidence? = nil
+}
+
+private struct SessionResetEvidence: Codable {
+    let processID: Int32
+    var preconditionProven = false
+    var alertAcknowledgmentRequested = false
+    var alertAcknowledged = false
+    var terminationRequested = false
+    var terminationAccepted: Bool? = nil
+    var processExitProven = false
 }
 
 private struct OrderFields {
@@ -1782,16 +1793,23 @@ private func unlockFailureDiagnostic(_ text: String) -> (String?, Int?) {
 // A stale first-client-login sheet can belong to a separate window while
 // ordinary trade is locked. Only the same account identifier
 // may contribute a diagnostic; never mix another window's password controls.
-private func secondaryClientLoginError(_ windows: [AXUIElement], primary: AXUIElement,
-                                       expected: String) -> (String?, [String]) {
-    guard validFingerprint(expected) else { return (nil, []) }
-    var matches: [String] = []
+private struct SecondaryClientLoginNotice {
+    let window: AXUIElement
+    let sheet: AXUIElement?
+    let button: AXUIElement?
+}
+
+private func secondaryClientLoginNotices(_ windows: [AXUIElement], primary: AXUIElement,
+                                       expected: String, allowClearedLogin: Bool = false) -> ([SecondaryClientLoginNotice], [String]) {
+    guard validFingerprint(expected) else { return ([], []) }
+    var matches: [SecondaryClientLoginNotice] = []
     var diagnostics: [String] = []
     for window in windows where !CFEqual(window, primary) {
         var texts = Set<String>()
         var accounts = Set<String>()
         var secureCount = 0
         var knownErrorSheet = false
+        var matchedNotice: (AXUIElement, AXUIElement)? = nil
         var sheetCount = 0
         var scanned = 0
         var visited: [AXUIElement] = []
@@ -1864,13 +1882,14 @@ private func secondaryClientLoginError(_ windows: [AXUIElement], primary: AXUIEl
                 }
                 let bodyTexts = textsByBody.flatMap { $0 }
                 diagnostics.append("sheet_bodies=\(bodies.count):sheet_buttons=\(buttons.count):known_error_text=\(bodyTexts.contains(where: { $0.hasSuffix("用户名或密码错误") })):known_body_only=\(bodyTexts.allSatisfy { ["用户名或密码错误", "方正证券网上交易用户名或密码错误", "方正证券网上交易"].contains($0) }):button_id_match=\(buttons.count == 1 && stringAttribute(buttons[0], kAXIdentifierAttribute) == "action-button-1"):button_title_match=\(buttons.count == 1 && stringAttribute(buttons[0], kAXTitleAttribute) == "确定")")
-                knownErrorSheet = knownErrorSheet || (stringAttribute(node, kAXDescriptionAttribute) == "alert"
+                let knownSheet = (stringAttribute(node, kAXDescriptionAttribute) == "alert"
                     && (1...2).contains(bodies.count) && buttons.count == 1
                     && textsByBody.allSatisfy { !$0.isEmpty }
                     && bodyTexts.contains(where: { $0.hasSuffix("用户名或密码错误") })
                     && bodyTexts.allSatisfy { ["用户名或密码错误", "方正证券网上交易用户名或密码错误", "方正证券网上交易"].contains($0) }
                     && stringAttribute(buttons[0], kAXIdentifierAttribute) == "action-button-1"
                     && stringAttribute(buttons[0], kAXTitleAttribute) == "确定")
+                if knownSheet { knownErrorSheet = true; matchedNotice = (node, buttons[0]) }
             }
             var children = childElements(node, kAXChildrenAttribute)
             for sheet in childElements(node, "AXSheets")
@@ -1889,12 +1908,23 @@ private func secondaryClientLoginError(_ windows: [AXUIElement], primary: AXUIEl
         if secureCount > 0 {
             diagnostics.append("scan_complete=\(scanComplete):account_match=\(accounts == Set([expected])):account_count=\(accounts.count):secure=\(secureCount):sheets=\(sheetCount):known_error_sheet=\(knownErrorSheet):trade_account_mode=\(texts.contains("交易账户")):login_method=\(texts.contains("登录方式")):password_label=\(texts.contains("交易密码")):captcha_label=\(texts.contains("验证码")):login_button=\(texts.contains("登录"))")
         }
-        guard scanComplete, secureCount == 1, accounts == Set([expected]), sheetCount == 1, knownErrorSheet,
+        guard scanComplete, secureCount == 1, accounts == Set([expected]),
+              (sheetCount == 1 && knownErrorSheet) || (allowClearedLogin && sheetCount == 0),
               texts.contains("登录方式"),
               texts.contains("交易密码"), texts.contains("验证码"), texts.contains("登录") else { continue }
-        matches.append("trade_password_incorrect")
+        if let matchedNotice {
+            matches.append(SecondaryClientLoginNotice(window: window, sheet: matchedNotice.0, button: matchedNotice.1))
+        } else if allowClearedLogin && sheetCount == 0 {
+            matches.append(SecondaryClientLoginNotice(window: window, sheet: nil, button: nil))
+        }
     }
-    return (matches.count == 1 ? matches[0] : nil, diagnostics)
+    return (matches, diagnostics)
+}
+
+private func secondaryClientLoginError(_ windows: [AXUIElement], primary: AXUIElement,
+                                       expected: String) -> (String?, [String]) {
+    let result = secondaryClientLoginNotices(windows, primary: primary, expected: expected)
+    return (result.0.count == 1 ? "trade_password_incorrect" : nil, result.1)
 }
 
 private func observe(command: String, auditTables: Bool = false) -> Observation {
@@ -3727,6 +3757,111 @@ private func refreshHistoryQuery(
     return matches(after) && observedHistoryDates(after) == dates ? after : nil
 }
 
+// Fail closed on partial graphs, residual sheets, or a replacement modal.
+private func resetGraphIsModalFree(_ roots: [AXUIElement], allowedLoginWindows: [AXUIElement] = [], rejected: (String) -> Void = { _ in }) -> Bool {
+    var visited: [AXUIElement] = []
+    func walk(_ node: AXUIElement, _ depth: Int) -> Bool {
+        if visited.contains(where: { CFEqual($0, node) }) { return true }
+        guard depth <= maximumDepth, visited.count < maximumNodes else { rejected("graph_limit"); return false }
+        visited.append(node)
+        func text(_ key: String, required: Bool = false) -> String? {
+            var value: CFTypeRef?
+            let error = AXUIElementCopyAttributeValue(node, key as CFString, &value)
+            if !required && (error == .attributeUnsupported || error == .noValue) { return "" }
+            guard error == .success, let result = value as? String else { rejected("unreadable_" + key); return nil }
+            return result
+        }
+        guard let role = text(kAXRoleAttribute, required: true), !role.isEmpty,
+              let subrole = text(kAXSubroleAttribute), let description = text(kAXDescriptionAttribute),
+              role != "AXSheet", role != "AXDialog",
+              (subrole != "AXDialog" || (depth == 0 && role == "AXWindow"
+                  && allowedLoginWindows.contains(where: { CFEqual($0, node) }))),
+              description.lowercased() != "alert" else { rejected("modal_or_unreadable_role_" + (text(kAXRoleAttribute) ?? "missing")); return false }
+        for key in [kAXChildrenAttribute, "AXSheets"] {
+            var value: CFTypeRef?
+            let error = AXUIElementCopyAttributeValue(node, key as CFString, &value)
+            if error == .attributeUnsupported || error == .noValue { continue }
+            guard error == .success, let children = value as? [AXUIElement] else { rejected("unreadable_" + key); return false }
+            for child in children where !walk(child, depth + 1) { return false }
+        }
+        return true
+    }
+    return roots.allSatisfy { walk($0, 0) }
+}
+
+private var resetPreparationDiagnostic = ""
+private var resetAlertAcknowledged = false
+private var resetClearedLoginWindow: AXUIElement? = nil
+
+private func prepareRejectedSession(_ original: Observation, expected: String) -> (Observation?, Bool) {
+    resetPreparationDiagnostic = ""
+    resetAlertAcknowledged = false
+    resetClearedLoginWindow = nil
+    guard let app = original.applicationElement, let primary = original.primaryWindow,
+          let pid = original.runningApplication?.processIdentifier else { return (nil, false) }
+    func elements(_ node: AXUIElement, _ name: String, optional: Bool = true) -> [AXUIElement]? {
+        var value: CFTypeRef?
+        let result = AXUIElementCopyAttributeValue(node, name as CFString, &value)
+        if optional && (result == .attributeUnsupported || result == .noValue) { return [] }
+        guard result == .success, let rows = value as? [AXUIElement] else { return nil }
+        return rows
+    }
+    guard let windows = elements(app, kAXWindowsAttribute, optional: false) else { return (nil, false) }
+    let notices = secondaryClientLoginNotices(windows, primary: primary, expected: expected).0
+    if notices.isEmpty {
+        return resetGraphIsModalFree(windows,
+            allowedLoginWindows: original.receipt.surfaceState == "client_login_required" ? [primary] : [], rejected: { resetPreparationDiagnostic = $0 })
+            && dismissLoginSuccessNotice(original, expected: expected, allowDismiss: false).0
+            ? (original, false) : (nil, false)
+    }
+    guard notices.count == 1 else { return (nil, false) }
+    let current = observe(command: "terminate-rejected-session")
+    guard current.runningApplication?.processIdentifier == pid,
+          current.receipt.screenLocked == false, current.receipt.accessibilityTrusted,
+          current.receipt.tradeAccountFingerprint == expected,
+          current.receipt.tradeAccountFingerprintCount == 1,
+          ["authentication_required", "client_login_required"].contains(current.receipt.surfaceState),
+          !["account_locked", "attempt_budget_exhausted"].contains(current.receipt.unlockFailureCategory ?? ""),
+          current.receipt.unlockRemainingAttempts.map({ $0 > 1 }) ?? true,
+          current.primaryWindow.map({ CFEqual($0, primary) }) == true,
+          let currentApp = current.applicationElement else { return (nil, false) }
+    guard let freshWindows = elements(currentApp, kAXWindowsAttribute, optional: false) else { return (nil, false) }
+    let fresh = secondaryClientLoginNotices(freshWindows, primary: primary, expected: expected).0
+    guard fresh.count == 1, CFEqual(fresh[0].window, notices[0].window),
+          let sheet = fresh[0].sheet, let originalSheet = notices[0].sheet,
+          let button = fresh[0].button, let originalButton = notices[0].button,
+          CFEqual(sheet, originalSheet), CFEqual(button, originalButton)
+    else { return (nil, false) }
+    // A failed AX call can still have acted; preserve its request separately.
+    guard AXUIElementPerformAction(button, kAXPressAction as CFString) == .success
+    else { resetPreparationDiagnostic = "alert_press_result_unproven"; return (nil, true) }
+    resetAlertAcknowledged = true
+    for _ in 0..<8 {
+        RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05))
+        let after = observe(command: "terminate-rejected-session")
+        guard after.runningApplication?.processIdentifier == pid,
+              after.receipt.screenLocked == false,
+              after.receipt.tradeAccountFingerprint == expected,
+              after.receipt.tradeAccountFingerprintCount == 1,
+              after.primaryWindow.map({ CFEqual($0, primary) }) == true,
+              let afterApp = after.applicationElement else { return (nil, true) }
+        guard let afterWindows = elements(afterApp, kAXWindowsAttribute, optional: false) else { return (nil, true) }
+        // Re-classify the same login window with no sheet, and recursively
+        // check all windows/attachments before accepting disappearance.
+        let clear = secondaryClientLoginNotices(afterWindows, primary: primary,
+            expected: expected, allowClearedLogin: true).0
+        if resetGraphIsModalFree(afterWindows,
+            allowedLoginWindows: [notices[0].window] + (after.receipt.surfaceState == "client_login_required" ? [primary] : []), rejected: { resetPreparationDiagnostic = $0 }), clear.count == 1,
+           clear[0].sheet == nil, CFEqual(clear[0].window, notices[0].window),
+           dismissLoginSuccessNotice(after, expected: expected, allowDismiss: false,
+               clearedResetLoginWindow: clear[0].window).0 {
+            resetClearedLoginWindow = clear[0].window
+            return (after, true)
+        }
+    }
+    return (nil, true)
+}
+
 private func terminateRejectedSession(arguments: [String]) -> Receipt {
     let original = observe(command: "terminate-rejected-session")
     var receipt = original.receipt
@@ -3746,6 +3881,19 @@ private func terminateRejectedSession(arguments: [String]) -> Receipt {
         receipt.reason = "one bound unlocked-machine rejected session was not proven"
         return receipt
     }
+    receipt.sessionResetEvidence = SessionResetEvidence(processID: app.processIdentifier)
+    let prepared = prepareRejectedSession(original, expected: expected)
+    receipt.sessionResetEvidence?.alertAcknowledgmentRequested = prepared.1
+    receipt.sessionResetEvidence?.alertAcknowledged = resetAlertAcknowledged
+    receipt.action = ActionResult(attempted: prepared.1, succeeded: false, requiresUserInput: false,
+        confirmPressed: false, confirmationMode: "none", unlockPathProven: false)
+    guard prepared.0 != nil else {
+        receipt.action = ActionResult(attempted: prepared.1, succeeded: false, requiresUserInput: false,
+            confirmPressed: false, confirmationMode: "none", unlockPathProven: false)
+        receipt.status = "session_reset_precondition_blocked"
+        receipt.reason = "reset preparation or exact known-alert disappearance was not proven; termination not requested: " + resetPreparationDiagnostic
+        return receipt
+    }
     let fresh = observe(command: "terminate-rejected-session")
     guard fresh.receipt.screenLocked == false,
           fresh.receipt.accessibilityTrusted,
@@ -3754,17 +3902,45 @@ private func terminateRejectedSession(arguments: [String]) -> Receipt {
           fresh.receipt.unlockRemainingAttempts.map({ $0 > 1 }) ?? true,
           fresh.receipt.tradeAccountFingerprintCount == 1, fresh.receipt.tradeAccountFingerprint == expected,
           fresh.runningApplication?.processIdentifier == app.processIdentifier,
+          NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier).count == 1,
           let originalWindow = original.primaryWindow, let freshWindow = fresh.primaryWindow,
           CFEqual(originalWindow, freshWindow) else {
         receipt.status = "session_reset_unproven"
         receipt.reason = "account or process changed before termination"
         return receipt
     }
+    var rawWindows: CFTypeRef?
+    guard let freshApplication = fresh.applicationElement,
+          AXUIElementCopyAttributeValue(freshApplication, kAXWindowsAttribute as CFString, &rawWindows) == .success,
+          let freshWindows = rawWindows as? [AXUIElement] else {
+        receipt.status = "session_reset_precondition_blocked"
+        receipt.reason = "fresh window list unproven; termination not requested"
+        return receipt
+    }
+    let cleared = secondaryClientLoginNotices(freshWindows, primary: freshWindow,
+        expected: expected, allowClearedLogin: true).0.filter { $0.sheet == nil }
+    let sameClearedWindow = resetClearedLoginWindow.map { bound in
+        cleared.count == 1 && CFEqual(cleared[0].window, bound)
+    } ?? cleared.isEmpty
+    guard sameClearedWindow,
+          dismissLoginSuccessNotice(fresh, expected: expected, allowDismiss: false,
+              clearedResetLoginWindow: resetClearedLoginWindow).0,
+          resetGraphIsModalFree(freshWindows, allowedLoginWindows:
+              (fresh.receipt.surfaceState == "client_login_required" ? [freshWindow] : [])
+              + cleared.map { $0.window }) else {
+        receipt.status = "session_reset_precondition_blocked"
+        receipt.reason = "fresh complete modal-free graph not proven; termination not requested"
+        return receipt
+    }
+    receipt.sessionResetEvidence?.preconditionProven = true
+    receipt.sessionResetEvidence?.terminationRequested = true
     let accepted = app.terminate()
+    receipt.sessionResetEvidence?.terminationAccepted = accepted
     for _ in 0..<40 {
         if app.isTerminated { break }
         RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05))
     }
+    receipt.sessionResetEvidence?.processExitProven = app.isTerminated
     receipt.action = ActionResult(attempted: true, succeeded: accepted && app.isTerminated,
         requiresUserInput: false, confirmPressed: false, confirmationMode: "none", unlockPathProven: false)
     receipt.status = receipt.action?.succeeded == true ? "session_terminated" : "session_reset_unproven"
@@ -4395,7 +4571,8 @@ private func dismissLoginSuccessNotice(_ observation: Observation, expected: Str
                                       allowStalePasswordError: Bool = false,
                                       allowClientPasswordRequiredNotice: Bool = false,
                                       allowLoginSuccessNotice: Bool = true,
-                                      allowUnlockPasswordRequiredNotice: Bool = false) -> (Bool, Bool, String) {
+                                      allowUnlockPasswordRequiredNotice: Bool = false,
+                                      clearedResetLoginWindow: AXUIElement? = nil) -> (Bool, Bool, String) {
     guard let app = observation.applicationElement else { return (false, false, "application_unavailable") }
     let windows = attribute(app, kAXWindowsAttribute) as? [AXUIElement] ?? []
     let visibleRows = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID)
@@ -4427,6 +4604,7 @@ private func dismissLoginSuccessNotice(_ observation: Observation, expected: Str
     }
     var notices: [(AXUIElement, AXUIElement)] = []
     for window in noticeSurfaces(windows) {
+        if let cleared = clearedResetLoginWindow, CFEqual(window, cleared) { continue }
         if let primary = observation.primaryWindow, CFEqual(window, primary) { continue }
         let title = stringAttribute(window, kAXTitleAttribute)
         if title == "通达信键盘精灵" { continue }
@@ -4893,7 +5071,18 @@ private func unlockFromStandardInput(arguments: [String]) -> Receipt {
     return result
 }
 
+private func authenticationTestCommandAllowed(_ command: String) -> Bool {
+    return Set(["probe", "version", "check-dialogs", "focus-unlock",
+        "terminate-rejected-session", "unlock-stdin", "fill-client-login-stdin",
+        "read-query", "open-order-surface", "open-query-surface"]).contains(command)
+}
+
 let arguments = Array(CommandLine.arguments.dropFirst())
+if ProcessInfo.processInfo.environment["XIAOCAO_APP_AUTHENTICATION_TEST"] == "1",
+   !authenticationTestCommandAllowed(arguments.first ?? "") {
+    fputs("AUTHENTICATION_TEST_ORDER_ACTION_FORBIDDEN\n", stderr)
+    exit(2)
+}
 if arguments.first == "self-test-price-policy" {
     let cases: [([String?], Int?)] = [
         (["0.5500", "0.，5500"], 0),

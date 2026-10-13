@@ -16,7 +16,7 @@ from xiaocao.live.foundersc_native_ax import FounderscNativeAXError
 from xiaocao.live.morning_observability import dependency_user_action
 from scripts.book_b_live_morning import _automatic_dependency_retry
 
-pytestmark = pytest.mark.app_simulation
+pytestmark = [pytest.mark.app_simulation, pytest.mark.app_authentication]
 NOW = datetime(2026, 10, 12, 1, 3, tzinfo=timezone.utc)
 FP = "263******022"
 

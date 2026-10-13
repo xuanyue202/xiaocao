@@ -22,6 +22,7 @@ from typing import Any, Callable
 
 from .foundersc_session import app_session
 from .app_test_window import app_test_context_active, require_app_test_window
+from .authentication_test_scope import authentication_test_mode, require_authentication_command
 from .foundersc_keychain import (
     SECURITY_COMMAND,
     TRADE_SERVICE,
@@ -394,16 +395,17 @@ class FounderscNativeAXClient:
 
     def _run(self, command: str, args: list[str] | None = None, *,
              secret_input: bytes | bytearray | None = None) -> NativeAXReceipt:
+        require_authentication_command(command)
         started = time.monotonic()
         started_at = datetime.now(timezone.utc).isoformat()
         query_kind = None
         if command == "read-query" and args and args[:1] == ["--kind"] and len(args) > 1:
             if args[1] in {"positions", "today-orders", "today-trades", "funds", "history-orders", "history-trades"}:
                 query_kind = args[1]
-        if self._app_test_only or app_test_context_active():
+        if (self._app_test_only or app_test_context_active()) and not authentication_test_mode():
             require_app_test_window()
         with app_session() as descriptor:
-            if self._app_test_only or app_test_context_active():
+            if (self._app_test_only or app_test_context_active()) and not authentication_test_mode():
                 require_app_test_window()
             acquired = time.monotonic()
             try:

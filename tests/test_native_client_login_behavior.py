@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-pytestmark = pytest.mark.app_simulation
+pytestmark = [pytest.mark.app_simulation, pytest.mark.app_authentication]
 
 
 @pytest.fixture(scope="module")

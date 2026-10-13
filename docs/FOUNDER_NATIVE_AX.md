@@ -461,3 +461,17 @@ their total separately, plus terminal cleanup. After the September 16 change,
 offline behavior is verified; the new APP speed requires fresh 2/3/5-order
 acceptance. Earlier 70.366/105.654-second runs used the old orchestration and are
 not performance evidence for this path.
+
+### 用户授权的纯登录测试
+
+用户在 2026-10-13 明确要求登录优化与测试立即进行。对此设置
+`XIAOCAO_APP_AUTHENTICATION_TEST=1`，只允许登录、解锁、已绑定会话恢复和
+只读导航/查询；Python 客户端与原生入口均拒绝订单准备、提交、确认、撤单。
+此例外保留共享 APP 会话锁，只适用于 `app_authentication` 测试，不改变
+其他 `app_simulation` 测试时段或交易、会计入口的授权。
+
+会话重建前，helper 17 可识别主交易锁屏之外的同账户登录错误 sheet，
+重新绑定 PID、窗口、sheet、按钮后仅确认一次已知错误提示。退出前要求
+完整递归窗口树无残留或新 modal，并重新核验账户、PID、尝试预算。
+退出回执分别记录准备、提示处理、退出请求、请求接受和进程终止证据；
+没有原始终止回执的旧恢复 claim 不可据此补造或重复退出。
