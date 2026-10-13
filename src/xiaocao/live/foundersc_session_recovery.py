@@ -100,6 +100,12 @@ def recover_session(request_path: Path, *, native, phase: str,
             save("termination_claimed")
             verify_owner()
             result = native.terminate_rejected_session(expected_fingerprint=fingerprint).as_dict()
+            termination_path = request_path.with_suffix(".session-reset-termination.json")
+            if termination_path.exists():
+                raise ValueError("SESSION_RESET_TERMINATION_EVIDENCE_CONFLICT")
+            _write(termination_path, result)
+            save("termination_observed", termination_receipt_path=str(termination_path),
+                 termination_receipt_sha256=_hash(result))
             if result.get("status") != "session_terminated" or (result.get("action") or {}).get("succeeded") is not True:
                 save("termination_unproven")
                 raise ValueError("SESSION_RESET_TERMINATION_UNPROVEN")

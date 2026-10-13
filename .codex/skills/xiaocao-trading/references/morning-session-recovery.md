@@ -11,6 +11,9 @@ Founder APP restart, saved trade-account login and routine visual CAPTCHA.
    Founder bundle and launches it once. A confirmed rejection needs a proved
    remaining budget above one; an unclassified/uncertain password never retries.
    An expired/ambiguous/locked state stops. No second restart after uncertainty.
+   The request's `.session-reset-termination.json` preserves the native action
+   and result, with its hash in the reset claim. An unproved termination stays
+   readback-only; do not reconstruct an older missing reply or repeat the exit.
 2. Fresh bootstrap/screenshot; explicitly select **交易账户** and reprove the
    same saved masked account on the login surface. Then invoke the same command
    with `--phase fill`. It claims one new password fill, stores native evidence

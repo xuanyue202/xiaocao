@@ -220,6 +220,7 @@ private struct Receipt: Codable {
     var staleAuthErrorDismissed: Bool? = nil
     var unlockSurface: UnlockSnapshot? = nil
     var unlockEvidence: UnlockEvidence? = nil
+    var secondaryClientLoginDiagnostic: [String]? = nil
 }
 
 private struct OrderFields {
@@ -1778,6 +1779,124 @@ private func unlockFailureDiagnostic(_ text: String) -> (String?, Int?) {
     return (category, remaining)
 }
 
+// A stale first-client-login sheet can belong to a separate window while
+// ordinary trade is locked. Only the same account identifier
+// may contribute a diagnostic; never mix another window's password controls.
+private func secondaryClientLoginError(_ windows: [AXUIElement], primary: AXUIElement,
+                                       expected: String) -> (String?, [String]) {
+    guard validFingerprint(expected) else { return (nil, []) }
+    var matches: [String] = []
+    var diagnostics: [String] = []
+    for window in windows where !CFEqual(window, primary) {
+        var texts = Set<String>()
+        var accounts = Set<String>()
+        var secureCount = 0
+        var knownErrorSheet = false
+        var sheetCount = 0
+        var scanned = 0
+        var visited: [AXUIElement] = []
+        var scanComplete = true
+        func childElements(_ node: AXUIElement, _ name: String) -> [AXUIElement] {
+            var value: CFTypeRef?
+            let error = AXUIElementCopyAttributeValue(node, name as CFString, &value)
+            if error == .attributeUnsupported || error == .noValue { return [] }
+            guard error == .success, let children = value as? [AXUIElement] else {
+                scanComplete = false
+                return []
+            }
+            return children
+        }
+        func diagnosticText(_ node: AXUIElement, _ name: String, allowNumericControlValue: Bool = false) -> String? {
+            var value: CFTypeRef?
+            let error = AXUIElementCopyAttributeValue(node, name as CFString, &value)
+            if error == .attributeUnsupported || error == .noValue { return nil }
+            if error == .success, allowNumericControlValue, value is NSNumber { return nil }
+            guard error == .success, let text = value as? String else {
+                scanComplete = false
+                return nil
+            }
+            return text.replacingOccurrences(of: #"\s+"#, with: "", options: .regularExpression)
+        }
+        func walk(_ node: AXUIElement, _ depth: Int) {
+            if visited.contains(where: { CFEqual($0, node) }) { return }
+            guard depth <= maximumDepth, scanned < maximumNodes else {
+                scanComplete = false
+                return
+            }
+            visited.append(node)
+            scanned += 1
+            guard let role = attribute(node, kAXRoleAttribute) as? String, !role.isEmpty else {
+                scanComplete = false
+                return
+            }
+            var rawSubrole: CFTypeRef?
+            let subroleError = AXUIElementCopyAttributeValue(node, kAXSubroleAttribute as CFString, &rawSubrole)
+            let absentSubrole = subroleError == .attributeUnsupported || subroleError == .noValue
+            if !absentSubrole && (subroleError != .success || !(rawSubrole is String)) {
+                scanComplete = false
+                return
+            }
+            let secure = rawSubrole as? String == "AXSecureTextField"
+            if secure { secureCount += 1 }
+            if !secure && ["AXStaticText", "AXButton", "AXComboBox"].contains(role) {
+                for key in [kAXTitleAttribute, kAXValueAttribute, kAXDescriptionAttribute] {
+                    if let text = diagnosticText(node, key,
+                        allowNumericControlValue: role == "AXButton" && key == kAXValueAttribute) {
+                        texts.insert(text)
+                    }
+                }
+            }
+            if !secure && ["AXComboBox", "AXTextField"].contains(role) {
+                let value = diagnosticText(node, kAXValueAttribute) ?? ""
+                if value.range(of: #"^\d{8,20}$"#, options: .regularExpression) != nil {
+                    accounts.insert(maskedFingerprint(in: value))
+                }
+            }
+            if role == "AXSheet" {
+                sheetCount += 1
+                let children = childElements(node, kAXChildrenAttribute)
+                let bodies = children.filter { stringAttribute($0, kAXRoleAttribute) == "AXStaticText" }
+                let buttons = children.filter { stringAttribute($0, kAXRoleAttribute) == "AXButton" }
+                let textsByBody = bodies.map { body in
+                    [kAXTitleAttribute, kAXValueAttribute, kAXDescriptionAttribute].compactMap {
+                        diagnosticText(body, $0)
+                    }.filter { !$0.isEmpty }
+                }
+                let bodyTexts = textsByBody.flatMap { $0 }
+                diagnostics.append("sheet_bodies=\(bodies.count):sheet_buttons=\(buttons.count):known_error_text=\(bodyTexts.contains(where: { $0.hasSuffix("用户名或密码错误") })):known_body_only=\(bodyTexts.allSatisfy { ["用户名或密码错误", "方正证券网上交易用户名或密码错误", "方正证券网上交易"].contains($0) }):button_id_match=\(buttons.count == 1 && stringAttribute(buttons[0], kAXIdentifierAttribute) == "action-button-1"):button_title_match=\(buttons.count == 1 && stringAttribute(buttons[0], kAXTitleAttribute) == "确定")")
+                knownErrorSheet = knownErrorSheet || (stringAttribute(node, kAXDescriptionAttribute) == "alert"
+                    && (1...2).contains(bodies.count) && buttons.count == 1
+                    && textsByBody.allSatisfy { !$0.isEmpty }
+                    && bodyTexts.contains(where: { $0.hasSuffix("用户名或密码错误") })
+                    && bodyTexts.allSatisfy { ["用户名或密码错误", "方正证券网上交易用户名或密码错误", "方正证券网上交易"].contains($0) }
+                    && stringAttribute(buttons[0], kAXIdentifierAttribute) == "action-button-1"
+                    && stringAttribute(buttons[0], kAXTitleAttribute) == "确定")
+            }
+            var children = childElements(node, kAXChildrenAttribute)
+            for sheet in childElements(node, "AXSheets")
+            where !children.contains(where: { CFEqual($0, sheet) }) {
+                children.append(sheet)
+            }
+            for child in children {
+                walk(child, depth + 1)
+            }
+        }
+        walk(window, 0)
+        for sheet in windows where stringAttribute(sheet, kAXRoleAttribute) == "AXSheet"
+            && elementAttribute(sheet, kAXParentAttribute).map({ CFEqual($0, window) }) == true {
+            walk(sheet, 0)
+        }
+        if secureCount > 0 {
+            diagnostics.append("scan_complete=\(scanComplete):account_match=\(accounts == Set([expected])):account_count=\(accounts.count):secure=\(secureCount):sheets=\(sheetCount):known_error_sheet=\(knownErrorSheet):trade_account_mode=\(texts.contains("交易账户")):login_method=\(texts.contains("登录方式")):password_label=\(texts.contains("交易密码")):captcha_label=\(texts.contains("验证码")):login_button=\(texts.contains("登录"))")
+        }
+        guard scanComplete, secureCount == 1, accounts == Set([expected]), sheetCount == 1, knownErrorSheet,
+              texts.contains("登录方式"),
+              texts.contains("交易密码"), texts.contains("验证码"), texts.contains("登录") else { continue }
+        matches.append("trade_password_incorrect")
+    }
+    return (matches.count == 1 ? matches[0] : nil, diagnostics)
+}
+
 private func observe(command: String, auditTables: Bool = false) -> Observation {
     let started = DispatchTime.now()
     let trusted = AXIsProcessTrusted()
@@ -2199,9 +2318,17 @@ private func observe(command: String, auditTables: Bool = false) -> Observation 
     let readablePositionValues = tableShapes.contains { table in
         table.auditComplete && (table.readableValueCount ?? 0) > 0
     }
-    let unlockDiagnostic = unlockFailureDiagnostic(
+    var unlockDiagnostic = unlockFailureDiagnostic(
         unlockDiagnosticText.joined(separator: " ")
     )
+    var secondaryLoginDiagnostic: [String] = []
+    if secureFields.count == 1, tradeFingerprints.count == 1, let primaryWindow {
+        let secondary = secondaryClientLoginError(windows, primary: primaryWindow, expected: fingerprint)
+        secondaryLoginDiagnostic = secondary.1
+        if unlockDiagnostic.0 == nil, let category = secondary.0 {
+            unlockDiagnostic = (category, unlockDiagnostic.1)
+        }
+    }
     let orderCapability = surfaceState == "trade_ready"
         && orderFields != nil
         && submitControls.count == 1
@@ -2278,6 +2405,7 @@ private func observe(command: String, auditTables: Bool = false) -> Observation 
         submitControls: submitControls
     )
     observation.receipt.unlockSurface = unlockSnapshot(observation, phase: "probe", started: started)
+    observation.receipt.secondaryClientLoginDiagnostic = secondaryLoginDiagnostic.isEmpty ? nil : secondaryLoginDiagnostic
     return observation
 }
 

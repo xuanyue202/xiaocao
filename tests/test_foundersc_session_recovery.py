@@ -112,6 +112,28 @@ def test_timeout_after_reset_claim_cannot_repeat_termination(tmp_path, monkeypat
     assert native.actions == ["terminate"]
 
 
+@pytest.mark.parametrize("attempted", [False, True])
+def test_failed_termination_preserves_native_action_evidence_without_replay(tmp_path, monkeypatch, attempted):
+    path, _ = fixture(tmp_path, monkeypatch)
+    native = Native()
+    result = {"status": "session_reset_unproven", "reason": "bound termination not proven",
+        "action": {"attempted": attempted, "succeeded": False, "confirm_pressed": False}}
+    def failed(**kwargs):
+        native.actions.append("terminate")
+        return native.reply(result)
+    native.terminate_rejected_session = failed
+    with pytest.raises(ValueError, match="TERMINATION_UNPROVEN"):
+        step(path, native, "restart")
+    record = json.loads(path.with_suffix(".session-reset.json").read_text())
+    receipt = Path(record["termination_receipt_path"])
+    assert json.loads(receipt.read_text()) == result
+    assert record["termination_receipt_sha256"] == _hash(result)
+    assert record["state"] == "termination_unproven"
+    with pytest.raises(ValueError, match="ALREADY_CLAIMED"):
+        step(path, native, "restart")
+    assert native.actions == ["terminate"]
+
+
 def test_wrong_new_login_account_never_reads_saved_password(tmp_path, monkeypatch):
     path, _ = fixture(tmp_path, monkeypatch); native = Native();step(path, native, "restart")
     native.payload["trade_account_fingerprint"]="999******999"
