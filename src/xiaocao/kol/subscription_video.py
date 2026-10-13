@@ -542,9 +542,11 @@ _CREATE_FOLDER_SCRIPT = r"""(async () => {
 
 _SELECT_RECENT_DESTINATION_FUNCTION = r"""(dialog, segments, visible) => {
   const expectedPath = '/' + segments.join('/');
+  const providerRoot = '我的网盘/';
   const canonicalPath = node => {
     const title = String(node.getAttribute('title') || '');
-    return title.startsWith('我的网盘/') ? '/' + title.slice(5) : title;
+    return title.startsWith(providerRoot)
+      ? '/' + title.slice(providerRoot.length) : title;
   };
   const matches = [...dialog.querySelectorAll('.save-path-item')].filter(
     node => visible(node) && canonicalPath(node) === expectedPath

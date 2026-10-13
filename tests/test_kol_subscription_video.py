@@ -3731,3 +3731,26 @@ def test_lv_transfer_pretrigger_failure_is_agent_repair_without_native_click(tmp
     claim = json.loads(service._claim_path(f"lv_transfer_{item['version_key']}").read_text())
     assert claim['status'] == 'failed_pretrigger'
     assert 'triggered_at' not in claim
+
+
+@pytest.mark.parametrize('same_row,expected', [(True, 'selected'), (False, 'destination_recent_path_not_selected')])
+def test_lv_transfer_recent_destination_deduplicates_selected_markers(same_row, expected):
+    from xiaocao.kol.subscription_video import _SELECT_RECENT_DESTINATION_FUNCTION
+
+    node = shutil.which('node')
+    if not node:
+        pytest.skip('Node is required to exercise selected destination proofs')
+    script = r'''
+const target = {getAttribute: () => '我的网盘/课程/自己的课/吕晓彤', click: () => {}};
+const other = {getAttribute: () => '/别处/吕晓彤'};
+const checkbox = {closest: () => __SAME__ ? target : other};
+const dialog = {querySelectorAll: selector => {
+  if (selector === '.save-path-item') return [target];
+  if (selector === '.save-path-item.check') return [target];
+  return [checkbox];
+}};
+const select = __FUNCTION__;
+console.log(JSON.stringify(select(dialog, ['课程', '自己的课', '吕晓彤'], () => true).status));
+'''.replace('__SAME__', 'true' if same_row else 'false').replace('__FUNCTION__', _SELECT_RECENT_DESTINATION_FUNCTION)
+    result = subprocess.run([node, '-e', script], check=True, capture_output=True, text=True)
+    assert json.loads(result.stdout) == expected
