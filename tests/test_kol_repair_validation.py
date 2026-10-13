@@ -1492,6 +1492,12 @@ def test_repair_validation_accepts_wechat_official_accounts_repair_closure_alias
             "kol_xiaocao_wechat_live_native_playback_input",
         ),
         (
+            "code_error",
+            "unhandled_source_exception",
+            "source_run",
+            "kol_xiaocao_wechat_live_source_run",
+        ),
+        (
             "internal_state_error",
             "progress_deadline_missing",
             "compressed_capture",
@@ -1850,6 +1856,31 @@ def test_repair_validation_requires_regression_and_fingerprint_trailer(
 
     with pytest.raises(ProgressContractError, match=expected):
         service.validate(_context(), repair_revision=REPAIR_REVISION)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("adapter", "subscription_video"),
+        ("targeted_test_profile", "kol_xiaocao_wechat_live_native_playback_input"),
+        ("category", "input_error"),
+        ("code", "unrelated_exception"),
+        ("stage", "native_playback_input"),
+    ],
+)
+def test_repair_validation_accepts_xiaocao_wechat_source_profile_legacy_exact(field, value):
+    from xiaocao.kol.writer_progress import _canonical_xiaocao_wechat_source_repair_profile
+
+    context = dict(
+        adapter="xiaocao_wechat_live",
+        targeted_test_profile="kol_xiaocao_wechat_live_source_run",
+        category="code_error",
+        code="unhandled_source_exception",
+        stage="source_run",
+    )
+    assert _canonical_xiaocao_wechat_source_repair_profile(context) == context["targeted_test_profile"]
+    context[field] = value
+    assert _canonical_xiaocao_wechat_source_repair_profile(context) is None
 
 
 def test_native_window_close_repair_profile_is_exact():

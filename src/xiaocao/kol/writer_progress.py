@@ -1692,11 +1692,13 @@ def _canonical_xiaocao_wechat_source_repair_profile(
     ) or (
         declared_profile == _XIAOCAO_WECHAT_SOURCE_REPAIR_PROFILE
         and failure
-        == (
-            "source_error",
-            "source_temporarily_unavailable",
-            "source_run",
-        )
+        in {
+            ("source_error", "source_temporarily_unavailable", "source_run"),
+            # Older native input timeouts reached the coordinator's generic
+            # exception boundary. Keep their immutable fingerprint eligible
+            # for the same tested, pushed repair and narrow continuation.
+            ("code_error", "unhandled_source_exception", "source_run"),
+        }
     ) or (
         declared_profile
         == _XIAOCAO_WECHAT_COMPRESSED_CAPTURE_REPAIR_PROFILE
