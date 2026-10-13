@@ -255,6 +255,9 @@ decision row is incomplete coverage, not a no-sell judgment.
    focused validation and a future natural-run readback; do not defer it merely
    because the EOD command cannot submit a trade. Check durable incident
    delivery separately from whether the final summary mentioned the alert.
+   Order incidents and EOD/change notices share the durable delivery claim.
+   Retry only proved pre-send failures; legacy pending, interrupted sends and
+   uncertain/partial delivery require exact reconciliation, never another send.
 6. Write `output/live/daily_execution_review_<date>.md`: expected versus actual,
    evidence paths/timestamps, impact, stable failure fingerprint, concise cause/fix/verification for
    defects, repair and regression proof, production verification status and

@@ -1354,6 +1354,8 @@ class TradingExecution:
         self.outbox = outbox or TradingIncidentOutbox(store.path.with_name("trading_incidents.jsonl"))
         self.takeovers = takeovers or TradingTakeoverStore(store.path.with_name("trading_takeovers.jsonl"))
         self.notifier = notifier if notifier is not None else self._default_notifier
+        self.notifier_readiness = (notify_module.wecom_transport_readiness if notifier is None
+                                  else lambda **_kwargs: {"status": "configured"})
         self.now = now or _utcnow
         if safety_env is not None and safety_env_provider is not None:
             raise ValueError("configure safety_env or safety_env_provider, not both")
@@ -1365,7 +1367,7 @@ class TradingExecution:
 
     @staticmethod
     def _default_notifier(title: str, body: str) -> object:
-        return notify_module.notify(title, body, audience="trading")
+        return notify_module.notify_detailed(title, body, audience="trading")
 
     @staticmethod
     def _with_capability_evidence(
@@ -3140,16 +3142,25 @@ class TradingExecution:
             "未知状态只允许继续对账，不会盲目重发。"
         )
         self.takeovers.write(plan, receipt, incident_id=incident_id)
-        fresh = self.outbox.enqueue(incident_id=incident_id, title="Book B 交易异常", body=body)
-        if not fresh or self.outbox.delivered(incident_id):
-            return
+        from .incident_delivery import deliver_pending, enqueue_notice
+
         try:
-            result = self.notifier("Book B 交易异常", body)
-            ok = result == "ok" or (isinstance(result, dict) and (result.get("wecom") == "ok" or result.get("status") == "ok"))
-            if ok:
-                self.outbox.mark_delivered(incident_id, result)
+            enqueue_notice(self.outbox.path, identifier=incident_id,
+                           title="Book B 交易异常", body=body)
+
+            def send(title: str, message: str, **_kwargs) -> object:
+                result = self.notifier(title, message)
+                if result == "ok" or isinstance(result, dict) and result.get("status") == "ok":
+                    return {"wecom": "ok"}
+                return result
+
+            # The notifier owns transport readiness and returns its per-recipient
+            # pre-send proof. Never retry an interrupted or uncertain send claim.
+            deliver_pending(self.outbox.path, sender=send,
+                            readiness=self.notifier_readiness,
+                            incident_ids={incident_id})
         except Exception:
-            # The outbox row remains pending; the next safe recovery pass may retry.
+            # Pending evidence stays durable; absence of send proof is not retry authority.
             return
 
 
