@@ -4217,6 +4217,102 @@ def test_structured_input_without_consumption_receipt_becomes_agent_repair(
     assert source["failure"]["category"] == "control_plane_handler_error"
 
 
+@pytest.mark.parametrize("summary", [
+    {"claim_count": 0, "receipt_count": 0, "uncertain_effect_count": 0},
+    {"claim_count": 1, "receipt_count": 0, "uncertain_effect_count": 1},
+])
+def test_structured_input_handler_transient_failure_preserves_exact_repair_owner(
+    tmp_path, summary,
+):
+    clock = Clock("2026-08-08T07:30:00+08:00")
+    service = DailyCoordinator(tmp_path / "daily", now=clock)
+    service.run([{
+        "name": "subscription_video",
+        "run": lambda: {
+            "status": "waiting",
+            "claim_receipt_summary": summary,
+            "waiting_items": [{
+                "identity": "video-1",
+                "version_key": "version-1",
+                "stage": "waiting_semantic_input",
+                "evidence_sha256": "b" * 64,
+            }],
+        },
+    }])
+    clock.value = datetime.fromisoformat("2026-08-08T08:30:00+08:00")
+
+    def broken_handler(progress):
+        assert progress.item_identity == "video-1"
+        raise TransientSourceError(
+            "source unavailable", category="source_error",
+            code="source_temporarily_unavailable", stage="source_run",
+        )
+
+    result = service.run([{
+        "name": "subscription_video",
+        "run": lambda: (_ for _ in ()).throw(AssertionError("full sweep replay")),
+        "structured_input": broken_handler,
+    }])
+
+    source = result["source_results"][0]
+    assert source["repair_required"] is True
+    assert source["failure"]["category"] == "control_plane_handler_error"
+    assert source["writer_progress"]["item_identity"] == "video-1"
+    assert source["writer_progress"]["narrow_resume_surface"] == "subscription_video:video-1"
+    assert source["handler_failure"]["code"] == "source_temporarily_unavailable"
+    assert source["writer_progress"]["claim_receipt_summary"] == summary
+
+
+def test_consumed_input_continuation_failure_keeps_latest_progress_counts(tmp_path):
+    clock = Clock("2026-08-08T07:30:00+08:00")
+    service = DailyCoordinator(tmp_path / "daily", now=clock)
+    service.run([{
+        "name": "subscription_video",
+        "run": lambda: {"status": "waiting", "waiting_items": [{
+            "identity": "video-1", "version_key": "version-1",
+            "stage": "waiting_semantic_input", "evidence_sha256": "b" * 64,
+        }]},
+    }])
+    clock.value = datetime.fromisoformat("2026-08-08T08:30:00+08:00")
+    summary = {"claim_count": 1, "receipt_count": 1, "uncertain_effect_count": 0}
+
+    def consumed(progress):
+        following = WriterProgress.continue_(
+            item_identity="video-1", completed_stage="semantic_input_consumed",
+            next_stage="publication_readback", claim_receipt_summary=summary,
+        )
+        return {
+            "outcome": {"status": "waiting", "writer_progress": following.to_dict()},
+            "structured_input_receipt": {
+                "event": "structured_input_consumed",
+                "request_id": progress.details["request_id"],
+                "request_schema_version": 1, "response_field": "bundle_path",
+                "immutable_bindings_sha256": hashlib.sha256(json.dumps(
+                    progress.details["immutable_bindings"], ensure_ascii=False,
+                    sort_keys=True, separators=(",", ":"),
+                ).encode()).hexdigest(),
+                "request_sha256": "d" * 64, "response_sha256": "e" * 64,
+            },
+        }
+
+    def broken_continuation(stage):
+        assert stage == "publication_readback"
+        raise TransientSourceError(
+            "provider unavailable", category="source_error",
+            code="readback_unavailable", stage="publication_readback",
+        )
+
+    result = service.run([{
+        "name": "subscription_video", "run": lambda: None,
+        "structured_input": consumed, "continue": broken_continuation,
+    }])
+    source = result["source_results"][0]
+    assert source["failure"]["category"] == "source_error"
+    assert source["failure"]["stage"] == "publication_readback"
+    assert source["writer_progress"]["item_identity"] == "video-1"
+    assert source["writer_progress"]["claim_receipt_summary"] == summary
+
+
 def test_real_structured_input_receipt_binds_lv_evidence(
     tmp_path,
     monkeypatch,

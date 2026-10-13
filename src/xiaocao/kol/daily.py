@@ -1961,6 +1961,7 @@ class DailyCoordinator:
         code: str,
         stage: str,
         item_identity: str | None = None,
+        claim_receipt_summary: Mapping[str, int] | None = None,
     ) -> tuple[dict[str, Any], WriterProgress]:
         identity = item_identity or f"{name}:source"
         fingerprint = FailureFingerprint(
@@ -1979,11 +1980,15 @@ class DailyCoordinator:
                 "identity": identity,
                 "version_key": "current",
             }]),
-            claim_receipt_summary={
-                "claim_count": 0,
-                "receipt_count": 0,
-                "uncertain_effect_count": 0,
-            },
+            claim_receipt_summary=(
+                dict(claim_receipt_summary)
+                if claim_receipt_summary is not None
+                else {
+                    "claim_count": 0,
+                    "receipt_count": 0,
+                    "uncertain_effect_count": 0,
+                }
+            ),
             targeted_test_profile=f"kol_{name}_{stage}"[:128],
             narrow_resume_surface=(
                 f"{name}:source"
@@ -3135,6 +3140,7 @@ class DailyCoordinator:
                 user_action_context: dict[str, str] | None = None
                 reconciliation_receipt: dict[str, Any] | None = None
                 structured_input_receipt: dict[str, Any] | None = None
+                continuation_progress: WriterProgress | None = None
                 try:
                     outcome = self._invoke_source_step(
                         source,
@@ -3169,6 +3175,7 @@ class DailyCoordinator:
                         )
                         if in_process.status != "continue":
                             break
+                        continuation_progress = in_process
                         continuation = source.get("continue")
                         if not callable(continuation):
                             raise DailyError(
@@ -3313,6 +3320,38 @@ class DailyCoordinator:
                     )
                     if provider_wait is not None:
                         outcome = provider_wait
+                    if (
+                        structured_progress is not None
+                        and structured_input_receipt is None
+                    ):
+                        # The input handler failed before returning its bound
+                        # consumption receipt. Keep the exact object's repair
+                        # ownership instead of validating an unreceipted wait.
+                        outcome, progress_override = self._agent_repair(
+                            name,
+                            category="control_plane_handler_error",
+                            code="progress_handler_contract_invalid",
+                            stage="progress_handler",
+                            item_identity=structured_progress.item_identity,
+                            claim_receipt_summary=structured_progress.details[
+                                "claim_receipt_summary"
+                            ],
+                        )
+                        outcome["handler_failure"] = failure
+                    elif (
+                        structured_input_receipt is not None
+                        and continuation_progress is not None
+                    ):
+                        outcome, progress_override = self._agent_repair(
+                            name,
+                            category=failure["category"],
+                            code=failure["code"],
+                            stage=failure["stage"],
+                            item_identity=continuation_progress.item_identity,
+                            claim_receipt_summary=continuation_progress.details[
+                                "claim_receipt_summary"
+                            ],
+                        )
                 except Exception:
                     outcome, progress_override = self._agent_repair(
                         name,
