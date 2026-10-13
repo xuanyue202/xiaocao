@@ -13,15 +13,17 @@ def preparation_executable(tmp_path_factory):
         pytest.skip('Swift compiler required')
     source = (Path(__file__).resolve().parents[1] / 'native/foundersc_ax_executor/Sources/FounderscNativeAX/main.swift').read_text()
     scanner = source[source.index('private struct SecondaryClientLoginNotice'):source.index('private func observe(command:')]
-    routines = source[source.index('private func resetGraphIsModalFree('):source.index('private func terminateRejectedSession(')]
+    routines = source[source.index('private func resetFrameChromeWindows('):source.index('private func terminateRejectedSession(')]
     harness = r'''
 import Foundation
 import CoreFoundation
 private let mode=CommandLine.arguments[1], maximumDepth=12, maximumNodes=200
-private class Element:NSObject { var values:[String:Any]=[:]; var children:[Element]=[];var sheets:[Element]=[]
+private struct Bounds {let x:Double;let y:Double;let width:Double;let height:Double}
+private class Element:NSObject {var area=Bounds(x:0,y:0,width:1000,height:800); var values:[String:Any]=[:]; var children:[Element]=[];var sheets:[Element]=[]
  init(_ role:String,_ title:String="") { values["role"]=role;values["title"]=title }
 }
 private typealias AXUIElement=Element
+private func bounds(of e:Element)->Bounds? {e.area}
 private enum AXError {case success,attributeUnsupported,noValue,failure}
 private let kAXRoleAttribute="role",kAXTitleAttribute="title",kAXDescriptionAttribute="description",kAXSubroleAttribute="subrole",kAXIdentifierAttribute="identifier",kAXValueAttribute="value",kAXChildrenAttribute="children",kAXWindowsAttribute="windows",kAXParentAttribute="parent",kAXPressAction="press"
 private func CFEqual(_ a:Element,_ b:Element)->Bool {a===b}
@@ -35,6 +37,8 @@ private let secure=Element("AXTextField"),account=Element("AXComboBox"),button=E
 private var presses=0,observations=0
 private func AXUIElementCopyAttributeValue(_ e:Element,_ key:CFString,_ value:inout CFTypeRef?)->AXError {
  let k=key as String
+ if mode=="frame-unreadable-title" && e.values["fixture-frame-button"] as? Bool == true && k=="title" {return .failure}
+ if mode=="frame-nonstring-title" && e.values["fixture-frame-button"] as? Bool == true && k=="title" {value=NSNumber(value:7);return .success}
  if (mode=="failed-children" || presses>0 && mode=="late-read-failed") && e===login && k=="children" {return .failure}
  if mode=="wrong-array-type" && e===login && k=="AXSheets" {value="invalid" as NSString;return .success}
  if k=="children" {value=e.children as NSArray;return .success}
@@ -78,6 +82,16 @@ sheet.values["description"]="alert"
 sheet.children=[Element("AXStaticText",mode=="unknown-text" ? "未知问题":"用户名或密码错误"),button]
 login.children=[secure,account]+["登录方式","交易密码","验证码","登录"].map {Element("AXStaticText",$0)}
 login.sheets=[sheet];app.values["windows"]=[primary,login]
+if mode.hasPrefix("frame-") {
+ let frame=Element("AXWindow",mode=="frame-wrong-title" ? "Unexpected":"Window")
+ frame.values["subrole"]="AXDialog"
+ frame.area=Bounds(x:mode=="frame-wrong-bounds" ? 200:10,y:4,width:66,height:20)
+ frame.children=[Element("AXButton",mode=="frame-labeled-button" ? "确定":mode=="frame-empty-button" ? "":"WindowSharingSessionButton")]
+ frame.children[0].values["fixture-frame-button"]=true
+ frame.children[0].area=Bounds(x:frame.area.x-1,y:frame.area.y-1,width:68,height:22)
+ if mode=="frame-extra-control" {frame.children.append(Element("AXTextField"))}
+ app.values["windows"]=[primary,login,frame]
+}
 if mode=="duplicate-sheet" {login.children.append(Element("AXSheet"))}
 if mode=="truncated" {var node=login;for _ in 0..<15 {let child=Element("AXGroup");node.children.append(child);node=child}}
 '''
@@ -94,7 +108,7 @@ print(String(data:try! JSONSerialization.data(withJSONObject:["prepared":result.
     return binary
 
 @pytest.mark.parametrize('mode,prepared,presses',[
-    ('normal',True,1),('primary-login-dialog',True,1),('wrong-account',False,0),('wrong-button',False,0),
+    ('normal',True,1),('frame-normal',True,1),('frame-empty-button',False,1),('frame-unreadable-title',False,1),('frame-nonstring-title',False,1),('frame-wrong-title',False,1),('frame-wrong-bounds',False,1),('frame-labeled-button',False,1),('frame-extra-control',False,1),('primary-login-dialog',True,1),('wrong-account',False,0),('wrong-button',False,0),
     ('unknown-text',False,0),('duplicate-sheet',False,0),('failed-children',False,0),
     ('wrong-array-type',False,0),('truncated',False,0),('fresh-account',False,0),
     ('fresh-budget',False,0),('fresh-locked',False,0),('press-failed',False,1),

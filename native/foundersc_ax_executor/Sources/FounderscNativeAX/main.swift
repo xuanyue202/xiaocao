@@ -3757,6 +3757,53 @@ private func refreshHistoryQuery(
     return matches(after) && observedHistoryDates(after) == dates ? after : nil
 }
 
+// AppKit exposes traffic-light/sharing-indicator chrome as a separate AXDialog window.
+// This is the same anonymous chrome recognized by the notice validator, with
+// direct button topology and exact geometry bound to the primary login window.
+private func resetFrameChromeWindows(_ windows: [AXUIElement], primary: AXUIElement) -> [AXUIElement] {
+    guard let parent = bounds(of: primary) else { return [] }
+    func children(_ element: AXUIElement, _ key: String) -> [AXUIElement]? {
+        var value: CFTypeRef?
+        let error = AXUIElementCopyAttributeValue(element, key as CFString, &value)
+        if error == .attributeUnsupported || error == .noValue { return [] }
+        guard error == .success, let result = value as? [AXUIElement] else { return nil }
+        return result
+    }
+    func buttonTitle(_ element: AXUIElement) -> String? {
+        var value: CFTypeRef?
+        let error = AXUIElementCopyAttributeValue(element, kAXTitleAttribute as CFString, &value)
+        if error == .attributeUnsupported || error == .noValue { return "" }
+        guard error == .success else { return nil }
+        return value as? String
+    }
+    return windows.filter { window in
+        guard !CFEqual(window, primary), stringAttribute(window, kAXRoleAttribute) == "AXWindow",
+              stringAttribute(window, kAXTitleAttribute) == "Window",
+              let area = bounds(of: window), let buttons = children(window, kAXChildrenAttribute),
+              let sheets = children(window, "AXSheets"), sheets.isEmpty,
+              [1, 3].contains(buttons.count),
+              buttons.allSatisfy({ stringAttribute($0, kAXRoleAttribute) == "AXButton"
+                  && (children($0, kAXChildrenAttribute)?.isEmpty == true)
+                  && (children($0, "AXSheets")?.isEmpty == true) }),
+              abs(area.x - parent.x - 10) <= 1,
+              [4.0, 7.0].contains(where: { abs(area.y - parent.y - $0) <= 1 }),
+              abs(area.width - 66) <= 1, abs(area.height - 20) <= 1,
+              area.x + area.width <= parent.x + 100, area.y + area.height <= parent.y + 40
+        else { return false }
+        let titles = buttons.map { buttonTitle($0) }
+        guard titles.allSatisfy({ $0 != nil }) else { return false }
+        let subroles = buttons.map { stringAttribute($0, kAXSubroleAttribute) }
+        let sharingIndicator = buttons.count == 1 && subroles == [""]
+            && titles == ["WindowSharingSessionButton"]
+            && bounds(of: buttons[0]).map { abs($0.x - area.x + 1) <= 1
+                && abs($0.y - area.y + 1) <= 1
+                && abs($0.width - area.width - 2) <= 1
+                && abs($0.height - area.height - 2) <= 1 } == true
+        return sharingIndicator || (buttons.count == 3 && titles.allSatisfy({ $0 == "" })
+            && Set(subroles) == Set(["AXCloseButton", "AXMinimizeButton", "AXZoomButton"]))
+    }
+}
+
 // Fail closed on partial graphs, residual sheets, or a replacement modal.
 private func resetGraphIsModalFree(_ roots: [AXUIElement], allowedLoginWindows: [AXUIElement] = [], rejected: (String) -> Void = { _ in }) -> Bool {
     var visited: [AXUIElement] = []
@@ -3772,11 +3819,22 @@ private func resetGraphIsModalFree(_ roots: [AXUIElement], allowedLoginWindows: 
             return result
         }
         guard let role = text(kAXRoleAttribute, required: true), !role.isEmpty,
-              let subrole = text(kAXSubroleAttribute), let description = text(kAXDescriptionAttribute),
-              role != "AXSheet", role != "AXDialog",
-              (subrole != "AXDialog" || (depth == 0 && role == "AXWindow"
-                  && allowedLoginWindows.contains(where: { CFEqual($0, node) }))),
-              description.lowercased() != "alert" else { rejected("modal_or_unreadable_role_" + (text(kAXRoleAttribute) ?? "missing")); return false }
+              let subrole = text(kAXSubroleAttribute), let description = text(kAXDescriptionAttribute)
+        else { return false }
+        let allowedLoginRoot = depth == 0 && role == "AXWindow"
+            && allowedLoginWindows.contains(where: { CFEqual($0, node) })
+        guard role != "AXSheet", role != "AXDialog",
+              (subrole != "AXDialog" || allowedLoginRoot), description.lowercased() != "alert" else {
+            rejected("modal_role=" + role + ":subrole=" + subrole + ":alert="
+                + String(description.lowercased() == "alert") + ":depth=" + String(depth)
+                + ":allowed_login_root=" + String(allowedLoginRoot)
+                + ":title_is_Window=" + String(stringAttribute(node, kAXTitleAttribute) == "Window")
+                + ":bounds=" + (bounds(of: node).map { "\($0.x),\($0.y),\($0.width),\($0.height)" } ?? "unproven")
+                + ":direct_child_roles=" + ((attribute(node, kAXChildrenAttribute) as? [AXUIElement])?.map {
+                    stringAttribute($0, kAXRoleAttribute) + "/" + stringAttribute($0, kAXSubroleAttribute)
+                }.joined(separator: ",") ?? "unproven"))
+            return false
+        }
         for key in [kAXChildrenAttribute, "AXSheets"] {
             var value: CFTypeRef?
             let error = AXUIElementCopyAttributeValue(node, key as CFString, &value)
@@ -3810,7 +3868,8 @@ private func prepareRejectedSession(_ original: Observation, expected: String) -
     let notices = secondaryClientLoginNotices(windows, primary: primary, expected: expected).0
     if notices.isEmpty {
         return resetGraphIsModalFree(windows,
-            allowedLoginWindows: original.receipt.surfaceState == "client_login_required" ? [primary] : [], rejected: { resetPreparationDiagnostic = $0 })
+            allowedLoginWindows: (original.receipt.surfaceState == "client_login_required" ? [primary] : [])
+                + resetFrameChromeWindows(windows, primary: primary), rejected: { resetPreparationDiagnostic = $0 })
             && dismissLoginSuccessNotice(original, expected: expected, allowDismiss: false).0
             ? (original, false) : (nil, false)
     }
@@ -3851,7 +3910,8 @@ private func prepareRejectedSession(_ original: Observation, expected: String) -
         let clear = secondaryClientLoginNotices(afterWindows, primary: primary,
             expected: expected, allowClearedLogin: true).0
         if resetGraphIsModalFree(afterWindows,
-            allowedLoginWindows: [notices[0].window] + (after.receipt.surfaceState == "client_login_required" ? [primary] : []), rejected: { resetPreparationDiagnostic = $0 }), clear.count == 1,
+            allowedLoginWindows: [notices[0].window] + (after.receipt.surfaceState == "client_login_required" ? [primary] : [])
+                + resetFrameChromeWindows(afterWindows, primary: primary), rejected: { resetPreparationDiagnostic = $0 }), clear.count == 1,
            clear[0].sheet == nil, CFEqual(clear[0].window, notices[0].window),
            dismissLoginSuccessNotice(after, expected: expected, allowDismiss: false,
                clearedResetLoginWindow: clear[0].window).0 {
@@ -3927,7 +3987,7 @@ private func terminateRejectedSession(arguments: [String]) -> Receipt {
               clearedResetLoginWindow: resetClearedLoginWindow).0,
           resetGraphIsModalFree(freshWindows, allowedLoginWindows:
               (fresh.receipt.surfaceState == "client_login_required" ? [freshWindow] : [])
-              + cleared.map { $0.window }) else {
+              + cleared.map { $0.window } + resetFrameChromeWindows(freshWindows, primary: freshWindow)) else {
         receipt.status = "session_reset_precondition_blocked"
         receipt.reason = "fresh complete modal-free graph not proven; termination not requested"
         return receipt

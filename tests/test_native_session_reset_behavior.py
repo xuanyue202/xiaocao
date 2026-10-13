@@ -54,6 +54,7 @@ private func AXUIElementCopyAttributeValue(_ e:Window,_ key:CFString,_ result:in
 private struct SecondaryClientLoginNotice { let window:Window;let sheet:Window? }
 private func secondaryClientLoginNotices(_ windows:[Window],primary:Window,expected:String,allowClearedLogin:Bool)->([SecondaryClientLoginNotice],[String]) {([],[])}
 private func dismissLoginSuccessNotice(_ o:Observation,expected:String,allowDismiss:Bool,clearedResetLoginWindow:Window?)->(Bool,Bool,String) {(mode != "fresh-unknown-window",false,"")}
+private func resetFrameChromeWindows(_ windows:[Window],primary:Window)->[Window] {[]}
 private func resetGraphIsModalFree(_ windows:[Window],allowedLoginWindows:[Window]=[])->Bool {!["fresh-modal","ack-fresh-modal"].contains(mode)}
 private struct Observation { let receipt:Receipt;let runningApplication:NSRunningApplication?;let primaryWindow:Window?;var applicationElement:Window? {window} }
 private var observations=0
