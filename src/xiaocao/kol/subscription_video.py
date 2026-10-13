@@ -540,7 +540,7 @@ _CREATE_FOLDER_SCRIPT = r"""(async () => {
 })()"""
 
 
-_SELECT_RECENT_DESTINATION_FUNCTION = r"""(dialog, segments, visible) => {
+_SELECT_RECENT_DESTINATION_FUNCTION = r"""async (dialog, segments, visible) => {
   const expectedPath = '/' + segments.join('/');
   const providerRoot = '我的网盘/';
   const canonicalPath = node => {
@@ -569,7 +569,15 @@ _SELECT_RECENT_DESTINATION_FUNCTION = r"""(dialog, segments, visible) => {
     return {status: 'selected', selected_path: expectedPath};
   }
   matches[0].click();
-  const selected = selectedRows();
+  const selectionDeadline = Date.now() + 2000;
+  let selected = selectedRows();
+  while (
+    Date.now() < selectionDeadline
+    && !(selected.length === 1 && canonicalPath(selected[0]) === expectedPath)
+  ) {
+    await new Promise(resolve => setTimeout(resolve, 50));
+    selected = selectedRows();
+  }
   if (
     selected.length !== 1
     || canonicalPath(selected[0]) !== expectedPath
@@ -749,7 +757,7 @@ _TRANSFER_SCRIPT = r"""(async () => {
     return nodes;
   };
   const selectRecentDestination = __SELECT_RECENT_DESTINATION__;
-  const recentDestination = selectRecentDestination(
+  const recentDestination = await selectRecentDestination(
     dialog, destinationSegments, visible
   );
   if (!['selected', 'tree_required'].includes(recentDestination.status)) {

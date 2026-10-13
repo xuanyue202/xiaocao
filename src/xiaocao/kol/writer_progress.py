@@ -843,6 +843,8 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
             "transfer_bound_tab_recovery_fails_closed or "
             "lv_transfer_recent_destination_requires_exact_selected_path or "
             "lv_transfer_recent_destination_deduplicates_selected_markers or "
+            "lv_transfer_recent_destination_waits_for_async_selection or "
+            "source_repair_observation_binds_exact_origin_and_evidence or "
             "lv_transfer_dialog_uses_outer_footer_and_rejects_ambiguity or "
             "lv_transfer_pretrigger_failure_is_agent_repair_without_native_click or "
             "repair_validation_rejects_unrelated_native_input_failure or "

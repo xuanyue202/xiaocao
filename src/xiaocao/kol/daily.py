@@ -2354,6 +2354,30 @@ class DailyCoordinator:
         """Find the sweep that persisted this exact repair progress."""
 
         for row in reversed(rows):
+            if row.get("event") == "source_repair_observed":
+                candidate = row.get("progress") or {}
+                if (
+                    row.get("source") == source
+                    and (row.get("isolated_failure") or {}).get("identity") == progress.item_identity
+                    and (row.get("isolated_failure") or {}).get("claim_status") == "failed_pretrigger"
+                    and re.fullmatch(r"[0-9a-f]{64}", str(row.get("source_claim_sha256") or ""))
+                    and candidate.get("item_identity") == progress.item_identity
+                    and candidate.get("failure_fingerprint") == progress.failure_fingerprint
+                ):
+                    origin = next((entry for entry in rows if (
+                        entry.get("event") == "sweep_completed"
+                        and entry.get("event_id") == row.get("origin_sweep_event_id")
+                        and entry.get("slot") == row.get("slot")
+                    )), None)
+                    if origin is not None:
+                        return {
+                            **origin,
+                            "source_states": [
+                                {**state, "status": "waiting", "writer_progress": candidate}
+                                if state.get("name") == source else state
+                                for state in origin.get("source_states", [])
+                            ],
+                        }
             if row.get("event") != "sweep_completed":
                 continue
             source_states = row.get("source_states")
@@ -2374,6 +2398,105 @@ class DailyCoordinator:
                 ):
                     return row
         return None
+
+    def observe_source_repair(
+        self,
+        source: str,
+        *,
+        progress: WriterProgress,
+        origin_sweep_event_id: str,
+        evidence_path: Path,
+        evidence_sha256: str,
+        source_output_dir: Path,
+    ) -> dict[str, Any]:
+        """Bind an isolated failure's later repair observation to its real sweep."""
+
+        if (
+            source != "subscription_video"
+            or progress.status != "repair_required"
+            or progress.failure["adapter"] != source
+            or progress.failure["code"] != "cloud_transfer_pretrigger_failed"
+        ):
+            raise DailyError("source repair observation needs exact repair progress")
+        evidence_bytes = evidence_path.read_bytes()
+        if hashlib.sha256(evidence_bytes).hexdigest() != evidence_sha256:
+            raise DailyError("source repair observation evidence changed")
+        evidence = json.loads(evidence_bytes)
+        expected = {
+            "source": source,
+            "item_identity": progress.item_identity,
+            "failure_fingerprint": progress.failure_fingerprint,
+            "origin_sweep_event_id": origin_sweep_event_id,
+        }
+        if not isinstance(evidence, dict) or any(evidence.get(key) != value for key, value in expected.items()):
+            raise DailyError("source repair observation evidence binding changed")
+        with self._locked():
+            rows = self.events()
+            origin = next((row for row in rows if (
+                row.get("event") == "sweep_completed"
+                and row.get("event_id") == origin_sweep_event_id
+                and any(state.get("name") == source for state in row.get("source_states", []))
+            )), None)
+            if origin is None:
+                raise DailyError("source repair observation lost its originating sweep")
+            starts = [row for row in rows if (
+                row.get("event") == "source_started"
+                and row.get("source") == source
+                and row.get("slot") == origin["slot"]
+                and row.get("occurred_at", "") <= origin["occurred_at"]
+            )]
+            if not starts:
+                raise DailyError("source repair observation lost its source start")
+            started_at = max(row["occurred_at"] for row in starts)
+            version = str(evidence.get("version_key") or "")
+            manifest = json.loads((source_output_dir / "manifest.json").read_bytes())
+            item = manifest.get("items", {}).get(progress.item_identity, {})
+            if not version or item.get("version_key") != version:
+                raise DailyError("source repair observation version changed")
+            # Ticket 05's historical source ledger predates event self-hashes.
+            # Bind the exact row into the integrity-protected daily observation.
+            failures = []
+            for line in (source_output_dir / "events.jsonl").read_text().splitlines():
+                if not line.strip():
+                    continue
+                if len(line.encode()) > MAX_LEDGER_LINE_BYTES:
+                    raise DailyError("isolated video failure row exceeds limit")
+                failure_row = json.loads(line)
+                if not isinstance(failure_row, dict):
+                    raise DailyError("isolated video failure row is invalid")
+                failures.append(failure_row)
+            isolated = next((row for row in failures if (
+                row.get("event") == "subscription_video_item_failure_isolated"
+                and row.get("identity") == progress.item_identity
+                and row.get("version_key") == version
+                and row.get("claim_status") == "failed_pretrigger"
+                and started_at <= str(row.get("recorded_at") or "") <= origin["occurred_at"]
+            )), None)
+            claim = json.loads((source_output_dir / "claims" / f"lv_transfer_{version}.json").read_bytes())
+            if (
+                isolated is None
+                or claim.get("source_identity") != progress.item_identity
+                or claim.get("source_version_key") != version
+                or claim.get("status") != "failed_pretrigger"
+                or claim.get("triggered_at")
+                or claim.get("provider_request_observed")
+                or claim.get("provider_response_observed")
+                or claim.get("side_effect_uncertain")
+            ):
+                raise DailyError("source repair observation lacks an exact isolated pretrigger failure")
+            observed = self._append(
+                "source_repair_observed",
+                slot=origin["slot"],
+                source=source,
+                progress=progress.to_dict(),
+                origin_sweep_event_id=origin_sweep_event_id,
+                evidence_path=str(evidence_path.resolve()),
+                evidence_sha256=evidence_sha256,
+                isolated_failure=isolated,
+                source_claim_sha256=hashlib.sha256(json.dumps(claim, sort_keys=True).encode()).hexdigest(),
+            )
+            self.convergence.record(progress, slot=origin["slot"])
+            return observed
 
     @staticmethod
     def _originating_sweep_for_progress(

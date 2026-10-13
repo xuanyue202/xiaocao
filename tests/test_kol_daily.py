@@ -8986,3 +8986,61 @@ def test_subscription_video_source_resume_reuses_retained_bundle_without_scan(
     else:
         assert runtime.videos_narrow_resume("subscription_video:source") == {"status": "completed"}
         assert calls == [{"only_identity": items[0]["identity"], "refresh_listing": False}]
+
+
+@pytest.mark.parametrize('change', [None, 'hash', 'origin', 'identity', 'missing_failure', 'wrong_version', 'outside_slot', 'triggered'])
+def test_source_repair_observation_binds_exact_origin_and_evidence(tmp_path, change):
+    import hashlib
+
+    service = DailyCoordinator(tmp_path / 'daily', now=Clock('2026-08-31T11:19:00+08:00'))
+    service.run([{'name': 'subscription_video', 'run': lambda: {'status': 'no_update'}}])
+    origin = next(row for row in reversed(service.events()) if row['event'] == 'sweep_completed')
+    before = service.events()
+    prior = WriterProgress.repair_required(
+        item_identity='video-1',
+        fingerprint=FailureFingerprint(
+            adapter='subscription_video', category='provider_contract_error',
+            code='cloud_transfer_pretrigger_failed', stage='cloud_transfer_confirmation',
+            failure_revision='a' * 40, provider_contract_version='subscription_video_source_v1',
+        ),
+        repair_revision=None, affected_set_digest='b' * 64,
+        claim_receipt_summary={'claim_count': 1, 'receipt_count': 0, 'uncertain_effect_count': 0},
+        targeted_test_profile='kol_subscription_video_source_run',
+        narrow_resume_surface='subscription_video:video-1', retryability='retryable',
+    )
+    evidence = {
+        'source': 'subscription_video', 'item_identity': 'video-1',
+        'failure_fingerprint': prior.failure_fingerprint,
+        'origin_sweep_event_id': origin['event_id'], 'version_key': 'v1',
+    }
+    if change == 'identity':
+        evidence['item_identity'] = 'other-video'
+    source_root = tmp_path / 'videos'
+    (source_root / 'claims').mkdir(parents=True)
+    (source_root / 'manifest.json').write_text(json.dumps({'items': {'video-1': {
+        'version_key': 'v2' if change == 'wrong_version' else 'v1',
+    }}}))
+    failure = {'event': 'subscription_video_item_failure_isolated',
+        'identity': 'video-1', 'version_key': 'v1', 'claim_status': 'failed_pretrigger',
+        'recorded_at': '2026-08-30T11:19:00+08:00' if change == 'outside_slot' else origin['occurred_at']}
+    (source_root / 'events.jsonl').write_text('' if change == 'missing_failure' else json.dumps(failure) + '\n')
+    claim = {'source_identity': 'video-1', 'source_version_key': 'v1', 'status': 'failed_pretrigger'}
+    if change == 'triggered':
+        claim['triggered_at'] = origin['occurred_at']
+    (source_root / 'claims/lv_transfer_v1.json').write_text(json.dumps(claim))
+    path = tmp_path / 'observation.json'
+    path.write_text(json.dumps(evidence))
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    if change:
+        with pytest.raises(DailyError):
+            service.observe_source_repair('subscription_video', progress=prior,
+                origin_sweep_event_id='0' * 64 if change == 'origin' else origin['event_id'],
+                evidence_path=path, evidence_sha256='0' * 64 if change == 'hash' else digest, source_output_dir=source_root)
+        assert service.events() == before
+        return
+    service.observe_source_repair('subscription_video', progress=prior,
+        origin_sweep_event_id=origin['event_id'], evidence_path=path, evidence_sha256=digest, source_output_dir=source_root)
+    assert service.events()[:len(before)] == before
+    projected = service._repair_originating_sweep(service.events(), source='subscription_video', progress=prior)
+    assert projected['event_id'] == origin['event_id']
+    assert projected['source_states'][0]['writer_progress']['item_identity'] == 'video-1'

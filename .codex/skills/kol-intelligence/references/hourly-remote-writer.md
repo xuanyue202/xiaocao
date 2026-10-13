@@ -38,6 +38,12 @@ A proved untriggered Lv save failure is `cloud_transfer_pretrigger_failed`,
 Agent-owned `repair_required` for its exact object. The titled outer `保存到`
 panel owns the confirmation footer; never select its smaller nested content
 shell. Multiple eligible panels remain ambiguous and do not authorize a click.
+Recent-destination selection waits up to two seconds for the exact selected
+path after its one click. For a pre-migration isolated video failure omitted
+from the sweep projection, `DailyCoordinator.observe_source_repair` may append
+an observation only after verifying the original source interval, exact failure
+ledger row, current source version and untriggered claim. Bind the real sweep
+event ID and evidence hash; never invent or rewrite an originating sweep.
 
 This sole writer consumes Xiaocao `scope=post_handoff` and URL-only
 `wechat_official_article` LiangHuiMCP capsules as discovery metadata, not full

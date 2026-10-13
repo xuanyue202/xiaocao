@@ -3750,7 +3750,31 @@ const dialog = {querySelectorAll: selector => {
   return [checkbox];
 }};
 const select = __FUNCTION__;
-console.log(JSON.stringify(select(dialog, ['课程', '自己的课', '吕晓彤'], () => true).status));
+(async () => console.log(JSON.stringify((await select(dialog, ['课程', '自己的课', '吕晓彤'], () => true)).status)))();
 '''.replace('__SAME__', 'true' if same_row else 'false').replace('__FUNCTION__', _SELECT_RECENT_DESTINATION_FUNCTION)
     result = subprocess.run([node, '-e', script], check=True, capture_output=True, text=True)
     assert json.loads(result.stdout) == expected
+
+
+def test_lv_transfer_recent_destination_waits_for_async_selection():
+    from xiaocao.kol.subscription_video import _SELECT_RECENT_DESTINATION_FUNCTION
+
+    node = shutil.which('node')
+    if not node:
+        pytest.skip('Node is required to execute the provider selected-state render')
+    script = r'''
+let checked = false;
+const target = {
+  getAttribute: () => '我的网盘/课程/自己的课/吕晓彤',
+  click: () => setTimeout(() => {checked = true;}, 30),
+};
+const dialog = {querySelectorAll: selector => {
+  if (selector === '.save-path-item') return [target];
+  if (selector === '.save-path-item.check') return [];
+  return checked ? [{closest: () => target}] : [];
+}};
+const select = __FUNCTION__;
+(async () => console.log(JSON.stringify(await select(dialog, ['课程', '自己的课', '吕晓彤'], () => true))))();
+'''.replace('__FUNCTION__', _SELECT_RECENT_DESTINATION_FUNCTION)
+    result = subprocess.run([node, '-e', script], check=True, capture_output=True, text=True)
+    assert json.loads(result.stdout) == {'status': 'selected', 'selected_path': '/课程/自己的课/吕晓彤'}
