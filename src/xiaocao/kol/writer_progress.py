@@ -935,6 +935,8 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
         "-k",
         (
             "source_cli_narrow_runner_supports_xiaocao_wechat_live or "
+            "native_input_timeout or "
+            "native_input_reads_long_utf8_reply_without_truncation or "
             "xiaoetong_recorded_video_source_identity_is_stable or "
             "recorded_video_capture_uses_file_binding_not_stale_live_context or "
             "start_with_recorded_video_page_arms_file_bound_capture_without_source_job or "
@@ -1677,6 +1679,11 @@ def _canonical_xiaocao_wechat_source_repair_profile(
             and failure == ("transport_error", "upload_foreground_failed", "upload_foreground")):
         return declared_profile
     if (
+        declared_profile == "kol_xiaocao_wechat_live_native_playback_input"
+        and failure == (
+            "input_error", "native_playback_input_timeout", "native_playback_input",
+        )
+    ) or (
         declared_profile == "kol_xiaocao_wechat_live_native_playback_window_close"
         and failure == (
             "input_error", "native_playback_window_close_unverified",
@@ -2042,6 +2049,7 @@ class RepairValidationService:
                     _XIAOCAO_WECHAT_COMPRESSED_CAPTURE_REPAIR_PROFILE,
                     _XIAOCAO_WECHAT_CLOUD_HANDOFF_REPAIR_PROFILE,
                     "kol_xiaocao_wechat_live_native_playback_window_close",
+                    "kol_xiaocao_wechat_live_native_playback_input",
                 }
             )
             and not (

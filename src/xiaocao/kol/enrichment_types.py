@@ -43,6 +43,19 @@ class EnrichmentDiagnosticError(EnrichmentError):
         super().__init__(message)
 
 
+class NativePlaybackInputTimeout(EnrichmentDiagnosticError):
+    """A bounded native reply timed out without cancelling its bound work."""
+
+    def __init__(self):
+        super().__init__(
+            "native playback input timed out; original capture binding preserved",
+            category="input_error",
+            code="native_playback_input_timeout",
+            stage="native_playback_input",
+        )
+        self.waiting_items: list[dict[str, Any]] = []
+
+
 def is_durable_report_only(item: Any) -> bool:
     """Return whether one result is a durable-only Lv report entry."""
     if not isinstance(item, dict):

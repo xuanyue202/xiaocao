@@ -1194,8 +1194,29 @@ def test_native_input_timeout_bounds_missing_and_partial_reply(partial):
     try:
         if partial:
             os.write(write_fd, partial)
-        with pytest.raises(DailyError):
+        with pytest.raises(EnrichmentDiagnosticError):
             kol_daily_script._read_native_agent_line(read_fd, timeout=0.02)
+    finally:
+        os.close(read_fd)
+        os.close(write_fd)
+
+
+def test_native_input_timeout_is_classified_without_losing_deadline():
+    read_fd, write_fd = os.pipe()
+    try:
+        run = _classified_source(
+            "xiaocao_wechat_live",
+            lambda: kol_daily_script._read_native_agent_line(read_fd, timeout=0.02),
+        )
+        result = run()
+        assert result["status"] == "waiting"
+        assert result["failure"] == {
+            "category": "input_error",
+            "code": "native_playback_input_timeout",
+            "stage": "native_playback_input",
+            "retryable": True,
+        }
+        assert result["waiting_items"] == []
     finally:
         os.close(read_fd)
         os.close(write_fd)
