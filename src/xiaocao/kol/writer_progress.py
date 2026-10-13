@@ -842,6 +842,8 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
             "transfer_activation_falls_back_for_bound_user_tab or "
             "transfer_bound_tab_recovery_fails_closed or "
             "lv_transfer_recent_destination_requires_exact_selected_path or "
+            "lv_transfer_dialog_uses_outer_footer_and_rejects_ambiguity or "
+            "lv_transfer_pretrigger_failure_is_agent_repair_without_native_click or "
             "repair_validation_rejects_unrelated_native_input_failure or "
             "lv_transfer_claim_precedes_click_and_exact_copy_readback_completes or "
             "lv_transfer_lost_native_input_is_repair_not_provider_attempt or "
@@ -1587,6 +1589,11 @@ def _canonical_subscription_video_source_repair_profile(
             (
                 "provider_contract_error",
                 "lv_native_click_not_delivered",
+                "cloud_transfer_confirmation",
+            ),
+            (
+                "provider_contract_error",
+                "cloud_transfer_pretrigger_failed",
                 "cloud_transfer_confirmation",
             ),
             (

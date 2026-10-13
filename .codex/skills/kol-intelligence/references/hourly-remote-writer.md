@@ -34,6 +34,11 @@ becomes `repair_required`; diagnostics never manufacture `wait_until` or a user
 blocker. Provider deadlines, auth/CAPTCHA, and uncertain effects retain their
 seven-state `writer_progress` states.
 
+A proved untriggered Lv save failure is `cloud_transfer_pretrigger_failed`,
+Agent-owned `repair_required` for its exact object. The titled outer `保存到`
+panel owns the confirmation footer; never select its smaller nested content
+shell. Multiple eligible panels remain ambiguous and do not authorize a click.
+
 This sole writer consumes Xiaocao `scope=post_handoff` and URL-only
 `wechat_official_article` LiangHuiMCP capsules as discovery metadata, not full
 articles: each is not the full article. It never scans the local

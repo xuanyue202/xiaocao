@@ -542,19 +542,27 @@ _CREATE_FOLDER_SCRIPT = r"""(async () => {
 
 _SELECT_RECENT_DESTINATION_FUNCTION = r"""(dialog, segments, visible) => {
   const expectedPath = '/' + segments.join('/');
+  const canonicalPath = node => {
+    const title = String(node.getAttribute('title') || '');
+    return title.startsWith('我的网盘/') ? '/' + title.slice(5) : title;
+  };
   const matches = [...dialog.querySelectorAll('.save-path-item')].filter(
-    node => visible(node) && node.getAttribute('title') === expectedPath
+    node => visible(node) && canonicalPath(node) === expectedPath
   );
   if (matches.length === 0) return {status: 'tree_required'};
   if (matches.length !== 1) {
     return {status: 'destination_recent_path_ambiguous', triggered: false};
   }
-  const selectedRows = () => [...dialog.querySelectorAll('.save-path-item.check')]
-    .filter(visible);
+  const selectedRows = () => [...new Set([
+    ...dialog.querySelectorAll('.save-path-item.check'),
+    ...[...dialog.querySelectorAll(
+      '.save-path-item [role="checkbox"][aria-checked="true"]'
+    )].filter(visible).map(node => node.closest('.save-path-item'))
+  ])].filter(node => node && visible(node));
   const current = selectedRows();
   if (
     current.length === 1
-    && current[0].getAttribute('title') === expectedPath
+    && canonicalPath(current[0]) === expectedPath
   ) {
     return {status: 'selected', selected_path: expectedPath};
   }
@@ -562,11 +570,42 @@ _SELECT_RECENT_DESTINATION_FUNCTION = r"""(dialog, segments, visible) => {
   const selected = selectedRows();
   if (
     selected.length !== 1
-    || selected[0].getAttribute('title') !== expectedPath
+    || canonicalPath(selected[0]) !== expectedPath
   ) {
     return {status: 'destination_recent_path_not_selected', triggered: false};
   }
   return {status: 'selected', selected_path: expectedPath};
+}"""
+
+
+_SELECT_TRANSFER_DIALOG_FUNCTION = r"""(root, visible) => {
+  const titledDialogs = [...root.querySelectorAll(
+    '#share-save-dialog-title'
+  )].filter(node => (
+    visible(node)
+    && String(node.innerText || node.textContent || '')
+    .replace(/\s+/g, ' ').trim() === '保存到'
+  )).map(node => node.closest('[role="dialog"]')).filter(node => (
+    visible(node)
+    && node.querySelector('#fileTreeDialog[role="dialog"]')
+  ));
+  const legacyDialogs = [...root.querySelectorAll(
+    '.dialog-fileTreeDialog'
+  )].filter(node => (
+    visible(node)
+    && /保存到|选择保存路径|我的网盘/.test(
+    String(node.innerText || node.textContent || '')
+    )
+  ));
+  // The titled outer panel owns the footer confirmation. Its nested
+  // legacy content shell has the smaller area but contains no buttons.
+  const candidates = [...new Set(
+    titledDialogs.length ? titledDialogs : legacyDialogs
+  )];
+  if (candidates.length > 1) {
+    return {status: 'save_dialog_ambiguous', triggered: false};
+  }
+  return {status: candidates.length ? 'ready' : 'missing', dialog: candidates[0] || null};
 }"""
 
 
@@ -686,31 +725,11 @@ _TRANSFER_SCRIPT = r"""(async () => {
   pathControl.click();
   const dialogDeadline = Date.now() + 10000;
   let dialog = null;
+  const selectTransferDialog = __SELECT_TRANSFER_DIALOG__;
   while (Date.now() < dialogDeadline) {
-    const titledDialogs = [...document.querySelectorAll(
-      '#share-save-dialog-title'
-    )].filter(node => (
-      visible(node)
-      && String(node.innerText || node.textContent || '')
-        .replace(/\s+/g, ' ').trim() === '保存到'
-    )).map(node => node.closest('[role="dialog"]')).filter(node => (
-      visible(node)
-      && node.querySelector('#fileTreeDialog[role="dialog"]')
-    ));
-    const legacyDialogs = [...document.querySelectorAll(
-      '.dialog-fileTreeDialog'
-    )].filter(node => (
-      visible(node)
-      && /保存到|选择保存路径|我的网盘/.test(
-        String(node.innerText || node.textContent || '')
-      )
-    ));
-    const candidates = [...new Set([...titledDialogs, ...legacyDialogs])];
-    candidates.sort((left, right) => (
-      left.getBoundingClientRect().width * left.getBoundingClientRect().height
-      - right.getBoundingClientRect().width * right.getBoundingClientRect().height
-    ));
-    dialog = candidates[0] || null;
+    const selection = selectTransferDialog(document, visible);
+    if (selection.status === 'save_dialog_ambiguous') return selection;
+    dialog = selection.dialog;
     if (dialog) break;
     await new Promise(resolve => setTimeout(resolve, 100));
   }
@@ -1016,7 +1035,7 @@ _TRANSFER_SCRIPT = r"""(async () => {
     provider_request_observed: network.requestSeen,
     provider_response_observed: network.responseSeen
   };
-})()""" .replace("__SELECT_RECENT_DESTINATION__", _SELECT_RECENT_DESTINATION_FUNCTION)
+})()""".replace("__SELECT_RECENT_DESTINATION__", _SELECT_RECENT_DESTINATION_FUNCTION).replace("__SELECT_TRANSFER_DIALOG__", _SELECT_TRANSFER_DIALOG_FUNCTION)
 
 
 _TRANSFER_PAGE_SUBMIT_SCRIPT = r"""(async () => {
@@ -5030,8 +5049,11 @@ class SubscriptionVideoService:
                 claim,
                 str(result.get("status") or "cloud_transfer_failed"),
             )
-            raise EnrichmentError(
-                f"Lv cloud transfer was not triggered: {result.get('status')}"
+            raise EnrichmentDiagnosticError(
+                f"Lv cloud transfer was not triggered: {result.get('status')}",
+                category="provider_contract_error",
+                code="cloud_transfer_pretrigger_failed",
+                stage="cloud_transfer_confirmation",
             )
         triggered = {
             **action_claim,

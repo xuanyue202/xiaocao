@@ -31,15 +31,18 @@ NOW = datetime.fromisoformat("2026-07-25T16:00:00+08:00")
 
 
 @pytest.mark.parametrize("already_selected", [False, True])
+@pytest.mark.parametrize("semantic_checkbox", [False, True])
 @pytest.mark.parametrize("recent_paths,selected_paths,expected", [
     (["/课程/自己的课/吕晓彤"], ["/课程/自己的课/吕晓彤"], "selected"),
+    (["我的网盘/课程/自己的课/吕晓彤"], ["我的网盘/课程/自己的课/吕晓彤"], "selected"),
+    (["其他网盘/课程/自己的课/吕晓彤"], [], "tree_required"),
     (["/别处/吕晓彤"], [], "tree_required"),
     (["/课程/自己的课/吕晓彤"] * 2, [], "destination_recent_path_ambiguous"),
     (["/课程/自己的课/吕晓彤"], [], "destination_recent_path_not_selected"),
     (["/课程/自己的课/吕晓彤"], ["/别处/吕晓彤"], "destination_recent_path_not_selected"),
 ])
 def test_lv_transfer_recent_destination_requires_exact_selected_path(
-    recent_paths, selected_paths, expected, already_selected,
+    recent_paths, selected_paths, expected, already_selected, semantic_checkbox,
 ):
     from xiaocao.kol.subscription_video import _SELECT_RECENT_DESTINATION_FUNCTION
 
@@ -51,6 +54,7 @@ def test_lv_transfer_recent_destination_requires_exact_selected_path(
     fixture = json.dumps({
         "recent": recent_paths, "selected": selected_paths,
         "alreadySelected": already_selected,
+        "semanticCheckbox": semantic_checkbox,
     })
     script = """
 const fixture = __FIXTURE__;
@@ -62,10 +66,14 @@ const rows = fixture.recent.map(path => ({
 const selected = fixture.selected.map(path => ({
   getAttribute: key => key === 'title' ? path : null
 }));
-const dialog = {querySelectorAll: selector => (
-  selector === '.save-path-item.check'
-    ? (clicks || fixture.alreadySelected ? selected : []) : rows
-)};
+const dialog = {querySelectorAll: selector => {
+  const active = clicks || fixture.alreadySelected ? selected : [];
+  if (selector === '.save-path-item') return rows;
+  if (selector === '.save-path-item.check') return fixture.semanticCheckbox ? [] : active;
+  if (selector.includes('aria-checked')) return fixture.semanticCheckbox
+    ? active.map(row => ({closest: () => row})) : [];
+  return [];
+}};
 const select = __FUNCTION__;
 (async () => {
   const result = await select(dialog, ['课程', '自己的课', '吕晓彤'], () => true);
@@ -81,7 +89,7 @@ const select = __FUNCTION__;
     assert observed["result"]["status"] == expected
     expected_clicks = int(
         len(recent_paths) == 1
-        and recent_paths[0] == "/课程/自己的课/吕晓彤"
+        and recent_paths[0] in {"/课程/自己的课/吕晓彤", "我的网盘/课程/自己的课/吕晓彤"}
         and not (already_selected and expected == "selected")
     )
     assert observed["clicks"] == expected_clicks
@@ -3664,3 +3672,62 @@ def test_ticket05_analysis_bundle_requires_cross_view_and_full_coverage(
             state,
             bundle_path=bundle_path,
         )
+
+
+@pytest.mark.parametrize('titled_count,legacy_count,expected', [
+    (1, 1, 'outer'), (0, 1, 'legacy'), (2, 1, 'save_dialog_ambiguous'),
+    (0, 2, 'save_dialog_ambiguous'), (0, 0, 'missing'),
+])
+def test_lv_transfer_dialog_uses_outer_footer_and_rejects_ambiguity(
+    titled_count, legacy_count, expected,
+):
+    from xiaocao.kol.subscription_video import _SELECT_TRANSFER_DIALOG_FUNCTION
+
+    node = shutil.which('node')
+    if not node:
+        pytest.skip('Node is required to exercise the provider dialog selection')
+    script = r'''
+const outer = Array.from({length: __TITLED__}, () => ({
+  name: 'outer', querySelector: () => ({}),
+}));
+const titles = outer.map(panel => ({
+  textContent: '保存到', closest: () => panel,
+}));
+const legacy = Array.from({length: __LEGACY__}, () => ({
+  name: 'legacy', textContent: '保存到 我的网盘',
+}));
+const root = {querySelectorAll: selector => (
+  selector === '#share-save-dialog-title' ? titles : legacy
+)};
+const select = __FUNCTION__;
+const result = select(root, () => true);
+console.log(JSON.stringify(result.dialog?.name || result.status));
+'''.replace('__TITLED__', str(titled_count)).replace(
+        '__LEGACY__', str(legacy_count),
+    ).replace('__FUNCTION__', _SELECT_TRANSFER_DIALOG_FUNCTION)
+    result = subprocess.run([node, '-e', script], check=True, capture_output=True, text=True)
+    assert json.loads(result.stdout) == expected
+
+
+def test_lv_transfer_pretrigger_failure_is_agent_repair_without_native_click(tmp_path):
+    service = _service(tmp_path, sleep=lambda _: None)
+    item = service._normalize(_source_rows()[0][1], source=LV_SOURCE, author=LV_AUTHOR)
+    service.ensure_lv_destination = lambda **_: {'status': 'completed'}
+    service._direct_private_entries = lambda **_: []
+    calls = []
+
+    def opencli(_session, *args, **_kwargs):
+        calls.append(args[0])
+        if args[0] == 'open':
+            return {'url': 'sanitized'}
+        return {'status': 'save_confirmation_ambiguous', 'triggered': False}
+
+    service._opencli_json = opencli
+    with pytest.raises(EnrichmentDiagnosticError) as caught:
+        service.transfer_lv_video(item, lv_session='lv', private_session='private', profile=None)
+    assert caught.value.diagnostic_category == 'provider_contract_error'
+    assert caught.value.diagnostic_code == 'cloud_transfer_pretrigger_failed'
+    assert 'click' not in calls
+    claim = json.loads(service._claim_path(f"lv_transfer_{item['version_key']}").read_text())
+    assert claim['status'] == 'failed_pretrigger'
+    assert 'triggered_at' not in claim

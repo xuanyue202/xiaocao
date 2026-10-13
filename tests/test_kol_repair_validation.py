@@ -1648,6 +1648,13 @@ def test_repair_validation_accepts_xiaocao_wechat_source_profile(
             "kol_subscription_video_source_run",
             "src/xiaocao/kol/writer_progress.py",
         ),
+        (
+            "provider_contract_error",
+            "cloud_transfer_pretrigger_failed",
+            "cloud_transfer_confirmation",
+            "kol_subscription_video_source_run",
+            "src/xiaocao/kol/subscription_video.py",
+        ),
     ),
 )
 def test_repair_validation_accepts_subscription_video_source_run_profile(
