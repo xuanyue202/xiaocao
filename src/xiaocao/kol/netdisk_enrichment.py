@@ -701,12 +701,15 @@ class NetdiskEnrichmentService:
         target_name: str,
         claim_id: str,
         inspect_only: bool = False,
+        repair_stalled: bool = False,
     ) -> Any:
         if session != _OPENCLI_UPLOAD_TEMPLATE_SESSION:
             raise EnrichmentError(
                 "Baidu Netdisk upload template requires OpenCLI session "
                 f"{_OPENCLI_UPLOAD_TEMPLATE_SESSION}"
             )
+        if repair_stalled and inspect_only:
+            raise EnrichmentError("upload recovery and inspection are separate operations")
         command = [
             *self.opencli_command,
             *(["--profile", profile] if profile else []),
@@ -729,6 +732,7 @@ class NetdiskEnrichmentService:
             "--format",
             "json",
             *(["--inspect-only", "true"] if inspect_only else []),
+            *(["--repair-stalled", "true"] if repair_stalled else []),
         ]
         try:
             return self.runner(
@@ -2908,6 +2912,126 @@ class NetdiskEnrichmentService:
 
     def status(self, job_id: str | None = None) -> dict[str, Any]:
         return self.store.status(job_id)
+
+    def _inspect_stalled_upload(self, current: dict[str, Any]) -> dict[str, Any]:
+        if (not self.use_opencli_upload_template
+            or current.get("status") != "upload_claimed"
+            or not current.get("upload_started_at")
+            or current.get("stalled_upload_repair_claimed_at")):
+            raise EnrichmentError("upload is not eligible for same-queue recovery")
+        result = self._opencli_upload_template_process(
+            session=_OPENCLI_UPLOAD_TEMPLATE_SESSION, profile=None,
+            video_path=Path(current["video_path"]), target_name=current["video_basename"],
+            claim_id=current["job_id"], inspect_only=True,
+        )
+        try:
+            proof, = json.loads(result.stdout)
+            surface = proof["surfaceState"]
+            queue = surface["transferQueue"]
+            row, = surface["targetUiRows"]
+            widths = row["progressWidths"]
+            valid = (result.returncode == 0
+                and proof["claimId"] == current["job_id"]
+                and proof["directory"] == self.netdisk_directory
+                and proof["targetName"] == current["video_basename"]
+                and proof.get("url") == "https://pan.baidu.com/disk/main"
+                and proof.get("status") == "ready_to_upload"
+                and proof.get("uploaded") is False and proof.get("uploadTarget") == ""
+                and type(proof["exactCountBefore"]) is int and proof["exactCountBefore"] == 0
+                and queue.get("complete") is True
+                and all(type(queue.get(key)) is int for key in
+                    ("rowCount", "targetCount", "successfulCount"))
+                and queue.get("rowCount") == 1 and queue.get("targetCount") == 1
+                and queue.get("successfulCount") == 0
+                and surface.get("targetInTransferUi") is True
+                and current["video_basename"] in row["rowText"]
+                and "status-uploading" in row["rowClassName"].split()
+                and widths and all(re.fullmatch(r"0(?:\.0+)?%", width) for width in widths)
+                and re.search(r"(?:^|\n)0B/s(?:$|\n)", row["rowText"])
+                and sum(control.get("title") == "暂停" for control in row["rowControls"]) == 1)
+        except (KeyError, TypeError, ValueError, AttributeError) as exc:
+            raise EnrichmentError("same-queue upload inspection is invalid") from exc
+        if not valid:
+            raise EnrichmentError("upload is not a unique running zero-progress transfer")
+        return {"observed_at": self._time().isoformat(),
+            "video_sha256": current["video_sha256"], "video_size_bytes": current["video_size_bytes"],
+            "row_class": row["rowClassName"], "row_text": row["rowText"], "progress_widths": widths}
+
+    def observe_stalled_upload(self, job_id: str) -> dict[str, Any]:
+        """Persist a fresh, passive observation of one retained running transfer."""
+        current = self.store.latest(job_id)
+        observation = self._inspect_stalled_upload(current)
+        with self.store.job_lock(job_id):
+            latest = self.store.latest(job_id)
+            if (latest.get("status") != "upload_claimed"
+                or latest.get("stalled_upload_repair_claimed_at")
+                or latest.get("video_sha256") != observation["video_sha256"]):
+                raise EnrichmentError("upload changed during recovery inspection")
+            observations = list(latest.get("stalled_upload_observations") or [])[-1:]
+            observations.append(observation)
+            row = {**latest, "event": "netdisk_stalled_upload_observed",
+                "stalled_upload_observations": observations,
+                "updated_at": observation["observed_at"]}
+            self.store.append(row)
+            return row
+
+    def repair_stalled_upload(self, job_id: str, *, repair_authorized: bool = False) -> dict[str, Any]:
+        """One durable pause/readback/continue on the same retained upload row."""
+        if repair_authorized is not True:
+            raise EnrichmentError("same-queue upload repair needs explicit authorization")
+        current = self.store.latest(job_id)
+        observation = self._inspect_stalled_upload(current)
+        prior = (current.get("stalled_upload_observations") or [])
+        try:
+            previous = prior[0]
+            start = datetime.fromisoformat(previous["observed_at"])
+            end = datetime.fromisoformat(observation["observed_at"])
+            valid = (start.tzinfo is not None and end.tzinfo is not None
+                and (end - start).total_seconds() >= 300
+                and previous["video_sha256"] == observation["video_sha256"]
+                and previous["video_size_bytes"] == observation["video_size_bytes"]
+                and previous["progress_widths"] == observation["progress_widths"])
+        except (KeyError, IndexError, TypeError, ValueError) as exc:
+            raise EnrichmentError("upload lacks two bounded stall observations") from exc
+        if not valid:
+            raise EnrichmentError("upload has not remained stalled for five minutes")
+        source = Path(current["video_path"])
+        with source.open("rb") as handle:
+            if (os.fstat(handle.fileno()).st_size != current["video_size_bytes"]
+                or _sha256_handle(handle) != current["video_sha256"]):
+                raise EnrichmentError("upload source changed before same-queue recovery")
+        with self.store.job_lock(job_id):
+            latest = self.store.latest(job_id)
+            if (latest.get("status") != "upload_claimed"
+                or latest.get("stalled_upload_repair_claimed_at")
+                or any(latest.get(key) != current.get(key) for key in
+                    ("video_path", "video_sha256", "video_size_bytes", "video_basename", "upload_started_at"))):
+                raise EnrichmentError("upload changed or recovery claim was consumed")
+            claimed = {**latest, "event": "netdisk_stalled_upload_repair_claimed",
+                "stalled_upload_repair_claimed_at": self._time().isoformat(),
+                "stalled_upload_repair_evidence": [previous, observation]}
+            self.store.append(claimed)
+        result = self._opencli_upload_template_process(
+            session=_OPENCLI_UPLOAD_TEMPLATE_SESSION, profile=None, video_path=source,
+            target_name=current["video_basename"], claim_id=job_id, repair_stalled=True,
+        )
+        try:
+            receipt, = json.loads(result.stdout)
+            valid = (result.returncode == 0 and receipt["status"] == "existing_upload_resumed"
+                and receipt["claimId"] == job_id and receipt["targetName"] == current["video_basename"]
+                and receipt["directory"] == self.netdisk_directory
+                and receipt.get("uploaded") is False
+                and receipt.get("pausedReadback") is True and receipt.get("resumedReadback") is True)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise EnrichmentError("same-queue recovery outcome is uncertain; do not retry") from exc
+        if not valid:
+            raise EnrichmentError("same-queue recovery outcome is uncertain; do not retry")
+        with self.store.job_lock(job_id):
+            latest = self.store.latest(job_id)
+            row = {**latest, "event": "netdisk_stalled_upload_resumed",
+                "stalled_upload_repair_receipt": receipt, "updated_at": self._time().isoformat()}
+            self.store.append(row)
+            return row
 
     def record_capability_failure(
         self,

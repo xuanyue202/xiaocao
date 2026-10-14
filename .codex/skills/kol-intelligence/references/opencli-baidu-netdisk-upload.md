@@ -27,6 +27,20 @@ receipts; compare the same claim/target across observations before calling it st
 Its bounded `rowControls` reports visible control labels/classes in that exact
 row for diagnosis only; it never clicks them or authorizes a retry or resubmission.
 
+For an explicitly authorized repair of a retained, running upload that stays
+at zero progress, use `observe_stalled_upload` to persist its actual adapter
+readback, then `repair_stalled_upload(..., repair_authorized=True)`. The service
+requires another same-target zero-progress readback at least five minutes later,
+unchanged local hash/size, a complete singleton target queue, zero cloud matches,
+and the visible running transfer's pause control. It durably claims one recovery
+before the adapter pauses that row, verifies its paused continue control, continues
+that same row once and verifies running state. It never navigates, attaches a
+file, cancels, reconstructs an uploader or changes the original upload claim.
+This recovery is not called by ordinary sweeps. A consumed claim, uncertain
+pause/continue result, user-paused row, progress, changed source or ambiguous
+queue prohibits retry. Running readback is not cloud acceptance; keep the same
+PTY through the original upload's exact cloud receipt and Handoff.
+
 After an adapter upload claim, ordinary `advance_opencli` polling uses that
 same adapter with `--inspect-only true`. It retains the exact uploader and
 checks the original claim/folder/name without navigation or file attachment.

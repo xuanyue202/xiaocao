@@ -359,6 +359,93 @@ async function activateUploadPage(page) {
   return state;
 }
 
+async function recoverStalledTransfer(page, input, inspection) {
+  const surface = inspection.surfaceState;
+  const row = surface?.targetUiRows?.length === 1 ? surface.targetUiRows[0] : null;
+  if (!surface?.transferQueue?.complete || surface.transferQueue.rowCount !== 1
+      || surface.transferQueue.targetCount !== 1 || surface.transferQueue.successfulCount !== 0
+      || !row?.rowClassName?.split(' ').includes('status-uploading')
+      || !row.progressWidths?.length || !row.progressWidths.every(width => /^0(?:\.0+)?%$/.test(width))
+      || !/(?:^|\n)0B\/s(?:$|\n)/.test(row.rowText || '')) {
+    throw new CommandExecutionError('Same-queue recovery requires one running zero-progress target');
+  }
+  const controlState = async (markTitle = '') => page.evaluate(`(() => {
+    const target = ${JSON.stringify(input.targetName)};
+    const title = ${JSON.stringify(markTitle)};
+    const claim = ${JSON.stringify(input.claimId)};
+    const dir = ${JSON.stringify(input.directory)};
+    const current = new URL(location.href);
+    const query = current.hash.slice(current.hash.indexOf('?') + 1);
+    if (current.origin !== 'https://pan.baidu.com' || current.pathname !== '/disk/main'
+        || new URLSearchParams(query).get('path') !== dir) return null;
+    const visible = node => {
+      const rect = node.getBoundingClientRect(); const style = getComputedStyle(node);
+      return rect.width > 0 && rect.height > 0 && style.display !== 'none'
+        && style.visibility !== 'hidden' && Number(style.opacity) !== 0;
+    };
+    const panels = [...document.querySelectorAll('.uploader-list')];
+    if (panels.length !== 1) return null;
+    if (panels[0].clientHeight <= 0 || panels[0].scrollHeight > panels[0].clientHeight + 2
+        || !(panels[0].innerText || '').includes('仅展示本次上传任务')) return null;
+    const rows = [...panels[0].querySelectorAll('.file-list')];
+    if (rows.length !== 1) return null;
+    const row = rows[0];
+    const names = [...row.querySelectorAll('[title]')].filter(node => node.title === target);
+    if (names.length !== 1 || !visible(names[0])) return null;
+    const controls = [...row.querySelectorAll('[title]')].filter(visible);
+    const pause = controls.filter(node => node.title === '暂停');
+    const resume = controls.filter(node => node.title === '继续' || node.title === '开始');
+    const widths = [...row.querySelectorAll('[style]')].map(node => node.style.width)
+      .filter(width => /^[0-9]+(?:[.][0-9]+)?%$/.test(width));
+    const zero = widths.length > 0 && widths.every(width => /^0(?:[.]0+)?%$/.test(width))
+      && (row.innerText || '').split(String.fromCharCode(10)).includes('0B/s');
+    const paused = row.classList.contains('status-pause') || row.classList.contains('status-paused');
+    const failed = row.classList.contains('status-error') || row.classList.contains('status-failed')
+      || row.classList.contains('status-success');
+    if (title) {
+      if (title === '暂停' && (!zero || failed)) return null;
+      if (title !== '暂停' && (!paused || failed)) return null;
+      const match = controls.filter(node => node.title === title);
+      if (match.length !== 1) return null;
+      row.querySelectorAll('[data-xiaocao-transfer-recovery]').forEach(node =>
+        node.removeAttribute('data-xiaocao-transfer-recovery'));
+      match[0].setAttribute('data-xiaocao-transfer-recovery', claim);
+    }
+    return {pauseCount: pause.length, resumeCount: resume.length,
+      resumeTitle: resume.length === 1 ? resume[0].title : '',
+      uploading: row.classList.contains('status-uploading'), paused, failed, zero, marked: !!title};
+  })()`);
+  const pause = await controlState('暂停');
+  if (!pause?.marked || pause.pauseCount !== 1 || pause.resumeCount !== 0 || !pause.uploading
+      || !pause.zero || pause.paused || pause.failed) {
+    throw new CommandExecutionError('Exact running upload pause control is unavailable');
+  }
+  const selector = `[data-xiaocao-transfer-recovery="${input.claimId}"]`;
+  await uploadStage(input, 'repair_pause', () => page.click(selector));
+  const waitState = async (paused) => {
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline) {
+      const state = await controlState();
+      if (state && (paused
+        ? state.pauseCount === 0 && state.resumeCount === 1 && !state.uploading && state.paused && !state.failed
+        : state.pauseCount === 1 && state.resumeCount === 0 && state.uploading && !state.paused && !state.failed)) return state;
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
+    throw new CommandExecutionError('Same-queue recovery state did not match; do not repeat');
+  };
+  const paused = await uploadStage(input, 'repair_pause_readback', () => waitState(true));
+  const resume = await controlState(paused.resumeTitle);
+  if (!resume?.marked || resume.resumeCount !== 1 || resume.pauseCount !== 0 || resume.uploading
+      || !resume.paused || resume.failed) {
+    throw new CommandExecutionError('Exact paused upload continue control is unavailable');
+  }
+  await uploadStage(input, 'repair_resume', () => page.click(selector));
+  await uploadStage(input, 'repair_resume_readback', () => waitState(false));
+  return [{status: 'existing_upload_resumed', directory: input.directory,
+    targetName: input.targetName, claimId: input.claimId, uploaded: false,
+    pausedReadback: true, resumedReadback: true}];
+}
+
 cli({
   site: 'baidu-netdisk',
   name: 'upload',
@@ -377,6 +464,7 @@ cli({
     { name: 'target-name', required: true, help: 'Exact destination basename; must equal the local basename' },
     { name: 'claim-id', required: true, help: 'Durable upload claim identifier from the caller ledger' },
     { name: 'inspect-only', type: 'boolean', default: false, help: 'Stop after exact folder/name inspection without attaching a file' },
+    { name: 'repair-stalled', type: 'boolean', default: false, help: 'One caller-claimed pause/readback/continue of the retained stalled transfer; never attach a file' },
     { name: 'activate-only', type: 'boolean', default: false, help: 'Check native page activation without attaching a file' },
     { name: 'timeout', type: 'int', default: 60, help: 'Transport deadline in seconds; shared with the runtime deadline' },
   ],
@@ -392,7 +480,18 @@ cli({
   ],
   func: async (page, kwargs) => {
     const input = normalizeInput(kwargs);
-    const inspection = await inspectTarget(page, input, {retainPage: kwargs['inspect-only'] === true});
+    if (kwargs['repair-stalled'] === true && (kwargs['inspect-only'] === true || kwargs['activate-only'] === true)) {
+      throw new ArgumentError('Same-queue repair cannot be combined with inspection or activation');
+    }
+    const inspection = await inspectTarget(page, input, {
+      retainPage: kwargs['inspect-only'] === true || kwargs['repair-stalled'] === true,
+    });
+    if (kwargs['repair-stalled'] === true) {
+      if (inspection.exactCount !== 0) {
+        throw new CommandExecutionError('Cloud target already exists; do not recover its upload');
+      }
+      return recoverStalledTransfer(page, input, inspection);
+    }
     if (inspection.exactCount === 1) {
       return [{
         status: 'already_present',
