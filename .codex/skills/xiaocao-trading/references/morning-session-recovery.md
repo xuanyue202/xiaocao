@@ -21,8 +21,9 @@ Founder APP restart, saved trade-account login and routine visual CAPTCHA.
 3. Read a fresh CAPTCHA image, recognize exactly four digits, enter only its
    unique field and read back the value. Run `--phase claim-login`, then press
    the unique Login once. A possible confirmation never repeats.
-4. Fresh same-account native readback; run `--phase finish`. It restores ordinary
-   trade capability through read-only navigation, verifies readiness and signals
+4. Navigate ordinary trade, then fresh same-account native readback; run `--phase finish`. It restores ordinary
+   trade capability through read-only navigation, verifies readiness before consuming
+   the finish claim and signals
    the original request once. A signal is not the original runner's ready result;
    consume its next event. Budget, order claims and UNKNOWN records remain intact.
 
@@ -50,3 +51,9 @@ For explicitly user-authorized authentication-only daytime validation, use
 Python and native dispatch restrict this mode to authentication and read-only
 navigation/query; it grants no order preparation, submission, confirmation or
 cancellation authority and retains the shared APP session lease.
+
+`ordinary_trade_readback_required` is read-only pending navigation, not a new
+credential attempt: preserve the Login/password/reset claims, navigate the same
+account ordinary trade page under the APP lease, and re-run only finish within
+the original deadline. Wrong account, locked screen or rejected/unknown
+credential evidence remains blocked; never replay fill, Login or restart.

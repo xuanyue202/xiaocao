@@ -914,6 +914,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
         target: str,
         expected_current: str = "any",
         logical_account_id: str = "primary",
+        require_order_capability: bool = False,
         **_kwargs: Any,
     ) -> dict[str, Any]:
         if str(target).lower() != "live":
@@ -922,9 +923,11 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             raise FounderscNativeAXError("NATIVE_APP_ENVIRONMENT_EXPECTATION_MISMATCH")
         if logical_account_id != "primary":
             raise FounderscNativeAXError("NATIVE_APP_LOGICAL_ACCOUNT_MISMATCH")
-        ready = self.ensure_native_ready(unlock_once=True)
+        ready = self.ensure_native_ready(unlock_once=True,
+            require_order_capability=require_order_capability)
         return {
             **ready,
+            "native_readiness": ready,
             "status": "environment_ready",
             "environment": "live",
             "environment_proof_complete": True,

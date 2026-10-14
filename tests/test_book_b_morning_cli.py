@@ -74,6 +74,7 @@ def test_morning_rejects_unbound_task_before_lock_or_notices(monkeypatch, capsys
     assert result["reason"] == "AUTOMATION_RUNTIME_IDENTITY_UNPROVEN"
 
 
+@pytest.mark.app_simulation
 @pytest.mark.parametrize("action", [None, "preflight_repair", "resume", "reconcile", "close", "capital_unavailable"])
 def test_morning_entry_dispatches_without_reproducing_recovery_candidates(tmp_path, monkeypatch, capsys, action):
     repair = action == "preflight_repair"
@@ -90,11 +91,11 @@ def test_morning_entry_dispatches_without_reproducing_recovery_candidates(tmp_pa
         monkeypatch.setattr(cli, "DependencyRecovery", create_recovery)
     def account_call(name, **kwargs):
         calls.append(name)
-        if repair and name == "login" and calls.count("login") == 1:
+        if repair and name == "environment" and calls.count("environment") == 1:
             raise RuntimeError("NATIVE_AX_ACCOUNT_SURFACE_NOT_READY")
         if "expected_fund_account_fingerprint" in kwargs:
             assert kwargs["expected_fund_account_fingerprint"] == "123******890"
-        return {"status": "ready"}
+        return {"status": "ready", "native_readiness": {"status": "native_trade_ready"}}
     broker = SimpleNamespace(
         ensure_login=lambda: account_call("login"),
         ensure_native_ready=lambda **kw: account_call("ready", **kw),
@@ -161,8 +162,8 @@ def test_morning_entry_dispatches_without_reproducing_recovery_candidates(tmp_pa
     lines = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
     result = lines[-1]
     if repair:
-        assert calls.count("login") == 2 and calls.count("execute") == 1
-        assert [line.get("event") for line in lines[:-1]] == ["dependency_recovery_wait", "dependency_recovered"]
+        assert calls.count("environment") == 3 and calls.count("login") == 0 and calls.count("execute") == 1
+        assert [line.get("event") for line in lines if str(line.get("event", "")).startswith("dependency_")] == ["dependency_recovery_wait", "dependency_recovered"]
         assert result["runner_identity"]["automation_id"] == "xiaocao-book-b-live-morning"
     if action == "capital_unavailable":
         assert result["reason"] == "LIVE_CAPITAL_RUNTIME_NOT_READY" and not calls

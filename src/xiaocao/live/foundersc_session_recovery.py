@@ -159,9 +159,19 @@ def recover_session(request_path: Path, *, native, phase: str,
             if record["state"] not in {"launched", "captcha_waiting", "login_confirmation_claimed"}:
                 raise ValueError("SESSION_RESET_FINISH_ALREADY_CLAIMED")
             confirmed_login = record["state"] == "login_confirmation_claimed"
-            save("finish_claimed")
             verify_owner()
             payload = native.probe().as_dict()
+            if (payload.get("trade_account_fingerprint") != fingerprint
+                    or payload.get("trade_account_fingerprint_count") != 1
+                    or payload.get("screen_locked") is not False
+                    or payload.get("unlock_failure_category") is not None):
+                raise ValueError("SESSION_RESET_FINISH_ACCOUNT_UNPROVEN")
+            if payload.get("surface_state") not in {"trade_ready", "authentication_required"}:
+                # Read-only pending proof does not consume finish or replay Login.
+                return {"status": "ordinary_trade_readback_required",
+                    "reset_path": str(reset_path), "state": record["state"],
+                    "next_action": "navigate_same_account_ordinary_trade_then_finish",
+                    "preparation_deadline": deadline.isoformat()}
             if confirmed_login and payload.get("surface_state") == "authentication_required":
                 # A newly authenticated session can auto-lock before the
                 # ordinary trade page is opened. This is a separate unlock,
@@ -187,7 +197,9 @@ def recover_session(request_path: Path, *, native, phase: str,
                         or (unlocked.get("action") or {}).get("unlock_path_proven") is not True):
                     raise ValueError("SESSION_RESET_NEW_SESSION_UNLOCK_UNPROVEN")
             # A manual same-account recovery can also finish the one request.
-            adapter.ensure_native_ready(require_order_capability=True, unlock_once=False)
+            ready = adapter.ensure_native_ready(require_order_capability=True, unlock_once=False)
+            verify_owner()
+            save("finish_claimed", readiness_sha256=_hash(ready))
             if now() >= deadline:
                 raise ValueError("SESSION_RESET_ORIGINAL_DEADLINE_EXPIRED")
             save("ready", verified_at=now().isoformat())

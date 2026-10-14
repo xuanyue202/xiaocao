@@ -221,3 +221,17 @@ The reading delta binds that base hash, carries every changed record and
 removed ID, and retains full current coverage. It is not an AI summary or a
 substitute for reading the base. A new worker must receive both the base and
 delta. Source publication continues to use the full current `context_path`.
+
+## Morning input loading and final dispatch
+
+Apply Contract §1d: original runner emits a cache-only, hash-bound all-eligible
+input capsule. Before 09:20 one explicitly routed Sol xhigh worker loads that
+projection and rules; record full viewpoint-ID coverage and actual accepted
+dispatch. This stage has authority=0 and performs no source summary, opening
+draft or trading judgment. At the exact frozen review request, immediately reuse
+the warm worker; the runner's fingerprint/coverage/rules check invalidates stale
+loading. Changed inputs require complete fresh compact loading, no keyword or
+latest-N truncation. Budget is total remaining model + source verification +
+independent parent acceptance + formal publication time, capped by the original
+support deadline. All §2a verification/publication gates still apply. Missing
+quality/loading/routing or late unpublished drafts degrade explicitly to baseline.

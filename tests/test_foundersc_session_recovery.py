@@ -201,3 +201,18 @@ def test_new_authenticated_session_autolock_is_a_separate_claim(tmp_path, monkey
         assert step(path, native, "finish")["status"] == "account_ready_recheck_signalled"
         assert native.actions == ["terminate", "fill", "new-session-unlock"]
         with pytest.raises(ValueError, match="ALREADY_CLAIMED"): step(path, native, "finish")
+
+
+def test_premature_finish_keeps_login_claim_for_ordinary_readiness(tmp_path, monkeypatch):
+    path, health_path = fixture(tmp_path, monkeypatch)
+    native = Native()
+    step(path, native, "restart")
+    step(path, native, "fill")
+    step(path, native, "claim-login")
+    native.payload["surface_state"] = "query_only"
+    result = step(path, native, "finish")
+    assert result["status"] == "ordinary_trade_readback_required"
+    record = json.loads(path.with_suffix(".session-reset.json").read_text())
+    assert record["state"] == "login_confirmation_claimed"
+    assert native.actions == ["terminate", "fill"]
+    assert json.loads(health_path.read_text())["state"] == "attempt_claimed"

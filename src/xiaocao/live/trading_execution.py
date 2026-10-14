@@ -1400,6 +1400,26 @@ class TradingExecution:
         ):
             return self._execute_locked(plan, broker)
 
+    def reconcile_existing(self, plan: TradePlan, broker: BrokerAdapter | None = None) -> ExecutionReceipt:
+        """Observe an already claimed order; this entry cannot prepare/submit."""
+        broker = broker or self.broker
+        if broker is None:
+            raise ValueError("a broker adapter must be configured before reconcile")
+        with self._account_writer_lock(plan.logical_account_id), (
+            broker.session() if callable(getattr(broker, "session", None)) else nullcontext()
+        ):
+            previous = self.store.current(plan.plan_id)
+            if (previous is None or previous.plan_hash != plan.plan_hash or not previous.submit_claim_id
+                    or previous.state not in TERMINAL_STATES | {
+                        ExecutionState.CLAIMED, ExecutionState.UNKNOWN, ExecutionState.SUBMITTED,
+                        ExecutionState.ACKNOWLEDGED, ExecutionState.PARTIAL, ExecutionState.RECONCILING}):
+                raise ValueError("RECONCILE_EXISTING_SUBMIT_CLAIM_REQUIRED")
+            if previous.cancel_claim_id:
+                return self._reconcile_cancel_claim(plan, broker, previous)
+            if previous.state in TERMINAL_STATES:
+                return self._repair_terminal_ownership(plan, previous)
+            return self._reconcile(plan, broker, previous, observation_only=True)
+
     def cancel(self, plan: TradePlan, broker: BrokerAdapter | None = None) -> ExecutionReceipt:
         """Cancel one known broker order once, then trust only reconciliation."""
         broker = broker or self.broker
@@ -2295,7 +2315,8 @@ class TradingExecution:
             details={"claim_id": claim_id},
         )
 
-    def _reconcile(self, plan: TradePlan, broker: BrokerAdapter, previous: ExecutionReceipt) -> ExecutionReceipt:
+    def _reconcile(self, plan: TradePlan, broker: BrokerAdapter, previous: ExecutionReceipt,
+                   *, observation_only: bool = False) -> ExecutionReceipt:
         if previous.cancel_claim_id:
             return self._reconcile_cancel_claim(plan, broker, previous)
         reconciling = self._record(
@@ -2373,7 +2394,7 @@ class TradingExecution:
             self._receipt_from_broker(plan, reconciling, broker_receipt, state, plan.shares),
             kind="reconcile_receipt",
         )
-        if state != ExecutionState.PARTIAL or reconciled.remaining_shares <= 0:
+        if observation_only or state != ExecutionState.PARTIAL or reconciled.remaining_shares <= 0:
             return reconciled
         if reconciled.submit_chain_uncertain:
             return self._record(

@@ -450,6 +450,42 @@ The 09:00 readiness surface is deliberately small:
    delivered incident, and prints delivery readback; `unproven` or missing
    transport is still a blocker to report, never human acknowledgement.
 
+The original runner emits `book_b_morning_checklist` with its dated owner-bound
+`checklist_path`. Read it with `scripts/morning_checklist.py --checklist <path>`;
+passed/recovered need evidence, stale is distinct, and pending is never green.
+It is local audit, not execution authority. Record the one market-auth/transport
+checks using the same script's `--item market_auth|transport --evidence <saved-proof>`
+under this Automation/Thread; choose recovered/degraded/blocked accurately.
+Record delivery and post-business accounting/history separately. A saved operator
+attestation is labelled as such; do not infer current API/account proof from it.
+
+On `book_b_kol_inputs_prepared`, use the runner's exact input/projection paths:
+do not run a second projection build. Before 09:20 dispatch one §2a Sol xhigh
+worker to load every eligible viewpoint and the hash-bound rules only. No source
+summary, conditional opening draft or early current-applicability judgment.
+Persist the actual accepted routing/worker ID plus `loaded_viewpoint_ids` under
+`output/live/kol_policy/analysis/`; then acknowledge full coverage with
+`CODEX_AUTOMATION_ID=xiaocao-book-b-live-morning PYTHONPATH=src .venv/bin/python
+scripts/morning_checklist.py --checklist <path> --input <exact input_path>
+--loaded <worker coverage JSON>`. Do not attest before the worker has loaded.
+Worker JSON contains `worker_id`, `loaded_viewpoint_ids` and `dispatch_path`.
+The dispatch JSON records the actually accepted `worker_id`, `accepted=true`,
+`model=gpt-6-sol`, `reasoning_effort=xhigh`, aware `dispatched_at`, exact input
+`input_sha256` and capsule `binding`; save the actual accepted tool arguments
+and return in `tool_arguments` / `tool_result` alongside it (`fork_turns=none`, returned `task_name` equals worker_id). The acknowledgement binds both receipt paths/hashes. Keep the same worker
+available for the original frozen review. Late/missing load immediately defers new model work; reuse only an already independently valid published policy under existing gates, otherwise baseline.
+
+The frozen review request includes one fresh cache-only projection/fingerprint
+check, changed-source flag, valid coverage/rules binding and warm worker ID.
+Read its brief immediately and dispatch the exact request to that worker before
+other supporting reads. If inputs changed, reload the new complete compact
+projection; do not re-analyse source semantics. Save dispatch time/arguments and
+actual remaining seconds. `dispatch_budget` includes model, citation verification,
+independent parent review and publication together; it is not model-only time.
+Stop support waits at the existing cutoff, do not extend freshness/backdate or
+publish a late draft. Source quality gaps and unavailable routing use baseline.
+The runner records successful boundary heartbeat observations independently.
+
 The 09:24 native session recheck and 09:25 account/quote/market guards remain
 fresh action-time checks; a 09:00 green status cannot pre-authorize them.
 
@@ -500,7 +536,7 @@ before final review. Use that exact request; do not duplicate the account read.
 Send only a changed `source_fingerprint` and current applicability facts. Never invent
 an opening fact or publish an authority=0 projection as a current decision.
 
-The runner holds one account fence across full-batch allocation and serialized submissions. A fully mapped, chain-certain ACK/PARTIAL allows the next reserved order; UNKNOWN or incomplete identity stops new writes. Fill polling starts after the submission pass. Inspect submission_observations for actual counter-acceptance proof and deadline performance; prepare completion is not submission. Preserve APP raw order states: queued is not exchange-accepted and neither is a fill. If orders remain open, the original task owns exact-plan reconciliation until terminal or an explicit recorded checkpoint handoff; never leave a bare unresolved receipt without naming the pending orders and next owner.
+The runner holds one account fence across full-batch allocation and serialized submissions. A fully mapped, chain-certain ACK/PARTIAL allows the next reserved order; UNKNOWN or incomplete identity stops new writes. After the submission pass, the original runner remains in `awaiting_fill`, releases batch leases and uses only the claimed-plan readback port. Chain-certain ACK/PARTIAL waits quietly until 09:30; then exact reads are bounded by the original absolute preparation deadline. Durable claims/reservations and every UNKNOWN fence remain. At exhaustion record exact pending orders and the original owner; do not claim an accepted handoff or extend the deadline. Normal queued ACK is waiting, not failure. Fill polling starts after the submission pass. Inspect submission_observations for actual counter-acceptance proof and deadline performance; prepare completion is not submission. Preserve APP raw order states: queued is not exchange-accepted and neither is a fill. If orders remain open, the original task owns exact-plan reconciliation until terminal or an explicit recorded checkpoint handoff; never leave a bare unresolved receipt without naming the pending orders and next owner.
 
 
 ### Bounded counter-submission hot path

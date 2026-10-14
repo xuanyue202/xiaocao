@@ -2894,3 +2894,29 @@ def test_sell_accepts_exact_positive_odd_lot_but_buy_still_requires_board_lot() 
     )
     assert live_sell.shares == 37
     assert live_sell.validation_error() is None
+
+
+@pytest.mark.app_simulation
+def test_reconcile_existing_partial_cannot_prepare_cancel_or_resubmit(tmp_path):
+    broker = FakeBroker(reconcile=[BrokerReceipt(status=BrokerStatus.PARTIAL,
+        order_id="o-1", strategy_id="s-1", filled_shares=100, remaining_shares=100,
+        retry_allowed=True, conclusive=True)])
+    execution = TradingExecution(broker=broker, store=InMemoryExecutionStore(tmp_path / "events.jsonl"))
+    plan = _plan()
+    before = execution.execute(plan)
+    counts = (broker.prepare_calls, broker.submit_calls, broker.cancel_calls, broker.probe_calls)
+    observed = execution.reconcile_existing(plan)
+    assert observed.state == ExecutionState.PARTIAL
+    assert observed.submit_claim_id == before.submit_claim_id
+    assert observed.filled_shares == 100
+    assert (broker.prepare_calls, broker.submit_calls, broker.cancel_calls, broker.probe_calls) == counts
+    assert broker.reconcile_calls == 1
+
+
+@pytest.mark.app_simulation
+def test_reconcile_existing_unclaimed_plan_cannot_start_execution(tmp_path):
+    broker = FakeBroker()
+    execution = TradingExecution(broker=broker, store=InMemoryExecutionStore(tmp_path / "events.jsonl"))
+    with pytest.raises(ValueError, match="SUBMIT_CLAIM_REQUIRED"):
+        execution.reconcile_existing(_plan())
+    assert broker.prepare_calls == broker.submit_calls == broker.cancel_calls == broker.reconcile_calls == 0

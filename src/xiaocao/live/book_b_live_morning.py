@@ -122,6 +122,7 @@ class BookBLiveMorningReceipt:
     preparation_budget_seconds: float | None = None
     preparation_deadline: str | None = None
     deferred_prior_day_sell_plan_ids: tuple[str, ...] = ()
+    checklist_path: str | None = None
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -1775,12 +1776,15 @@ def run_book_b_live_morning(
     prepare_only: Callable[[TradePlan], BrokerReceipt] | None = None,
     wait_for_submit_window: Callable[[datetime], None] | None = None,
     wait_for_reconcile: Callable[[], None] | None = None,
+    await_order_results: Callable[[list[TradePlan], list[ExecutionReceipt]], None] | None = None,
     now: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     risk_provider: Callable[[datetime], AccountRiskReceipt] | None = None,
     account_snapshot_provider: Callable[[], dict] | None = None,
     trading_dates_provider: Callable[[datetime], list[str]] | None = None,
     review_rendezvous: Callable[[dict], dict] | None = None,
     on_progress: Callable[[str, datetime], None] | None = None,
+    on_check: Callable[[str, str, dict], None] | None = None,
+    on_order_progress: Callable[[list[ExecutionReceipt]], None] | None = None,
 ) -> BookBLiveMorningReceipt:
     """Consume one dated freeze and advance immutable live plans exactly once.
 
@@ -1850,6 +1854,8 @@ def run_book_b_live_morning(
             snapshot_cache = None
 
     def observe_submission(plan: TradePlan, observed: ExecutionReceipt) -> None:
+        if on_order_progress:
+            on_order_progress(execution_receipts)
         if plan.plan_id in submission_observations or not _mapped_batch_order(plan, observed):
             return
         clock = now().astimezone(ZoneInfo("Asia/Shanghai"))
@@ -1951,6 +1957,8 @@ def run_book_b_live_morning(
             )
             dated_freeze_receipt = _assert_dated_freeze(config, dated_freeze_receipt)
             frozen_rows = _read_completed_freeze(config, dated_freeze_receipt)
+            if on_check:
+                on_check("original_bundle", "passed", {**dated_freeze_receipt, "validated_row_count": len(frozen_rows)})
             if config.resume_plan_id:
                 frozen_rows = [row for row in frozen_rows
                                if f"book-b:{config.trade_date}:{row.get('code')}:BUY" == config.resume_plan_id]
@@ -1992,6 +2000,9 @@ def run_book_b_live_morning(
                         allocation = _load_allocation(config, allocation_payload)
                         _write_json_atomic(config.allocation_facts_path, allocation_payload)
                         review_risk = support()[1]
+                        if on_check:
+                            on_check("account_risk", "blocked" if review_risk.deploy_factor <= 0 else "passed", {"allocation_capsule_sha256": allocation_payload["allocation_capsule_sha256"],
+                                "account_risk": asdict(review_risk)})
                         current = now().astimezone(ZoneInfo("Asia/Shanghai"))
                         review_requested_at = current
                         if (current.hour, current.minute) < (11, 30):
@@ -2033,6 +2044,8 @@ def run_book_b_live_morning(
                         review_receipt = (review_rendezvous(request) if review_risk.deploy_factor > 0
                             else {"status": "deferred", "reason": "ACCOUNT_RISK_BLOCKS_NEW_BUY",
                                   "request_sha256": digest(request), "supporting_health": "degraded"})
+                        if on_check and review_risk.deploy_factor <= 0:
+                            on_check("kol_decision", "not_applicable", {"reason": "ACCOUNT_RISK_BLOCKS_NEW_BUY"})
                         if not isinstance(review_receipt, dict):
                             raise ValueError("LIVE_REVIEW_RENDEZVOUS_RECEIPT_INVALID")
                         if now() >= deadline:
@@ -2135,7 +2148,14 @@ def run_book_b_live_morning(
                         receipts=execution_receipts, wait=wait_for_reconcile,
                         on_observation=observe_submission,
                         submission_scope=reserved_submission_scope if submission_scope else None,
+                        post_submit_reconcile_rounds=0 if await_order_results else 3,
                     )
+                    if await_order_results and execution_receipts:
+                        # Reservations/claims remain durable; no APP or account
+                        # batch lease is held while resting orders wait.
+                        batch_fence.close()
+                        enter("awaiting_fill")
+                        await_order_results(execution_plans, execution_receipts)
                     stage_times["batch_observed"] = now().isoformat()
                     status, reason = _rollup(execution_receipts)
                     if not execution_receipts:

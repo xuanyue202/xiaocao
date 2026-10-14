@@ -88,11 +88,22 @@ def message(kind: str, trade_date: str, facts: dict) -> tuple[str, str]:
     preflight = facts.get("failed_stage") == "preflight"
     # Historical reconciliation is reported separately from today's outcome.
     terminal = status in {"completed", "no_action", "skipped"} and not preflight
-    title = "小草早盘：执行结果" if terminal else "小草早盘：执行受阻"
+    working = (status in {"pending", "unresolved", "blocked"} and not facts.get("failed_stage")
+        and bool(orders) and all(row.get("state") in {"acknowledged", "partial"}
+            and row.get("broker_order_id") and row.get("submit_chain_uncertain") is False
+            and row.get("cancel_chain_uncertain") is False for row in orders))
+    title = "小草早盘：等待成交" if working else "小草早盘：执行结果" if terminal else "小草早盘：执行受阻"
     lines = [f"{trade_date} APP 仿真"]
     if kind == "golden-window":
         title = "小草早盘：执行仍未确认"
-        lines.append("结果：09:30 尚未取得完整交易回执，委托和成交数量暂未证明。")
+        lines.append("结果：09:30 尚未取得全部委托终态；当前已知情况如下。" if orders else
+                     "结果：09:30 尚未取得完整交易回执，委托和成交数量暂未证明。")
+        lines.extend(_order_line(row) for row in orders)
+        if pending:
+            lines.append(f"另有 {len(pending)} 笔历史委托待核对：")
+            lines.extend(_order_line(row) for row in pending)
+        if facts.get("pending_evidence_unproven"):
+            lines.append("历史委托证据暂无法读取，未决数量尚未证明。")
         lines.append("系统继续处理，确认结果后再通知；暂不需要你操作。")
     else:
         if preflight:
@@ -101,7 +112,9 @@ def message(kind: str, trade_date: str, facts: dict) -> tuple[str, str]:
             lines.append(f"结果：本次 {len(orders)} 笔委托；逐单确认情况如下。")
         else:
             lines.append("结果：本次没有新增买入。")
-        if not ok or not orders:
+        if working:
+            lines.append("原因：柜台已收单，原任务继续核对成交；无需重报委托。")
+        elif not ok or not orders:
             lines.append(f"原因：{_cause(facts.get('reason'))}")
         lines.extend(_order_line(row) for row in orders)
         if pending:
@@ -167,6 +180,8 @@ class MorningNotifications:
         self.timer = None
         self.terminal = threading.Event()
         self.on_delivery = on_delivery
+        self.progress_lock = threading.Lock()
+        self.progress_facts = {}
 
     def _enqueue(self, path):
         future = self.pool.submit(self.send, path)
@@ -187,11 +202,18 @@ class MorningNotifications:
         if 0 < remaining <= 1800:
             def checkpoint():
                 if not self.terminal.is_set():
-                    self.publish("golden-window", {"status": "pending",
+                    with self.progress_lock:
+                        facts = dict(self.progress_facts)
+                    self.publish("golden-window", {**facts, "status": "pending",
                         "reason": "GOLDEN_WINDOW_TERMINAL_NOT_PROVEN"})
             self.timer = timer_factory(remaining, checkpoint)
             self.timer.daemon = True
             self.timer.start()
+
+    def update_progress(self, facts: dict):
+        """Local only; the existing 09:30 timer owns any pending notice."""
+        with self.progress_lock:
+            self.progress_facts = dict(facts)
 
     def publish(self, kind: str, facts: dict | None = None):
         if kind == "result":

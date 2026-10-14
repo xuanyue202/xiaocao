@@ -27,7 +27,7 @@ def review_brief(request: dict) -> dict:
             'request_id', 'request_sha256', 'requested_at', 'entry_deadline',
             'freeze_path', 'freeze_sha256', 'strategy_sha', 'trade_date',
             'allocation_facts_path', 'allocation_capsule_sha256',
-            'account_facts', 'account_risk',
+            'account_facts', 'account_risk', 'kol_inputs', 'dispatch_budget',
         )},
         'review_deadline': deadline.isoformat(),
         'candidates': [{k: row[k] for k in _CANDIDATE_FIELDS if k in row}
@@ -42,7 +42,8 @@ def review_notice(request: dict, request_path: Path, receipt_path: Path, brief_p
             'request_id': request['request_id'], 'request_sha256': request['request_sha256'],
             'request_path': str(request_path), 'receipt_path': str(receipt_path),
             'brief_path': str(brief_path), 'review_deadline': brief['review_deadline'],
-            'candidate_count': len(brief['candidates'])}
+            'candidate_count': len(brief['candidates']),
+            'kol_inputs': request.get('kol_inputs'), 'dispatch_budget': request.get('dispatch_budget')}
 
 
 def dependency_user_action(reason: object, health: dict | None = None) -> dict:
@@ -99,7 +100,8 @@ def _compact_order(row: dict) -> dict:
     return result
 
 
-def terminal_notice(payload: dict, receipt_path: Path, *, include_durable_pending=True) -> dict:
+def terminal_notice(payload: dict, receipt_path: Path, *, include_durable_pending=True,
+                    include_incidents=True) -> dict:
     receipts = list(payload.get('execution_receipts', []))
     reconciliations = [*payload.get('open_plan_reconciliations', []),
                        *payload.get('prior_reconciliations', [])]
@@ -136,7 +138,7 @@ def terminal_notice(payload: dict, receipt_path: Path, *, include_durable_pendin
             'user_action_required': payload.get('user_action_required') is True or action.get('required') is True,
             'user_action': action, 'pending_evidence_unproven': payload.get('pending_evidence_unproven', False),
             'pending_orders': [_compact_order(r) for r in pending],
-            'incident_notifications': _incident_notifications(receipt_path, receipts + pending),
+            'incident_notifications': _incident_notifications(receipt_path, receipts + pending) if include_incidents else [],
             'receipt_path': str(receipt_path.resolve()),
             'stage_times': payload.get('stage_times', {}),
             'orders': [_compact_order(r) for r in receipts],
