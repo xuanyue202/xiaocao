@@ -65,7 +65,11 @@ def _output_signals(output: object) -> dict:
         state = "brand_window_observed"
     else:
         state = "unclassified"
+    error_code = next((code for code in (
+        "noWindowsAvailable", "windowNotFoundAtPosition", "AXError.notImplemented",
+    ) if code in text), None)
     return {"state": state, "text_sha256": _sha(text.encode()),
+            "reported_error_code": error_code,
             "image_sha256": images,
             "output_sha256": _sha(json.dumps(output, ensure_ascii=False,
                                               sort_keys=True).encode())}
@@ -143,6 +147,7 @@ def inspect_trace(
         "empty_window_disabled_chat", "security_relogin",
     }), None)
     security = next((c for c in observations if c.get("state") == "security_relogin"), None)
+    tool_error = next((c for c in observations if c.get("reported_error_code")), None)
     prior = [c["call_id"] for c in ordered if c["kind"] != "native_observation" and
              (abnormal is None or _time(c["requested_at"]) <= _time(abnormal["completed_at"]))]
     return {
@@ -152,6 +157,7 @@ def inspect_trace(
         "calls": ordered, "findings": {
             "first_abnormal_call_id": abnormal["call_id"] if abnormal else None,
             "first_security_text_call_id": security["call_id"] if security else None,
+            "first_tool_error_call_id": tool_error["call_id"] if tool_error else None,
             "preceding_effect_call_ids": prior,
             "pending_call_ids": [c["call_id"] for c in ordered if c["completion"] == "pending"],
             "root_trigger_proven": False,

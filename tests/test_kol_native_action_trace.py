@@ -82,6 +82,20 @@ def test_collects_actual_freeform_environment_checkpoint_shape():
     assert "private command" not in json.dumps(result)
 
 
+def test_window_input_rejection_is_not_security_or_success():
+    source = journal(
+        call("input", "// KOL_ACTION:B1_COURSE_BUTTON\nawait wechat.click([414,410]);"),
+        output("input", "Computer Use server error -10005: noWindowsAvailable"),
+        call("readback", "await wechat.getAXStateAndScreenshot();"),
+        output("readback", 'There has been no change for Window: "草料二维码".'),
+    )
+    result = inspect(source)
+    assert result["calls"][0]["reported_error_code"] == "noWindowsAvailable"
+    assert result["findings"]["first_tool_error_call_id"] == "input"
+    assert result["findings"]["first_security_text_call_id"] is None
+    assert result["findings"]["root_trigger_proven"] is False
+
+
 def test_hashes_images_and_sensitive_payloads_without_exporting_them():
     frame = b"private screen bytes"
     result_event = output("input", 'Window: "草料二维码"; personal chat text')
