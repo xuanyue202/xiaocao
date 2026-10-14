@@ -313,7 +313,8 @@ lists enrich asynchronously with an incremental cache; they cannot bind a source
 
    **本轮输入上限：** 商户唤起一次；有课程口令门时按钮/输入框/确定各点击一次、
    `typeText("666")` 一次，仅 W4R 前置证据齐备时另补缺失后缀一次；
-   未自动起播才增加 Play 点击一次；课程关闭提交一次。
+   未自动起播才增加 Play 点击一次；课程语义关闭提交一次，品牌入口仅在桥接
+   B4R 的无效关闭证据齐备时另允许一次当前截图圆形关闭控件点击。
    同意页另按 C1–C3，勾选和提交各最多一次。
    这是上限而非配额，已满足的步骤必须跳过。允许的微信工具动作仅为表内
    `getApp`、`getAXState`、`getAXStateAndScreenshot`、目标 `click`、`typeText("666")`、

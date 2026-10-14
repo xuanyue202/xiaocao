@@ -111,6 +111,7 @@ with the indicated observation; no historical coordinates or blind input.
 | B2 | “即将打开‘见势擒龙团’小程序”, with unique “允许” | `await wechat.click(allowButton); await wechat.getAXStateAndScreenshot()` | Require exact brand course; this normal navigation confirmation is already in capture scope |
 | B3 | Brand/course visible | Follow native W1–W6 only for a visible password/Play gate; otherwise inspect the same singleton candidate | Bind the post-arm finite replay to the original source; liveplay/warm-up are not acceptance |
 | B4a | Exact branded course/title verified; its finite replay observed, or its waiting/live state established; no unrelated tabs/windows would be closed | From fresh AX click File; read AX, then click its unique enabled `关闭全部标签页` (`performClose:`) once and read `getAXStateAndScreenshot()` | Require the exact course to disappear; menu-click success alone is not closure |
+| B4R | B4a returned without an input error, but a fresh Window menu still lists the same branded course; cancel that menu, then obtain a new screenshot of that exact course; its top-right mini-program circular close control is uniquely visible and unobstructed | Click the center of that current screenshot's close control once, then read `getAXStateAndScreenshot()` | Continue B4b–B4c only after the course disappears. A rejection or still-present course stops close inputs; no second fallback, relaunch or WeChat-main-window close |
 | B4b | Course disappeared; fresh AX gives unique Window menu | `await wechat.click(windowMenu); await wechat.getAXState()` | Require no `见势擒龙团` window; still present means unverified, no repeat close |
 | B4c | Window menu proved absence and exposes `Cancel` | `await wechat.performSecondaryAction(windowMenu, "Cancel"); await wechat.getAXState()` | Record `playback_window_closed=true`; media/source acceptance remains independent |
 
@@ -127,6 +128,12 @@ because it was clicked. B4a–B4c require this round's actual result, not anothe
 course's historical success. If the course is already absent from a fresh Window menu,
 record that observation and skip another close. A known download can continue
 while native closure is repaired; preserve both facts independently.
+
+B4R is the bounded fallback for an observed no-effect semantic close, not for
+an uncertain/denied input. It uses only the actual course screenshot, never a
+historical coordinate or the main chat window's close button. The existing
+round-close observations above justify trying this visible control; they do not
+prove this round's closure. Window-menu absence remains mandatory acceptance.
 
 ## Input-window recovery, not a playback retry loop
 
