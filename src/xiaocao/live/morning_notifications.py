@@ -125,6 +125,18 @@ def result_fingerprint(facts: dict) -> str:
               "remaining_shares", "reason", "next_action", "submit_chain_uncertain",
               "cancel_chain_uncertain", "fill_quantity_proven")
     content = {k: facts.get(k) for k in ("status", "reason", "failed_stage")}
+    orders = facts.get("orders") or []
+    # The opening batch calls a working order unresolved; same-plan recovery
+    # calls it blocked. Neither wrapper changes the proved order progress.
+    if (content["status"] in {"unresolved", "blocked"}
+            and content["failed_stage"] is None and orders
+            and all(row.get("state") in {"acknowledged", "partial"}
+                    and row.get("broker_order_id")
+                    and row.get("fill_quantity_proven") is True
+                    and row.get("submit_chain_uncertain") is False
+                    and row.get("cancel_chain_uncertain") is False
+                    and row.get("reason") == content["reason"] for row in orders)):
+        content["status"] = "unresolved"
     for name in ("orders", "pending_orders"):
         content[name] = sorted(({k: row.get(k) for k in fields}
             for row in facts.get(name) or []), key=lambda row: str(row["plan_id"]))
