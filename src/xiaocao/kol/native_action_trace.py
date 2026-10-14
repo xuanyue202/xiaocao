@@ -98,15 +98,15 @@ def inspect_trace(
         payload = event.get("payload", {})
         kind = payload.get("type")
         if event.get("type") != "response_item" or kind not in {
-            "function_call", "function_call_output",
+            "function_call", "function_call_output", "custom_tool_call", "custom_tool_call_output",
         }:
             continue
         timestamp = event.get("timestamp", "")
         if _time(timestamp) < boundary:
             continue
         call_id = payload.get("call_id")
-        if kind == "function_call":
-            raw = payload.get("arguments", "")
+        if kind in {"function_call", "custom_tool_call"}:
+            raw = payload.get("arguments", payload.get("input", ""))
             try:
                 arguments = json.loads(raw)
             except ValueError:

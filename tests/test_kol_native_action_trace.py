@@ -68,6 +68,20 @@ def test_reports_pending_dispatch_and_truncated_live_tail():
     assert result["findings"]["first_security_text_call_id"] is None
 
 
+def test_collects_actual_freeform_environment_checkpoint_shape():
+    source = journal(
+        event("custom_tool_call", name="exec", call_id="pac", input=
+              '// KOL_ACTION:PAC_ENABLE\ntext(await tools.exec_command({cmd:"private command"}));'),
+        event("custom_tool_call_output", call_id="pac", output=[
+            {"type": "input_text", "text": 'nested tool returned session_id=123'}]),
+    )
+    result = inspect(source)
+    assert result["calls"][0]["step"] == "PAC_ENABLE"
+    assert result["calls"][0]["completion"] == "output_recorded"
+    assert result["findings"]["preceding_effect_call_ids"] == ["pac"]
+    assert "private command" not in json.dumps(result)
+
+
 def test_hashes_images_and_sensitive_payloads_without_exporting_them():
     frame = b"private screen bytes"
     result_event = output("input", 'Window: "草料二维码"; personal chat text')
