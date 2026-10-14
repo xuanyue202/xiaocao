@@ -1583,6 +1583,40 @@ def test_daily_runtime_runs_xiaocao_wechat_subscription(tmp_path, monkeypatch):
     ]
 
 
+def test_source_cli_narrow_runner_supports_xiaocao_wechat_live_in_local_capture(
+    tmp_path, monkeypatch,
+):
+    calls = []
+
+    class FakeCoordinator:
+        def __init__(self, _output_dir):
+            pass
+
+        def run(self, sources, *, blocker_sender):
+            source = sources[0]
+            result = source["narrow_resume"](
+                "xiaocao_wechat_live:kol-wechat-recovered"
+            )
+            assert result["already_completed"] is True
+            assert result["identity"] == "kol-wechat-recovered"
+            assert result["writer_progress"]["status"] == "terminal"
+            return {"status": "completed", "silent": True}
+
+    def capture(self, *, only_identity=None):
+        assert only_identity == "kol-wechat-recovered", "must not scan another item"
+        calls.append(only_identity)
+        return {"status": "no_update", "already_completed": True,
+                "identity": only_identity}
+
+    monkeypatch.setattr(kol_daily_script, "DailyCoordinator", FakeCoordinator)
+    monkeypatch.setattr(DailyRuntime, "xiaocao_wechat", capture)
+    monkeypatch.setattr(DailyRuntime, "reconcile_local_mailbox", lambda self: [])
+    monkeypatch.setattr(sys, "argv", ["kol_daily.py", "capture-local",
+                                    "--output-dir", str(tmp_path / "daily")])
+    assert kol_daily_script.main() == 0
+    assert calls == ["kol-wechat-recovered"]
+
+
 def test_capture_local_cli_runs_live_and_official_account_sources(
     tmp_path,
     monkeypatch,

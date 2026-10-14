@@ -5374,11 +5374,7 @@ def main() -> int:
                 ),
                 "narrow_resume": _classified_narrow_source(
                     "xiaocao_wechat_live",
-                    lambda surface: _adapter_scope_resume(
-                        "xiaocao_wechat_live",
-                        surface,
-                        runtime.xiaocao_wechat,
-                    ),
+                    runtime.xiaocao_wechat_narrow_resume,
                 ),
                 "reconcile": _classified_progress_source(
                     "xiaocao_wechat_live",

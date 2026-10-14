@@ -174,6 +174,16 @@ mailbox reconciliation owns subsequent readback. Never call it `全部完成` wi
 `acked`, and never end at a launch, download, source-code fix, or upload claim.
 Record the actual stopping condition and its evidence in Automation memory.
 
+An exact item recovered through `capture-xiaocao-item` can already be completed
+while the coordinator still retains its earlier repair fingerprint. Verify the
+same item's capture acceptance and mailbox readback first. Close the coordinator
+lifecycle through the pushed, fingerprint-bound repair validation and
+`resume-source-repair` when its code repair applies; the native narrow handler
+must pass the exact item to `xiaocao_wechat_narrow_resume`, never an adapter-wide
+scan. The completed item returns `already_completed` without activation, download,
+upload or another mailbox send. Preserve the earlier failure; do not clear ledgers
+or use another hour gate to reconcile it.
+
 ## WeChat and Xiaoetong gate
 
 Scan only `福利官小花四-刘丹（执业编号:A0380125080026）` via local `wechat-cli`;
