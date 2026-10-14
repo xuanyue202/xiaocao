@@ -1,0 +1,356 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-14",
+  "kind": "morning",
+  "author": "小草",
+  "source": "小草直播",
+  "authority": 0,
+  "knowledge_status": "reusable_knowledge",
+  "summary": "小草把广泛普跌、短线环境偏弱与高标失速视为防守信号：弱市优先研究下跌或超跌低吸，压低仓位，盘中候选只在较早时点达到高分时观察；他对科技方向的来源原意只是整体需要更强。系统把最后一点操作化为代表性强势股、板块广度和高标风险的同步核验。该方法是待检验的候选经验，不能自动改动策略参数或触发交易。",
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_netdisk_enrichment/artifacts/kol-netdisk-d7361c0631889857/20261014 盘前大师班直播10月14日-compressed.txt",
+      "sha256": "5b89c8276c376812bfe63c77bb0c76d2ebf9839098b5b822617e387ff06dec1d",
+      "size": 10612
+    }
+  ],
+  "posture": {
+    "regime": "广泛普跌、短线得分偏弱的防守环境",
+    "dominant_style": "下跌或超跌低吸优先，盘中起爆与高波动模式降级",
+    "risk": "候选排名和个股身份缺少逐秒回执，弱市中的局部急拉也可能快速回落",
+    "style_ranking": [
+      "下跌或超跌低吸",
+      "早盘高分候选的轻仓观察",
+      "倒接力等高波动模式",
+      "弱势环境下的盘中起爆"
+    ]
+  },
+  "regime_call": {
+    "horizon": "当日超短，并在下一交易日重新核验",
+    "call": "普跌面扩大、短线环境得分显著为负时，以防守和低吸为主，不把单股逆势涨停当成板块转强。",
+    "what_would_falsify": "来源层面的防守判断可被下跌家数持续显著收窄、短线环境得分转正并保持所削弱；代表性强势股、板块广度和高标风险的同步改善是系统用于研究的进一步操作化条件。"
+  },
+  "directions": [
+    {
+      "name": "下跌或超跌低吸",
+      "stance": "弱市优先研究",
+      "conditions": "候选在较早盘中时点达到高分，且不是追逐已经大幅拉升的结果。",
+      "risk_boundary": "逐秒排名、标的身份和可成交价格缺失时，只保留方法，不形成具体买单。"
+    },
+    {
+      "name": "盘中高分模式",
+      "stance": "轻仓、重时点",
+      "conditions": "作者给出的观察窗在9:35前，100分是示例门槛，越早越好。",
+      "risk_boundary": "窗口结束后的上涨只能作为复盘案例，不能倒推为可追买信号。"
+    },
+    {
+      "name": "科技与元器件方向",
+      "stance": "暂不确认延续",
+      "conditions": "来源只说板块整体需要更强，没有给出核心股、广度或高标的量化门槛。",
+      "system_operationalization": "系统为研究核验追加代表性强势股、板块广度和高标风险是否同步改善；这不是老师原话。",
+      "risk_boundary": "音似澳弘电子的单股修复只能作为案例；来源未提供可量化的板块确认阈值。"
+    }
+  ],
+  "stocks": [
+    {
+      "surface_form": "傲红、敖宏、奥宏电子、澳红、二红",
+      "resolved_identity": "可能对应澳弘电子（605058），未证实",
+      "role": "科技板块延续性判断的例子",
+      "lesson": "单股从未一字板到盘中涨停，不足以单独推翻板块缺乏延续性的判断。"
+    },
+    {
+      "surface_form": "龙板传媒",
+      "resolved_identity": "龙版传媒（605577）",
+      "role": "高标风险例子",
+      "lesson": "高标跌停用于支持弱市中的风险约束，不构成对该股的独立交易建议。"
+    },
+    {
+      "surface_form": "凡凡凡拓、防多数、防错",
+      "resolved_identity": "可能对应凡拓数创（301313），未证实",
+      "role": "第二名及盘中低吸成功案例",
+      "lesson": "案例说明作者重视弱市中的模式匹配，但缺少精确排名回执和标的代码，不能据此重放交易。"
+    },
+    {
+      "surface_form": "满昆、网坤",
+      "resolved_identity": "可能对应满坤科技（301132），未证实",
+      "role": "9:35高分后的历史涨幅案例",
+      "lesson": "从约2%涨至约18%或触及20%只能验证事后表现，不能替代当时可见性、成交性和样本统计。"
+    },
+    {
+      "surface_form": "农场产品",
+      "resolved_identity": "可能对应农产品（000061），也可能只是行业表述，未证实",
+      "role": "跌停数量观察",
+      "lesson": "语音歧义未解，不能把它纳入具体标的决策。"
+    }
+  ],
+  "strategy_hit_audit": {
+    "status": "no_verified_teacher_local_overlap",
+    "as_of": "2026-10-14T04:36:53Z",
+    "method": "把老师口述的赢家、当地策略基准命中和方向性核心观察分开核验。证券身份未唯一映射、缺少点时排名或模式回执、或只有板块相关性时，一律不计为策略命中。",
+    "teacher_named_winners": [
+      {
+        "surface_form": "凡凡凡拓、防多数、防错",
+        "possible_identity": "凡拓数创（301313），未证实",
+        "teacher_description": "第二名，且竞价低吸与盘中低吸都曾选中，作者把它作为盘中强势案例。",
+        "classification": "teacher_named_winner",
+        "status": "no_evidence",
+        "reason": "近音名称没有代码或画面，无法唯一映射；同日当地策略冻结清单没有301313，且没有老师所述点时的排名、模式信号与可成交回执。",
+        "segment_ids": [
+          "586db3258f040ae74fe0cc09eea23d2c677de17e5d0973bf00a82235b581540e",
+          "d06e66d53b1d042aaf2f70900fa611ae558e52c80b7b603f8909bf7f401e2de1",
+          "105edf5870ca3b5b3a29dca79de768689dbbc2b161d0a99ace7e9880842e3af2"
+        ]
+      },
+      {
+        "surface_form": "满昆、网坤",
+        "possible_identity": "满坤科技（301132），未证实",
+        "teacher_description": "作者称其9:35时达到高分、随后由约2%涨至约18%并一度触及20%。",
+        "classification": "teacher_named_winner",
+        "status": "no_evidence",
+        "reason": "近音名称没有代码或画面，无法唯一映射；同日当地策略冻结清单没有301132，也没有9:35点时分数、排名与可成交回执。事后涨幅不能补成策略命中。",
+        "segment_ids": [
+          "a29acaac307f36e1f73fa61e768b64fff1bd745829ca1863be971f5858422305",
+          "464187b6403464088d17ea56ac0e853e87ad916322182c3347d64cc48c5e8e4d",
+          "cc50c47d1863875b7cd2f62aeba87cad8b95964982603c27914b24e9c5ca2953"
+        ]
+      },
+      {
+        "surface_form": "傲红、敖宏、奥宏电子、澳红、二红",
+        "possible_identity": "澳弘电子（605058），未证实",
+        "teacher_description": "作者观察到它没有顶一字板，后来又快速拉升至接近或达到涨停。",
+        "classification": "teacher_named_market_winner_not_strategy_hit",
+        "status": "no_evidence",
+        "reason": "近音名称没有代码或画面，无法唯一映射；当地早盘评分文件虽含605058的K/P分数，但冻结策略清单没有605058，来源也未给出可对应的点时模式信号和入场条件，因此只能视为个股案例。",
+        "segment_ids": [
+          "7beb6e1bf3a3309d418b71c66a6e02768e431381aa04d0666140db1730681849",
+          "8305cb7300cf9aaf414ee0c00ac5e2b7288cebadb8725cb1de65ff03b20fcf0f",
+          "dc80d9e6fde4078ad61c1191adc25187243e463e971c8ae47525ed49f26b036a",
+          "6c045cb184c8dc5f04dc5216efaff67c594dd0407143450d9ff94564488ac650",
+          "695462c9e2add0bb9ff5d4382e432bebf3a2c71f32d8a7ee861d796e74e41214"
+        ]
+      }
+    ],
+    "local_strategy_benchmark_hits": {
+      "matched_teacher_assets": [],
+      "teacher_asset_status": "no_evidence",
+      "reason": "同日不可变早盘策略清单共17项，没有301313、301132、605058或605577。唯一可交易且mode_exec_star为真的当地基准是天顺风能（002531）的N字低吸，它不是老师口述赢家，不能算交叉命中。",
+      "local_only_reference": {
+        "code": "002531.XSHE",
+        "name": "天顺风能",
+        "mode": "N字低吸",
+        "mode_exec_star": true,
+        "mode_trade_eligible": true,
+        "classification": "local_strategy_benchmark_only"
+      }
+    },
+    "direction_core_observations": [
+      {
+        "subject": "弱市中的低吸相对优先",
+        "classification": "direction_core_observation",
+        "status": "system_supported_context_only",
+        "observation": "老师的防守、轻仓和低吸优先判断与午间官方弱市数据方向一致；一致性只支持环境判断，不构成任何具体标的或模式命中。"
+      },
+      {
+        "subject": "科技与元器件延续性不足",
+        "classification": "direction_core_observation",
+        "status": "source_with_system_operationalization",
+        "observation": "老师只说科技整体需要更强；后续单股及元器件局部修复也没有伴随可核验的板块级策略证据。",
+        "system_operationalization": "系统以代表性强势股、板块广度和高标风险是否同步改善作为研究核验条件；来源没有量化这些阈值。"
+      },
+      {
+        "subject": "早盘高分的时间价值",
+        "classification": "direction_core_observation",
+        "status": "no_evidence",
+        "observation": "9:35前和100分是老师给出的观察框架；缺少逐秒排名、首次达分时间与可成交记录，不能以个例上涨替代点时策略证据。"
+      }
+    ],
+    "evidence": [
+      {
+        "role": "teacher_source",
+        "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_netdisk_enrichment/artifacts/kol-netdisk-d7361c0631889857/20261014 盘前大师班直播10月14日-compressed.txt",
+        "sha256": "5b89c8276c376812bfe63c77bb0c76d2ebf9839098b5b822617e387ff06dec1d",
+        "size": 10612
+      },
+      {
+        "role": "local_strategy_frozen_queue",
+        "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/morning_bundles/2026-10-14/d8dff9f230ed9a9a20216f90f30e4e07acfae0dbd8e7b3527c22ab73b01e587b/original/queue.json",
+        "sha256": "1879ec70b14402335a87e2000944b023570f85feab6300ad48c5b0c6d7c1f4f5",
+        "size": 2357
+      },
+      {
+        "role": "local_strategy_frozen_snapshot",
+        "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/morning_bundles/2026-10-14/d8dff9f230ed9a9a20216f90f30e4e07acfae0dbd8e7b3527c22ab73b01e587b/original/snapshot.jsonl",
+        "sha256": "c591089dd8e87e40b77412841cb66431c84221340c15b2b71672e416f79f80f6",
+        "size": 62499
+      },
+      {
+        "role": "local_morning_score_context",
+        "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/morning_scores/2026-10-14/774cfe56b65310bd5efdaab3cc463f2426113ada1aacb695e3aa8f9a13f3f368.json",
+        "sha256": "d013b043974b19d66d1e95aab820224c90cd0cf810a4605b59ef836af5f5a2d0",
+        "size": 4218
+      }
+    ]
+  },
+  "method_principles": [
+    "来源方法是先用普跌环境与高标失速判断风险状态，再在弱市优先低吸、降级起爆与高波动模式。",
+    "弱势环境中的参与顺序是先降仓位，再选择下跌或超跌低吸；高分只能提高观察优先级，不能替代标的、价格与成交核验。",
+    "盘中信号有明确时效，作者强调9:35前和越早越好；窗口结束后的大涨不应成为追涨依据。",
+    "来源只要求科技整体更强；系统把板块延续研究操作化为代表性强势股、板块广度和高标风险的同步核验，单只股票的逆势修复或涨停只保留为案例。"
+  ],
+  "exit_lessons": [],
+  "hypotheses": [
+    {
+      "hypothesis_id": "XH-235",
+      "candidate_local_key": "early-high-score-window",
+      "ingest_status": "already_ingested",
+      "no_reingest": true,
+      "prior_relationship": "refines:XH-223_with_explicit_09_35_boundary",
+      "claim": "盘中高分信号越早出现，短线可用性越高；9:35后的同类信号价值下降。",
+      "implied_rule": "对高分信号按首次出现时间分层，早盘窗口结束后不追逐已经扩大的涨幅。",
+      "falsifiable_test": "对所有盘中高分候选记录首次达到阈值的秒级时间，分9:35前后比较可成交收益、滑点、最大回撤和封板率。",
+      "expected_effect": "减少把事后上涨误认成事前可执行信号。",
+      "category": "timing",
+      "current_source_origin": "teacher_source",
+      "relationship_detail": "XH-223研究高分、较早出现及晚时提高阈值的一般关系；XH-235把本场明确的9:35分界单独设为可证伪阈值，因此是窄化精炼而非同一claim重复。"
+    },
+    {
+      "hypothesis_id": "XH-236",
+      "candidate_local_key": "sector-breadth-confirmation",
+      "ingest_status": "already_ingested",
+      "no_reingest": true,
+      "prior_relationship": "novel_system_operationalization",
+      "claim": "单只板块龙头的逆势涨停不能证明板块延续，板块确认需要核心股和广度共同改善。",
+      "implied_rule": "板块交易确认至少同时检查核心股强度、板块上涨广度和高标风险。",
+      "falsifiable_test": "比较只有单一核心股涨停与核心股加板块广度同步改善两类情形在随后一至三日的板块超额收益和回撤。",
+      "expected_effect": "降低被孤立强股误导的板块追涨。",
+      "category": "sector_confirmation",
+      "current_source_origin": "source_observation_plus_system_operationalization",
+      "attribution_boundary": "来源原意仅为科技整体需要更强；核心股、板块广度和高标风险的同步条件由系统为可复现研究而操作化，不得转述成老师给出的阈值。"
+    }
+  ],
+  "prior_assessments": [
+    {
+      "prior_hypothesis_id": "XH-154",
+      "assessment": "partial_support",
+      "prior_claim": "非退潮期使用高弹性盘中起爆、弱市使用下跌或超跌低吸，比固定使用单一模式有更好的风险调整后收益。",
+      "supported_part": "本场支持弱市优先下跌或超跌低吸、降级盘中起爆并轻仓。",
+      "unsupported_parts": [
+        "非退潮期使用高弹性盘中起爆",
+        "状态切换比固定单一模式具有更好的风险调整后收益"
+      ],
+      "current_source_role": "仅作为XH-154弱市分支的部分支持，不构成完整claim复现。",
+      "ingest_status": "not_an_ingest_candidate",
+      "no_reingest": true,
+      "prior_evidence": {
+        "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_28614a76_prior_hypotheses.jsonl",
+        "sha256": "c0b4a6d0b057fa1ddb658a892a6c2a4e9e2b3150416610d4958e8c3bfb435ff7",
+        "size": 287614
+      }
+    },
+    {
+      "prior_hypothesis_id": "XH-223",
+      "assessment": "related_but_not_duplicate",
+      "prior_claim": "在短线评分稳定且大于零的候选中，高分、较早出现或越晚时点采用更高评分要求，可能带来可重复的样本外增量。",
+      "relationship_to_current": "XH-235把9:35作为明确分界并直接比较分界前后，属于对一般时间价值关系的窄化、独立可证伪精炼。",
+      "ingest_status": "existing_prior_unchanged",
+      "no_reingest": true,
+      "prior_evidence": {
+        "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_28614a76_prior_hypotheses.jsonl",
+        "sha256": "c0b4a6d0b057fa1ddb658a892a6c2a4e9e2b3150416610d4958e8c3bfb435ff7",
+        "size": 287614
+      }
+    }
+  ],
+  "ingest_outcome": {
+    "status": "already_executed",
+    "new_hypothesis_ids": ["XH-235", "XH-236"],
+    "no_reingest": true,
+    "evidence": {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_28614a76_market_evidence_v4.json",
+      "sha256": "a01b2eb233913634355e22631b8452dea953f82c0c8ccc4519e97dc43ed0fc18",
+      "size": 8660
+    }
+  },
+  "timing_notes": [
+    "来源给出的高分观察窗是9:35前，并强调越早越好。",
+    "同日午间核验支持弱市背景，但没有9:25至9:35的逐秒排名、成交和板块回放。",
+    "该知识只保留方法与待检验假设；任何次日使用都要重新读取市场状态。"
+  ],
+  "decision_trace": [
+    {
+      "observation": "开盘与盘中出现大面积下跌，作者称处于空仓主跌或熊市式环境，高标也有跌停。",
+      "inference": "市场承接和风险偏好不足，高波动与追涨模式的稳定性下降。",
+      "action": "优先研究下跌或超跌低吸，降低仓位，对高分候选只在较早时点观察。"
+    },
+    {
+      "observation": "老师认为科技整体需要更强；音似澳弘电子的个股后来盘中修复并涨停，但来源没有据此明确撤销整体偏弱判断。",
+      "inference": "来源层面只能保留科技整体尚未转强与单股例外并存，不能把单股案例补写为板块确认规则。",
+      "action": "系统研究才以代表性强势股、板块广度和高标风险是否同步改善作为核验条件；不把这组条件归给老师。"
+    },
+    {
+      "observation": "疑似满坤科技在9:35高分后大涨，疑似凡拓数创也成为成功案例。",
+      "inference": "早盘高分与弱市低吸可能有筛选价值，但这只是个例，且标的映射、排名和成交证据不完整。",
+      "action": "将其转为可复现的分层检验，不把个例直接提升为策略规则。"
+    }
+  ],
+  "judgment_heuristics": [
+    "先判环境，再选模式；环境越弱，仓位越轻。",
+    "对盘中信号同时记录分数和首次出现时间，避免只看收盘赢家。",
+    "来源只要求板块整体更强；系统研究用代表性强势股、板块广度与高标风险同步改善来区分板块延续和单股例外。",
+    "证券名称、排名、买点和收益缺证时，保留不确定性并禁止重放。"
+  ],
+  "typo_corrections": [
+    {
+      "surface": "下列低息、下跌利息、下跌地区、下跌商店",
+      "corrected": "按上下文校正为下跌或超跌低吸"
+    },
+    {
+      "surface": "职位模式、紫薇",
+      "corrected": "按上下文暂校正为紫微模式，具体产品名仍待确认"
+    },
+    {
+      "surface": "起报",
+      "corrected": "按上下文校正为起爆"
+    },
+    {
+      "surface": "傲红、敖宏、奥宏电子、澳红、二红",
+      "corrected": "可能对应澳弘电子（605058），未证实"
+    },
+    {
+      "surface": "龙板传媒",
+      "corrected": "龙版传媒（605577）"
+    },
+    {
+      "surface": "凡凡凡拓、防多数、防错",
+      "corrected": "可能对应凡拓数创（301313），未证实"
+    },
+    {
+      "surface": "满昆、网坤",
+      "corrected": "可能对应满坤科技（301132），未证实"
+    },
+    {
+      "surface": "农场产品",
+      "corrected": "可能对应农产品（000061），也可能是行业表述，未证实"
+    },
+    {
+      "surface": "新一轮",
+      "corrected": "无法唯一映射，保留为未具名第一名候选"
+    }
+  ],
+  "action_summary": {
+    "posture_update": "候选更新：仅作为小草当日防守姿态的authority=0输入，等待独立研究与人工门槛，不自动修改当前全局姿态。",
+    "playbook_update": "候选补充：弱市先判环境再选低吸模式，并把早盘信号时点纳入复盘。",
+    "hypothesis_update": "XH-235与XH-236已经摄入并取得真实ID，本草稿只记录结果，禁止再次摄入。XH-235以明确9:35分界精炼XH-223的一般时间价值关系；XH-236是从来源所说科技整体需更强发展出的系统研究操作化。XH-154仅获弱市低吸分支的部分支持，不算完整claim复现，也不列为本场摄入候选。",
+    "audit_evidence": "完整读取31个稳定segment；已区分老师口述赢家、当地策略基准和方向性观察。凡拓数创、满坤科技、澳弘电子的近音映射及点时策略证据均为no_evidence，当地唯一可交易基准天顺风能不与老师口述赢家重合。",
+    "instrumentation_todo": "后续研究需保存候选首次达分秒级时间、当时排名、可成交价格、板块广度及模式样本全集。",
+    "routing": [
+      "XH-154仅partial_support，不复用完整claim",
+      "XH-235、XH-236已摄入，禁止重放",
+      "XH-235是XH-223的9:35分界精炼",
+      "XH-236标明系统操作化归属",
+      "研究回测待办",
+      "不自动调参",
+      "不触发交易"
+    ]
+  }
+}
