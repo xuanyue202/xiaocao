@@ -228,6 +228,14 @@ async function inspectTarget(page, input, { retainPage = false } = {}) {
               text: node.parentElement?.parentElement?.innerText?.slice(0, 500) || '',
               rowClassName: row?.className || '',
               rowText: row?.innerText?.slice(0, 500) || '',
+              rowControls: row ? [...row.querySelectorAll('[title], [aria-label], button, a')]
+                .filter(element => visible(element))
+                .map(element => ({
+                  title: (element.getAttribute('title') || '').slice(0, 150),
+                  label: (element.getAttribute('aria-label') || '').slice(0, 150),
+                  text: (element.innerText || '').slice(0, 150),
+                  className: String(element.className || '').slice(0, 150),
+                })).slice(0, 12) : [],
               progressWidths: row ? [...row.querySelectorAll('[style]')]
                 .map(element => element.style.width)
                 .filter(width => /^[0-9]+(?:[.][0-9]+)?%$/.test(width)).slice(0, 10) : [],

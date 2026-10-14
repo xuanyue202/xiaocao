@@ -24,6 +24,8 @@ source mutation, or receipt identity mismatch fails closed.
 Inspect-only `surfaceState.targetUiRows` also exposes the exact transfer row's
 class/text and percentage widths. These are progress diagnostics, not cloud
 receipts; compare the same claim/target across observations before calling it stalled.
+Its bounded `rowControls` reports visible control labels/classes in that exact
+row for diagnosis only; it never clicks them or authorizes a retry or resubmission.
 
 After an adapter upload claim, ordinary `advance_opencli` polling uses that
 same adapter with `--inspect-only true`. It retains the exact uploader and
