@@ -168,10 +168,35 @@ do not compensate by splicing a ticket. The 2026-09-28 sources were
 
 After the Browser/readiness/entry sequence, bind `wechat` with
 `await cua.getApp("com.tencent.xinWeChat")` only when no binding exists; follow
-the tool's first-use documentation. Only if the post-launch readback did not
-show the expected bridge may the observed Window menu's unique “草料二维码”
-item be selected once and read back. It is not a preflight step. Main-chat white
-screenshots are not proof that WeChat exited.
+the tool's first-use documentation. If the post-launch readback or B1/B2 result
+does not show the expected bridge/brand state, do not add a Window-menu probe
+or choose a window to chase the jump. One current-state readback then offline
+diagnosis preserves the item. Independently verified-course cleanup retains
+B4b/B4c. Main-chat white screenshots are not proof that WeChat exited.
+
+## Security-relogin recurrence and attribution
+
+The Oct14 23:25 original-item trace did not select any window item. It opened
+the application's Window menu and cancelled it. At 23:28:15, before Cancel,
+the AX window title was already empty, ordinary WeChat actions were disabled,
+and no course/bridge was listed. At 23:28:24 Cancel's readback first exposed the
+explicit security-relogin text. This supports an already abnormal window state
+before Cancel; it does not establish whether the earlier Allow, networking,
+menu opening or an asynchronous security decision caused it.
+
+Do not infer a trigger from the last screenshot/menu action. Generic focus/menu
+events can be observed by an application; that is not evidence about WeChat's
+security policy. Keep dispatched actions, last normal state, first abnormal
+state and first explicit protection text separate in the operation receipt.
+
+After a security-relogin page, stop native inputs and preserve original IDs and
+claims. User login restoration alone does not authorize replaying the unchanged
+PAC → issued Scheme → cross-mini-program navigation chain. First identify a
+concrete evidence-backed changed repair/diagnostic plan and its applicable
+authorization; use offline validation before any approved bounded probe. Do not
+turn relogin into a retry loop, move to another tool after denial, add arbitrary
+delays/count limits, or treat an offline pass as root-cause/E2E proof. Existing
+capture cleanup and authentication response requirements still apply.
 
 For every click use a unique fresh AX index, or the center of the unique visible
 control in the latest screenshot if AX lacks the control. Follow each action

@@ -239,6 +239,11 @@ If the native WeChat client visibly says phone login is required, report
 `wechat_client_login_required` with `activated=false` and keep the same
 identity/job. This is not a Xiaoetong account-login or course-password state.
 Send one deduplicated user action even from `resume-source-repair`.
+For an observed security-relogin recurrence, login restoration does not by itself
+permit repeating the unchanged PAC/issued-entry/brand-navigation path. Continue
+offline diagnosis first and bind an evidence-backed changed repair/diagnostic
+plan to its applicable authorization. Never attribute protection to whichever
+menu/screenshot happened to reveal it. Preserve the original IDs and claims.
 
 `密码666` text is not a visible gate. Do not inspect cookies, storage, or
 credentials. `awaiting_playback` keeps identities and rechecks at the next

@@ -1625,6 +1625,11 @@ class XiaocaoWechatLiveSubscription:
                 "浏览器核验完成后检查同一抓取服务/PAC，再签发并唤起一次；"
                 "此后才读取微信并执行必要的 B0–B4。仅本任务已有精确课程读回时复用。"
                 "明确策略拒绝不得换工具绕过。微信原生窗口按 B0–B4 操作。"
+                "B1/B2 跳转未确认时，禁止追加窗口菜单探测或选择窗口；只做一次"
+                "当前状态读回并继续离线诊断。仅已核验课程的关闭验收使用窗口菜单。"
+                "安全重登录提示是结果，不得把最后一次菜单/截图动作标成触发原因。"
+                "出现安全重登录后停止原生输入；重新登录本身不授权原样重跑"
+                "PAC→Scheme→品牌跳转，须先有证据支持的变更修复/诊断方案及适用授权。"
                 "已有精确课程窗口则复用。"
                 if native_entry and course_app == "见势擒龙团"
                 else
@@ -1721,6 +1726,11 @@ class XiaocaoWechatLiveSubscription:
                     "on_explicit_policy_denial": "stop_denied_action_no_tool_bypass",
                 }
                 if reason != "captured_window_cleanup":
+                    request["ui_policy"].update({
+                        "unconfirmed_brand_navigation_window_menu_probe_allowed": False,
+                        "security_relogin_retry_policy": "changed_plan_and_applicable_authorization_required",
+                        "security_relogin_attribution": "observation_is_not_trigger_proof",
+                    })
                     request["native_bridge_editor_policy"].update({
                         "native_ui_before_editor_readback_allowed": False,
                         "workflow_order": [

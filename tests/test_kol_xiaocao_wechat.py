@@ -873,6 +873,10 @@ def test_native_mini_program_entry_is_armed_before_ui_and_binds_observed_live(
         assert "source_url" not in request
         assert "launch_resolver_command" not in request
         if app_name == "见势擒龙团":
+            assert request["ui_policy"]["unconfirmed_brand_navigation_window_menu_probe_allowed"] is False
+            assert request["ui_policy"]["security_relogin_retry_policy"] == (
+                "changed_plan_and_applicable_authorization_required"
+            )
             assert Path(request["native_entry_reference"]).is_file()
             assert request["native_bridge_config_path"] == (
                 "output/live/kol_xiaocao_live/native_share_bridge.json"
