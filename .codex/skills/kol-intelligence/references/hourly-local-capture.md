@@ -108,6 +108,21 @@ A retryable `source_temporarily_unavailable` after an `awaiting_playback` wait
 reuses the same capture/job and next 20-minute deadline; binding, ledger, or receipt
 failures alone enter source repair.
 
+Native activation must report the observed failure instead of hiding it as
+`unknown` or a provider wait. Use `password_input_incomplete` for a proved
+partial course-password input, `native_bridge_target_unverified` when the
+editor target cannot be verified, `native_bridge_policy_denied` after an
+explicit policy denial, and `native_window_input_unavailable` when reviewed
+window recovery still cannot dispatch input. `password_required`, `unknown`,
+and unqualified `mini_program_waiting` also require same-item diagnosis.
+These become `input_error/<specific code>/native_playback_input`, retain the
+exact subscription/capture and enter `repair_required`; they have no provider
+deadline. A policy denial still prohibits bypassing that action or changing
+tools to evade it. Report that exact external boundary if it remains unresolved.
+Only observed `waiting_to_start`, `live`, `replay_generating`, or a genuine
+`source_temporarily_unavailable` may use the playback provider-wait route.
+Do not infer that the replay was not ready from a failed entry or input.
+
 After `cloud_handoff_published` process death, do not rerun the full sweep; run:
 
 ```bash

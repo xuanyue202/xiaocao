@@ -275,7 +275,7 @@ def test_explicit_dated_backfill_recovers_only_the_selected_original_entry(
             "action": request["action"],
             "subscription_id": request["subscription_id"],
             "playback_surface": "wechat_mini_program",
-            "page_state": "mini_program_waiting",
+            "page_state": "replay_generating",
             "activated": False,
             "media_request_observed": False,
             "playback_window_closed": False,
@@ -329,7 +329,7 @@ def test_dated_backfill_revalidates_reexpired_item_and_reuses_capture(tmp_path, 
             "action": request["action"],
             "subscription_id": request["subscription_id"],
             "playback_surface": "wechat_mini_program",
-            "page_state": "mini_program_waiting",
+            "page_state": "replay_generating",
             "activated": False,
             "media_request_observed": False,
             "playback_window_closed": False,
@@ -817,6 +817,14 @@ def test_wechat_mini_program_route_binds_media_to_the_exact_live_id(tmp_path, cl
             subscription.run_once(opencli_session="xiaocao-lv-subscription")
         assert error.value.diagnostic_code == "native_playback_window_close_unverified"
         assert capture.advances == 0
+        return
+
+    if page_state in {"unknown", "mini_program_waiting"}:
+        with pytest.raises(EnrichmentDiagnosticError) as error:
+            subscription.run_once(opencli_session="xiaocao-lv-subscription")
+        assert error.value.diagnostic_code == "native_playback_state_unresolved"
+        assert capture.advances == 0
+        assert next(iter(subscription._load()["items"].values()))["capture_job_id"]
         return
 
     result = subscription.run_once(opencli_session="xiaocao-lv-subscription")
@@ -1733,8 +1741,8 @@ def test_awaiting_playback_rechecks_the_bound_page_each_hour_until_playable(
     )
     browser_requests: list[dict] = []
     activation_states = iter([
-        ("mini_program_waiting", False),
-        ("mini_program_waiting", False),
+        ("replay_generating", False),
+        ("replay_generating", False),
         ("mini_program_media_observed", True),
     ])
     capture = _CaptureDriver()
@@ -1931,7 +1939,7 @@ def test_native_input_timeout_retains_original_capture_for_same_item_resume(tmp_
             "playback_surface": XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM,
             "source_identity": "xiaoetong:app6ums63as6516:l_6a75cf66e4b0694c5bf6d228",
             "live_id": "l_6a75cf66e4b0694c5bf6d228",
-            "page_state": "mini_program_waiting", "activated": False,
+            "page_state": "replay_generating", "activated": False,
             "media_request_observed": False, "playback_window_closed": False}
 
     subscription = XiaocaoWechatLiveSubscription(tmp_path / "wechat",
@@ -1960,6 +1968,198 @@ def test_native_input_timeout_retains_original_capture_for_same_item_resume(tmp_
     assert driver.arms == [(original["identity"], original["page_url"])]
     assert driver.advances == 0
     assert driver.native_bindings == []
+
+
+@pytest.mark.parametrize("page_state,code", [
+    ("unknown", "native_playback_state_unresolved"),
+    ("mini_program_waiting", "native_playback_state_unresolved"),
+    ("password_required", "native_course_password_unresolved"),
+    ("password_input_incomplete", "native_course_password_input_incomplete"),
+    ("native_bridge_policy_denied", "native_bridge_policy_denied"),
+    ("native_bridge_target_unverified", "native_bridge_target_unverified"),
+    ("native_window_input_unavailable", "native_window_input_unavailable"),
+    ("playable", "native_playback_activation_unverified"),
+    ("mini_program_media_observed", "native_playback_activation_unverified"),
+])
+@pytest.mark.parametrize("standalone", [False, True])
+def test_native_local_failure_is_same_item_repair_not_provider_wait(
+    tmp_path, page_state, code, standalone,
+):
+    from scripts.kol_daily import _classified_source, _standalone_writer_result
+
+    payload = _history("[2026-10-12 17:18] 小花: "
+        "#小程序://见势擒龙团/r1Kgg0AodmxqoeG")
+    original = parse_xiaocao_live_messages(payload)[0]
+    driver = _CaptureDriver()
+    recovered = False
+
+    def exchange(request):
+        return {
+            "action": request["action"],
+            "subscription_id": request["subscription_id"],
+            "playback_surface": "wechat_mini_program",
+            "page_state": "mini_program_media_observed" if recovered else page_state,
+            "activated": recovered,
+            "media_request_observed": recovered,
+            "playback_window_closed": recovered,
+            **({"source_identity": "xiaoetong:app123:l_original",
+                "live_id": "l_original", "candidate_id": "original-candidate"}
+               if recovered or page_state in {"playable", "mini_program_media_observed"}
+               else {}),
+        }
+
+    subscription = XiaocaoWechatLiveSubscription(
+        tmp_path / "wechat", history_reader=lambda: payload,
+        browser_exchange=exchange, capture_driver=driver,
+        clock=lambda: datetime.fromisoformat("2026-10-14T07:03:00+08:00"),
+    )
+    manifest = subscription._load()
+    manifest["initialized_at"] = "2026-10-12T18:01:00+08:00"
+    manifest["items"][original["identity"]] = {
+        **original, "status": "awaiting_playback",
+        "capture_job_id": "kol-capture-current",
+        "observed_page_state": "wechat_client_login_required",
+        "user_action_required": True,
+        "source_identity": "xiaoetong:app123:l_original",
+        "source_resource_id": "l_original",
+        "next_poll_not_before": "2026-10-14T07:20:00+08:00",
+    }
+    subscription._save(manifest)
+
+    def run():
+        return subscription.run_once(opencli_session="xiaocao-lv-subscription",
+            only_identity=original["identity"])
+
+    result = (_standalone_writer_result("xiaocao_wechat_live", run) if standalone
+        else _classified_source("xiaocao_wechat_live", run)())
+    progress = normalize_source_result("xiaocao_wechat_live", result,
+        failure_revision="1" * 40, provider_contract_version="xiaocao_writer_v1")
+    assert progress.status == "repair_required"
+    assert progress.failure["code"] == code
+    assert progress.failure["stage"] == "native_playback_input"
+    assert progress.details["narrow_resume_surface"] == (
+        f"xiaocao_wechat_live:{original['identity']}"
+    )
+    assert "next_poll_not_before" not in result["waiting_items"][0]
+    item = subscription._load()["items"][original["identity"]]
+    assert item["observed_page_state"] == page_state
+    assert item["user_action_required"] is False
+    assert item["capture_job_id"] == "kol-capture-current"
+    assert item["source_identity"] == "xiaoetong:app123:l_original"
+    assert item["message_sha256"] == original["message_sha256"]
+    assert driver.arms == []
+    assert driver.advances == 0
+    assert driver.native_bindings == []
+
+    recovered = True
+    run()
+    item = subscription._load()["items"][original["identity"]]
+    assert item["status"] == "playback_activated"
+    assert item["capture_job_id"] == "kol-capture-current"
+    assert item["source_identity"] == "xiaoetong:app123:l_original"
+    assert item["message_sha256"] == original["message_sha256"]
+    assert len(driver.native_bindings) == 1
+    assert driver.arms == []
+
+
+@pytest.mark.parametrize("observation", [
+    {"source_identity": "xiaoetong:app123:l_other", "live_id": "l_other"},
+    {"media_request_observed": True},
+    {"activated": True},
+])
+def test_local_failed_state_does_not_accept_wrong_or_unbound_media(tmp_path, observation):
+    payload = _history("[2026-10-12 17:18] 小花: "
+        "#小程序://见势擒龙团/r1Kgg0AodmxqoeG")
+    original = parse_xiaocao_live_messages(payload)[0]
+    driver = _CaptureDriver()
+
+    def exchange(request):
+        return {"action": request["action"],
+            "subscription_id": request["subscription_id"],
+            "playback_surface": "wechat_mini_program", "page_state": "unknown",
+            "activated": False, "media_request_observed": False, **observation}
+
+    subscription = XiaocaoWechatLiveSubscription(tmp_path,
+        history_reader=lambda: payload, browser_exchange=exchange,
+        capture_driver=driver,
+        clock=lambda: datetime.fromisoformat("2026-10-14T07:03:00+08:00"))
+    manifest = subscription._load()
+    manifest["initialized_at"] = "2026-10-12T18:01:00+08:00"
+    manifest["items"][original["identity"]] = {
+        **original, "status": "awaiting_playback", "capture_job_id": "kol-capture-current",
+        "source_identity": "xiaoetong:app123:l_original", "source_resource_id": "l_original",
+    }
+    subscription._save(manifest)
+    with pytest.raises(EnrichmentError, match="playback binding is invalid"):
+        subscription.run_once(opencli_session="xiaocao-lv-subscription",
+            only_identity=original["identity"])
+    item = subscription._load()["items"][original["identity"]]
+    assert item["source_identity"] == "xiaoetong:app123:l_original"
+    assert item["capture_job_id"] == "kol-capture-current"
+    assert driver.arms == []
+    assert driver.advances == 0
+    assert driver.native_bindings == []
+
+
+@pytest.mark.parametrize("standalone", [False, True])
+def test_fresh_media_with_unverified_close_clears_old_login_but_cannot_download(
+    tmp_path, standalone,
+):
+    from scripts.kol_daily import _classified_source, _standalone_writer_result
+
+    payload = _history("[2026-10-12 17:18] 小花: "
+        "#小程序://见势擒龙团/r1Kgg0AodmxqoeG")
+    original = parse_xiaocao_live_messages(payload)[0]
+    driver = _CaptureDriver()
+    closed = False
+
+    def exchange(request):
+        return {"action": request["action"],
+            "subscription_id": request["subscription_id"],
+            "playback_surface": "wechat_mini_program",
+            "page_state": "mini_program_media_observed", "activated": True,
+            "media_request_observed": True, "playback_window_closed": closed,
+            "source_identity": "xiaoetong:app123:l_original", "live_id": "l_original",
+            "candidate_id": "original-candidate"}
+
+    subscription = XiaocaoWechatLiveSubscription(tmp_path,
+        history_reader=lambda: payload, browser_exchange=exchange, capture_driver=driver,
+        clock=lambda: datetime.fromisoformat("2026-10-14T07:03:00+08:00"))
+    manifest = subscription._load()
+    manifest["initialized_at"] = "2026-10-12T18:01:00+08:00"
+    manifest["items"][original["identity"]] = {
+        **original, "status": "awaiting_playback", "capture_job_id": "kol-capture-current",
+        "observed_page_state": "wechat_client_login_required", "user_action_required": True,
+    }
+    subscription._save(manifest)
+
+    def run():
+        return subscription.run_once(opencli_session="xiaocao-lv-subscription",
+            only_identity=original["identity"])
+
+    result = (_standalone_writer_result("xiaocao_wechat_live", run) if standalone
+        else _classified_source("xiaocao_wechat_live", run)())
+    progress = normalize_source_result("xiaocao_wechat_live", result,
+        failure_revision="1" * 40, provider_contract_version="xiaocao_writer_v1")
+    assert progress.status == "repair_required"
+    assert progress.item_identity == original["identity"]
+    assert progress.failure["code"] == "native_playback_window_close_unverified"
+    item = subscription._load()["items"][original["identity"]]
+    assert item["observed_page_state"] == "mini_program_media_observed"
+    assert item["media_request_observed"] is True
+    assert item["playback_window_closed"] is False
+    assert item["user_action_required"] is False
+    assert item["activated"] is False
+    assert item["capture_job_id"] == "kol-capture-current"
+    assert item["source_identity"] == "xiaoetong:app123:l_original"
+    assert "candidate_id" not in item
+    assert driver.native_bindings == []
+    assert driver.advances == 0
+    closed = True
+    run()
+    assert len(driver.native_bindings) == 1
+    assert driver.arms == []
+    assert subscription._load()["items"][original["identity"]]["status"] == "playback_activated"
 
 
 def test_pending_cloud_handoff_resumes_exact_job_after_stale_playback_state(

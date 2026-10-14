@@ -1680,9 +1680,18 @@ def _canonical_xiaocao_wechat_source_repair_profile(
         return declared_profile
     if (
         declared_profile == "kol_xiaocao_wechat_live_native_playback_input"
-        and failure == (
-            "input_error", "native_playback_input_timeout", "native_playback_input",
-        )
+        and failure[0] == "input_error"
+        and failure[2] == "native_playback_input"
+        and failure[1] in {
+            "native_playback_input_timeout",
+            "native_playback_state_unresolved",
+            "native_course_password_unresolved",
+            "native_course_password_input_incomplete",
+            "native_bridge_policy_denied",
+            "native_bridge_target_unverified",
+            "native_window_input_unavailable",
+            "native_playback_activation_unverified",
+        }
     ) or (
         declared_profile == "kol_xiaocao_wechat_live_native_playback_window_close"
         and failure == (

@@ -58,6 +58,12 @@ of truth for contact, publication time, application name and original share toke
    account/code setup; do not create another code, change the course identity or
    delegate the ordinary course/Allow buttons to the user. Authentication remains
    a user-only boundary.
+   Before any new entry, require the exact saved target readback; the local
+   config alone is insufficient. If that readback fails, return
+   `page_state=native_bridge_target_unverified`; if an explicit tool policy
+   denies the edit, return `page_state=native_bridge_policy_denied` and stop
+   that denied action without another-tool bypass. Both retain the original
+   item for diagnosis, rather than claiming a provider replay wait.
 
 ## Obtain the fresh provider-issued entry
 

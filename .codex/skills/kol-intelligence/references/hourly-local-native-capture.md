@@ -393,6 +393,15 @@ browser surfaces or protocols to bypass it. A submitted file without a cloud
 receipt remains uncertain, even if another page shows an empty upload queue.
 Do not resubmit or report Handoff until that exact job is safely reconciled.
 
+At native activation, record local entry/input failures with their specific
+`page_state`: `native_bridge_policy_denied`, `native_bridge_target_unverified`,
+`native_window_input_unavailable`, or `password_input_incomplete`. The latter
+applies when W4R cannot safely finish the proved partial input; first execute
+W4R when its evidence permits it. Preserve truthful false activation/media
+flags and actual closure evidence. Unresolved `unknown`, `password_required`,
+or `mini_program_waiting` also enter same-item repair, not provider wait.
+No-window input rejection alone proves neither a locked Mac nor a login failure.
+
 ## Continuation and completed-capture acceptance
 
 On macOS the patched downloader owns a detached `__proxy-guard` pipe lease.

@@ -892,6 +892,17 @@ def test_repair_closure_accepts_subscription_video_observability_profile_alias(
             "cloud_handoff",
             "kol_xiaocao_wechat_live_cloud_handoff",
         ),
+        *[("input_error", code, "native_playback_input",
+           "kol_xiaocao_wechat_live_native_playback_input") for code in (
+            "native_playback_input_timeout",
+            "native_playback_state_unresolved",
+            "native_course_password_unresolved",
+            "native_course_password_input_incomplete",
+            "native_bridge_policy_denied",
+            "native_bridge_target_unverified",
+            "native_window_input_unavailable",
+            "native_playback_activation_unverified",
+        )],
     ],
 )
 def test_repair_closure_accepts_xiaocao_wechat_source_profile(

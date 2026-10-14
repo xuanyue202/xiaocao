@@ -71,11 +71,20 @@ _PLAYBACK_PAGE_STATES = {
     "unknown",
 }
 XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM = "wechat_mini_program"
+_NATIVE_PLAYBACK_REPAIR_CODES = {
+    "unknown": "native_playback_state_unresolved",
+    "mini_program_waiting": "native_playback_state_unresolved",
+    "password_required": "native_course_password_unresolved",
+    "password_input_incomplete": "native_course_password_input_incomplete",
+    "native_bridge_policy_denied": "native_bridge_policy_denied",
+    "native_bridge_target_unverified": "native_bridge_target_unverified",
+    "native_window_input_unavailable": "native_window_input_unavailable",
+}
 _MINI_PROGRAM_PLAYBACK_STATES = _PLAYBACK_PAGE_STATES | {
     "mini_program_consent_required",
     "mini_program_media_observed",
     "mini_program_waiting",
-}
+} | _NATIVE_PLAYBACK_REPAIR_CODES.keys()
 
 
 def _canonical(value: Any) -> str:
@@ -1659,7 +1668,9 @@ class XiaocaoWechatLiveSubscription:
                 "page_state": (
                     "mac_locked_manual_unlock_required|wechat_client_login_required|mini_program_consent_required|waiting_to_start|live|"
                     "replay_generating|playable|password_required|unknown|"
-                    "mini_program_media_observed|mini_program_waiting"
+                    "mini_program_media_observed|mini_program_waiting|"
+                    "password_input_incomplete|native_bridge_policy_denied|"
+                    "native_bridge_target_unverified|native_window_input_unavailable"
                 ),
                 "activated": "boolean",
                 "media_request_observed": "boolean",
@@ -1806,7 +1817,18 @@ class XiaocaoWechatLiveSubscription:
                 stage="mini_program_consent",
             )
         media_request_observed = response.get("media_request_observed") is True
-        if (expected_live_id or media_request_observed) and not source_bound:
+        unobserved_local_failure = (
+            page_state in _NATIVE_PLAYBACK_REPAIR_CODES
+            and response.get("activated") is not True
+            and not media_request_observed
+            and not observed_source_identity
+            and not observed_live_id
+        )
+        if (
+            (expected_live_id or media_request_observed)
+            and not source_bound
+            and not unobserved_local_failure
+        ):
             raise EnrichmentError(
                 "WeChat mini-program playback binding is invalid"
             )
@@ -1820,12 +1842,25 @@ class XiaocaoWechatLiveSubscription:
             and replay_ready
         )
         if activated and response.get("playback_window_closed") is not True:
-            raise EnrichmentDiagnosticError(
+            item = self._transition(
+                manifest, item, "awaiting_playback",
+                observed_page_state=page_state,
+                playback_surface=XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM,
+                activated=False,
+                media_request_observed=True,
+                playback_window_closed=False,
+                user_action_required=False,
+                source_identity=observed_source_identity,
+                source_resource_id=observed_live_id,
+            )
+            error = EnrichmentDiagnosticError(
                 "native course window closure has not been verified",
                 category="input_error",
                 code="native_playback_window_close_unverified",
                 stage="native_playback_window_close",
             )
+            error.waiting_items = [{**item, "stage": "native_playback_window_close"}]
+            raise error
         if native_entry and activated and reason != "captured_window_cleanup":
             self.capture_driver.bind_mini_program_capture(
                 item["identity"],
@@ -1842,8 +1877,9 @@ class XiaocaoWechatLiveSubscription:
             "media_request_observed": media_request_observed,
             "playback_window_closed": response.get("playback_window_closed") is True,
         }
-        if activated:
-            fields["user_action_required"] = False
+        # This fresh non-authentication observation replaces an older login
+        # blocker; it must not inherit user ownership from a previous attempt.
+        fields["user_action_required"] = False
         if response_page:
             fields["page_url"] = response_page
         if source_bound and (expected_live_id or activated):
@@ -1854,12 +1890,27 @@ class XiaocaoWechatLiveSubscription:
             candidate_id = str(response.get("candidate_id") or "").strip()
             if candidate_id:
                 fields["candidate_id"] = candidate_id
-        return self._transition(
+        item = self._transition(
             manifest,
             item,
             "playback_activated" if activated else "awaiting_playback",
             **fields,
         )
+        if not activated and page_state not in {
+            "waiting_to_start", "live", "replay_generating",
+            "source_temporarily_unavailable",
+        }:
+            error = EnrichmentDiagnosticError(
+                "native activation is unresolved; repair the same capture",
+                category="input_error",
+                code=_NATIVE_PLAYBACK_REPAIR_CODES.get(
+                    page_state, "native_playback_activation_unverified",
+                ),
+                stage="native_playback_input",
+            )
+            error.waiting_items = [{**item, "stage": "native_playback_input"}]
+            raise error
+        return item
 
     def _resolve_page(
         self,

@@ -1237,7 +1237,11 @@ def _read_agent_json(request: dict[str, Any]) -> dict[str, Any]:
     return value
 
 
-def _native_playback_timeout_result(exc: NativePlaybackInputTimeout) -> dict[str, Any]:
+def _native_playback_failure_result(exc: EnrichmentDiagnosticError) -> dict[str, Any]:
+    waiting_items = [
+        {key: value for key, value in item.items() if key != "next_poll_not_before"}
+        for item in getattr(exc, "waiting_items", [])
+    ]
     return {
         "status": "waiting",
         "failure": {
@@ -1246,7 +1250,8 @@ def _native_playback_timeout_result(exc: NativePlaybackInputTimeout) -> dict[str
             "stage": exc.diagnostic_stage,
             "retryable": True,
         },
-        "waiting_items": exc.waiting_items,
+        "waiting_count": len(waiting_items),
+        "waiting_items": waiting_items,
     }
 
 
@@ -1493,17 +1498,9 @@ def _standalone_writer_result(adapter: str, runner) -> dict[str, Any]:
             }],
         }
     except NativePlaybackInputTimeout as exc:
-        outcome = _native_playback_timeout_result(exc)
+        outcome = _native_playback_failure_result(exc)
     except EnrichmentDiagnosticError as exc:
-        outcome = {
-            "status": "waiting",
-            "failure": {
-                "category": exc.diagnostic_category,
-                "code": exc.diagnostic_code,
-                "stage": exc.diagnostic_stage,
-                "retryable": True,
-            },
-        }
+        outcome = _native_playback_failure_result(exc)
     except EnrichmentError:
         outcome = {
             "status": "waiting",
@@ -1560,7 +1557,7 @@ def _classified_source(name: str, runner):
                 stage="semantic_input",
             ) from exc
         except NativePlaybackInputTimeout as exc:
-            return _native_playback_timeout_result(exc)
+            return _native_playback_failure_result(exc)
         except DailyError:
             raise
         except EnrichmentError as exc:
@@ -1589,6 +1586,14 @@ def _classified_source(name: str, runner):
             diagnostic_code = str(
                 getattr(exc, "diagnostic_code", "")
             )
+            if (
+                isinstance(exc, EnrichmentDiagnosticError)
+                and exc.diagnostic_stage in {
+                    "native_playback_input", "native_playback_window_close",
+                }
+                and getattr(exc, "waiting_items", None)
+            ):
+                return _native_playback_failure_result(exc)
             if diagnostic_code == "mini_program_consent_required":
                 raise UserActionBlocker(
                     "xiaocao-mini-program-consent",
