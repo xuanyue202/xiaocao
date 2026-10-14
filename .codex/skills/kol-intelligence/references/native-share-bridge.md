@@ -35,6 +35,21 @@ close below. This repairs the workflow, not the underlying input service.
 
 ## Reuse the configured code and bind the original share
 
+Browser first: before any native WeChat read or input, verify the configured
+editor URL/code and independently reopen its saved original-share component in
+the bound Browser tab. Do not call `cua.getApp` for WeChat, take its screenshot,
+or select Window → 草料二维码 merely to prepare or verify the web editor.
+If the saved target matches, skip editing/saving. Only after this Browser
+readback verify the same capture's sniffer/PAC and obtain one fresh provider
+entry; then bind/read native WeChat once for B0–B4. An exact course already
+verified in this task may be reused without another launch. Do not open native
+windows just to discover whether Browser editing is necessary. Fewer native
+actions are not proof that WeChat protection cannot occur.
+
+An already captured item's window-cleanup request skips editor checks and entry
+issuance entirely; verify/close only its exact native course under B4. After a
+known download/upload claim, follow downstream receipts without another launch.
+
 Read the local, untracked configuration at
 `output/live/kol_xiaocao_live/native_share_bridge.json`. It holds the existing
 editor/public page, provider application/path, button label and the last
@@ -151,10 +166,12 @@ do not compensate by splicing a ticket. The 2026-09-28 sources were
 
 ## Visible native jump: B0–B4
 
-Bind `wechat` with `await cua.getApp("com.tencent.xinWeChat")` only when no
-binding exists; follow the tool's first-use documentation. If the observed
-Window menu uniquely lists “草料二维码”, select that item and read back its
-page. Main-chat white screenshots are not proof that WeChat exited.
+After the Browser/readiness/entry sequence, bind `wechat` with
+`await cua.getApp("com.tencent.xinWeChat")` only when no binding exists; follow
+the tool's first-use documentation. Only if the post-launch readback did not
+show the expected bridge may the observed Window menu's unique “草料二维码”
+item be selected once and read back. It is not a preflight step. Main-chat white
+screenshots are not proof that WeChat exited.
 
 For every click use a unique fresh AX index, or the center of the unique visible
 control in the latest screenshot if AX lacks the control. Follow each action

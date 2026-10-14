@@ -7,6 +7,10 @@ Keep the existing capture/job and process; the local entry owns discovery,
 process lifetime, and mailbox completion.
 
 **微信执行标准：执行下文动作表；品牌原生分享入口同时使用桥接参考的 B0–B4。**
+品牌入口的准备、编辑与保存目标核验先全部在绑定的 Browser 标签页完成；
+不得为此前置步骤读取微信/截图或选择其窗口菜单。之后核验同一 sniffer/PAC、
+签发并唤起一次入口，才读取原生微信执行必要课程动作。本任务已核验的精确
+课程窗口可复用；有限媒体后的关闭请求不重做网页核验或唤起。
 “打开课程”“输入口令”“关闭课程窗口”必须落到对应行的
 前置画面、工具调用和结果检查。未列出的画面/操作停在原任务做离线诊断，
 不得以自修复为由试点、重开、刷新或增加快捷键。此约束旨在减少微信敏感操作，
@@ -414,6 +418,12 @@ Cancel-wait must detach the owned PAC before stopping the sniffer, including on
 inactive network services left behind by a network switch. Retain the existing
 media/receipt validation gates. PAC uses `PROXY ...; DIRECT` for capture domains;
 direct fallback preserves connectivity, not media-capture success.
+After an idle capture is restored under the same ID, earlier cleanup/cancel
+receipts are historical. Both cleanup commands recheck current process,
+listeners, API and owned PAC before returning an idempotent result; if restored,
+they execute the existing guarded cleanup. Idle cancel still refuses a new
+candidate or a non-idle capture. Do not treat a historical receipt as fresh
+service shutdown or as media completion.
 
 If an older crash or machine restart leaves an orphaned endpoint, use the exact
 installed downloader's `proxy-recover` subcommand (not a new capture). It refuses

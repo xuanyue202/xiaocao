@@ -2014,13 +2014,26 @@ class XiaocaoLiveService:
             raise EnrichmentError("existing provider task blocks transport-only repair")
         return self._replace_sniffer_for_repair(current, replacement_binary=replacement_binary, preserve_native_arm=True)
 
+    def _verified_cleanup_replay(
+        self, existing: dict[str, Any] | None,
+    ) -> dict[str, Any] | None:
+        if existing is None:
+            return None
+        readback = self.cleanup_snapshot()
+        try:
+            validate_cleanup_evidence(readback)
+        except EnrichmentError:
+            return None
+        return {**existing, "idempotent_replay": True, "cleanup_readback": readback}
+
     def cleanup_sniffer(self, *, capture_job_id: str) -> dict[str, Any]:
         existing = self._event(
             "capture_cleanup_completed",
             capture_job_id=capture_job_id,
         )
-        if existing is not None:
-            return {**existing, "idempotent_replay": True}
+        replay = self._verified_cleanup_replay(existing)
+        if replay is not None:
+            return replay
         self._append(
             "capture_cleanup_claimed",
             status="cleanup_claimed",
@@ -2051,17 +2064,18 @@ class XiaocaoLiveService:
 
     def cancel_capture_wait(self, capture_job_id: str) -> dict[str, Any]:
         """Stop an idle capture wait without claiming completed-media cleanup."""
-        existing = self._event(
-            "capture_wait_cancelled",
-            capture_job_id=capture_job_id,
-        )
-        if existing is not None:
-            return {**existing, "idempotent_replay": True}
         capture = self.capture_store.latest(capture_job_id)
         if capture is None:
             raise EnrichmentError("capture job does not exist")
         if capture.get("status") != "awaiting_capture":
             raise EnrichmentError("only an idle capture wait can be cancelled")
+        existing = self._event(
+            "capture_wait_cancelled",
+            capture_job_id=capture_job_id,
+        )
+        replay = self._verified_cleanup_replay(existing)
+        if replay is not None:
+            return replay
         detected = self.capture_store.detect_capture(
             capture,
             self.sniffer.candidates(),

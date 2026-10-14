@@ -888,6 +888,13 @@ def test_native_mini_program_entry_is_armed_before_ui_and_binds_observed_live(
                 "opencli_fallback": "only_after_exact_url_readback",
                 "saved_target_readback": "reopened_editor_component",
                 "on_explicit_policy_denial": "stop_denied_action_no_tool_bypass",
+                "native_ui_before_editor_readback_allowed": False,
+                "workflow_order": [
+                    "browser_saved_target_readback",
+                    "same_capture_sniffer_pac_readback",
+                    "fresh_provider_launch_once_or_verified_course_reuse",
+                    "native_activation_readback",
+                ],
             }
         else:
             assert "native_entry_reference" not in request

@@ -2225,6 +2225,71 @@ def test_cancel_wait_stops_only_the_idle_sniffer_and_restores_proxy(
     )
 
 
+@pytest.mark.parametrize("method,event", [
+    ("cancel_capture_wait", "capture_wait_cancelled"),
+    ("cleanup_sniffer", "capture_cleanup_completed"),
+])
+def test_cleanup_rechecks_restored_capture_before_replaying_old_receipt(
+    tmp_path, monkeypatch, method, event,
+):
+    store = CaptureJobStore(tmp_path / "capture.jsonl")
+    armed = store.arm([])
+    service = XiaocaoLiveService(
+        tmp_path / "live", capture_ledger=store.path,
+        sniffer_client=SimpleNamespace(candidates=lambda: []),
+    )
+    service._append(event, capture_job_id=armed["job_id"], status="old_cleanup")
+    state = {"running": True, "pac": True}
+    calls = []
+
+    def snapshot():
+        return {
+            "process_gone": not state["running"],
+            "api_status_unavailable": not state["running"],
+            "listeners": {"2022": state["running"], "2023": state["running"]},
+            "proxy_flags": {"HTTPEnable": 0, "HTTPSEnable": 0,
+                            "ProxyAutoConfigEnable": int(state["pac"]), "SOCKSEnable": 0},
+            "capture_proxy_detached": not state["pac"],
+            "observed_at": "2026-10-14T18:30:00+08:00",
+        }
+
+    def detach():
+        calls.append("detach")
+        state["pac"] = False
+
+    def stop(pid, _signal):
+        assert pid == 123 and not state["pac"]
+        calls.append("stop")
+        state["running"] = False
+
+    monkeypatch.setattr(service, "cleanup_snapshot", snapshot)
+    monkeypatch.setattr(service, "_sniffer_pids", lambda: [123] if state["running"] else [])
+    monkeypatch.setattr(service, "_disable_owned_capture_pac", detach)
+    monkeypatch.setattr("xiaocao.kol.xiaocao_live.os.kill", stop)
+    cleanup = getattr(service, method)
+    result = cleanup(capture_job_id=armed["job_id"])
+    assert calls == ["detach", "stop"]
+    assert result["status"] != "old_cleanup"
+    assert result["process_gone"] and result["capture_proxy_detached"]
+    replay = cleanup(capture_job_id=armed["job_id"])
+    assert replay["idempotent_replay"] is True
+    assert replay["cleanup_readback"]["process_gone"] is True
+    assert calls == ["detach", "stop"]
+    assert store.latest(armed["job_id"])["status"] == "awaiting_capture"
+
+
+def test_prior_idle_cancel_cannot_hide_a_bound_capture(tmp_path, monkeypatch):
+    store = CaptureJobStore(tmp_path / "capture.jsonl")
+    armed = store.arm([])
+    service = XiaocaoLiveService(tmp_path / "live", capture_ledger=store.path)
+    service._append("capture_wait_cancelled", capture_job_id=armed["job_id"])
+    current = store.transition(armed, "download_claimed", status="download_claimed")
+    monkeypatch.setattr(service, "cleanup_snapshot", lambda: pytest.fail("reject before cleanup"))
+    with pytest.raises(EnrichmentError, match="only an idle capture wait"):
+        service.cancel_capture_wait(armed["job_id"])
+    assert store.latest(armed["job_id"]) == current
+
+
 def test_cancel_wait_preserves_a_new_candidate_seen_before_ledger_poll(
     tmp_path,
     monkeypatch,
@@ -2257,6 +2322,10 @@ def test_cancel_wait_preserves_a_new_candidate_seen_before_ledger_poll(
         sniffer_binary=binary,
         sniffer_client=Sniffer(),
     )
+    service._append("capture_wait_cancelled", capture_job_id=armed["job_id"])
+    monkeypatch.setattr(service, "cleanup_snapshot", lambda: {
+        "process_gone": False,
+    })
 
     with pytest.raises(EnrichmentError, match="new capture candidate"):
         service.cancel_capture_wait(armed["job_id"])

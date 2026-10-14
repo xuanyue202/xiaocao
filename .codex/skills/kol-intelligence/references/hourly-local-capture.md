@@ -200,6 +200,11 @@ the native-stage reference; the exact original share is its target. Do not
 require a visible chat card for that route or convert its token to a guessed
 HTTPS link or Scheme. Goose's original-message route remains scoped to its
 currently unique visible card.
+For the brand bridge, prepare and verify the saved original target entirely in
+the bound Browser editor before any native WeChat read, screenshot or menu
+selection. Only after Browser verification and same-capture sniffer/PAC checks
+does the fresh entry lead to the reviewed native actions. Captured-course
+cleanup skips Browser preflight and launch; preserve all existing claims.
 
 Also run stateless `subscription-updates --within 48h` for exactly:
 

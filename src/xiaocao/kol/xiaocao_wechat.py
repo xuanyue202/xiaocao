@@ -1617,9 +1617,13 @@ class XiaocaoWechatLiveSubscription:
             "instructions": (
                 "保留原始联系人、发布时间、应用名和分享码；先读 Skill 的"
                 "references/native-share-bridge.md，复用已配置草料活码。"
+                "先只用 Browser 核验编辑器和已保存分享码；不要为网页核验读取微信、"
+                "截图或点击窗口菜单/草料窗口。目标已匹配时不编辑、不保存。"
                 "草料网页编辑优先用 Browser 已绑定的精确编辑器标签页，不用原生"
                 "Computer Use 操作网页；每次操作前核验当前编辑器 URL 和码 ID，"
                 "保存后重开编辑器组件读回原分享目标，再取得一次新鲜提供方入口。"
+                "浏览器核验完成后检查同一抓取服务/PAC，再签发并唤起一次；"
+                "此后才读取微信并执行必要的 B0–B4。仅本任务已有精确课程读回时复用。"
                 "明确策略拒绝不得换工具绕过。微信原生窗口按 B0–B4 操作。"
                 "已有精确课程窗口则复用。"
                 if native_entry and course_app == "见势擒龙团"
@@ -1716,6 +1720,16 @@ class XiaocaoWechatLiveSubscription:
                     "saved_target_readback": "reopened_editor_component",
                     "on_explicit_policy_denial": "stop_denied_action_no_tool_bypass",
                 }
+                if reason != "captured_window_cleanup":
+                    request["native_bridge_editor_policy"].update({
+                        "native_ui_before_editor_readback_allowed": False,
+                        "workflow_order": [
+                            "browser_saved_target_readback",
+                            "same_capture_sniffer_pac_readback",
+                            "fresh_provider_launch_once_or_verified_course_reuse",
+                            "native_activation_readback",
+                        ],
+                    })
         else:
             request.update({
                 "source_url": item["source_url"],
