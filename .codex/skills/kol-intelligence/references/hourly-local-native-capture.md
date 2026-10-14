@@ -283,8 +283,14 @@ lists enrich asynchronously with an incremental cache; they cannot bind a source
    | W1 | 已取得 app 对象 | `await wechat.getAXStateAndScreenshot();` | 目标课程且有“输入密码”→W2；口令弹窗已打开且输入为空→W3；已起播或同一场有限媒体已捕获→W7；无口令门且有可见 Play→W6；其他→停止输入 |
    | W2 | 目标课程，唯一可见“输入密码”按钮，无弹窗 | `await wechat.click(passwordButton); await wechat.getAXStateAndScreenshot();` | 必须出现课程口令弹窗和空输入框→W3；没出现不再点 |
    | W3 | 课程口令弹窗内空输入框可见 | `await wechat.click(passwordInput); await wechat.getAXStateAndScreenshot();` | 同一输入框已聚焦/可见输入光标→W4；未确认聚焦不输入 |
-   | W4 | 同一空输入框已聚焦 | `await wechat.typeText("666"); await wechat.getAXStateAndScreenshot();` | 必须读回输入值为 666→W5；其他值不清空、不补写、不提交 |
-   | W5 | 课程口令框显示 666，唯一“确定”按钮可见 | `await wechat.click(confirmButton); await wechat.getAXStateAndScreenshot();` | 已起播→立即 W7；未起播且有可见 Play→W6；错误/仍为口令门→停止输入，不能再提交 |
+   | W4 | 同一空输入框已聚焦 | `await wechat.typeText("666"); await wechat.getAXStateAndScreenshot();` | 完整输入已读回→W5；本次输入的已知前缀只收到 1 或 2 个字符→W4R；其他情况停止提交，保留原任务诊断 |
+   | W4R | 同一课程、同一输入框；本轮从空框只输入过 666，期间无人编辑或切换窗口；最新读回明确只有 6 或 66（掩码框可用清晰的 1 或 2 个掩码字符）；光标仍在末尾 | `await wechat.typeText(missingSuffix); await wechat.getAXStateAndScreenshot();`，`missingSuffix` 只能分别为 `"66"` 或 `"6"` | 只补缺失后缀一次；完整读回→W5；仍不完整、计数不清或焦点变化则停止提交，继续原任务诊断，不清空、不重复整串 |
+   | W5 | 同一课程口令框完整读回为 666；或从已知空框只输入过字符 6、完整显示 3 个掩码字符且没有其他编辑；唯一确认按钮可见 | `await wechat.click(confirmButton); await wechat.getAXStateAndScreenshot();` | 已起播→立即 W7；未起播且有可见 Play→W6；错误/仍为口令门→停止输入，不能再提交 |
+
+   课程口令属于本任务已授权的已知值。少输字符是 Agent 可恢复的输入问题，
+   不应仅因此请求用户操作或记为登录/服务端故障。W4R 不允许猜测未知字符、
+   在外部编辑后从掩码反推内容、补写验证码/账号密码，或在工具明确拒绝输入时
+   换工具绕过。用户已补齐并确认时直接核验现有课程和同源媒体，跳过 W2–W5。
 
 4. **抓到后关闭课程窗口：W6–W10。** W7–W10 的菜单动作是鹅直播旧版已验收路径；
    新版品牌走桥接参考 B4 的实际关闭状态核对和故障修复，不将旧菜单验收迁移过来。
@@ -306,10 +312,12 @@ lists enrich asynchronously with an incremental cache; they cannot bind a source
    不使用退出微信、进程终止、全局快捷键或右上角坐标作为替代。
 
    **本轮输入上限：** 商户唤起一次；有课程口令门时按钮/输入框/确定各点击一次、
-   `typeText("666")` 一次；未自动起播才增加 Play 点击一次；课程关闭提交一次。
+   `typeText("666")` 一次，仅 W4R 前置证据齐备时另补缺失后缀一次；
+   未自动起播才增加 Play 点击一次；课程关闭提交一次。
    同意页另按 C1–C3，勾选和提交各最多一次。
    这是上限而非配额，已满足的步骤必须跳过。允许的微信工具动作仅为表内
    `getApp`、`getAXState`、`getAXStateAndScreenshot`、目标 `click`、`typeText("666")`、
+   W4R 限定的 `typeText("6"|"66")`、
    菜单 `performSecondaryAction(..., "Cancel")`；不能用 Space、静音、双击、Enter、Tab、Esc、全局快捷键、刷新、
    返回、窗口调整、退出/重启微信、重新打开 Scheme、DOM/CDP 或注入来代替。
 
