@@ -877,9 +877,22 @@ def test_native_mini_program_entry_is_armed_before_ui_and_binds_observed_live(
             assert request["native_bridge_config_path"] == (
                 "output/live/kol_xiaocao_live/native_share_bridge.json"
             )
+            assert request["native_bridge_editor_policy"] == {
+                "surface": "browser_dom",
+                "preferred_transport": "bound_browser_tab",
+                "session": "caoliao",
+                "explicit_tab_required": True,
+                "native_computer_use_allowed": False,
+                "require_current_editor_url": True,
+                "require_bound_tab_locators": True,
+                "opencli_fallback": "only_after_exact_url_readback",
+                "saved_target_readback": "reopened_editor_component",
+                "on_explicit_policy_denial": "stop_denied_action_no_tool_bypass",
+            }
         else:
             assert "native_entry_reference" not in request
             assert "native_bridge_config_path" not in request
+            assert "native_bridge_editor_policy" not in request
         return {
             "action": request["action"],
             "subscription_id": request["subscription_id"],

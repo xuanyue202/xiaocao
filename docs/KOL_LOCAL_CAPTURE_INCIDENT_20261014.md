@@ -18,3 +18,11 @@
 证据：原订阅 `events.jsonl` / `capture_jobs.jsonl`；协调器 `output/live/kol_daily/events.jsonl` 的 10/13 21:01:56 与 10/14 07:03:46 记录；`output/live/kol_daily/receipts/hourly_local_20261014T0700.json`；`local_continue_20261014_password.json` 与 `local_continue_20261014_password_mailbox.json`。昨晚编辑拒绝的实际操作记于该 Automation 的 memory.md 10/13 21:02 条目；供应商 ready 时间及 CUA 输入服务底层原因均未独立证明。
 
 验证：418 项相关回归通过，独立 Standards / Spec 复审均无剩余问题，Skill 运行包检查通过。补齐 Agent 输入后缀的新版动作未在用户已确认口令后重复执行；不把合同修复当作新的无人值守 UI 验收。现有 Automation 提示已通过应用接口更新并读回，原时刻、模型和通知策略保持一致。
+
+## 昨晚入口问题的补充修复（11:06）
+
+先前提交修正了失败分类，尚未固定编辑器的操作路径。本次把原生网页编辑改为精确绑定编辑器标签页的 Browser DOM 控件操作，原生 CUA 用于已审查的微信操作。运行请求明确要求当前 URL/码 ID 校验、同标签页控件、保存后重开组件读回；本地配置保留已核验标签页绑定，后续每次仍需新读回。
+
+本轮发现 OpenCLI 的 state 指向编辑器，但 eval 返回另一个前台页面；单独选中标签页、甚至显式 --tab 都未消除这次不一致。URL 检查拒绝继续读取/输入。该工具行为没有被修复，也不能证明它就是昨晚拒绝的底层原因。OpenCLI 因此仅在实际 URL 核验通过后作回退；不把会话名或 selected 返回当作输入已绑定的证据。
+
+Browser API 绑定到原 Edge 标签页 1950315443，同一码 446019473；重载后独立读回唯一链接为原分享码 r1Kgg0AodmxqoeG。通过该标签页的 DOM 控件打开“更换链接”面板，再次核对“小程序链接”和通用按钮文字，取消后确认面板关闭。没有修改目标、保存内容、使用原生网页 setValue、创建新码或重新启动课程。证据 `output/live/kol_daily/receipts/bridge_editor_repair_20261014.json`。184 项相关回归及独立两路审查通过；这是入口路由与保存目标的验证，不代表修改了工具安全策略或重测了下一场完整采集。

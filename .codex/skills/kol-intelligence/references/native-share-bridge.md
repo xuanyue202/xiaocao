@@ -42,6 +42,56 @@ configured subscription/message hash. It contains no ticket or signed media.
 The config describes the bridge; the current request/manifest remains the source
 of truth for contact, publication time, application name and original share token.
 
+The editor is a web page. Prefer Browser DOM controls bound to the exact existing
+authenticated editor tab as the routine entry, before any
+native action. Do not select native Edge/Computer Use to edit this page;
+`cua_repl` native input uses the existing reviewed WeChat action tables, including
+consent and course closure. This routing avoids
+starting a web edit through a native input surface that may reject its URL;
+it does not change or bypass a tool security policy. If this operation is
+explicitly denied on any surface, stop it and diagnose the recorded boundary;
+never switch tools to execute the denied edit.
+
+Read `editor_binding` from the current local config when present. Reuse its
+Browser/tab ID only after fresh metadata confirms the exact editor URL/code;
+if stale, resolve the existing editor tab by the configured URL and inspect any
+ambiguity. Use that tab's Browser DOM locators; do not use native `setValue`,
+native Edge actions, or browser-wide foreground input. Re-read the tab URL
+before each component read/mutation, and use locators bound to this same tab.
+If the URL changed, stop before fields/input and rebind the existing editor.
+An explicit policy denial stops the action on every transport.
+
+OpenCLI is a supported fallback for a genuinely unavailable Browser transport,
+only when exact-page readback succeeds before any editor input. In that path,
+read `opencli browser caoliao state` first (use pinned
+`npx --yes @jackwener/opencli@1.8.6` when needed). If its page is about:blank,
+rebind this same session to `editor_url` from the current config with
+`open <editor_url> --window foreground`, select the returned exact page with
+`tab select <page> --window foreground`, and read state again. A disconnected
+session or transient command timeout may receive bounded same-session recovery;
+do not recreate the code, change identity, use CUA on the editor, or bypass a
+policy denial. Inspect fresh visible component DOM before filling/clicking;
+never reuse numeric references or CSS selectors from a historical snapshot.
+Session name or an earlier state snapshot is not sufficient page binding.
+Pass `--tab <exact returned page>` on each supported browser command. Both a
+separate tab selection and an explicit --tab eval returned an unrelated URL
+in the 2026-10-14 diagnostic; neither is acceptance without current URL readback.
+Before each component read or mutation, require the current page URL to match
+the configured editor host and exact code ID. For supported OpenCLI DOM writes,
+keep that URL check inside the same evaluation; Browser read-only evaluate
+must remain read-only and mutations use the bound tab's locators. Reject a
+changed tab before inspecting fields
+or dispatching input. Re-select the exact editor page and read back when the
+user has changed the foreground tab; do not operate their unrelated page.
+
+After a changed target is saved, independently reopen/reload the same editor,
+reopen the component and verify the exact original share and generic button.
+An unsaved field value, local config match, or Save click success is not proof
+of persisted binding. Update local subscription/message binding only after
+that verification, then allow the fresh merchant entry. If the saved target
+already matches, perform verification without another save. Keep signed tickets,
+credential values, hidden app state and guessed component APIs out of this path.
+
 1. Skip activation when the same capture already has accepted media, an active
    download, an upload claim or Handoff. Continue its existing downstream stage.
 2. In the existing logged-in browser editor, inspect the code's “其他小程序”
