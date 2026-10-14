@@ -359,12 +359,14 @@ async function activateUploadPage(page) {
   return state;
 }
 
-async function recoverStalledTransfer(page, input, inspection) {
+async function recoverStalledTransfer(page, input, inspection, {continueOnly = false} = {}) {
   const surface = inspection.surfaceState;
   const row = surface?.targetUiRows?.length === 1 ? surface.targetUiRows[0] : null;
   if (!surface?.transferQueue?.complete || surface.transferQueue.rowCount !== 1
       || surface.transferQueue.targetCount !== 1 || surface.transferQueue.successfulCount !== 0
-      || !row?.rowClassName?.split(' ').includes('status-uploading')
+      || !(continueOnly
+        ? row?.rowClassName?.split(' ').some(value => value === 'status-pause' || value === 'status-paused')
+        : row?.rowClassName?.split(' ').includes('status-uploading'))
       || !row.progressWidths?.length || !row.progressWidths.every(width => /^0(?:\.0+)?%$/.test(width))
       || !/(?:^|\n)0B\/s(?:$|\n)/.test(row.rowText || '')) {
     throw new CommandExecutionError('Same-queue recovery requires one running zero-progress target');
@@ -394,7 +396,7 @@ async function recoverStalledTransfer(page, input, inspection) {
     if (names.length !== 1 || !visible(names[0])) return null;
     const controls = [...row.querySelectorAll('[title]')].filter(visible);
     const pause = controls.filter(node => node.title === '暂停');
-    const resume = controls.filter(node => node.title === '继续' || node.title === '开始');
+    const resume = controls.filter(node => node.title === '继续上传' || node.title === '继续' || node.title === '开始');
     const widths = [...row.querySelectorAll('[style]')].map(node => node.style.width)
       .filter(width => /^[0-9]+(?:[.][0-9]+)?%$/.test(width));
     const zero = widths.length > 0 && widths.every(width => /^0(?:[.]0+)?%$/.test(width))
@@ -404,7 +406,7 @@ async function recoverStalledTransfer(page, input, inspection) {
       || row.classList.contains('status-success');
     if (title) {
       if (title === '暂停' && (!zero || failed)) return null;
-      if (title !== '暂停' && (!paused || failed)) return null;
+      if (title !== '暂停' && (!paused || failed || (${JSON.stringify(continueOnly)} && !zero))) return null;
       const match = controls.filter(node => node.title === title);
       if (match.length !== 1) return null;
       row.querySelectorAll('[data-xiaocao-transfer-recovery]').forEach(node =>
@@ -415,13 +417,7 @@ async function recoverStalledTransfer(page, input, inspection) {
       resumeTitle: resume.length === 1 ? resume[0].title : '',
       uploading: row.classList.contains('status-uploading'), paused, failed, zero, marked: !!title};
   })()`);
-  const pause = await controlState('暂停');
-  if (!pause?.marked || pause.pauseCount !== 1 || pause.resumeCount !== 0 || !pause.uploading
-      || !pause.zero || pause.paused || pause.failed) {
-    throw new CommandExecutionError('Exact running upload pause control is unavailable');
-  }
   const selector = `[data-xiaocao-transfer-recovery="${input.claimId}"]`;
-  await uploadStage(input, 'repair_pause', () => page.click(selector));
   const waitState = async (paused) => {
     const deadline = Date.now() + 5000;
     while (Date.now() < deadline) {
@@ -433,10 +429,21 @@ async function recoverStalledTransfer(page, input, inspection) {
     }
     throw new CommandExecutionError('Same-queue recovery state did not match; do not repeat');
   };
-  const paused = await uploadStage(input, 'repair_pause_readback', () => waitState(true));
+  let paused;
+  if (continueOnly) {
+    paused = await uploadStage(input, 'repair_existing_pause_readback', () => waitState(true));
+  } else {
+    const pause = await controlState('暂停');
+    if (!pause?.marked || pause.pauseCount !== 1 || pause.resumeCount !== 0 || !pause.uploading
+        || !pause.zero || pause.paused || pause.failed) {
+      throw new CommandExecutionError('Exact running upload pause control is unavailable');
+    }
+    await uploadStage(input, 'repair_pause', () => page.click(selector));
+    paused = await uploadStage(input, 'repair_pause_readback', () => waitState(true));
+  }
   const resume = await controlState(paused.resumeTitle);
   if (!resume?.marked || resume.resumeCount !== 1 || resume.pauseCount !== 0 || resume.uploading
-      || !resume.paused || resume.failed) {
+      || !resume.paused || resume.failed || (continueOnly && !resume.zero)) {
     throw new CommandExecutionError('Exact paused upload continue control is unavailable');
   }
   await uploadStage(input, 'repair_resume', () => page.click(selector));
@@ -465,6 +472,7 @@ cli({
     { name: 'claim-id', required: true, help: 'Durable upload claim identifier from the caller ledger' },
     { name: 'inspect-only', type: 'boolean', default: false, help: 'Stop after exact folder/name inspection without attaching a file' },
     { name: 'repair-stalled', type: 'boolean', default: false, help: 'One caller-claimed pause/readback/continue of the retained stalled transfer; never attach a file' },
+    { name: 'continue-stalled', type: 'boolean', default: false, help: 'Finish one caller-claimed recovery from the exact paused transfer; never pause or attach' },
     { name: 'activate-only', type: 'boolean', default: false, help: 'Check native page activation without attaching a file' },
     { name: 'timeout', type: 'int', default: 60, help: 'Transport deadline in seconds; shared with the runtime deadline' },
   ],
@@ -480,17 +488,19 @@ cli({
   ],
   func: async (page, kwargs) => {
     const input = normalizeInput(kwargs);
-    if (kwargs['repair-stalled'] === true && (kwargs['inspect-only'] === true || kwargs['activate-only'] === true)) {
+    const recovery = kwargs['repair-stalled'] === true || kwargs['continue-stalled'] === true;
+    if (recovery && (kwargs['inspect-only'] === true || kwargs['activate-only'] === true
+        || (kwargs['repair-stalled'] === true && kwargs['continue-stalled'] === true))) {
       throw new ArgumentError('Same-queue repair cannot be combined with inspection or activation');
     }
     const inspection = await inspectTarget(page, input, {
-      retainPage: kwargs['inspect-only'] === true || kwargs['repair-stalled'] === true,
+      retainPage: kwargs['inspect-only'] === true || recovery,
     });
-    if (kwargs['repair-stalled'] === true) {
+    if (recovery) {
       if (inspection.exactCount !== 0) {
         throw new CommandExecutionError('Cloud target already exists; do not recover its upload');
       }
-      return recoverStalledTransfer(page, input, inspection);
+      return recoverStalledTransfer(page, input, inspection, {continueOnly: kwargs['continue-stalled'] === true});
     }
     if (inspection.exactCount === 1) {
       return [{

@@ -40,7 +40,7 @@ def setup_upload(tmp_path, monkeypatch):
 
     def run(**kwargs):
         calls.append(kwargs)
-        if kwargs.get('repair_stalled'):
+        if kwargs.get('repair_stalled') or kwargs.get('continue_stalled'):
             # Recovery is claimed before any browser operation, without a held
             # job lock. A lost result must permanently consume that claim.
             assert service.store.latest(current['job_id'])['stalled_upload_repair_claimed_at']
@@ -132,10 +132,61 @@ def test_uncertain_resume_is_never_repeated(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize('scenario', ['success', 'progress', 'paused_initial', 'ambiguous',
-                                      'incomplete', 'wrong_folder', 'denied', 'error_after_pause'])
+                                      'incomplete', 'wrong_folder', 'denied', 'error_after_pause',
+                                      'continue_success', 'continue_error', 'continue_progress'])
 def test_production_adapter_only_recovers_exact_paused_transfer(scenario):
     import subprocess
     from pathlib import Path
     root = Path(__file__).resolve().parents[1]
     subprocess.run(['node', 'tests/fixtures/kol_upload_recovery.mjs', scenario],
                    cwd=root, check=True, capture_output=True, text=True, timeout=10)
+
+
+def test_claimed_pause_can_continue_once_without_repeating_pause(tmp_path, monkeypatch):
+    service, job, clock, proof, calls, _, _ = setup_upload(tmp_path, monkeypatch)
+    service.store.append({**service.store.latest(job),
+        'stalled_upload_repair_claimed_at': NOW.isoformat(),
+        'stalled_upload_repair_dispatch_finished_at': NOW.isoformat()})
+    row = proof['surfaceState']['targetUiRows'][0]
+    row['rowClassName'] = 'status-pause file-list'
+    row['rowControls'] = [{'title': '继续上传'}]
+    result = service.continue_claimed_stalled_upload(job, repair_authorized=True)
+    assert result['event'] == 'netdisk_stalled_upload_resumed'
+    assert sum(call.get('continue_stalled') is True for call in calls) == 1
+    assert not any(call.get('repair_stalled') for call in calls)
+    with pytest.raises(EnrichmentError, match='not eligible'):
+        service.continue_claimed_stalled_upload(job, repair_authorized=True)
+
+
+def test_uncertain_claimed_continuation_is_consumed(tmp_path, monkeypatch):
+    service, job, clock, proof, calls, uncertain, _ = setup_upload(tmp_path, monkeypatch)
+    service.store.append({**service.store.latest(job),
+        'stalled_upload_repair_claimed_at': NOW.isoformat(),
+        'stalled_upload_repair_dispatch_finished_at': NOW.isoformat()})
+    row = proof['surfaceState']['targetUiRows'][0]
+    row['rowClassName'] = 'status-pause file-list'
+    row['rowControls'] = [{'title': '继续上传'}]
+    uncertain[0] = True
+    with pytest.raises(EnrichmentError, match='uncertain'):
+        service.continue_claimed_stalled_upload(job, repair_authorized=True)
+    with pytest.raises(EnrichmentError, match='not eligible'):
+        service.continue_claimed_stalled_upload(job, repair_authorized=True)
+    assert sum(call.get('continue_stalled') is True for call in calls) == 1
+
+
+def test_paused_inflight_repair_cannot_overlap_its_continue(tmp_path, monkeypatch):
+    service, job, clock, proof, calls, _, _ = setup_upload(tmp_path, monkeypatch)
+    service.store.append({**service.store.latest(job),
+        'stalled_upload_repair_claimed_at': NOW.isoformat()})
+    row = proof['surfaceState']['targetUiRows'][0]
+    row['rowClassName'] = 'status-pause file-list'
+    row['rowControls'] = [{'title': '继续上传'}]
+    with pytest.raises(EnrichmentError, match='not eligible'):
+        service.continue_claimed_stalled_upload(job, repair_authorized=True)
+    assert not calls
+    service.record_stalled_upload_dispatch_exit(job, evidence={
+        'basis': 'outer_command_exit_readback', 'exit_code': 1,
+        'session_id': 1234, 'chunk_id': 'test-exit', 'observed_at': NOW.isoformat()})
+    result = service.continue_claimed_stalled_upload(job, repair_authorized=True)
+    assert result['event'] == 'netdisk_stalled_upload_resumed'
+    assert sum(call.get('continue_stalled') is True for call in calls) == 1

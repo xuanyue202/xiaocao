@@ -41,6 +41,20 @@ pause/continue result, user-paused row, progress, changed source or ambiguous
 queue prohibits retry. Running readback is not cloud acceptance; keep the same
 PTY through the original upload's exact cloud receipt and Handoff.
 
+If this recovery returned without a final receipt and the original transfer is
+now authoritatively paused, `continue_claimed_stalled_upload(...,
+repair_authorized=True)` may finish that existing claim once after an explicit
+repair. It requires an observed original command exit as well as the original
+recovery claim, no success/continuation claim,
+the exact singleton paused target at zero progress, a visible `继续上传|继续|开始`
+control, zero cloud matches and unchanged local hash/size. It durably claims
+only the continue action before dispatch, never pauses again or reattaches.
+Its uncertain result consumes that continuation; no further retry is allowed.
+An in-flight/unknown original dispatcher cannot be continued. For a legacy
+attempt without an exit record, record only the actual completed command's
+tool readback with `record_stalled_upload_dispatch_exit`; preserve unknown
+historical pause/continue phases and never infer an exit from a paused row.
+
 After an adapter upload claim, ordinary `advance_opencli` polling uses that
 same adapter with `--inspect-only true`. It retains the exact uploader and
 checks the original claim/folder/name without navigation or file attachment.
