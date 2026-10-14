@@ -244,6 +244,11 @@ permit repeating the unchanged PAC/issued-entry/brand-navigation path. Continue
 offline diagnosis first and bind an evidence-backed changed repair/diagnostic
 plan to its applicable authorization. Never attribute protection to whichever
 menu/screenshot happened to reveal it. Preserve the original IDs and claims.
+Native action evidence follows the bridge reference: label steps, separate
+input/readback calls and export the exact current rollout slice with
+`scripts/kol_native_action_trace.py`. An explicitly authorized changed diagnostic
+rerun may take its one authentication baseline after Browser verification and
+before PAC/entry; a fresh login/security boundary stops entry issuance.
 
 `密码666` text is not a visible gate. Do not inspect cookies, storage, or
 credentials. `awaiting_playback` keeps identities and rechecks at the next

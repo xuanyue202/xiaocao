@@ -166,6 +166,41 @@ do not compensate by splicing a ticket. The 2026-09-28 sources were
 
 ## Visible native jump: B0–B4
 
+### Action evidence and an explicitly authorized diagnostic rerun
+
+Use `scripts/kol_native_action_trace.py` to export the exact current task's
+known rollout file (never discover another task/owner). Bind `--thread-id`,
+`--not-before <this run's timezone-aware start>`, `--identity` and
+`--capture-job-id` to the original request, with a per-run `--output-dir`.
+The exporter only reads local evidence and the original manifest; it starts no
+apps/services and changes no claims. It retains immutable source-hash snapshots
+and a `latest.json` pointer. Image/code/text hashes bind original evidence;
+raw images, typed text, credentials and issued URLs are not copied into reports.
+
+Label each relevant tool call with a code comment `// KOL_ACTION:<STEP>`:
+`BROWSER_PREFLIGHT`, `READINESS`, `PAC_ENABLE`, `PROVIDER_LAUNCH`, and the actual
+native SOP step. For native inputs, split the table's action and immediate
+readback into two consecutive tool calls, labelled e.g. `B2_ALLOW` then
+`B2_READBACK`. This changes recording granularity, not permitted actions or
+counts. Export after readback and before the next input; an unfinished tool
+call is pending, never a successful action. Preserve the exact source call IDs
+and request/output bounds. No added menus, screenshots or inputs for telemetry.
+
+For an explicitly user-authorized diagnostic rerun after a security exit,
+once Browser has verified the saved exact target, allow one passive native
+authentication-baseline read before enabling capture PAC or issuing/opening an
+entry. Label it `AUTH_BASELINE`. Use the existing WeChat handle when available;
+do not select windows or dismiss prompts. If it already shows security/login,
+stop before PAC/entry and return truthful authentication state to any retained
+PTY. This baseline is evidence collection, not authority to log in or repeat an
+unchanged route. The user must authorize the concrete changed diagnostic plan.
+Captured-course cleanup and known download/upload stages skip this preflight.
+
+On any anomaly preserve first abnormal AX separately from first explicit
+security text. The exporter lists preceding effects, not proven causes: a
+security decision can predate its UI. An offline trace/test pass is not a fix
+for WeChat self-protection or actual media/cloud acceptance.
+
 After the Browser/readiness/entry sequence, bind `wechat` with
 `await cua.getApp("com.tencent.xinWeChat")` only when no binding exists; follow
 the tool's first-use documentation. If the post-launch readback or B1/B2 result

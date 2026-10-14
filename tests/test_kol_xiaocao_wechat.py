@@ -769,6 +769,12 @@ def test_wechat_mini_program_route_binds_media_to_the_exact_live_id(tmp_path, cl
         )
         assert request["operator"] == "agent"
         assert request["user_action_required"] is False
+        trace = request["action_trace_policy"]
+        assert trace["identity"] == request["subscription_id"]
+        assert trace["capture_job_id"] == "kol-capture-current"
+        assert Path(trace["exporter"]).is_file()
+        assert trace["separate_input_and_readback_calls"] is True
+        assert trace["exact_current_thread_rollout_required"] is True
         assert request["ui_policy"] == {
             "app_bundle_id": "com.tencent.xinWeChat",
             "surface": "visible_foreground_ui",
