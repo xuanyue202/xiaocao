@@ -879,6 +879,22 @@ def test_native_mini_program_entry_is_armed_before_ui_and_binds_observed_live(
         assert "source_url" not in request
         assert "launch_resolver_command" not in request
         if app_name == "见势擒龙团":
+            recovery = request["window_input_recovery_policy"]
+            assert recovery["subscription_id"] == request["subscription_id"]
+            assert recovery["capture_job_id"] == capture.playback_preparations[-1][1]
+            assert set(recovery["input_lookup_errors"]) == {
+                "noWindowsAvailable", "windowNotFoundAtPosition",
+            }
+            assert recovery["fullscreen_cause_requires_current_evidence"] is True
+            reconstruction = recovery["bridge_reconstruction"]
+            assert reconstruction["max_attempts"] == 1
+            assert reconstruction["requires_fresh_visible_caoliao_bridge"] is True
+            assert reconstruction["requires_current_space_input_failure_evidence"] is True
+            assert reconstruction["error_code_alone_satisfies_preconditions"] is False
+            assert reconstruction["requires_no_course_or_bound_media_download_upload"] is True
+            assert reconstruction["close_and_verify_bridge_absence_first"] is True
+            assert reconstruction["reopen_saved_target_before_fresh_entry"] is True
+            assert reconstruction["reuse_same_sniffer_and_capture"] is True
             assert request["ui_policy"]["unconfirmed_brand_navigation_window_menu_probe_allowed"] is False
             assert request["ui_policy"]["security_relogin_retry_policy"] == (
                 "changed_plan_and_applicable_authorization_required"
@@ -907,6 +923,7 @@ def test_native_mini_program_entry_is_armed_before_ui_and_binds_observed_live(
                 ],
             }
         else:
+            assert "window_input_recovery_policy" not in request
             assert "native_entry_reference" not in request
             assert "native_bridge_config_path" not in request
             assert "native_bridge_editor_policy" not in request
@@ -1725,6 +1742,7 @@ def test_existing_source_task_is_reconciled_before_another_wechat_ui_attempt(
     def close_readback(request: dict) -> dict:
         assert needs_close_readback, "completed source must bypass new playback"
         assert request["check_reason"] == "captured_window_cleanup"
+        assert "window_input_recovery_policy" not in request
         assert "launch_resolver_command" not in request
         requests.append(request)
         return {

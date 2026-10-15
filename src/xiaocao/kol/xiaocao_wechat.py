@@ -1739,6 +1739,25 @@ class XiaocaoWechatLiveSubscription:
                     "on_explicit_policy_denial": "stop_denied_action_no_tool_bypass",
                 }
                 if reason != "captured_window_cleanup":
+                    request["window_input_recovery_policy"] = {
+                        "subscription_id": item["identity"],
+                        "capture_job_id": item["capture_job_id"],
+                        "input_lookup_errors": ["noWindowsAvailable", "windowNotFoundAtPosition"],
+                        "fullscreen_cause_requires_current_evidence": True,
+                        "surface": "reviewed_cua_only",
+                        "bridge_reconstruction": {
+                            "max_attempts": 1,
+                            "requires_fresh_visible_caoliao_bridge": True,
+                            "requires_current_space_input_failure_evidence": True,
+                            "error_code_alone_satisfies_preconditions": False,
+                            "requires_no_course_or_bound_media_download_upload": True,
+                            "close_and_verify_bridge_absence_first": True,
+                            "reopen_saved_target_before_fresh_entry": True,
+                            "reuse_same_sniffer_and_capture": True,
+                        },
+                        "on_policy_denial": "no_tool_or_surface_bypass",
+                        "on_security_relogin": "stop_native_inputs",
+                    }
                     request["ui_policy"].update({
                         "unconfirmed_brand_navigation_window_menu_probe_allowed": False,
                         "security_relogin_retry_policy": "changed_plan_and_applicable_authorization_required",
