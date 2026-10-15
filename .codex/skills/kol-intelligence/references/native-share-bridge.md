@@ -176,6 +176,13 @@ The exporter only reads local evidence and the original manifest; it starts no
 apps/services and changes no claims. It retains immutable source-hash snapshots
 and a `latest.json` pointer. Image/code/text hashes bind original evidence;
 raw images, typed text, credentials and issued URLs are not copied into reports.
+Inspect `coverage` on every export: `source_before_run`, `no_selected_calls`,
+an incomplete tail or pending outputs mean evidence is incomplete. A stale
+current-task journal can return zero calls; this never proves no operation,
+error or protection occurred. Preserve the actual tool transcript and a clearly
+labelled manual observation record until that exact journal catches up. Do not
+invent call IDs/timestamps or claim a full exported trace, and do not repeat
+native operations merely to populate telemetry. Continue the original safe job.
 
 Label each relevant tool call with a code comment `// KOL_ACTION:<STEP>`:
 `BROWSER_PREFLIGHT`, `READINESS`, `PAC_ENABLE`, `PROVIDER_LAUNCH`, and the actual

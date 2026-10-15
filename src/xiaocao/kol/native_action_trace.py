@@ -148,18 +148,37 @@ def inspect_trace(
     }), None)
     security = next((c for c in observations if c.get("state") == "security_relogin"), None)
     tool_error = next((c for c in observations if c.get("reported_error_code")), None)
+    event_times = [_time(e["timestamp"]) for e in events if e.get("timestamp")]
+    last_event = max(event_times, default=None)
+    pending = [c["call_id"] for c in ordered if c["completion"] == "pending"]
+    limitations = []
+    if last_event is None or last_event < boundary:
+        limitations.append("source_before_run")
+    if not ordered:
+        limitations.append("no_selected_calls")
+    if incomplete_tail:
+        limitations.append("incomplete_final_line")
+    if pending:
+        limitations.append("pending_tool_outputs")
+    coverage = {
+        "status": "evidence_incomplete" if limitations else "selected_calls_recorded",
+        "source_last_event_at": last_event.astimezone(_SHANGHAI).isoformat() if last_event else None,
+        "limitations": limitations,
+        "meaning": "Only recorded selected calls are covered; empty findings do not prove absence of errors or protection.",
+    }
     prior = [c["call_id"] for c in ordered if c["kind"] != "native_observation" and
              (abnormal is None or _time(c["requested_at"]) <= _time(abnormal["completed_at"]))]
     return {
         "schema_version": 1, "thread_id": thread_id, "binding": binding,
         "not_before": _local_time(not_before), "source_sha256": _sha(source),
         "source_bytes": len(source), "incomplete_final_line": incomplete_tail,
+        "coverage": coverage,
         "calls": ordered, "findings": {
             "first_abnormal_call_id": abnormal["call_id"] if abnormal else None,
             "first_security_text_call_id": security["call_id"] if security else None,
             "first_tool_error_call_id": tool_error["call_id"] if tool_error else None,
             "preceding_effect_call_ids": prior,
-            "pending_call_ids": [c["call_id"] for c in ordered if c["completion"] == "pending"],
+            "pending_call_ids": pending,
             "root_trigger_proven": False,
             "timing_basis": "tool request/output bounds; observation time and security decision time may differ",
         },
@@ -187,8 +206,10 @@ def export_trace(
     if not snapshot.exists():
         _atomic_json(snapshot, result)
     _atomic_json(output_dir / "latest.json", {"snapshot": snapshot.name,
-                 "source_sha256": result["source_sha256"], "findings": result["findings"]})
+                 "source_sha256": result["source_sha256"], "coverage": result["coverage"],
+                 "findings": result["findings"]})
     return {"snapshot": str(snapshot.resolve()), "call_count": len(result["calls"]),
+            "coverage": result["coverage"],
             **result["findings"]}
 
 

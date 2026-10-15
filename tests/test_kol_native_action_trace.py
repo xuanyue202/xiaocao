@@ -66,6 +66,24 @@ def test_reports_pending_dispatch_and_truncated_live_tail():
     assert result["calls"][0]["step"] == "B2_ALLOW"
     assert "completed_at" not in result["calls"][0]
     assert result["findings"]["first_security_text_call_id"] is None
+    assert result["coverage"]["status"] == "evidence_incomplete"
+    assert result["coverage"]["limitations"] == ["incomplete_final_line", "pending_tool_outputs"]
+
+
+def test_old_journal_does_not_report_current_run_as_clean():
+    source = journal(call("old", "await wechat.getAXState();", at="2026-10-14T15:26:00Z"))
+    result = inspect(source)
+    assert result["calls"] == []
+    assert result["coverage"]["status"] == "evidence_incomplete"
+    assert result["coverage"]["source_last_event_at"] == "2026-10-14T23:26:00+08:00"
+    assert result["coverage"]["limitations"] == ["source_before_run", "no_selected_calls"]
+
+
+def test_fresh_unrelated_events_are_not_native_action_coverage():
+    result = inspect(journal(event("message", role="assistant")))
+    assert result["coverage"]["limitations"] == ["no_selected_calls"]
+    recorded = inspect(journal(call("read", "await wechat.getAXState();"), output("read", "ok")))
+    assert recorded["coverage"]["status"] == "selected_calls_recorded"
 
 
 def test_collects_actual_freeform_environment_checkpoint_shape():
