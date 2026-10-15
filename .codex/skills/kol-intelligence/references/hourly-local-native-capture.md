@@ -432,6 +432,13 @@ listeners, API and owned PAC before returning an idempotent result; if restored,
 they execute the existing guarded cleanup. Idle cancel still refuses a new
 candidate or a non-idle capture. Do not treat a historical receipt as fresh
 service shutdown or as media completion.
+Before first cloud handoff, `advance` passively rechecks a historical cleanup.
+`capture_cleanup_readback_required` means the old receipt is not current;
+it does not authorize stopping the shared singleton, which may serve another
+capture. Preserve the original IDs/upload claim and continue Agent-owned
+same-item diagnosis. Establish the current capture binding before any explicit
+cleanup; do not kill or detach an unverified capture. Completed handoff readback
+does not repeat cleanup or restart a sniffer.
 
 If an older crash or machine restart leaves an orphaned endpoint, use the exact
 installed downloader's `proxy-recover` subcommand (not a new capture). It refuses

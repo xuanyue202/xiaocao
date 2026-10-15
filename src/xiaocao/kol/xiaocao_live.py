@@ -43,7 +43,7 @@ from .claim_coverage import (
     validate_claim_coverage,
 )
 from .author_profiles import semantic_author_profile
-from .enrichment_types import EnrichmentError
+from .enrichment_types import EnrichmentDiagnosticError, EnrichmentError
 from .netdisk_enrichment import NetdiskEnrichmentService
 from .semantic_bundle import read_validated_bundle, validate_receipt_bindings
 
@@ -2421,17 +2421,27 @@ class XiaocaoLiveService:
                     pending["source_job_status"] = capture["source_job_status"]
                 return pending
         media = self.validate_media(capture_job_id)
+        handoff = self._event(
+            "cloud_handoff_published",
+            capture_job_id=capture_job_id,
+        )
         cleanup = self._event(
             "capture_cleanup_completed",
             capture_job_id=capture_job_id,
         )
         if cleanup is None:
             cleanup = self.cleanup_sniffer(capture_job_id=capture_job_id)
+        elif handoff is None:
+            # The shared singleton might now serve another capture. Recheck
+            # old evidence passively; do not stop that process on this ID's behalf.
+            cleanup = self._verified_cleanup_replay(cleanup)
+            if cleanup is None:
+                raise EnrichmentDiagnosticError(
+                    "historical capture cleanup requires current same-item reconciliation",
+                    category="contract_error", code="capture_cleanup_readback_required",
+                    stage="compressed_capture",
+                )
         validate_cleanup_evidence(cleanup)
-        handoff = self._event(
-            "cloud_handoff_published",
-            capture_job_id=capture_job_id,
-        )
         if handoff is None:
             netdisk = self.netdisk.prepare(media["media_path"])
             if str(netdisk.get("status") or "") not in _TERMINAL_NETDISK:

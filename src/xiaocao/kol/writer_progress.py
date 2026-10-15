@@ -954,6 +954,7 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
             "account_login_state_is_authoritative_when_page_url_stays_bound or "
             "cloud_handoff_wait_has_durable_poll_deadline or "
             "compressed_capture_wait_has_durable_poll_deadline or "
+            "advance_rechecks_historical_cleanup_without_stopping_shared_capture or "
             "pending_cloud_handoff_resumes_exact_job_after_stale_playback_state or "
             "repair_closure_accepts_xiaocao_wechat_source_profile"
         ),
@@ -1712,11 +1713,10 @@ def _canonical_xiaocao_wechat_source_repair_profile(
         declared_profile
         == _XIAOCAO_WECHAT_COMPRESSED_CAPTURE_REPAIR_PROFILE
         and failure
-        == (
-            "internal_state_error",
-            "progress_deadline_missing",
-            "compressed_capture",
-        )
+        in {
+            ("internal_state_error", "progress_deadline_missing", "compressed_capture"),
+            ("contract_error", "capture_cleanup_readback_required", "compressed_capture"),
+        }
     ) or (
         declared_profile == _XIAOCAO_WECHAT_CLOUD_HANDOFF_REPAIR_PROFILE
         and failure

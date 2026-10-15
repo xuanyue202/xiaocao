@@ -2290,6 +2290,48 @@ def test_prior_idle_cancel_cannot_hide_a_bound_capture(tmp_path, monkeypatch):
     assert store.latest(armed["job_id"]) == current
 
 
+@pytest.mark.parametrize("running", [True, False])
+def test_advance_rechecks_historical_cleanup_without_stopping_shared_capture(tmp_path, monkeypatch, running):
+    ledger, capture_id, media, duration = _capture_fixture(tmp_path)
+    state = {"running": running, "pac": running}
+
+    def prepare(path):
+        assert path == str(media)
+        assert not state["running"] and not state["pac"]
+        return {"job_id": "same-upload", "status": "prepared"}
+
+    service = XiaocaoLiveService(tmp_path / "live", capture_ledger=ledger,
+        netdisk_service=SimpleNamespace(prepare=prepare,
+            advance_opencli=lambda *_args, **_kwargs: {
+                "job_id": "same-upload", "status": "upload_claimed"}),
+        runner=_probe_runner(media, duration))
+    proof = lambda: {
+        "process_gone": not state["running"], "api_status_unavailable": not state["running"],
+        "listeners": {"2022": state["running"], "2023": state["running"]},
+        "proxy_flags": {"HTTPEnable": 0, "HTTPSEnable": 0,
+                        "ProxyAutoConfigEnable": int(state["pac"]), "SOCKSEnable": 0},
+        "capture_proxy_detached": not state["pac"],
+        "observed_at": "2026-10-15T08:00:00+08:00",
+    }
+    service._append("capture_cleanup_completed", capture_job_id=capture_id,
+        **{**proof(), "process_gone": True, "api_status_unavailable": True,
+           "listeners": {"2022": False, "2023": False}, "capture_proxy_detached": True})
+    monkeypatch.setattr(service, "cleanup_snapshot", proof)
+    monkeypatch.setattr(service, "_sniffer_pids", lambda: pytest.fail("passive readback only"))
+    monkeypatch.setattr(service, "_disable_owned_capture_pac", lambda: pytest.fail("preserve shared capture PAC"))
+    monkeypatch.setattr("xiaocao.kol.xiaocao_live.os.kill", lambda *_args: pytest.fail("preserve shared capture process"))
+    if running:
+        with pytest.raises(EnrichmentError) as error:
+            service.advance(capture_id, opencli_session="same-session")
+        assert error.value.diagnostic_code == "capture_cleanup_readback_required"
+        assert state == {"running": True, "pac": True}
+    else:
+        result = service.advance(capture_id, opencli_session="same-session")
+        assert result["status"] == "upload_claimed" and result["netdisk_job_id"] == "same-upload"
+    assert service.capture_store.latest(capture_id)["status"] == "downloaded"
+    assert service._event("capture_cleanup_completed", capture_job_id=capture_id)["process_gone"]
+
+
 def test_cancel_wait_preserves_a_new_candidate_seen_before_ledger_poll(
     tmp_path,
     monkeypatch,
