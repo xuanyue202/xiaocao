@@ -4002,7 +4002,7 @@ def test_decision_input_failure_is_appended_without_bundle_contents(tmp_path):
     assert "missing-household-bundle" not in ledger
 
 
-@pytest.mark.parametrize("failure_kind", ["household", "structured", "opaque"])
+@pytest.mark.parametrize("failure_kind", ["household", "transport", "structured", "opaque"])
 @pytest.mark.parametrize("opaque_after_failure", [False, True])
 def test_decision_failure_preserves_safe_identity_and_resumes_without_replay(
     tmp_path, failure_kind, opaque_after_failure,
@@ -4026,6 +4026,7 @@ def test_decision_failure_preserves_safe_identity_and_resumes_without_replay(
     )
     failure = {
         "household": DecisionError("household context provider failed"),
+        "transport": DecisionError("亮灰 MCP request failed"),
         "structured": structured,
         "opaque": RuntimeError(secret),
     }[failure_kind]
@@ -4065,8 +4066,9 @@ def test_decision_failure_preserves_safe_identity_and_resumes_without_replay(
     assert state["failure_stage"] == "process"
     assert calls == {"process": 1, "sender": 0}
     if failure_kind != "opaque":
-        expected = ("household_context_provider_failed" if failure_kind == "household"
-                    else "provider_unavailable")
+        expected = {"household": "household_context_provider_failed",
+                    "transport": "lianghui_transport_failed",
+                    "structured": "provider_unavailable"}[failure_kind]
         assert caught.value.diagnostic_code == state["diagnostic_code"] == expected
         if failure_kind == "structured":
             assert caught.value is structured

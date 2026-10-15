@@ -29,6 +29,10 @@ particular, `household_context_provider_failed` identifies a failed fresh
 household read, rather than a new source or semantic request. Reconcile the
 exact object's effects and restore the provider before its validated narrow
 resume; the diagnostic never authorizes a replacement sweep or effect replay.
+`lianghui_transport_failed` preserves the safe identity of an MCP transport
+failure during processing. Read the exact publication ledger and reconcile
+every outstanding claim before continuing its original request; partial staging
+does not establish publication or authorize a new claim.
 
 `repair_required` is work for the current Agent, not a user blocker: reconcile,
 patch/test/commit/push without user WIP, then continue on the same stdin. Never

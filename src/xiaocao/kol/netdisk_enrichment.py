@@ -69,6 +69,13 @@ def _decision_process_diagnostic(exc: BaseException) -> EnrichmentDiagnosticErro
             code="household_context_provider_failed",
             stage="business_processing",
         )
+    if isinstance(exc, DecisionError) and str(exc) == "亮灰 MCP request failed":
+        return EnrichmentDiagnosticError(
+            "LiangHui transport request failed",
+            category="processor_error",
+            code="lianghui_transport_failed",
+            stage="business_processing",
+        )
     return None
 
 
