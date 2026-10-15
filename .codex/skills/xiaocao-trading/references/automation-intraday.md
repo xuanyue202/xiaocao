@@ -4,11 +4,24 @@ Read this file only for Book-B/Book-T monitoring, the 14:25 precheck or the 14:4
 
 ## Execute and scope
 
-For opening and 14:25 precheck, start with:
+For opening, start with:
 
 ```bash
 python3 scripts/show_journal.py --date today
 ```
+
+For the 14:25 precheck, start one retained process after minimal instructions:
+
+```bash
+CODEX_AUTOMATION_ID=xiaocao-intraday-risk-precheck-1425 bash scripts/book_b_live_precheck_startup.sh
+```
+
+Verify the exact initial scheduler ID and retain its runtime `CODEX_THREAD_ID`.
+The launcher runs paper once, then APP once without another model turn between
+them. Each entrypoint keeps its own calendar, 14:25 and economic guards. A paper
+failure remains a nonzero launcher result while the independent APP check still
+runs. Wait for the original shell to terminate, then inspect both branch results;
+do not invoke either monitor separately or restart the launcher.
 
 The existing sparse task runs only at 10:25, 10:55, 13:25 and 13:55, and starts
 with the local `scripts/kol_trading_tick.py poll` gate. On this remote host the
@@ -54,8 +67,8 @@ Default Book B:
 
 Fallback: `PYTHONPATH=src python3 scripts/live_monitor.py --execute-sells`.
 
-After the paper monitor terminates, run the matching independent live-lifecycle
-checkpoint exactly once:
+For opening/sparse, after the paper monitor terminates, run the matching
+independent live-lifecycle checkpoint exactly once:
 
 ```bash
 PYTHONPATH=src .venv/bin/python scripts/book_b_live_intraday.py --date today --phase <opening|sparse|precheck|closing> --execute-sells
