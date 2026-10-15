@@ -24,6 +24,12 @@ The started task owns repair; do not defer obtainable work.
 Obey seven-state `writer_progress.next_action`; bind input and readback
 receipts; retryability never changes owner.
 
+Video decision failures retain credential-safe diagnostic identities. In
+particular, `household_context_provider_failed` identifies a failed fresh
+household read, rather than a new source or semantic request. Reconcile the
+exact object's effects and restore the provider before its validated narrow
+resume; the diagnostic never authorizes a replacement sweep or effect replay.
+
 `repair_required` is work for the current Agent, not a user blocker: reconcile,
 patch/test/commit/push without user WIP, then continue on the same stdin. Never
 run `run` twice for one slot; after matching repair closure use `resume-mailbox`
