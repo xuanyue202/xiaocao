@@ -1,0 +1,294 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-15",
+  "kind": "盘前与早盘大师班",
+  "author": "小草",
+  "source": "小草直播",
+  "authority": 0,
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_netdisk_enrichment/artifacts/kol-netdisk-9608b14334da731f/20261015 盘前大师班直播10月15日-compressed.txt",
+      "sha256": "1b16ac59e13a4081e3e3577c31c5c88e8014cf0b9978af47be7e1f585ab86c57",
+      "size": 6576
+    },
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_1b16ac59/market_evidence_r6.json",
+      "sha256": "440cb5245e74b012dd986d2e32e03a8a976a49704671cc31c249ea65e318c7b9",
+      "size": 68915
+    },
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/recommend_2026-10-15.md",
+      "sha256": "4af53d44f4863954f19e75c3400125ed82f244950549283c4608522eda88922c",
+      "size": 9789
+    },
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261015_01a13dd0/xiaocao_hypotheses.jsonl",
+      "sha256": "6594e72339adc080940813a2066f953d52d62ac672bfd22a15ac0e28c4006a3a",
+      "size": 299180
+    }
+  ],
+  "summary": "小草把极端低开视为当日反弹机会：求稳时优先下跌或超跌低吸，接力只作次选，并用高分盘中信号寻找候选；他预期低开后回升，后段更进一步说当日可广泛买入、无需再提醒仓位。可复用部分是环境、模式、评分与风险预算之间的决策链。模式分、收益、具名股票和取消仓位边界都缺少完整样本与退出定义，只能作为零权威研究材料。",
+  "posture": {
+    "regime": "来源把当日开盘描述为极端普跌，并判断悲观定价过度，预期盘中修复。",
+    "dominant_style": "来源排序为下跌或超跌低吸优先，接力次之，高分盘中候选是主要入口。",
+    "risk": "同场前段强调求稳，后段却扩大为随便买、无需提醒仓位；这是来源内部的风险预算冲突，不代表系统接受无上限抄底。",
+    "style_ranking": [
+      "下跌或超跌低吸",
+      "高分盘中候选",
+      "接力备选",
+      "无条件广泛抄底"
+    ]
+  },
+  "regime_call": {
+    "call": "小草的来源姿态是：极端低开后大概率低开高走，求稳者先做下跌或超跌低吸；到直播后段，他把姿态扩大为当日可广泛买入、应该抄底，并明确说不再提醒仓位。",
+    "horizon": "2026年10月15日当日盘中，现已过期，不自动延长到下一交易日。",
+    "what_would_falsify": [
+      "当日主要指数与市场广度没有从极端低开中修复",
+      "下跌或超跌高分候选的完整样本在成本后不优于匹配基准",
+      "无仓位边界的广泛抄底显著放大最大不利变动或尾部亏损"
+    ],
+    "system_boundary": "系统只记录该来源姿态。收盘后绑定事实显示：上证收盘仍略低于开盘，创业板收盘略高于开盘，两者仍分别下跌1.59%和2.92%，只呈局部、有限修复，不能验证全市场低开高走；同秒市场广度、模式样本、入场、退出和账户成交仍不完整，因此保留仓位上限与可成交性要求。"
+  },
+  "directions": [
+    {
+      "name": "A股极端低开后的日内修复",
+      "stance": "来源偏多，认为低开高走概率较大。",
+      "horizon": "2026年10月15日当日",
+      "authority": 0
+    },
+    {
+      "name": "下跌或超跌低吸",
+      "stance": "来源在求稳选择中置于接力之前。",
+      "horizon": "极端低开当日盘中",
+      "authority": 0
+    },
+    {
+      "name": "接力",
+      "stance": "来源称可以观察，但保守时仍选低吸。",
+      "horizon": "2026年10月15日当日",
+      "authority": 0
+    }
+  ],
+  "stocks": [
+    {
+      "surface_form": "读课文／读课文化",
+      "resolved_name": "读客文化",
+      "ticker": "301025.XSHE",
+      "role": "来源当日盘中点名的强势候选",
+      "boundary": "分钟行情支持当日由低开快速冲高，不能证明作者入场、模式分或实际收益。"
+    },
+    {
+      "surface_form": "肯特",
+      "resolved_name": null,
+      "role": "来源称为早盘100分候选并提到盈利",
+      "boundary": "肯特股份与肯特催化都是目录候选，无法唯一映射；九个点说法被作者当场撤回。"
+    },
+    {
+      "surface_form": "光光耀",
+      "resolved_name": null,
+      "role": "来源称有较大涨幅的音似个股",
+      "boundary": "目录只给出光洋股份作为候选，语音不足以唯一确认。"
+    }
+  ],
+  "method_principles": [
+    "极端低开只定义研究情境，不自动决定买入；环境、模式资格和仓位边界分别记录。",
+    "在来源排序中，求稳选择是下跌或超跌低吸，接力只是备选。",
+    "模式分只有在分母、计算时点、候选全集、入场与统一退出均固定后才能比较。",
+    "个股快速冲高只验证价格路径，不能倒推出老师实得收益或信号可成交性。",
+    "取消仓位提醒的宽泛抄底口径与前段保守低吸分开评估。",
+    "音似证券保持未解析，直到名称、代码、交易所和时点能唯一绑定。"
+  ],
+  "exit_lessons": [],
+  "hypotheses": [
+    {
+      "claim": "极端低开日取消仓位提醒并广泛抄底，相比保留预设仓位上限，可能放大尾部损失。",
+      "implied_rule": "把固定仓位上限与无仓位提醒设为并行影子组，不改变任何现行资本权限。",
+      "falsifiable_test": "在相同极端低开样本、候选和退出规则下，比较两组净收益、最大回撤、最大不利变动与连续亏损。",
+      "expected_effect": "判断取消风险边界的收益是否足以覆盖左尾扩大；若不能则拒绝无条件抄底。",
+      "category": "risk_budget",
+      "authority": 0,
+      "dedup_review": "不可变基线中XH-075讨论渐进调仓、XH-189讨论既定节奏，均不等同于极端低开日取消仓位提醒；XH-222、XH-223、XH-235与本场只部分相关，不合并旧完整claim。",
+      "source_thesis_ids": [
+        "t08"
+      ]
+    }
+  ],
+  "feedback_review": [
+    {
+      "prior_id": "XH-011",
+      "status": "contradicts",
+      "judgment": "本场在极端普跌时主张低吸而非禁买，与XH-011曾提出的普跌禁买相反；XH-011已被研究拒绝，本场不复活其阈值，也不构成新验证。"
+    },
+    {
+      "prior_id": "XH-222",
+      "status": "related_partial_only",
+      "judgment": "本场只支持极端低开时低吸优先、接力次选；没有完整的10厘米与绿盘低吸对红盘追涨命题，不追加复现日期。"
+    },
+    {
+      "prior_id": "XH-223",
+      "status": "related_partial_only",
+      "judgment": "本场只重复高分候选可用；没有评分大于零的广义资格或越晚门槛越高，不合并旧claim。"
+    },
+    {
+      "prior_id": "XH-235",
+      "status": "related_partial_only",
+      "judgment": "本场紧接早盘100分候选出现一句音近“按31你看不到他”的含糊口述，可能存在观察时点限制；原音不能确认是9:31，更没有形成9:35前后分组或明确时限，因此不合并旧claim、不追加复现日期。"
+    }
+  ],
+  "timing_notes": [
+    "来源标题和口述日期均指向2026年10月15日，交易观点窗口止于当日收盘。",
+    "完整指数分钟线覆盖09:30至15:00：上证收盘略低于开盘，创业板收盘略高于开盘；不能据此替代全市场广度和候选全集。",
+    "读客文化从09:30低开到09:40快速冲高；个股行情只核对到13:03，且不证明事前可成交收益。",
+    "紧接早盘100分候选的一句音近“按31你看不到他”可能提示观察时点限制，但原音不足以确认9:31或任何固定截止。"
+  ],
+  "typo_corrections": [
+    {
+      "raw": "下跌利息／下列利息／下界地区",
+      "normalized": "下跌低吸",
+      "basis": "同场多次与下跌、超跌低吸并列，模式语义一致。"
+    },
+    {
+      "raw": "读课文／读课文化",
+      "normalized": "读客文化",
+      "basis": "证券语境与目录候选301025.XSHE一致。"
+    },
+    {
+      "raw": "小帕菜／小白菜",
+      "normalized": "小白菜",
+      "basis": "作者在相邻句自我复述，但未给策略定义。"
+    }
+  ],
+  "decision_trace": [
+    {
+      "observation": "来源称市场极端低开，并切换到下跌环境。",
+      "inference": "作者认为悲观开盘提供日内修复机会。",
+      "action": "求稳时优先查看下跌或超跌低吸候选。",
+      "why": "来源把低吸置于接力之前，并称盘中出现高分信号。",
+      "evidence_claim_ids": [
+        "c01",
+        "c02",
+        "c03",
+        "c06"
+      ]
+    },
+    {
+      "observation": "来源预期低开高走；收盘事实显示上证收盘略低于开盘，创业板收盘略高于开盘，两者仍大幅下跌。",
+      "inference": "指数只出现局部、有限修复，不能确认全市场低开高走。",
+      "action": "把低开高走保留为已经到期、且仅获部分指数支持的来源假设。",
+      "why": "完整收盘指数可核对市场路径，但同秒广度与完整候选集合仍缺失。",
+      "evidence_claim_ids": [
+        "c04"
+      ]
+    },
+    {
+      "observation": "读客文化快速冲高；肯特和另一音似名称无法唯一解析。",
+      "inference": "价格路径可核验，模式分、入场和实得收益仍未知。",
+      "action": "读客文化只记价格支持，其余名称保留no_evidence。",
+      "why": "避免用事后涨幅反推信号有效或账户盈利。",
+      "evidence_claim_ids": [
+        "c07",
+        "c08",
+        "c09",
+        "c12"
+      ]
+    },
+    {
+      "observation": "来源前段强调求稳，后段又说随便买、不再提醒仓位。",
+      "inference": "同场风险预算明显放宽，且没有新增可复现条件。",
+      "action": "宽泛抄底与保守低吸分开检验，系统不自动采用。",
+      "why": "取消仓位边界对家庭尾部风险影响更大。",
+      "evidence_claim_ids": [
+        "c03",
+        "c10"
+      ]
+    }
+  ],
+  "judgment_heuristics": [
+    "极端低开只定义情境，不自动决定买入。",
+    "模式选择按风险目标排序，再比较候选得分。",
+    "任何模式分都要记录定义、时点、分母、入场和退出。",
+    "同场保守与激进口径分别保留并审计。",
+    "具名股票行情支持与作者实际交易证据严格分开。",
+    "未唯一映射的音似名称不得进入交易路由。"
+  ],
+  "strategy_hit_audit": {
+    "status": "completed_with_boundaries",
+    "teacher_named_winners": [
+      {
+        "name": "读客文化",
+        "classification": "not_emitted",
+        "source_role": "来源当日盘中点名强势候选",
+        "reason": "301025.XSHE不在冻结的本地推荐清单；分钟价格支持冲高，但没有作者成交与退出。"
+      },
+      {
+        "name": "肯特",
+        "classification": "no_evidence",
+        "source_role": "来源称早盘100分候选",
+        "reason": "肯特股份与肯特催化均为目录候选，名称无法唯一解析；作者撤回九个点说法。"
+      },
+      {
+        "name": "光光耀",
+        "classification": "no_evidence",
+        "source_role": "来源称有较大涨幅的音似个股",
+        "reason": "只有光洋股份目录候选，语音与代码未唯一绑定。"
+      }
+    ],
+    "local_strategy_benchmark_hits": [
+      {
+        "name": "亚邦股份",
+        "classification": "emitted_strategy_hit",
+        "source_role": "冻结推荐中的N字低吸可执行候选",
+        "reason": "603188.XSHG是冻结推荐的星E候选；它不是KOL点名股，N字低吸也不等于来源的下跌超跌低吸。"
+      }
+    ],
+    "direction_core_observations": [
+      {
+        "name": "低吸方向",
+        "classification": "no_evidence",
+        "reason": "来源和本地推荐都出现低吸字样，但模式定义不同，不能据名称判断方向命中。"
+      }
+    ],
+    "boundary": "审计只使用绑定分钟行情和冻结推荐；没有账户成交、持仓、退出或未绑定信号快照，不作盈利与买入结论。"
+  },
+  "action_summary": {
+    "posture_update": "candidate_only：来源当日姿态已过期，不改写现行posture。",
+    "playbook_update": "no_change：低吸、评分与仓位冲突只进入研究和反馈。",
+    "hypothesis_update": "one_new_candidate：只保留取消仓位边界的一条新候选；XH-222、XH-223、XH-235仅记部分相关，不作复现。 本次已单文件入库为XH-245，保持零权威，不得重复摄取。",
+    "audit_evidence": "完整读取并逐项核验：6576字节来源、19个绑定段、68915字节市场证据、9789字节冻结推荐、299180字节不可变假设基线；各文件实际UTF-8/原始字节数与SHA-256均匹配绑定记录。",
+    "instrumentation_todo": "补齐同秒全市场广度、模式分定义和候选全集、可成交入场、统一退出与费用；澄清“31”的原始语音和观察时点含义；no_issue_created。",
+    "routing": [
+      "authority=0",
+      "research_candidate_only",
+      "no_auto_tune",
+      "no_book_or_account_write",
+      "human_gate_required"
+    ]
+  },
+  "limitations": [
+    "没有同秒全市场广度，无法核实4800多家低开和5367家中仅100家上涨。",
+    "没有模式原始输出，无法核实100分、1000分或2000多分的定义和候选全集。",
+    "行情不能证明作者入场、成交、持仓、退出或实际收益。",
+    "指数分钟线完整覆盖09:30至15:00；读客文化与两个“肯特”候选的个股行情只核对到13:03，不能扩大为个股收盘事实。",
+    "肯特与光光耀无法唯一映射。",
+    "家庭配置只读快照截至13:02:10，盈亏未覆盖全部持仓，也没有收盘后的完整券商回读。"
+  ],
+  "ingest_outcome": {
+    "status": "ingested",
+    "hypothesis_ids": [
+      "XH-245"
+    ],
+    "ingest_count": 1,
+    "authority": 0,
+    "do_not_reingest": true,
+    "reason": "执行端依据单文件入库回执和当前候选账本记录的确定性结果；语义草稿保留原始字节。"
+  },
+  "processing_receipt": {
+    "accepted_knowledge_draft": {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_xiaocao_live/semantic_requests/kol-75a44c0338a1/.semantic_delegation/fec4147f3acf0a1f0436d69701a8758ec1ff666bc622beafcd70f34ea53fe6f4/context-5c95b178eb720c4ac342b7021d776bd633d4b7afc682e2f4c9a26544f62d44b4/knowledge_draft.json",
+      "sha256": "ec813a91836a2a8b55232b728b0fdeb8c9e32e589cd558e1ff144f4c238b7410"
+    },
+    "ingest_receipt": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261015_01a13ee3/knowledge_1b16ac59_receipt.json",
+    "operational_finalization_only": true,
+    "investment_semantics_changed": false
+  }
+}
