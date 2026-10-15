@@ -152,6 +152,68 @@ def test_lianghui_client_prefers_structured_tool_result():
     }
 
 
+@pytest.mark.parametrize("failed_reads", [4, 5])
+@pytest.mark.parametrize("operation", ["get_kol_write_status", "get_kol_record"])
+def test_write_status_transport_recovery_is_bounded(monkeypatch, failed_reads, operation):
+    import requests
+
+    client = LiangHuiMcpClient("https://example.test/mcp", {"Authorization": "secret"})
+    calls = []
+    sleeps = []
+
+    class Response:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"result": {"structuredContent": {"recordState": "immutable"}}}
+
+    def post(_url, **kwargs):
+        calls.append(json.loads(kwargs["data"])["params"])
+        if len(calls) <= failed_reads:
+            raise requests.exceptions.Timeout("private-provider-token")
+        return Response()
+
+    monkeypatch.setattr(client.session, "post", post)
+    monkeypatch.setattr("xiaocao.kol.household.time.sleep", sleeps.append)
+    request = {"idempotency_key": "original-claim"}
+    if failed_reads == 5:
+        with pytest.raises(DecisionError, match="^亮灰 MCP request failed$"):
+            client.call_tool(operation, request)
+    else:
+        assert client.call_tool(operation, request) == {"recordState": "immutable"}
+    assert len(calls) == 5
+    assert all(row == {"name": operation, "arguments": request} for row in calls)
+    assert sleeps == [0.5, 1.0, 1.5, 2.0]
+
+
+@pytest.mark.parametrize("operation", ["get_kol_write_status", "get_kol_record", "put_kol_record", "publish_kol_report"])
+@pytest.mark.parametrize("application_error", [False, True])
+def test_write_status_retry_never_replays_writes_or_application_errors(
+    monkeypatch, operation, application_error,
+):
+    import requests
+
+    from xiaocao.kol.household import LiangHuiMcpError
+
+    client = LiangHuiMcpClient("https://example.test/mcp", {"Authorization": "secret"})
+    calls = []
+    sleeps = []
+
+    def tool(name, arguments):
+        calls.append((name, arguments))
+        if application_error:
+            raise LiangHuiMcpError("conflict", code="CONFLICT")
+        raise DecisionError("亮灰 MCP request failed") from requests.exceptions.ConnectionError("private")
+
+    monkeypatch.setattr(client, "_tool", tool)
+    monkeypatch.setattr("xiaocao.kol.household.time.sleep", sleeps.append)
+    with pytest.raises(DecisionError):
+        client.call_tool(operation, {"idempotency_key": "original-claim"})
+    assert len(calls) == (5 if operation in {"get_kol_write_status", "get_kol_record"} and not application_error else 1)
+    assert len(sleeps) == len(calls) - 1
+
+
 def test_lianghui_client_lists_live_tools():
     def opener(request, timeout):
         payload = json.loads(request.data)

@@ -190,7 +190,7 @@ class LiangHuiMcpClient:
 
     def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
         """Public small-tool seam used by the durable publication ledger."""
-        attempts = 3 if name == "get_kol_write_status" else 1
+        attempts = 5 if name in {"get_kol_write_status", "get_kol_record"} else 1
         for attempt in range(1, attempts + 1):
             try:
                 return self._tool(name, arguments)

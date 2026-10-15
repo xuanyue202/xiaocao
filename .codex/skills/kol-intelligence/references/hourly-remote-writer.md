@@ -128,8 +128,8 @@ uncertain effects. Source repairs use `validate-source-repair` then
 `resume-source-repair` with exact adapter/fingerprint; resume consumes only
 `narrow_resume_surface` and reads neither mailbox nor another source.
 
-The LiangHui publication client may retry the same `get_kol_write_status`
-read up to three times after a transport timeout or connection failure, with
+The LiangHui publication client may retry the same `get_kol_write_status` or
+`get_kol_record` read up to five times after a transport timeout or connection failure, with
 short backoff. This never retries a write or an application error; uncertain
 writes still require the original claim's authoritative status reconciliation.
 For a source-level video repair with one retained request-bound bundle, narrow

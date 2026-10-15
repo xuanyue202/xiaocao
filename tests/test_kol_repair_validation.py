@@ -159,6 +159,7 @@ def test_household_context_provider_recovery_rejects_unproven_recovery(tmp_path,
             "src/xiaocao/kol/netdisk_enrichment.py",
             "tests/test_kol_netdisk_enrichment.py",
         ),
+        ("src/xiaocao/kol/household.py", "tests/test_kol_household.py"),
         (
             "src/xiaocao/kol/wechat_official.py",
             "tests/test_kol_wechat_official.py",
@@ -219,6 +220,7 @@ def test_repair_validation_runs_repo_owned_profile_and_persists_matching_receipt
             "tests/test_kol_semantic_delegation.py",
             "tests/test_kol_daily_semantic_delegation.py",
             "tests/test_kol_netdisk_enrichment.py",
+            "tests/test_kol_household.py",
             "-q",
         )
         return CompletedProcess(command, 0, "42 passed\n", "")
