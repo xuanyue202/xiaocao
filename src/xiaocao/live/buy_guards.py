@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
+from datetime import datetime, time, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -63,6 +63,7 @@ def evaluate_buy_market_guard(
     require_authoritative: bool | None = None,
     now: datetime | None = None,
     max_age_seconds: int = 900,
+    allow_opening_auction_quote: bool = False,
 ) -> tuple[bool, str | None, dict[str, Any]]:
     """Return ``(allowed, reason, evidence)`` for one BUY row.
 
@@ -117,7 +118,22 @@ def evaluate_buy_market_guard(
             if clock.tzinfo is None:
                 clock = clock.replace(tzinfo=timezone.utc)
             age_seconds = (clock - observed_dt).total_seconds()
-            if age_seconds > max(0, int(max_age_seconds)) or age_seconds < -60:
+            local_clock = clock.astimezone(_MARKET_TZ)
+            local_observed = observed_dt.astimezone(_MARKET_TZ)
+            # The auction result can keep its 09:25 trade timestamp until
+            # continuous trading starts. It remains usable for pre-open BUY
+            # queuing, without treating an older pre-auction quote as current.
+            opening_quote_required = (
+                allow_opening_auction_quote
+                and time(9, 25) <= local_clock.time() < time(9, 30)
+            )
+            if opening_quote_required:
+                if not (
+                    local_observed.date() == local_clock.date()
+                    and time(9, 25) <= local_observed.time() <= local_clock.time()
+                ):
+                    return False, LIMIT_DOWN_CHECK_UNAVAILABLE, evidence
+            elif age_seconds > max(0, int(max_age_seconds)) or age_seconds < -60:
                 return False, LIMIT_DOWN_CHECK_UNAVAILABLE, evidence
     if status in _TRADING_STATUSES and down_price is not None and latest_price is not None:
         return True, None, evidence

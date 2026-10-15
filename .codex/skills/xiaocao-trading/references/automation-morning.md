@@ -529,6 +529,16 @@ empty response proves reachability only. Leave the APP untouched after initial
 preflight until the runner's 09:24 recovery event. Source freshness and current
 applicability remain independent.
 
+### Opening auction quote timestamps
+
+Apply Contract §9: during China 09:25 inclusive to 09:30 exclusive, a live BUY
+may use the same-day auction quote timestamped from 09:25 through the current
+time. Do not apply the continuous-auction 60-second expiry to this fixed
+auction result. Pre-09:25, wrong-date, future or missing evidence does not gain
+permission; at 09:30 the continuous-auction freshness check applies again.
+Trading status, down price, basket, account/capital and exact-once gates remain.
+This correction never replays a terminal plan.
+
 ### Submit the batch before waiting for fills
 
 The runner supplies hash-bound account/allocation facts and account-risk receipt

@@ -494,10 +494,10 @@ class TradePlan:
                 },
                 require_authoritative=True,
                 now=now,
-                # APP submission must use the current continuous-auction
-                # observation. A plan can wait behind account/AX preparation;
-                # the research-oriented default (15 minutes) is too old here.
+                # Continuous trading needs a recent quote; the 09:25 auction
+                # result keeps its trade timestamp while BUYs queue before 09:30.
                 max_age_seconds=60 if self.environment == "live" else 900,
+                allow_opening_auction_quote=self.environment == "live",
             )
             if not allowed:
                 return reason or "LIMIT_DOWN_CHECK_UNAVAILABLE"

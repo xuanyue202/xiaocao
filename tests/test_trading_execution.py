@@ -1559,6 +1559,58 @@ def test_live_sell_unproven_market_guard_stops_before_probe(
     assert broker.submit_calls == 0
 
 
+@pytest.mark.app_simulation
+@pytest.mark.parametrize(
+    ("observed_at", "checked_at", "expected"),
+    [
+        ("2026-08-15T09:25:00+08:00", "2026-08-15T09:26:01+08:00", None),
+        ("2026-08-15T09:25:00+08:00", "2026-08-15T09:27:01+08:00", None),
+        ("2026-08-15T09:25:00+08:00", "2026-08-15T09:29:59+08:00", None),
+        ("2026-08-15T09:25:00+08:00", "2026-08-15T09:30:00+08:00", "LIMIT_DOWN_CHECK_UNAVAILABLE"),
+        ("2026-08-15T09:24:59+08:00", "2026-08-15T09:27:01+08:00", "LIMIT_DOWN_CHECK_UNAVAILABLE"),
+        ("2026-08-15T09:24:59+08:00", "2026-08-15T09:25:10+08:00", "LIMIT_DOWN_CHECK_UNAVAILABLE"),
+        ("2026-08-14T09:25:00+08:00", "2026-08-15T09:27:01+08:00", "LIMIT_DOWN_CHECK_UNAVAILABLE"),
+        ("2026-08-15T09:29:00+08:00", "2026-08-15T09:27:01+08:00", "LIMIT_DOWN_CHECK_UNAVAILABLE"),
+        ("2026-08-15T09:27:30+08:00", "2026-08-15T09:27:01+08:00", "LIMIT_DOWN_CHECK_UNAVAILABLE"),
+        ("2026-08-15T01:25:00+00:00", "2026-08-15T01:29:59+00:00", None),
+    ],
+)
+def test_live_buy_auction_quote_age_follows_market_phase(observed_at, checked_at, expected) -> None:
+    observed = datetime.fromisoformat(observed_at)
+    plan = replace(
+        _plan(environment="live", deadline=observed + timedelta(days=2)),
+        market_guard_required=True,
+        market_guard_observed_at=observed,
+        market_guard_latest_price=10.0,
+        market_guard_down_price=9.0,
+    )
+    assert plan.guard_reason(now=datetime.fromisoformat(checked_at)) == expected
+
+
+@pytest.mark.app_simulation
+@pytest.mark.parametrize(
+    ("change", "expected"),
+    [
+        ({"market_guard_observed_at": None}, "LIMIT_DOWN_CHECK_UNAVAILABLE"),
+        ({"market_guard_status": "halt"}, "LIMIT_DOWN_CHECK_UNAVAILABLE"),
+        ({"market_guard_down_price": None}, "LIMIT_DOWN_CHECK_UNAVAILABLE"),
+        ({"market_guard_latest_price": 9.0}, "LIMIT_DOWN_BUY_BLOCKED"),
+        ({"market_guard_latest_price": 10.11}, "REALTIME_ABOVE_BASKET"),
+    ],
+)
+def test_live_buy_auction_quote_preserves_other_market_guards(change, expected) -> None:
+    observed = datetime(2026, 8, 15, 1, 25, tzinfo=timezone.utc)
+    plan = replace(
+        _plan(environment="live", deadline=observed + timedelta(hours=5)),
+        market_guard_required=True,
+        market_guard_observed_at=observed,
+        market_guard_latest_price=10.0,
+        market_guard_down_price=9.0,
+    )
+    plan = replace(plan, **change)
+    assert plan.guard_reason(now=observed + timedelta(minutes=2)) == expected
+
+
 def test_bound_market_guard_refresh_preserves_intent_hash_and_abandon_line() -> None:
     observed = datetime(2026, 8, 15, 1, 30, tzinfo=timezone.utc)
     base = replace(

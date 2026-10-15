@@ -1,6 +1,6 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：4.41
+**版本**：4.42
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
 **关联实现**：`src/xiaocao/live/{safety,capital_keychain,foundersc_native_ax,foundersc_native_broker,trading_execution,book_b_live_lifecycle,book_b_live_intraday}.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`native/foundersc_ax_executor/`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{book_b_live_morning,book_b_live_intraday,live_monitor,research_mode_switch_replay}.py`
@@ -631,8 +631,11 @@ APP 在用户明确批准的动态资金政策下，以账户绑定的资金划�
   `09:25–11:30` 或 `13:00–14:57` 提交（09:25–09:30为柜台排队），SELL仍须连续竞价，午休、收盘集合竞价和盘后继续硬阻断；每个
   新 plan 在持久化 intent 前必须从专有 API 刷新并绑定同日交易状态、现价、跌停价
   和时间戳；普通 live
-  BUY 报价不超过60秒，SELL沿用原15分钟上限。BUY在提交 claim 前再次核验
-  报价时效，超时没有 claim 则停止，不能沿用盘前报价。
+  BUY 在连续竞价阶段报价不超过60秒，SELL沿用原15分钟上限。北京时间
+  09:25（含）至09:30（不含）的柜台排队阶段，允许使用同日09:25起已形成且不晚于
+  当前时刻的集合竞价报价，不因成交时间戳停在09:25而套用60秒过期门；09:25之前、
+  异日、未来或缺失的报价不因此放行。09:30起恢复连续竞价时效检查。BUY在提交
+  claim 前仍核验真实日期、交易状态、现价、权威跌停价、basket及全部账户/资本/订单门。
   同一冻结计划的恢复按§1b持续推进，09:30不再是准备截止。不得改变冻结选股、allocation、初始限价、
   资金门或 exact-once；恢复已有 intent 仍只对账，不重新刷新经济字段或提交。
   exact-order 撤单已实现并实盘验收；自动补单仍禁用；App 重启后的 CAPTCHA 按独立慢恢复证据判定。
@@ -683,6 +686,7 @@ APP 在用户明确批准的动态资金政策下，以账户绑定的资金划�
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| 4.42 | 2026-10-15 | 用户纠正09:25–09:30固定竞价报价被60秒门误判：同日09:25起且不晚于当前的报价在该阶段可用；09:30起恢复连续竞价时效，其他市场/资本/精确一次门及历史终态不变。 |
 | 4.41 | 2026-10-14 | 用户批准阶段清单、全量 KOL 输入预加载及立即最终评审、成功边界回执、同批 APP 检查合并；恢复 finish 先证就绪，原 owner 有界等待精确成交并通知已知订单，不放宽资金/风险/UNKNOWN。 |
 | 4.40 | 2026-10-12 | 用户批准完整当前证据支持独立BUY而不受最新结算缺日单独阻断；未分类现金仅作保守净值下界，不制造经济暂停或高点；错误锁存追加证据纠正。会话故障一次重建及有界验证码登录；晨间行为源码隔离、历史K/P预备与支持后置。 |
 | 4.39 | 2026-10-12 | 用户要求旧 SELL 历史对账移到开盘批次之后；独立 BUY 消费新鲜可用现金/自有标记，保留同股禁买、旧 UNKNOWN、当前 BUY/SELL 与 EOD 门。只读 review_account 零副作用失败可原 owner 一次续跑，派生回执不可链式续跑。 |
