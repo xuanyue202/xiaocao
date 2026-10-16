@@ -78,17 +78,20 @@ The 14:45 closing pass is the deliberate ordering exception because it opens
 the final continuous-auction exit window. After reading this reference, its first
 executable business command must be the live `--phase closing` command above.
 Do not put journal inspection, git checks, paper monitoring, status, data-doctor
-or other diagnostics ahead of it. After that live process terminates, run the
-paper monitor exactly once and complete both branches' reconciliation. This
+or other diagnostics ahead of it. The retained launcher runs the paper monitor
+once immediately after the APP process terminates, then the task reconciles both branches. This
 priority changes orchestration only; it does not broaden the time gate, capital
 authority or exact-once rules.
 
 The closing Automation uses `scripts/book_b_live_closing_startup.sh` as its
 prebuilt first tool invocation. That launcher performs only the required
-instruction/memory reads and then the exact live command in one shell process;
-it exists to remove model-composed startup work from the two-minute deadline.
-Do not add discovery, journal, Git, KOL, paper, broker or diagnostic work to the
-launcher, and do not use it outside the single scheduled closing pass.
+instruction/memory reads, the wall-clock gate, then APP once followed by paper
+once in the same shell. It requires the exact closing Automation ID and the
+runtime Thread ID before entry. Both branch exit codes are printed; an APP
+failure remains nonzero while the independent paper branch still runs. A gate
+failure stops both. Retain this original launcher until it exits, then inspect
+both results; do not invoke either monitor separately or restart the launcher.
+Keep discovery, journal, Git, KOL and diagnostics outside this scheduled pass.
 The nominal wake is 14:38. The launcher waits to the absolute 14:45 start,
 including dispatches before 14:40, with each sleep at most 60 seconds and a
 fresh wall-clock read after each chunk. The 14:25 precheck wakes at 14:18;
