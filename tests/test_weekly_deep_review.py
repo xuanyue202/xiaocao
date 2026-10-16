@@ -174,6 +174,25 @@ def test_holiday_closing_does_not_substitute_for_missing_eod(tmp_path):
     assert watch["non_trading_dates"] == []
 
 
+def test_missing_eod_does_not_hide_missing_daily_review(tmp_path):
+    archive = tmp_path / "output/live/book_b_live_execution/runs/intraday/archive"
+    archive.mkdir(parents=True)
+    for day in ("2026-10-12", "2026-10-14"):
+        (archive / f"{day}-closing-example.json").write_text(json.dumps({
+            "trade_date": day, "phase": "closing", "status": "observed",
+            "reason": "NO_NEW_LIVE_SELL_HANDOFF",
+        }), encoding="utf-8")
+    review = tmp_path / "output/live/daily_execution_review_2026-10-14.md"
+    review.write_text("Original closing reviewed; EOD remains missing.\n", encoding="utf-8")
+
+    watch = wdr.build_execution_repair_watch(tmp_path, as_of=dt.date(2026, 10, 16))
+
+    assert watch["missing_eod_dates"] == ["2026-10-12", "2026-10-14"]
+    assert watch["missing_daily_review_dates"] == ["2026-10-12"]
+    assert [row["date"] for row in watch["daily_reviews"]] == ["2026-10-14"]
+    assert watch["status"] == "review_required"
+
+
 def test_holiday_eod_preserves_earlier_closing_failure_without_settlement_duty(tmp_path):
     archive = tmp_path / "output/live/book_b_live_execution/runs/intraday/archive"
     archive.mkdir(parents=True)
@@ -532,6 +551,27 @@ def test_allowed_commit_paths_are_narrow():
     assert wdr._allowed_path("output/live/flywheel_change_ledger.jsonl", date_s="2026-07-02")
     assert not wdr._allowed_path("output/live/paper_account.json", date_s="2026-07-02")
     assert not wdr._allowed_path("output/.cache/xiaocao.db", date_s="2026-07-02")
+
+
+def test_weekly_report_does_not_select_extra_input_experiments(tmp_path):
+    data = wdr.weekly_evidence.build_weekly_evidence(tmp_path, as_of=dt.date(2026, 10, 16))
+    original_ids = [row["experiment_id"] for row in data["exploration_proposals"]]
+    slot = {"id": "stable", "experiment_id": "stable-experiment", "objective": "selected-objective",
+            "falsifier": "selected-falsifier", "required_evidence": ["paired-inputs"],
+            "owner": "weekly", "rollback": "retain-baseline", "next_review": "2026-10-23"}
+    report = wdr._render_report(
+        {"date": "2026-10-16", "data_evidence_review": data,
+         "kol_system_review": {"experiment_slots": [slot]}},
+        mode=wdr.MODE_PROPOSAL, validation=[], created_issues=[], staged_files=[], blocked_dirty=[],
+    )
+
+    assert slot["objective"] in report
+    narrative = report.partition("```json")[0]
+    assert original_ids and all(identifier not in narrative for identifier in original_ids)
+    assert all(identifier in report for identifier in original_ids)  # Original audit inputs remain available.
+    assert [row["experiment_id"] for row in data["exploration_proposals"]] == original_ids
+    standalone = "\n".join(wdr.weekly_evidence.render_weekly_evidence(data))
+    assert all(identifier in standalone for identifier in original_ids)
 
 
 def test_auto_applied_finalize_requires_candidate_and_validation(tmp_path, monkeypatch):
