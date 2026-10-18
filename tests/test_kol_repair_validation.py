@@ -1319,6 +1319,12 @@ def test_repair_validation_accepts_shared_lv_listing_validation_profile(
             "wechat_official_scan",
             "kol_wechat_official_accounts_wechat_official_scan",
         ),
+        (
+            "source_error",
+            "wechat_official_scan_incomplete",
+            "wechat_official_scan",
+            "kol_wechat_official_accounts_wechat_official_scan",
+        ),
     ],
 )
 def test_repair_validation_accepts_wechat_official_accounts_source_profile(
@@ -1413,15 +1419,19 @@ def test_repair_validation_accepts_wechat_official_accounts_source_profile(
     assert receipt.failure_fingerprint == "6" * 64
 
 
+@pytest.mark.parametrize("category,code", [
+    ("configuration", "wechat_cli_missing"),
+    ("source_error", "wechat_official_scan_incomplete"),
+])
 def test_repair_validation_accepts_wechat_official_accounts_repair_closure_alias(
-    tmp_path,
+    tmp_path, category, code,
 ) -> None:
     progress = WriterProgress.repair_required(
         item_identity="wechat_official_accounts:source",
         fingerprint=FailureFingerprint(
             adapter="wechat_official_accounts",
-            category="configuration",
-            code="wechat_cli_missing",
+            category=category,
+            code=code,
             stage="wechat_official_scan",
             failure_revision=FAILURE_REVISION,
             provider_contract_version="xiaocao_writer_v1",
@@ -1451,7 +1461,7 @@ def test_repair_validation_accepts_wechat_official_accounts_repair_closure_alias
             content_sha256="5" * 64,
             failure_fingerprint=progress.failure_fingerprint,
             failure_revision=FAILURE_REVISION,
-            failure_code="wechat_cli_missing",
+            failure_code=code,
             failure_stage="wechat_official_scan",
             repair_revision=REPAIR_REVISION,
             target_branch="main",

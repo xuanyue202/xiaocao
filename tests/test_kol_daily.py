@@ -427,7 +427,11 @@ def test_local_capture_flag_rejects_other_business_entries(monkeypatch, command,
     assert exc.value.code == 2
 
 
-def test_local_official_repair_preserves_capture_ownership(monkeypatch):
+@pytest.mark.parametrize("failure_code", [
+    "source_temporarily_unavailable",
+    "wechat_official_scan_incomplete",
+])
+def test_local_official_repair_preserves_capture_ownership(monkeypatch, failure_code):
     calls = []
     runtime = SimpleNamespace(
         args=SimpleNamespace(local_capture=True),
@@ -439,7 +443,7 @@ def test_local_official_repair_preserves_capture_ownership(monkeypatch):
     monkeypatch.setattr(kol_daily_script, "_writer_failure_revision", lambda: "a" * 40)
     result = kol_daily_script._resume_source_repair_outcome(
         runtime, "wechat_official_accounts", "wechat_official_accounts:source",
-        failure_code="source_temporarily_unavailable",
+        failure_code=failure_code,
     )
     assert calls == ["local_capture"]
     assert result["status"] == "no_update"

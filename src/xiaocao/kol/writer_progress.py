@@ -1659,6 +1659,11 @@ def _canonical_wechat_official_source_repair_profile(
                 "wechat_cli_missing",
                 "wechat_official_scan",
             ),
+            (
+                "source_error",
+                "wechat_official_scan_incomplete",
+                "wechat_official_scan",
+            ),
         }
     ):
         return _WECHAT_OFFICIAL_SOURCE_REPAIR_PROFILE

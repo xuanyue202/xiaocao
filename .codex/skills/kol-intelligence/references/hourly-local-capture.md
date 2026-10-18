@@ -50,6 +50,10 @@ For a validated local `wechat_official_accounts` repair, use
 --failure-fingerprint <exact fingerprint> --local-capture`.
 The flag keeps the continuation on URL capture and mailbox reconciliation;
 the unflagged command retains the remote inbox writer's existing behavior.
+This also applies to `source_error/wechat_official_scan_incomplete` at
+`wechat_official_scan`: validate the exact fingerprint with the registered
+official-account source repair profile before the local continuation. A recovered
+stateless probe alone does not close the coordinator's retained repair.
 
 The coordinator locks only short ledger transactions. Source execution uses a
 non-blocking slot per source, including narrow continuations. Browser/MCP/stdin
