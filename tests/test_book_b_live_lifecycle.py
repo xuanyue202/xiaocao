@@ -1554,6 +1554,7 @@ def test_intraday_eod_only_reconciles_projects_and_settles(tmp_path: Path) -> No
     assert receipt.status == "settled"
     assert receipt.settlement is not None
     assert receipt.settlement["settled_nav"] == 30_000
+    assert receipt.broker_snapshot == _snapshot(observed_at=EOD_NOW)
 
 
 def _prior_zero_fill_sell_after_independent_exit(tmp_path: Path, state=ExecutionState.UNKNOWN):
@@ -1620,6 +1621,7 @@ def test_blocked_eod_retains_fresh_account_and_exact_reconciliation(tmp_path: Pa
     assert receipt.status == "blocked"
     assert receipt.reason == "LIVE_BOOK_B_EOD_OPEN_EXECUTION_RECONCILE_REQUIRED"
     assert receipt.account["broker_snapshot_sha256"] == snapshot["snapshot_sha256"]
+    assert receipt.broker_snapshot == snapshot
     assert receipt.account["cash"] == 30_099.79
     assert receipt.reconciliation_receipts == (unresolved.as_dict(),)
     assert receipt.decisions == receipt.execution_receipts == ()

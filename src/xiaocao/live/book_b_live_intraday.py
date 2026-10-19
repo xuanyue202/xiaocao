@@ -331,6 +331,7 @@ class BookBLiveIntradayReceipt:
     settlement: dict[str, Any] | None = None
     risk_receipt: dict[str, Any] | None = None
     deferred_buy_plan_ids: tuple[str, ...] = ()
+    broker_snapshot: dict[str, Any] | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -600,6 +601,7 @@ def _run_book_b_live_intraday_locked(
                 status="blocked",
                 reason=str(exc),
                 account=account.as_dict(),
+                broker_snapshot=snapshot,
                 decisions=(),
                 execution_receipts=(),
                 reconciliation_receipts=tuple(reconciled),
@@ -612,6 +614,7 @@ def _run_book_b_live_intraday_locked(
             status="settled",
             reason="BROKER_RECONCILED_EOD_SETTLED",
             account=account.as_dict(),
+            broker_snapshot=snapshot,
             decisions=(),
             execution_receipts=(),
             reconciliation_receipts=tuple(reconciled),

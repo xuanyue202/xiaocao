@@ -153,3 +153,21 @@ def test_eod_login_failure_notifies_from_the_durable_original_receipt(entry, mon
     payload = json.loads(capsys.readouterr().err)
     assert notices == [Path(payload["run_receipt_path"])]
     assert calls == []
+
+
+@pytest.mark.app_simulation
+def test_eod_archive_keeps_exact_snapshot_without_printing_broker_tables(entry, monkeypatch, capsys):
+    cli, calls, root = entry
+    snapshot = {"snapshot_sha256": "a" * 64,
+        "tables": {kind: {"rows": [{"evidence": kind}]}
+                   for kind in ("positions", "today-orders", "today-trades")},
+        "funds_summary": {"available_cash": 12345.67}}
+    monkeypatch.setattr(cli, "run_book_b_live_intraday", lambda **kwargs:
+        SimpleNamespace(as_dict=lambda: {"status": "settled", "broker_snapshot": snapshot}))
+    assert cli.main(["--phase", "eod", "--state-dir", str(root)]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    archived = json.loads(Path(payload["run_receipt_path"]).read_text())
+    assert archived["broker_snapshot"] == snapshot
+    assert "broker_snapshot" not in payload
+    assert payload["broker_snapshot_evidence"] == {
+        "receipt_path": payload["run_receipt_path"], "snapshot_sha256": "a" * 64}

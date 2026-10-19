@@ -250,7 +250,13 @@ def main(argv: list[str] | None = None) -> int:
         _write_json_atomic(archive_path, payload)
         _write_json_atomic(run_path, payload)
         _notify_blocked_eod(archive_path, payload)
-        print(json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str))
+        summary = {key: value for key, value in payload.items() if key != "broker_snapshot"}
+        if payload.get("broker_snapshot") is not None:
+            summary["broker_snapshot_evidence"] = {
+                "receipt_path": str(archive_path),
+                "snapshot_sha256": payload["broker_snapshot"]["snapshot_sha256"],
+            }
+        print(json.dumps(summary, ensure_ascii=False, sort_keys=True, default=str))
         return 0 if payload["status"] in {"settled", "no_action", "observed", "executed"} else 2
     except Exception as exc:
         payload = {

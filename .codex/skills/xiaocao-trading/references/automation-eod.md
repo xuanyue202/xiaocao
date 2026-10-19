@@ -65,6 +65,11 @@ intent/event chain stays open and the strict settlement writer still blocks.
 If the strict settlement writer blocks after a valid
 post-close projection, the blocked receipt retains that account and exact
 reconciliation receipts; these are current observations, not settled NAV.
+The original archive also retains `broker_snapshot`: the exact normalized
+positions/orders/trades and positions-funds evidence used by that projection,
+with its original clocks and snapshot hash. Default CLI output gives its archive
+reference instead of printing the tables. Historical receipts without that field
+retain an evidence gap; do not reconstruct or overwrite them from a later read.
 Preserve any older settlement written through that
 exception as historical evidence and disclose its failed terminal-plan audit.
 The settlement loader and risk history exclude a hash-matched settlement whose
