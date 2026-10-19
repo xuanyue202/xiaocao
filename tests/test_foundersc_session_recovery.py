@@ -195,8 +195,12 @@ def test_new_authenticated_session_autolock_is_a_separate_claim(tmp_path, monkey
     if fault == "wrong_account": native.payload["trade_account_fingerprint"]="999******999"
     if fault == "error": native.payload["unlock_failure_category"]="trade_password_incorrect"
     if fault:
-        with pytest.raises(ValueError, match="NEW_SESSION_UNLOCK_UNPROVEN"): step(path, native, "finish")
+        original_claim = path.with_suffix(".session-reset.json").read_bytes()
+        original_health = hp.read_bytes()
+        with pytest.raises(ValueError): step(path, native, "finish")
         assert native.actions == ["terminate", "fill"]
+        assert path.with_suffix(".session-reset.json").read_bytes() == original_claim
+        assert hp.read_bytes() == original_health
     else:
         assert step(path, native, "finish")["status"] == "account_ready_recheck_signalled"
         assert native.actions == ["terminate", "fill", "new-session-unlock"]

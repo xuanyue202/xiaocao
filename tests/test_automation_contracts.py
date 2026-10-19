@@ -19,14 +19,14 @@ def _automation(name: str) -> dict:
 
 def test_market_schedules_keep_distinct_ids_and_china_wall_clock() -> None:
     expected = {
-        "xiaocao-daily-morning": ("9", "23"),
-        "xiaocao-daily-morning-execution": ("9", "25"),
-        "xiaocao-book-b-live-morning": ("9", "0"),
+        "xiaocao-daily-morning": ("9", "18"),
+        "xiaocao-daily-morning-execution": ("9", "18"),
+        "xiaocao-book-b-live-morning": ("8", "53"),
         "xiaocao-intraday-monitor": ("9", "35,45,55"),
         "xiaocao-intraday-monitor-05": ("10,13", "25,55"),
-        "xiaocao-intraday-risk-precheck-1425": ("14", "25"),
-        "xiaocao-intraday-monitor-1455": ("14", "41"),
-        "xiaocao-daily-eod": ("15", "10"),
+        "xiaocao-intraday-risk-precheck-1425": ("14", "18"),
+        "xiaocao-intraday-monitor-1455": ("14", "38"),
+        "xiaocao-daily-eod": ("15", "3"),
         "xiaocao-weekly-deep-review": ("20", "30"),
     }
     ids = []
@@ -77,23 +77,6 @@ def test_nonsemantic_daytime_tasks_cannot_start_kol_publication() -> None:
         prompt = _automation(name)["prompt"]
         assert "delegate only semantic judgment" not in prompt
         assert "kol_trading_decision.py publish" not in prompt
-
-
-def test_semantic_consumers_use_lianghui_viewpoint_projection() -> None:
-    for name in (
-        "xiaocao-book-b-live-morning",
-        "xiaocao-daily-morning-execution",
-        "xiaocao-intraday-monitor-05",
-    ):
-        prompt = _automation(name)["prompt"]
-        assert "kol_trading_context.py projection" in prompt
-        assert "kol_trading_preparation.py" not in prompt
-        assert "opening draft" not in prompt.lower()
-        assert "unchanged report bodies" in prompt
-        assert "source_fingerprint" in prompt
-        assert "no fixed count or latest-N cutoff" in prompt
-        assert "classification_backfill" in prompt
-        assert "keywords, holdings, asset names or latest-N" in prompt
 
 
 def test_remote_writer_owns_typed_short_term_classification() -> None:

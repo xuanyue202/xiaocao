@@ -77,6 +77,10 @@ def test_source_exclusivity_across_processes_and_release_after_exit(tmp_path):
         assert by_name["xiaocao_wechat_live"]["code"] == "source_busy"
         assert by_name["wechat_official_accounts"]["status"] == "no_update"
         assert result["silent"] is False
+        release.set()
+        # Drain before joining: the child's Queue feeder must flush the full
+        # coordinator receipt, which can exceed the OS pipe buffer.
+        child_result = output.get(timeout=5)
     finally:
         release.set()
         process.join(5)
@@ -84,7 +88,7 @@ def test_source_exclusivity_across_processes_and_release_after_exit(tmp_path):
             process.terminate()
             process.join(2)
     assert process.exitcode == 0
-    assert output.get(timeout=2)["health"] == "healthy"
+    assert child_result["health"] == "healthy"
     # The same source is available again after the first process exits.
     assert service.run([
         {"name": "xiaocao_wechat_live", "run": lambda: {"status": "no_update"}},

@@ -1460,8 +1460,8 @@ def test_write_status_retries_transient_transport_reads(monkeypatch, failures):
     assert len(delays) == failures
 
 
-@pytest.mark.parametrize("tool", ["put_kol_record", "publish_kol_report", "get_kol_record"])
-def test_write_status_retries_never_repeat_other_calls(monkeypatch, tool):
+@pytest.mark.parametrize("tool", ["put_kol_record", "publish_kol_report"])
+def test_transport_retries_never_repeat_writes(monkeypatch, tool):
     import requests
     from xiaocao.kol.household import LiangHuiMcpClient
 
@@ -1478,7 +1478,8 @@ def test_write_status_retries_never_repeat_other_calls(monkeypatch, tool):
     assert len(calls) == 1
 
 
-def test_write_status_retries_are_bounded_and_do_not_retry_application_errors(monkeypatch):
+@pytest.mark.parametrize("tool", ["get_kol_write_status", "get_kol_record"])
+def test_read_retries_are_bounded_and_do_not_retry_application_errors(monkeypatch, tool):
     import requests
     from xiaocao.kol.household import LiangHuiMcpClient, LiangHuiMcpError
 
@@ -1492,8 +1493,8 @@ def test_write_status_retries_are_bounded_and_do_not_retry_application_errors(mo
 
     monkeypatch.setattr(client.session, "post", failed_post)
     with pytest.raises(DecisionError):
-        client.call_tool("get_kol_write_status", {"idempotency_key": "exact-claim"})
-    assert len(calls) == 3
+        client.call_tool(tool, {"idempotency_key": "exact-claim"})
+    assert len(calls) == 5
 
     class Rejected:
         def raise_for_status(self):
@@ -1509,6 +1510,6 @@ def test_write_status_retries_are_bounded_and_do_not_retry_application_errors(mo
 
     monkeypatch.setattr(client.session, "post", rejected_post)
     with pytest.raises(LiangHuiMcpError) as error:
-        client.call_tool("get_kol_write_status", {"idempotency_key": "exact-claim"})
+        client.call_tool(tool, {"idempotency_key": "exact-claim"})
     assert error.value.code == "NOT_FOUND"
     assert len(calls) == 1
