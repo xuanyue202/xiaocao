@@ -1015,6 +1015,8 @@ def write_book_b_live_settlement(
             raise ValueError("LIVE_BOOK_B_SETTLEMENT_CAPITAL_CHANGED")
         if current_ownership_head != account.ownership_head_sha256:
             raise ValueError("LIVE_BOOK_B_SETTLEMENT_OWNERSHIP_CHANGED")
+        if current_ownership_head is not None and account.accounting is None:
+            raise ValueError("LIVE_BOOK_B_SETTLEMENT_ACTUAL_FEES_REQUIRED")
         if account.accounting is not None:
             from .book_b_accounting import verify_observation
             from .book_b_capital import verify_account
@@ -1022,6 +1024,8 @@ def write_book_b_live_settlement(
             report = verify_observation(root, account.accounting, current=True)
             if report["status"] not in {"reconciled", "cash_discrepancy_tolerated"}:
                 raise ValueError("LIVE_BOOK_B_SETTLEMENT_CASH_RECONCILE_REQUIRED")
+            if report.get("fee_status") != "actual_fees_complete":
+                raise ValueError("LIVE_BOOK_B_SETTLEMENT_ACTUAL_FEES_REQUIRED")
             if report["status"] == "cash_discrepancy_tolerated":
                 stamp = datetime.fromisoformat(report["observed_at"])
                 if (observed.tzinfo is None

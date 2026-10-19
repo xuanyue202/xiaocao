@@ -28,14 +28,12 @@ def _price(value) -> str:
     return text + ".00" if "." not in text else text + "0" if len(text.split(".")[1]) == 1 else text
 
 
-def _profit(pnl, cost, *, estimated: bool = False) -> str:
+def _profit(pnl, cost) -> str:
     if pnl is None or cost is None or Decimal(str(cost)) <= 0:
         return "盈亏：待核算（缺少对应成交账务）"
     amount, basis = Decimal(str(pnl)), Decimal(str(cost))
     label = "盈利" if amount > 0 else "亏损" if amount < 0 else "盈亏持平"
-    prefix = "账本暂计" if estimated else "扣费后"
-    line = f"{prefix}{label}：{abs(amount):.2f} 元（{amount / basis * 100:+.2f}%）"
-    return line + ("\n费用按计划估算，最终净利待费用核对。" if estimated else "")
+    return f"扣费后{label}：{abs(amount):.2f} 元（{amount / basis * 100:+.2f}%）"
 
 
 def _reason(reason: str) -> str:
@@ -97,10 +95,23 @@ def app_sell_notice(receipt: dict, intent: dict, postings: list[dict]) -> SellNo
         price = receipt.get("fill_price")
         lines.append(f"成交均价：{_price(price)} 元" if price else "成交均价：待核对")
         shares = sum(int(p["shares"]) for p in postings)
-        cost = -sum(Decimal(str(p["cost_change"])) for p in postings)
-        pnl = sum(Decimal(str(p["realized_pnl"])) for p in postings)
-        financial_result = _profit(pnl if shares == filled else None, cost,
-            estimated=any(p["fee_basis"] == "estimated_plan_rate" for p in postings))
+        final = (shares == filled and postings and
+                 all(p.get("final_realized_pnl") is not None and
+                     p.get("final_cost_change") is not None for p in postings))
+        if final:
+            cost = -sum(Decimal(str(p["final_cost_change"])) for p in postings)
+            pnl = sum(Decimal(str(p["final_realized_pnl"])) for p in postings)
+            financial_result = _profit(pnl, cost)
+        elif shares != filled or not postings:
+            financial_result = "盈亏：待核算（缺少对应成交账务）"
+        else:
+            financial_result = "扣费后盈亏：待核对实际手续费，暂不确认金额和百分比。"
+            if shares == filled and postings and all(p.get("gross_pnl") is not None for p in postings):
+                gross = sum(Decimal(str(p["gross_pnl"])) for p in postings)
+                cost = sum(Decimal(str(p["gross_sold_cost"])) for p in postings)
+                if cost > 0:
+                    financial_result += (f"\n未扣费价差：{gross:+.2f} 元（{gross / cost * 100:+.2f}%），"
+                                         "不是最终净利润。")
         lines.append(financial_result)
         if not complete:
             lines.append("剩余部分尚未确认卖出；以上盈亏仅对应已成交部分。")

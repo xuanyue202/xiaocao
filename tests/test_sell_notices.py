@@ -86,18 +86,20 @@ def app_data():
                "remaining_shares": 0, "fill_price": 8.22}
     posted = {"source_sha256": "exact-fill-hash", "owned_lot_id": "buy-lot",
               "kind": "SELL", "shares": 1100, "cost_change": "-8965.90",
-              "realized_pnl": "75.20", "fee_basis": "estimated_plan_rate"}
+              "realized_pnl": "75.20", "fee_basis": "estimated_plan_rate",
+              "final_realized_pnl": "75.20", "final_cost_change": "-8965.90"}
     return receipt, intent, posted
 
 
 @pytest.mark.app_simulation
 def test_app_result_profit_is_explicitly_provisional_and_separate_from_paper():
     receipt, intent, posted = app_data()
+    posted.update(final_realized_pnl=None, final_cost_change=None, gross_pnl="77.00", gross_sold_cost="8965.00")
     result = notices.app_sell_notice(receipt, intent, [posted])
     assert "APP仿真B" in result.title and "已全部卖出" in result.title
     assert "1100 / 1100 股" in result.body and "8.22 元" in result.body
-    assert "账本暂计盈利：75.20 元（+0.84%）" in result.body
-    assert "最终净利待费用核对" in result.body
+    assert "75.20" not in result.body and "待核对实际手续费" in result.body
+    assert "+77.00 元（+0.86%）" in result.body
 
 
 @pytest.mark.app_simulation
@@ -116,7 +118,7 @@ def test_ack_unknown_or_uncertain_mapping_is_not_reported_as_completed(change):
 def test_partial_sale_uses_only_the_allocated_sold_cost():
     receipt, intent, posted = app_data()
     receipt.update(state="partial", filled_shares=100, remaining_shares=1000)
-    posted.update(shares=100, cost_change="-815.09", realized_pnl="6.83")
+    posted.update(shares=100, final_cost_change="-815.09", final_realized_pnl="6.83")
     result = notices.app_sell_notice(receipt, intent, [posted])
     assert "部分卖出" in result.title and "100 / 1100 股" in result.body
     assert "6.83 元（+0.84%）" in result.body and "仅对应已成交部分" in result.body
@@ -176,8 +178,8 @@ def test_replacement_order_notice_includes_predecessor_fill_postings(tmp_path, m
     intent["shares"] = 200
     receipt.update(plan_hash=notices._sha256(intent), filled_shares=200)
     first = {**posted, "source_sha256": "first-order-fill", "shares": 100,
-             "cost_change": "-800", "realized_pnl": "20"}
-    second = {**posted, "shares": 100, "cost_change": "-800", "realized_pnl": "20"}
+             "final_cost_change": "-800", "final_realized_pnl": "20"}
+    second = {**posted, "shares": 100, "final_cost_change": "-800", "final_realized_pnl": "20"}
     ownership = [{"event_hash": p["source_sha256"], "plan_id": "sell-plan",
                   "plan_hash": receipt["plan_hash"], "broker_order_id": order}
                  for p, order in [(first, "old-order"), (second, "6005007")]]

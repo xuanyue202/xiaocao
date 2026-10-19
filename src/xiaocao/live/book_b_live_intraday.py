@@ -591,7 +591,8 @@ def _run_book_b_live_intraday_locked(
         try:
             settlement = write_book_b_live_settlement(state_root, account, now=current)
         except ValueError as exc:
-            if str(exc) != "LIVE_BOOK_B_EOD_OPEN_EXECUTION_RECONCILE_REQUIRED":
+            if str(exc) not in {"LIVE_BOOK_B_EOD_OPEN_EXECUTION_RECONCILE_REQUIRED",
+                                "LIVE_BOOK_B_SETTLEMENT_ACTUAL_FEES_REQUIRED"}:
                 raise
             # The strict writer still refuses settlement. Preserve the fresh
             # projection and exact reconciliation already proved by this run.

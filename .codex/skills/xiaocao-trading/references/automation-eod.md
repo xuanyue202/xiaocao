@@ -5,7 +5,12 @@ Read this file only for the daily post-close capture/evaluation branch.
 APP Book B cash/NAV and performance use Operating Contract §6's dynamic
 SQLite financial journal. Consume `account.accounting` and cite its observation,
 journal and funding heads. Apply `docs/BOOK_B_ACCOUNTING.md` for profit/cost,
-unclassified cash and estimated fees. Paper A/B/T and historical settlements stay independent.
+unclassified cash and actual fee finality. Missing itemized native fees keep net
+profit unknown and block formal settlement even when cash happens to match;
+report pending exact order identities. Accepted actual fee receipts append
+differences to the shared journal; never classify a balance gap as a fee or
+replace historical postings. Budget/exit-fee estimates retain their existing
+scope. Paper A/B/T and historical settlements stay independent.
 
 ## Execute
 

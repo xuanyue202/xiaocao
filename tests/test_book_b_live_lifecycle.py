@@ -275,15 +275,19 @@ def _record_fill(
         broker_order_id=f"order-{event_id}",
         fill_price=price,
         event_id=event_id,
+        observed_at=datetime.fromisoformat(plan.trade_date).replace(
+            hour=NOW.hour, minute=NOW.minute, tzinfo=timezone.utc),
     )
-    persisted = ExecutionStore(state_dir / "events.jsonl").append(
-        plan=plan,
-        receipt=receipt,
-        kind="broker_receipt",
-    )
-    BookBOwnershipEvidence(
-        state_dir / "book_b_ownership_evidence.jsonl"
-    ).record(plan, persisted)
+    from unittest.mock import patch
+    with patch("xiaocao.live.trading_execution._utcnow", lambda: receipt.observed_at):
+        persisted = ExecutionStore(state_dir / "events.jsonl").append(
+            plan=plan,
+            receipt=receipt,
+            kind="broker_receipt",
+        )
+        BookBOwnershipEvidence(
+            state_dir / "book_b_ownership_evidence.jsonl"
+        ).record(plan, persisted)
     return plan
 
 
@@ -833,9 +837,9 @@ def test_old_zero_fill_sell_after_lot_exit_allows_fresh_mark_for_other_codes(
 
     buy = _record_fill(tmp_path, _plan(trade_date="2026-08-31"),
         price=10, event_id="prior-buy")
-    settled = project_book_b_live_account(tmp_path,
-        _snapshot(shares=100, sellable=100, observed_at=EOD_NOW),
-        trade_date="2026-09-01", now=EOD_NOW)
+    from tests.book_b_fee_fixtures import proved_fee_account
+    settled = proved_fee_account(tmp_path,
+        _snapshot(shares=100, sellable=100, observed_at=EOD_NOW))
     write_book_b_live_settlement(tmp_path, settled, now=EOD_NOW)
     old_sell = _bind_plan_intent(tmp_path, _plan(side="SELL", lot_id=buy.plan_id,
         trade_date="2026-09-02"))
@@ -920,9 +924,9 @@ def test_old_zero_fill_sell_after_lot_exit_allows_fresh_mark_for_other_codes(
 @pytest.mark.app_simulation
 def test_prior_zero_fill_sell_scopes_new_risk_without_closing_order(tmp_path: Path) -> None:
     buy = _record_fill(tmp_path, _plan(trade_date="2026-08-31"), price=10, event_id="prior-buy")
-    settled = project_book_b_live_account(tmp_path,
-        _snapshot(shares=100, sellable=100, observed_at=EOD_NOW),
-        trade_date="2026-09-01", now=EOD_NOW)
+    from tests.book_b_fee_fixtures import proved_fee_account
+    settled = proved_fee_account(tmp_path,
+        _snapshot(shares=100, sellable=100, observed_at=EOD_NOW))
     write_book_b_live_settlement(tmp_path, settled, now=EOD_NOW)
     sell = _bind_plan_intent(tmp_path, _plan(side="SELL", lot_id=buy.plan_id,
         trade_date="2026-09-02"))
@@ -1634,6 +1638,8 @@ def test_blocked_eod_retains_fresh_account_and_exact_reconciliation(tmp_path: Pa
 @pytest.mark.app_simulation
 def test_eod_settles_only_after_exact_old_sell_terminal_readback(tmp_path: Path) -> None:
     old_sell, current, store, unresolved, snapshot = _prior_zero_fill_sell_after_independent_exit(tmp_path)
+    from tests.book_b_fee_fixtures import proved_fee_account
+    proved_fee_account(tmp_path, snapshot)
     reconciliations = []
     def reconcile(plan):
         assert plan.plan_id == old_sell.plan_id
@@ -1954,6 +1960,9 @@ def test_full_live_lifecycle_buy_decision_sell_fill_eod_and_next_basis(
     # The transaction implementation owns this transition in production.  The
     # lifecycle consumes only its broker-proved fill receipt.
     _record_fill(tmp_path, handed_off[0], price=11.0, event_id="sell-fill")
+    from tests.book_b_fee_fixtures import proved_fee_account
+    proved_fee_account(tmp_path, _snapshot(observed_at=EOD_NOW, broker_fills=(
+        ("order-sell-fill", "000001.XSHE", "SELL", 100, 11.0),)))
     eod = run_book_b_live_intraday(
         state_dir=tmp_path,
         freeze_dir=tmp_path,
