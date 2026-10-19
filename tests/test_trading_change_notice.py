@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from scripts.trading_change_notice import deliver_pending, pending_notices, enqueue_notice
 from xiaocao.live.trading_execution import TradingIncidentOutbox
 
@@ -87,4 +89,20 @@ def test_change_notice_sender_crash_remains_reconcile_only(tmp_path):
     ready = lambda **_: {"status": "configured"}
     assert deliver_pending(path, sender=sender, readiness=ready)[0]["delivery"] == "pending_error"
     assert deliver_pending(path, sender=sender, readiness=ready)[0]["delivery"] == "pending_reconcile"
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("local_result", ["ok", "error: TimeoutExpired"])
+def test_local_popup_success_and_relay_presend_failure_is_partial_delivery(tmp_path, local_result):
+    path, calls = tmp_path / "notice.jsonl", []
+    enqueue_notice(path, identifier="mixed", title="sale", body="confirmed fill")
+    def sender(*args, **kwargs):
+        calls.append(args)
+        return {"macos": local_result, "wecom": "failed", "wecom_recipients": {"private": {
+            "status": "failed", "retry_safety": "safe", "failure_phase": "connect"}}}
+    ready = lambda **_: {"status": "configured"}
+    first = deliver_pending(path, sender=sender, readiness=ready)[0]
+    second = deliver_pending(path, sender=sender, readiness=ready)[0]
+    assert first["delivery"] == "pending_unproven"
+    assert second["delivery"] == "pending_reconcile"
     assert len(calls) == 1

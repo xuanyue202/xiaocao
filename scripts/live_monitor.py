@@ -86,7 +86,7 @@ from xiaocao.live.instrument_contract import (  # noqa: E402
     has_explicit_instrument_contract,
     is_sellable,
 )
-from xiaocao.live.notify import notify as _notify  # noqa: E402
+from xiaocao.live.sell_notices import notify_paper_sells  # noqa: E402
 from xiaocao.strategy.params import TREND_BUDGET_RATIO, TREND_REBALANCE_R, TREND_TRAIL_DD  # noqa: E402
 
 OUT_DIR = ROOT / "output" / "live"
@@ -943,7 +943,7 @@ def main() -> None:
     parser.add_argument("--book", choices=["B", "T"], default="B",
                         help="which paper book to monitor; default B (short-line)")
     parser.add_argument("--no-notify", action="store_true",
-                        help="禁用 macOS 通知（保留 stdout + alerts.jsonl）")
+                        help="禁用卖出结果通知（保留 stdout + alerts.jsonl）")
     parser.add_argument("--execute-sells", action="store_true",
                         help="触发 T+1 止损时执行模拟卖出，更新 positions/account/trades")
     args = parser.parse_args()
@@ -1100,9 +1100,6 @@ def main() -> None:
                 book=book,
             )
             if not already_logged:
-                if not args.no_notify:
-                    # macOS popup + WeCom relay (when XIAOCAO_WECOM_* is set)
-                    _notify(f"卖点触发 {s['code']}", msg, macos=True)
                 with ALERTS_FILE.open("a", encoding="utf-8") as f:
                     f.write(json.dumps({
                         "ts": today_iso,
@@ -1110,16 +1107,26 @@ def main() -> None:
                         "book": book,
                         **s,
                     }, ensure_ascii=False) + "\n")
-        if args.execute_sells:
-            closed, blocked = _execute_simulated_sells(client, triggered_alerts, book=book)
-            account = _load_account(book)
-            print(
-                f"\nSimulated sells executed: {closed}; "
-                f"blocked={blocked}; "
-                f"cash={float(account.get('cash', 0.0)):.2f}, "
-                f"realized_pnl={float(account.get('realized_pnl', 0.0)):+.2f}, "
-                f"total_fees={float(account.get('total_fees', 0.0)):.2f}"
-            )
+        try:
+            if args.execute_sells:
+                closed, blocked = _execute_simulated_sells(client, triggered_alerts, book=book)
+                account = _load_account(book)
+                print(
+                    f"\nSimulated sells executed: {closed}; "
+                    f"blocked={blocked}; "
+                    f"cash={float(account.get('cash', 0.0)):.2f}, "
+                    f"realized_pnl={float(account.get('realized_pnl', 0.0)):+.2f}, "
+                    f"total_fees={float(account.get('total_fees', 0.0)):.2f}"
+                )
+        finally:
+            if not args.no_notify:
+                try:
+                    results = notify_paper_sells(triggered_alerts, live_dir=OUT_DIR,
+                        positions_path=POSITIONS_FILE, book=book, trade_date=today_iso,
+                        execute_requested=args.execute_sells)
+                    print(json.dumps({"sell_notices": results}, ensure_ascii=False))
+                except Exception as exc:
+                    print(f"Sell result notice unavailable: {type(exc).__name__}", file=sys.stderr)
     else:
         print(f"\nNo sell triggers. {sum(1 for p in positions)} position(s) holding.")
     snapshot = _write_holdings_snapshot(statuses, book=book)

@@ -267,6 +267,10 @@ post-business safe retry through `scripts/trading_change_notice.py --outbox
 output/live/paper_eod_status_notices.jsonl --retry-pending`; never replay the
 status digest command to recover an uncertain send. Historical direct-send
 logs without a durable claim remain a delivery evidence gap.
+Include `output/live/sell_result_notices.jsonl` in the same post-business
+`trading_change_notice.py --outbox <path> --retry-pending` pass for paper/APP
+sale outcomes. Recover only queued exact claims; never replay a trade or invent
+a historical notification claim to fill a delivery gap.
 Retry only proved pre-send failures; legacy pending, interrupted sends and
    uncertain/partial delivery require exact reconciliation, never another send.
 6. Write `output/live/daily_execution_review_<date>.md`: expected versus actual,

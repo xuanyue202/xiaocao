@@ -29,6 +29,7 @@ from xiaocao.live.trading_runner import build_foundersc_native_execution  # noqa
 from xiaocao.live.live_decision_support import calendar_provider, read_policy  # noqa: E402
 from xiaocao.live.eod_automation_gate import EodGateRejected, claim_eod_slot  # noqa: E402
 from book_b_eod_alert import notify_eod_blocker  # noqa: E402
+from xiaocao.live.sell_notices import notify_app_sells  # noqa: E402
 
 
 def _china_now() -> datetime:
@@ -250,6 +251,13 @@ def main(argv: list[str] | None = None) -> int:
         _write_json_atomic(archive_path, payload)
         _write_json_atomic(run_path, payload)
         _notify_blocked_eod(archive_path, payload)
+        try:
+            notices = notify_app_sells(payload, state_dir=state_dir,
+                                      outbox=ROOT / "output/live/sell_result_notices.jsonl")
+            if notices:
+                print(json.dumps({"sell_notices": notices}, ensure_ascii=False), file=sys.stderr)
+        except Exception as exc:
+            print(f"Sell result notice unavailable: {type(exc).__name__}", file=sys.stderr)
         summary = {key: value for key, value in payload.items() if key != "broker_snapshot"}
         if payload.get("broker_snapshot") is not None:
             summary["broker_snapshot_evidence"] = {

@@ -116,13 +116,17 @@ def _deliver_pending_locked(path: Path, *, sender, readiness, incident_ids) -> l
                 if isinstance(recipient_results, dict) else []
             )
             # A partial delivery also cannot safely resend the aggregate body.
-            safe = bool(recipient_results) and isinstance(recipient_results, dict) and all(
+            # A local popup may already have appeared even when osascript
+            # timed out. Only an explicit platform skip proves no local send.
+            local_attempted = (isinstance(sent, dict) and "macos" in sent
+                               and sent["macos"] != "skipped (not darwin)")
+            safe = not local_attempted and bool(recipient_results) and isinstance(recipient_results, dict) and all(
                 isinstance(value, dict) and value.get("status") in {None, "failed"}
                 and value.get("retry_safety") == "safe"
                 for value in recipient_results.values()
             )
             _attempt(path, identifier, "failed_safe" if safe else "uncertain")
-            results.append({
+            result = {
                 "incident_id": identifier,
                 "delivery": "pending_unproven",
                 "failure_phases": sorted({
@@ -131,5 +135,8 @@ def _deliver_pending_locked(path: Path, *, sender, readiness, incident_ids) -> l
                 "retry_safety": sorted({
                     str(value.get("retry_safety") or "unknown") for value in failures
                 }),
-            })
+            }
+            if local_attempted:
+                result["partial_channels" if sent["macos"] == "ok" else "uncertain_channels"] = ["macos"]
+            results.append(result)
     return results

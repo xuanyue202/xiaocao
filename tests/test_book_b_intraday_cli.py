@@ -171,3 +171,19 @@ def test_eod_archive_keeps_exact_snapshot_without_printing_broker_tables(entry, 
     assert "broker_snapshot" not in payload
     assert payload["broker_snapshot_evidence"] == {
         "receipt_path": payload["run_receipt_path"], "snapshot_sha256": "a" * 64}
+
+
+@pytest.mark.app_simulation
+def test_sell_result_notification_follows_original_archive_and_cannot_change_result(entry, monkeypatch, capsys):
+    cli, calls, root = entry
+    monkeypatch.setattr(cli, "run_book_b_live_intraday", lambda **kwargs:
+        SimpleNamespace(as_dict=lambda: {"status": "executed"}))
+    def failed_notice(payload, **kwargs):
+        archived = json.loads(Path(payload["run_receipt_path"]).read_text())
+        assert archived == payload and archived["status"] == "executed"
+        raise OSError("notice claim unavailable")
+    monkeypatch.setattr(cli, "notify_app_sells", failed_notice)
+    assert cli.main(["--phase", "closing", "--state-dir", str(root)]) == 0
+    output = capsys.readouterr()
+    assert json.loads(output.out)["status"] == "executed"
+    assert "notice unavailable" in output.err and calls == []

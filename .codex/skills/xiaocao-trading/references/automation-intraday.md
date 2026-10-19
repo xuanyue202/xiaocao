@@ -247,3 +247,13 @@ skips), paper positions/trades/account to agree, and the live run receipt to
 bind a current three-table/positions-funds snapshot plus owned-lot projection. A printed trigger,
 SELL intent, prepared form, acknowledged order or process exit is not an
 executed live sell; only broker-proved fill evidence is.
+
+Sell notifications lead with the account (paper B/T or APP simulation B),
+confirmed full/partial sale or unconfirmed/no-sale status, quantity, actual
+fill price, profit/loss amount and return on the allocated sold cost. Paper
+execution reports only after its canonical transaction returns; a signal alone
+is a reminder. APP profit uses exact fill-linked shared accounting postings;
+missing postings stay unknown and estimated fees remain explicitly provisional.
+Technical scores remain in audit logs, while the notice gives a short Chinese
+reason. Both use the shared durable claim in
+`output/live/sell_result_notices.jsonl`; do not replay a monitor to recover a notice.
