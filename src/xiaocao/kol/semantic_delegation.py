@@ -421,6 +421,16 @@ def _submission_id(value: str) -> str:
 
 
 def _invocation(packet: dict[str, Any], args: dict[str, Any], *, continuation: bool = False) -> str:
+    # The collaboration runtime spells no inherited context as fork_turns=none.
+    # Validate its transport envelope while retaining the actual args in receipts.
+    if "fork_turns" in args:
+        if (args.get("fork_turns") != "none"
+                or not isinstance(args.get("task_name"), str)
+                or not re.fullmatch(r"[a-z0-9_]+", args["task_name"])
+                or set(args) != {"task_name", "fork_turns", "model", "reasoning_effort", "message"}):
+            raise DelegationError("Invocation must use an exact no-context collaboration spawn")
+        args = {key: value for key, value in args.items() if key not in {"task_name", "fork_turns"}}
+        args["fork_context"] = False
     parameters = packet.get("dispatch_parameters")
     if (not isinstance(parameters, dict) or set(parameters) != {"model", "reasoning_effort", "fork_context"}
             or any(args.get(k) != v for k, v in parameters.items())
