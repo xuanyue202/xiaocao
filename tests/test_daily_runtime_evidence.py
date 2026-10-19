@@ -10,6 +10,32 @@ import pytest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
+
+
+def test_source_gap_reaches_operator_without_forwarding_business_payload(tmp_path):
+    from xiaocao.live.runtime_evidence import stream_process
+
+    read_fd, write_fd = os.pipe()
+    event = {"event": "market_dependency_recovery_wait", "trade_date": "2026-10-19",
+        "failure_category": "MORNING_SOURCE_INCOMPLETE", "source_gaps": [
+            {"source": "stock_index", "status": "partial", "missing_codes": ["301139.XSHE"],
+             "account_table": {"private": "never forward"}}],
+        "candidate_table": {"private": "never forward"}}
+    try:
+        result = stream_process([str(PYTHON), "-c",
+            "import sys;sys.stderr.write("+repr(json.dumps(event)+"\n")+")"],
+            cwd=tmp_path, env=dict(os.environ), output_path=tmp_path/"child.log", operator_fd=write_fd)
+        os.close(write_fd)
+        write_fd = None
+        with os.fdopen(read_fd) as stream:
+            forwarded = json.loads(stream.readline())
+        assert result == 0
+        assert forwarded["source_gaps"] == [{"source": "stock_index", "status": "partial",
+            "missing_code_count": 1, "missing_codes": ["301139.XSHE"]}]
+        assert "candidate_table" not in forwarded
+    finally:
+        if write_fd is not None:
+            os.close(write_fd)
 PYTHON = Path(sys.executable)
 
 

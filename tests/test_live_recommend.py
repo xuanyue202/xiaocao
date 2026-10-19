@@ -51,7 +51,8 @@ def test_committed_bundle_survives_compatibility_freeze_conflict(tmp_path, monke
         "open": 13.71, "basket_price": 13.98}
     snapshot = (json.dumps(row) + "\n").encode()
 
-    live_recommend._publish_original_batch(day, {}, f"{day}T09:23:00+08:00", snapshot)
+    from tests.test_morning_capture_contract import readiness
+    live_recommend._publish_original_batch(day, readiness(codes=["000020.XSHE"]), f"{day}T09:23:00+08:00", snapshot)
 
     assert mirror.read_bytes() == conflicting_bytes
     receipt = acquire_bundle(tmp_path, day)
@@ -467,7 +468,7 @@ def test_kronos_model_failure_does_not_block_mode_exec_snapshot_or_report(
     monkeypatch.setattr(live_recommend, "_resolve_date", lambda _date: "2026-08-05")
     monkeypatch.setattr(live_recommend, "_wait_for_recommendation_start", lambda _date: None)
     monkeypatch.setattr(live_recommend, "_client", lambda: _Client())
-    monkeypatch.setattr(live_recommend, "ApiDataSource", lambda *_args, **_kwargs: SimpleNamespace(readiness={}))
+    monkeypatch.setattr(live_recommend, "ApiDataSource", lambda *_args, **_kwargs: SimpleNamespace(readiness=__import__("tests.test_morning_capture_contract", fromlist=["readiness"]).readiness(codes=["600815.XSHG"])))
     monkeypatch.setattr(
         live_recommend,
         "_run_strategy_when_ready",

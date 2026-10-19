@@ -6,6 +6,10 @@ import hashlib
 import json
 import copy
 import time
+from pathlib import Path
+from xiaocao.utils.atomic_files import atomic_write
+
+from xiaocao.live.source_observation import observation_current
 
 from xiaocao.api.catalog import STOCK_GROUPS, resolve_group
 from xiaocao.api.client import XiaocaoClient
@@ -16,7 +20,8 @@ GROUPS = {key: item.value for key, item in STOCK_GROUPS.items()}
 
 
 class ApiDataSource:
-    def __init__(self, client: XiaocaoClient, hpqb_state: int = 0, lpdx_state: int = 0) -> None:
+    def __init__(self, client: XiaocaoClient, hpqb_state: int = 0, lpdx_state: int = 0,
+                 *, resolve_security_universe: bool = False) -> None:
         self.client = client
         self.hpqb_state = hpqb_state
         self.lpdx_state = lpdx_state
@@ -25,16 +30,37 @@ class ApiDataSource:
         self._observe_enabled = False
         self._requests = {}
         self._validated = {}
+        # Enable only for current capture: today's directory cannot filter history.
+        self.resolve_security_universe = resolve_security_universe
+        self._security_codes: set[str] | None = None
+        self._security_directory_sha256: str | None = None
 
     def begin_observation(self, attempt: int, *, retry_missing: bool = False) -> None:
         retained = {k:v for k,v in self._validated.items()
                     if v[1].get("status") in {"populated", "empty_confirmed"}
-                    and 0 <= (datetime.now(timezone.utc) - datetime.fromisoformat(v[1]["completed_at"])).total_seconds() <= 60} if retry_missing else {}
+                    and observation_current(v[1], now=datetime.now(timezone.utc))} if retry_missing else {}
         self._observe_enabled = True
         self.observations = []
         self.readiness = {"attempt": attempt, "sources": self.observations}
         self._requests = {}
         self._validated = retained
+        self._security_codes = None
+        self._security_directory_sha256 = None
+
+    def reuse_ready_observation(self, attempt: int) -> bool:
+        """Keep one complete, still-current source version instead of chasing ticks."""
+        reusable = bool(self._requests) and self.observation_is_current()
+        if reusable:
+            self.readiness["attempt"] = attempt
+            self.readiness["confirmation"] = {"unchanged": True, "reused": True,
+                "request_count": len(self._requests)}
+        return reusable
+
+    def observation_is_current(self) -> bool:
+        if not self.observations:
+            return False
+        return all(r.get("status") in {"populated", "empty_confirmed"}
+                   and observation_current(r, now=datetime.now(timezone.utc)) for r in self.observations)
 
     def revalidate_observation(self, attempt: int) -> bool:
         previous = dict(self._requests)
@@ -46,7 +72,9 @@ class ApiDataSource:
             record = self.observations[-1]
             if record.get("response_sha256") == expected:
                 record.update({k:v for k,v in previous_records[key][1].items()
-                               if k in {"ranked_requested_count", "unranked_codes", "status"}})
+                               if k in {"ranked_requested_count", "unranked_codes", "status",
+                                        "raw_code_count", "admitted_code_count", "excluded_codes",
+                                        "exclusion_reason", "security_directory_sha256"}})
             unchanged = unchanged and record.get("response_sha256") == expected
         self.readiness["confirmation"] = {"unchanged": unchanged, "request_count": len(previous)}
         return bool(previous) and unchanged
@@ -56,6 +84,8 @@ class ApiDataSource:
         # query key while exposing only the inputs actually used by the rerun.
         self.observations.clear()
         self._requests.clear()
+        self._security_codes = None
+        self._security_directory_sha256 = None
 
     def _observe(self, kind: str, date: str, fetch, *, requested_codes=None, cache_key=()):
         if not self._observe_enabled:
@@ -64,7 +94,9 @@ class ApiDataSource:
         key = (kind, date, tuple(requested_codes or ()), tuple(cache_key))
         if key in self._validated:
             rows, record, request = self._validated[key]
-            self.observations.append(copy.deepcopy(record))
+            record = copy.deepcopy(record)
+            self.observations.append(record)
+            self._validated[key] = (rows, record, request)
             self._requests[key] = request
             return copy.deepcopy(rows)
         started = time.monotonic()
@@ -94,16 +126,22 @@ class ApiDataSource:
                      str(row.get("code") or row.get("stockCode") or row.get("stockId") or "")
                      for row in rows if isinstance(row, (dict, str))}
             missing = sorted(set(requested_codes) - found)
+        response = json.dumps(rows, sort_keys=True, ensure_ascii=False, default=str).encode()
+        response_hash = hashlib.sha256(response).hexdigest()
+        response_path = Path("output/live/morning_sources/normalized") / (response_hash + ".json")
+        atomic_write(response_path, response, immutable=True)
         self.observations.append({
             "source": kind, "requested_date": date, "observed_at": stamp,
             "status": "partial" if missing else "populated" if rows else "empty_unconfirmed",
             "row_count": len(rows), "missing_codes": missing,
-            "response_sha256": hashlib.sha256(json.dumps(rows, sort_keys=True, ensure_ascii=False,
-                                                        default=str).encode()).hexdigest(),
+            "response_sha256": response_hash, "response_path": str(response_path.resolve()),
+            "requested_codes": list(requested_codes or []),
             "completed_at": datetime.now(timezone.utc).isoformat(),
             "elapsed_seconds": round(time.monotonic() - started, 6),
         })
         record = self.observations[-1]
+        if kind == "security_directory" and getattr(self.client, "stock_info_evidence", None):
+            record["raw_response"] = copy.deepcopy(self.client.stock_info_evidence)
         request = (kind, date, fetch, tuple(requested_codes or ()), tuple(cache_key), record["response_sha256"])
         self._requests[key] = request
         self._validated[key] = (copy.deepcopy(rows), record, request)
@@ -111,8 +149,43 @@ class ApiDataSource:
 
     def get_pool(self, date: str, group: str | int) -> list[str]:
         group_id = resolve_group(group)
-        return self._observe(f"pool:{group}", date, lambda: self.client.get_code_list_v2(
+        self._load_security_directory(date)
+        codes = self._observe(f"pool:{group}", date, lambda: self.client.get_code_list_v2(
             date, group_id, self.hpqb_state, self.lpdx_state))
+        return self._admit_security_codes(codes)
+
+    def _load_security_directory(self, date: str) -> None:
+        if not self.resolve_security_universe or self._security_codes is not None:
+            return
+
+        def fetch():
+            rows = self.client.stock_info(use_cache=False, strict=True)
+            if not rows:
+                raise ApiSourceNotReadyError("MORNING_SECURITY_DIRECTORY_EMPTY")
+            if (not isinstance(rows, list) or any(
+                    not isinstance(r, dict) or not isinstance(r.get("stockId"), str)
+                    or "." not in r["stockId"] or not r["stockId"].strip() for r in rows)):
+                raise ApiSchemaError("MORNING_SECURITY_DIRECTORY_INVALID")
+            return rows
+
+        rows = self._observe("security_directory", date, fetch)
+        self._security_codes = {r["stockId"] for r in rows}
+        if self._observe_enabled:
+            record = self.observations[-1]
+            self._security_directory_sha256 = record["response_sha256"]
+
+    def _admit_security_codes(self, codes: list[str]) -> list[str]:
+        if not self.resolve_security_universe:
+            return codes
+        admitted = [code for code in codes if code in self._security_codes]
+        if self._observe_enabled:
+            self.observations[-1].update(
+                raw_code_count=len(codes), admitted_code_count=len(admitted),
+                excluded_codes=sorted(set(codes) - self._security_codes),
+                exclusion_reason="NOT_IN_SECURITY_DIRECTORY",
+                security_directory_sha256=self._security_directory_sha256,
+            )
+        return admitted
 
     def get_stock_index(self, date: str, codes: list[str]) -> list[dict[str, Any]]:
         output: list[dict[str, Any]] = []
@@ -155,6 +228,8 @@ class ApiDataSource:
         descending: bool = True,
         target_type: int | str = "stock",
     ) -> list[str]:
+        if not codes:
+            return []
         rows = self._observe(f"sort:{sort_id}", date, lambda selected=tuple(codes): self.client.sort_v2(
             list(selected),
             sort_id=sort_id,
@@ -200,13 +275,14 @@ class ApiDataSource:
         block_code: str | None = None,
         category_code: str | None = None,
     ) -> list[str]:
+        self._load_security_directory(date)
         result = self._observe("direction_codes", date, lambda: self.client.get_code_by_xiao_cao_block(
             date,
             blockCodeList=block_code or "",
             industryBlockCodeList=block_code or "",
             categoryCodeList=category_code or "",
         ), cache_key=(block_code, category_code))
-        return _extract_codes(result)
+        return self._admit_security_codes(_extract_codes(result))
 
 
 def _extract_codes(value: Any) -> list[str]:

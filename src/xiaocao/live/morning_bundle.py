@@ -104,7 +104,7 @@ def validate_components(date: str, snapshot: bytes, report: bytes, queue: bytes)
 
 
 def publish_bundle(live_dir: Path, date: str, *, snapshot: bytes, report: bytes,
-                   queue: dict, capture: dict, on_stage=None) -> dict:
+                   queue: dict, capture: dict, on_stage=None, precommit=None) -> dict:
     """Commit complete original bytes before publishing any consumer readiness."""
     live_dir = Path(live_dir)
     _valid_date(date)
@@ -140,6 +140,8 @@ def publish_bundle(live_dir: Path, date: str, *, snapshot: bytes, report: bytes,
         if orphans and (len(orphans) != 1 or orphans[0] != root / "checkpoint.json"
                 or orphans[0].read_bytes() != raw):
             raise ValueError("MORNING_BUNDLE_ORPHAN_ORIGINAL_CONFLICT")
+        if precommit:
+            precommit()
         atomic_write(root / "checkpoint.json", raw, immutable=True)
         if on_stage:
             on_stage("checkpoint_written")
@@ -225,7 +227,7 @@ def _materialize(live_dir, date, checkpoint, checkpoint_sha, directory, *, on_st
 
 def publish_captured_batch(live_dir: Path, date: str, *, snapshot: bytes,
                            strategy_sha: str, source_readiness: dict, timing: dict,
-                           raw_capture: bytes | None = None) -> dict:
+                           raw_capture: bytes | None = None, precommit=None) -> dict:
     """Publish execution evidence before optional report/news enrichment.
 
     The queue in this package binds execution identity. The separate derived
@@ -256,7 +258,8 @@ def publish_captured_batch(live_dir: Path, date: str, *, snapshot: bytes,
             "raw_capture_base64": base64.b64encode(raw_capture).decode(),
             "raw_capture_sha256": _sha(raw_capture), "execution_derivation": "cached_intelligence_fields_only",
             "ordered_candidates": [{k: r.get(k) for k in ("code", "mode", "book", "mode_exec_star", "mode_trade_eligible")} for r in rows],
-            "source_readiness": source_readiness, "captured_at": _stamp(), "timing": timing})
+            "source_readiness": source_readiness, "captured_at": _stamp(), "timing": timing},
+        precommit=precommit)
 
 
 def _ready_result(ready):
@@ -284,6 +287,19 @@ def _verify_ready(live_dir, date, checkpoint, checkpoint_sha):
             raise ValueError("MORNING_BUNDLE_ARTIFACT_CONFLICT")
     validate_components(date, raws["snapshot"], raws["report"], raws["queue"])
     return _ready_result(ready)
+
+
+def inspect_bundle(live_dir: Path, date: str) -> dict:
+    """Verify existing bytes without claims, repair requests or other writes."""
+    try:
+        checkpoint, digest = _checkpoint(Path(live_dir), date)
+        producer = checkpoint.get("producer") or {}
+        if (producer.get("automation_id") != "xiaocao-daily-morning"
+                or not isinstance(producer.get("thread_id"), str) or not producer["thread_id"]):
+            raise ValueError("MORNING_BUNDLE_PRODUCER_UNPROVED")
+        return {**_verify_ready(Path(live_dir), date, checkpoint, digest), "producer": producer}
+    except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+        return {"status": "unproved", "market_date": date, "reason": type(exc).__name__}
 
 
 def acquire_bundle(live_dir: Path, date: str, *, repair: bool = True) -> dict:

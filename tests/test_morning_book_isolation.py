@@ -11,7 +11,7 @@ from xiaocao.live import run_flow
 ROOT = Path(__file__).resolve().parents[1]
 
 
-@pytest.mark.parametrize('failure', ['freeze', 'book_b', 'book_t', 'none', 'calendar'])
+@pytest.mark.parametrize('failure', ['freeze', 'book_b', 'book_t', 'none', 'calendar', 'wait_for_t'])
 def test_morning_books_keep_independent_results(tmp_path, failure):
     python = tmp_path / '.venv/bin/python'
     python.parent.mkdir(parents=True)
@@ -23,7 +23,7 @@ if args[:2] == ['-m', 'xiaocao.live.runtime_evidence']:
     env = dict(os.environ)
     env['PYTHONPATH'] = os.pathsep.join(filter(None, [env.get('XIAOCAO_DAILY_HELPER'), env['TEST_SOURCE']]))
     os.execve(env['TEST_PYTHON'], [env['TEST_PYTHON'], *args], env)
-with Path('calls.txt').open('a') as f:
+with Path(os.environ['TEST_CALLS']).open('a') as f:
     f.write(' '.join(args) + '\\n')
 if args[:3] == ['-m', 'xiaocao', 'calendar']:
     import datetime
@@ -31,6 +31,14 @@ if args[:3] == ['-m', 'xiaocao', 'calendar']:
         print('calendar unavailable')
         sys.exit(1)
     print(datetime.date.today().isoformat())
+if args[0].endswith('wait_for_morning_freeze.py') and os.environ['FAIL_STAGE'] == 'wait_for_t':
+    import time
+    deadline = time.monotonic()+4
+    while not Path(os.environ['TEST_CALLS']+'.t_done').exists():
+        if time.monotonic() > deadline: sys.exit(3)
+        time.sleep(0.02)
+if args[0].endswith('paper_record.py') and '--trend-only' in args:
+    Path(os.environ['TEST_CALLS']+'.t_done').touch()
 if args[0].endswith('wait_for_morning_freeze.py') and os.environ['FAIL_STAGE'] == 'freeze':
     print('report_missing')
     sys.exit(1)
@@ -41,15 +49,15 @@ if args[0].endswith('paper_record.py') and '--trend-only' in args and os.environ
 ''')
     python.chmod(0o755)
     env = {**os.environ, 'XIAOCAO_ROOT': str(tmp_path), 'FAIL_STAGE': failure,
-        'TEST_PYTHON': sys.executable, 'TEST_SOURCE': str(ROOT / 'src'),
+        'TEST_CALLS': str(tmp_path / 'calls.txt'), 'TEST_PYTHON': sys.executable, 'TEST_SOURCE': str(ROOT / 'src'),
         'CODEX_AUTOMATION_ID': 'xiaocao-daily-morning-execution', 'CODEX_THREAD_ID': 'fixture-paper'}
     completed = subprocess.run(['bash', str(ROOT / 'scripts/auto_daily.sh'), 'morning-execute'], cwd=tmp_path, env=env, capture_output=True, text=True, timeout=10)
     calls = (tmp_path / 'calls.txt').read_text().splitlines()
     log = next((tmp_path / 'output/live/auto').glob('*_morning-execute.log'))
     events = run_flow.events_from_log(automation='morning-execute', market_date='2026-09-14', log_path=log)
     snapshot = run_flow.build_snapshot(automation='morning-execute', market_date='2026-09-14', events=events, exit_code=completed.returncode)
-    assert snapshot['deterministic_status'] == ('succeeded' if failure == 'none' else 'failed')
-    assert (completed.returncode != 0) == (failure != 'none')
+    assert snapshot['deterministic_status'] == ('succeeded' if failure in {'none', 'wait_for_t'} else 'failed')
+    assert (completed.returncode != 0) == (failure not in {'none', 'wait_for_t'})
     if failure == 'calendar':
         assert not any('paper_record.py' in c for c in calls)
         return

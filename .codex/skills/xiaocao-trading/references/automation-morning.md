@@ -9,6 +9,71 @@ hash/model/date-bound score archive; missing scores stay neutral and degraded,
 never remove a candidate. Auction contrast enrichment follows original bundle
 publication and cannot rewrite its economic fields.
 
+Resolve today's pool/direction codes through Contract §1b's current security
+directory before requiring detail coverage. The producer automatically excludes
+directory-orphan codes with raw/directory hashes and reasons in the checkpoint;
+this is ordinary universe resolution. Empty/failed/malformed directories and
+missing details/prices for admitted securities remain genuine dependencies.
+Reuse a proved complete source version for at most60 seconds, then revalidate
+the whole version. A source-gap event names the exact missing codes; inspect it
+promptly instead of waiting for shell termination. An unchecked price count is
+unknown. Preserve the existing producer and completed-day no-replay boundary.
+
+## Source capture recovery and end-to-end readback
+
+On a forwarded source or price dependency, inspect the exact evidence and
+`pipeline_path` immediately. The producer persists first/last observations,
+missing codes and an immutable request while remaining alive. For
+`recovery_kind=original_source_recheck`, repair the data/auth dependency, then
+run `CODEX_AUTOMATION_ID=xiaocao-daily-morning PYTHONPATH=src .venv/bin/python
+scripts/morning_source_recovery.py --request <exact request_path>` once in its
+original task. It claims one cache recheck, never launches or replaces code.
+A signal means recheck requested, not ready. Code changes apply to a later
+pinned run; terminal/committed/expired/other-owner requests remain fenced.
+Committed bundle repair continues through `morning_bundle_recovery.py`.
+
+Source reuse ends 60 seconds after original `observed_at`, including network
+latency. Individual entry-price observations share that limit. The original
+capture validates inside its publication lock immediately before the first
+immutable checkpoint; expiry returns to the same process's full capture loop.
+This rule concerns input observation, preserving the separate 09:25–09:30
+exchange quote timestamp rule. Raw directory bytes have a content-addressed
+artifact and hash in addition to the normalized response hash.
+
+Calendar/history/mode evidence is loaded during prewake; only post-09:25:01
+facts enter the original capture. Preserve actual readiness/capture durations,
+09:27 support cutoff and original APP deadline. A short/expired support budget
+uses the deterministic baseline; it never borrows native submission time or
+extends decision validity. Current account/quote/risk guards remain at use.
+
+After an event or a terminal consumer result, run the read-only
+`scripts/morning_pipeline_status.py --date <date>` and read its dated artifact.
+It lists producer/paper owners, exact APP owner/checklist/deadline and matched
+terminal receipts separately. Missing, pending and blocked remain explicit.
+Bundle ready never establishes APP or paper execution success. This derived
+observation has no writer, budget, trade or notification authority.
+
+Book B waits and Book T execute concurrently in the original paper supervisor.
+T's fill-window wait occurs outside the shared ledger lock. Formal writes
+remain serialized with lock-time reload/recovery. Its successful control
+writer archives immutable account/position/trade bytes under that lock; T v2
+consumes that receipt's exact snapshots even if B later updates shared files.
+T failure prevents its shadow consumer. Report each child from its own outcome;
+retain B failure even when T succeeds. A report-only KOL revision may restage
+old viewpoints: verify the full terminal manifest, shared publication identity,
+each original viewpoint/evaluation binding and relation's originating binding.
+Preserve both report and semantic revisions in evidence. The T adapter selects
+one complete terminal report head by proved server receipt time; maintenance
+history does not duplicate its viewpoints. Conflicting simultaneous heads and
+incomplete manifests remain blocked. Use actual input observation time, keeping
+original evaluation/review validity clocks. Load only explicitly referenced historical relation targets from exact terminal manifests; they remain reference-only and cannot add current support. A missing local
+publication may be repaired by exact read-only LiangHui report/manifest and
+immutable record readback in `output/live/kol_daily/publication_readbacks/`.
+Use content-addressed capsules, actual observed time and complete matched hashes;
+this mirrors existing published records and never stages or republishes them.
+Mirror capsules populate only the historical lookup, never the current input
+set; direct historical targets do not recursively import their older relations.
+
 For `app_session_reset`, load [session recovery](morning-session-recovery.md).
 For latest APP settlement gaps, use Operating Contract §2a's approved complete
 current-mark path. A conservative cash/NAV bound does not prove economic loss
@@ -222,7 +287,7 @@ The orchestration must reach these stages:
 3. The execution stage uses `wait_for_morning_freeze.py` to require the matching dated report and queue. Missing, malformed or wrong-date evidence fails closed; it never regenerates the signal set.
 4. `wait_for_agent_reviews.py` opens a bounded rendezvous. A missing derived queue waits within that same budget; its later arrival never resets the deadline. Invalid or wrong-date queues remain explicit degradation. While the execution shell waits, read the dated queue and frozen evidence, then write structured reviews with `scripts/agent_intelligence_review.py`. Supply each queue item's exact `evidence_freeze_ref` using `--evidence-freeze-ref`; an absent or different reference is rejected before writing. Never substitute keyword scoring. For this local paper branch, if time expires, let base picks continue and report supporting-layer fallback. The independent APP opening runner follows §1b instead.
 5. `paper_record.py --pick mode_exec_star --intelligence-trade shadow` records only executable ★E Book-B fills plus the matching Book-A reference rows. K/P, auxiliary indicators, intelligence and manual notional cannot restore a failed mode gate.
-6. Book T runs independently after the Book-B attempt, including a missing Book-B freeze or failed Book-B paper record. The original shell preserves the Book-B failure exit status after finishing Book T; it skips B review/buy when B evidence is missing. A Book-T error remains deterministic failure and prevents its optional shadow consumer. Shared ledger recovery/locking and Book-T market gates still apply. Report each book as checked, failed, or not started from its own receipt.
+6. Book T runs concurrently with Book B’s wait in the original supervisor; consume each child’s own outcome under the source recovery and end-to-end readback rules above. Shared ledger recovery/locking and Book T market gates remain required.
 7. `paper_record.py --trend-only` first checks whether Book T has an empty slot or a sellable switch candidate. A full aligned book returns immediately; otherwise it waits for the opening window and fills or performs a paired switch. No candidate or an unfilled replacement is normal.
 
 The current formal Book T consumer remains the v1 control path until Issue 06's

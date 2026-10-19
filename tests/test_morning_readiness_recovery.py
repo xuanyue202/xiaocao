@@ -219,8 +219,132 @@ def test_stable_raw_inputs_confirm_without_repeating_strategy_or_prices(monkeypa
     monkeypatch.setattr(recommend, "run_strategy", strategy)
     result, _ = recommend._run_strategy_when_ready("2026-10-09", source, timeout_sec=-1,
         poll_sec=2, confirm_sec=0, price_probe=lambda _: prices.append(elapsed[0]) or [])
-    assert calls == prices == [0.0] and reads == [0.0, 2.0]
+    assert calls == prices == reads == [0.0]
     assert result[0]["code"] == "A" and source.readiness["price_enrichment"]["reused"]
+
+
+def test_complete_changing_live_source_freezes_one_fresh_version(monkeypatch):
+    from xiaocao.datasource.api_source import ApiDataSource
+
+    elapsed, reads = [0.0], []
+    source = ApiDataSource(SimpleNamespace(get_industry_block_rank=lambda *args:
+        reads.append(len(reads) + 1) or [{"score": len(reads)}]))
+    monkeypatch.setattr(recommend, "_today_iso", lambda: "2026-10-19")
+    monkeypatch.setattr(recommend._time, "monotonic", lambda: elapsed[0])
+    def sleep(seconds):
+        elapsed[0] += seconds
+        assert elapsed[0] <= 10, "complete changing data must not wait forever"
+    monkeypatch.setattr(recommend._time, "sleep", sleep)
+    def strategy(day, source, **kwargs):
+        score = source.get_industry_block_rank(day)[0]["score"]
+        return [{"code": "A", "mode": "test", "score": score}]
+    monkeypatch.setattr(recommend, "run_strategy", strategy)
+    rows, _ = recommend._run_strategy_when_ready("2026-10-19", source,
+        timeout_sec=-1, poll_sec=2, confirm_sec=8, price_probe=lambda _: [])
+    assert reads == [1] and rows[0]["score"] == 1
+
+
+def test_expired_complete_observation_revalidates_before_reuse():
+    from datetime import timezone
+    from xiaocao.datasource.api_source import ApiDataSource
+
+    reads = []
+    source = ApiDataSource(SimpleNamespace(get_industry_block_rank=lambda *args:
+        reads.append(1) or [{"score": 1}]))
+    source.begin_observation(1)
+    source.get_industry_block_rank("2026-10-19")
+    assert source.reuse_ready_observation(2)
+    source.observations[0]["observed_at"] = (
+        datetime.now(timezone.utc)-timedelta(seconds=61)).isoformat()
+    assert not source.reuse_ready_observation(3)
+    assert source.revalidate_observation(3) and len(reads) == 2
+    source.observations[0]["status"] = "partial"
+    assert not source.reuse_ready_observation(4)
+
+
+def test_slow_price_probe_cannot_release_expired_sources(monkeypatch):
+    import xiaocao.datasource.api_source as module
+    from datetime import timezone
+
+    elapsed, reads, prices = [0.0], [], []
+    base = datetime.now(timezone.utc)
+    class ClockDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return (base+timedelta(seconds=elapsed[0])).astimezone(tz)
+    monkeypatch.setattr(module, "datetime", ClockDateTime)
+    source = module.ApiDataSource(SimpleNamespace(get_industry_block_rank=lambda *args:
+        reads.append(elapsed[0]) or [{"score": 1}]))
+    monkeypatch.setattr(recommend, "_today_iso", lambda: "2026-10-19")
+    monkeypatch.setattr(recommend._time, "monotonic", lambda: elapsed[0])
+    monkeypatch.setattr(recommend._time, "sleep", lambda s: elapsed.__setitem__(0, elapsed[0]+s))
+    def strategy(day, source, **kwargs):
+        source.get_industry_block_rank(day)
+        return [{"code": "A", "mode": "test"}]
+    def price_probe(rows):
+        prices.append(elapsed[0])
+        if len(prices) == 1:
+            elapsed[0] += 61
+        return []
+    monkeypatch.setattr(recommend, "run_strategy", strategy)
+    recommend._run_strategy_when_ready("2026-10-19", source, timeout_sec=-1,
+        poll_sec=2, confirm_sec=0, stable_samples=1, price_probe=price_probe)
+    assert reads == [0, 63] and prices == [0, 63]
+    assert source.observation_is_current()
+
+
+def test_slow_equal_revalidation_cannot_release_an_expired_complete_version(monkeypatch):
+    import xiaocao.datasource.api_source as module
+    from datetime import timezone
+
+    elapsed, reads = [0.0], {1: [], 2: []}
+    base = datetime.now(timezone.utc)
+    class ClockDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return (base+timedelta(seconds=elapsed[0])).astimezone(tz)
+    monkeypatch.setattr(module, "datetime", ClockDateTime)
+    def fetch(day, model):
+        reads[model].append(elapsed[0])
+        if model == 2 and len(reads[model]) == 2:
+            elapsed[0] += 61
+        return [{"model": model}]
+    source = module.ApiDataSource(SimpleNamespace(get_industry_block_rank=fetch))
+    monkeypatch.setattr(recommend, "_today_iso", lambda: "2026-10-19")
+    monkeypatch.setattr(recommend._time, "monotonic", lambda: elapsed[0])
+    monkeypatch.setattr(recommend._time, "sleep", lambda s: elapsed.__setitem__(0, elapsed[0]+s))
+    def strategy(day, source, **kwargs):
+        source.get_industry_block_rank(day, 1)
+        source.get_industry_block_rank(day, 2)
+        return [{"code": "A", "mode": "test"}]
+    monkeypatch.setattr(recommend, "run_strategy", strategy)
+    recommend._run_strategy_when_ready("2026-10-19", source, timeout_sec=-1,
+        poll_sec=2, confirm_sec=65, price_probe=lambda _: [])
+    assert source.observation_is_current()
+    assert reads == {1: [0, 62, 125], 2: [0, 62, 125]}
+
+
+def test_unchecked_prices_are_unknown_and_exact_gap_is_forwarded(monkeypatch, capsys):
+    import json
+
+    elapsed = [0.0]
+    source = SimpleNamespace(readiness={})
+    monkeypatch.setattr(recommend, "_today_iso", lambda: "2026-10-19")
+    monkeypatch.setattr(recommend._time, "monotonic", lambda: elapsed[0])
+    monkeypatch.setattr(recommend._time, "sleep", lambda s: elapsed.__setitem__(0, elapsed[0]+s))
+    def strategy(*args, **kwargs):
+        source.readiness = {"sources": [{"source": "stock_index",
+            "status": "partial" if elapsed[0] < 2 else "populated",
+            "missing_codes": ["A"] if elapsed[0] < 2 else []}]}
+        return [{"code": "A", "mode": "test"}]
+    monkeypatch.setattr(recommend, "run_strategy", strategy)
+    recommend._run_strategy_when_ready("2026-10-19", source,
+        timeout_sec=-1, poll_sec=2, confirm_sec=0, stable_samples=1, price_probe=lambda _: [])
+    events = [json.loads(line) for line in capsys.readouterr().err.splitlines() if line.startswith("{")]
+    first = next(e for e in events if e["event"] == "morning_capture_iteration")
+    assert first["unpriced_count"] is None and not first["price_checked"]
+    gap = next(e for e in events if e["event"] == "market_dependency_recovery_wait")
+    assert gap["source_gaps"][0]["missing_codes"] == ["A"]
 
 
 def test_changed_confirmation_rebuilds_from_validated_inputs_without_double_fetch():
@@ -274,7 +398,7 @@ def test_expired_populated_pool_can_change_while_detail_is_missing():
     source.begin_observation(1)
     assert source.get_pool("2026-10-09", "jingwang") == ["A"]
     for _, record, _ in source._validated.values():
-        record["completed_at"] = (datetime.now(timezone.utc)-timedelta(seconds=61)).isoformat()
+        record["observed_at"] = (datetime.now(timezone.utc)-timedelta(seconds=61)).isoformat()
     codes[0] = ["B"]
     source.begin_observation(2, retry_missing=True)
     assert source.get_pool("2026-10-09", "jingwang") == ["B"]

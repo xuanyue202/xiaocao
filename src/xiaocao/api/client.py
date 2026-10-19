@@ -319,8 +319,36 @@ class XiaocaoClient:
     def get_block_score(self, date: str) -> Any:
         return self.post("/stock/xiao_cao_block_score", {"date": date})
 
-    def stock_info(self) -> list[dict[str, Any]]:
-        result = self.post("/stock/stock_info", {})
+    def stock_info(self, *, use_cache: bool = True, strict: bool = False) -> list[dict[str, Any]]:
+        from datetime import datetime, timezone
+        observed_at = datetime.now(timezone.utc).isoformat()
+        self.stock_info_evidence = None
+        result = (self.post("/stock/stock_info", {}) if use_cache else
+                  self._do_post("/stock/stock_info", {"params": {}}))
+        if strict:
+            # Universe exclusions need the original directory's validity, before
+            # the compatibility normalizer can discard malformed entries.
+            import re
+            if not isinstance(result, list) or any(
+                not isinstance(row, dict)
+                or not isinstance(row.get("code"), str)
+                or re.fullmatch(r"[A-Za-z0-9]+\.[A-Z0-9]+", row["code"]) is None
+                or not (type(row.get("statusType")) is int or type(row.get("blockType")) is int)
+                for row in result
+            ):
+                raise ApiSchemaError("MORNING_SECURITY_DIRECTORY_INVALID")
+        if strict:
+            import hashlib
+            import json
+            from pathlib import Path
+            from xiaocao.utils.atomic_files import atomic_write
+            raw = json.dumps(result, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode()
+            digest = hashlib.sha256(raw).hexdigest()
+            path = Path("output/live/morning_sources/raw") / (digest + ".json")
+            atomic_write(path, raw, immutable=True)
+            self.stock_info_evidence = {"path": str(path.resolve()), "sha256": digest,
+                "bytes": len(raw), "request": {"endpoint": "/stock/stock_info", "params": {}},
+                "observed_at": observed_at}
         rows = _as_list(result)
         output = []
         for row in rows:

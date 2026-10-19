@@ -88,6 +88,32 @@ run_book_t_shadow_if_frozen() {
     return 0
   fi
 }
+run_book_t_morning() {
+  log "paper-record Book T trend basket (paper-only, independent account)"
+  if ! run_python kronos_screen/scripts/paper_record.py --date "$TODAY" --initial-capital 100000 --fee-rate 0.0001 --trend-only >>"$LOG" 2>&1; then
+    log "morning execute FAILED: Book T paper-record failed"
+    return 1
+  fi
+  run_book_t_shadow_if_frozen
+}
+run_morning_books() {
+  # Only preparation/waits overlap; paper_record owns the shared ledger lock.
+  # Wait for BOTH children on every outcome; never orphan a ledger writer.
+  local book_t_pid book_b_exit book_t_exit
+  run_book_t_morning &
+  book_t_pid=$!
+  trap 'kill -TERM "$book_t_pid" 2>/dev/null || true; wait "$book_t_pid"; exit 143' TERM INT
+  run_book_b_morning
+  book_b_exit=$?
+  wait "$book_t_pid"
+  book_t_exit=$?
+  trap - TERM INT
+  if [ "$book_t_exit" -ne 0 ]; then return "$book_t_exit"; fi
+  if [ "$book_b_exit" -ne 0 ]; then
+    log "morning execution FAILED: Book B failed; Book T completed independently"
+    return "$book_b_exit"
+  fi
+}
 run_book_t_v2_daily_mark_if_frozen() {
   local input="output/live/book_t_v2_shadow_input_${TODAY}.json"
   if [ ! -f "$input" ]; then
@@ -154,14 +180,8 @@ case "$STEP" in
     log "morning prerecommend ready -> output/live/recommend_${TODAY}.md"
     ;;
   morning-execute)
-    run_book_b_morning
+    run_morning_books
     BOOK_B_EXIT=$?
-    log "paper-record Book T trend basket (paper-only, independent account)"
-    if ! run_python kronos_screen/scripts/paper_record.py --date "$TODAY" --initial-capital 100000 --fee-rate 0.0001 --trend-only >>"$LOG" 2>&1; then
-      log "morning execute FAILED: Book T paper-record failed"
-      exit 1
-    fi
-    run_book_t_shadow_if_frozen
     log "surface 小草 posture prior (judgment lens only; NOT a filter on the deterministic picks)"
     run_python scripts/xiaocao_knowledge.py --posture >>"$LOG" 2>&1 || true
     log "record standing posture call (judgment-calibration loop; scored fwd at eod)"
@@ -177,14 +197,8 @@ case "$STEP" in
     run_python scripts/live_recommend.py --no-stdout >>"$LOG" 2>&1
     log "build AI intelligence review queue (zero-fetch; no score write)"
     run_python scripts/build_intelligence_review_queue.py --date "$TODAY" --limit "${XIAOCAO_AGENT_REVIEW_QUEUE_LIMIT:-8}" >>"$LOG" 2>&1 || true
-    run_book_b_morning
+    run_morning_books
     BOOK_B_EXIT=$?
-    log "paper-record Book T trend basket (paper-only, independent account)"
-    if ! run_python kronos_screen/scripts/paper_record.py --date "$TODAY" --initial-capital 100000 --fee-rate 0.0001 --trend-only >>"$LOG" 2>&1; then
-      log "morning FAILED: Book T paper-record failed"
-      exit 1
-    fi
-    run_book_t_shadow_if_frozen
     log "surface 小草 posture prior (judgment lens only; NOT a filter on the deterministic picks)"
     run_python scripts/xiaocao_knowledge.py --posture >>"$LOG" 2>&1 || true
     log "record standing posture call (judgment-calibration loop; scored fwd at eod)"

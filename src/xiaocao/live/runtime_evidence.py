@@ -6,6 +6,7 @@ records describe process outcomes, never infer an order/fill from stdout.
 from __future__ import annotations
 
 import argparse
+import fcntl
 import hashlib
 import json
 import os
@@ -146,7 +147,9 @@ def operational_inputs(root: Path, market_date: str) -> dict[str, Any]:
 
 def append_event(path: Path, row: dict[str, Any]) -> None:
     with path.open('a', encoding='utf-8') as stream:
+        fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
         stream.write(json.dumps(row, ensure_ascii=False) + '\n')
+        stream.flush()
 
 
 def stream_process(args: list[str], *, cwd: Path, env: dict[str, str], output_path: Path | None = None,
@@ -223,9 +226,26 @@ def recovery_event_line(line: str) -> str | None:
             'market_dependency_recovery_wait', 'morning_bundle_repair_required'}:
         return None
     fields = ('event', 'trade_date', 'status', 'reason', 'failure_category',
-              'request_path', 'request_sha256', 'recovery_command')
-    return json.dumps({key: redact(row[key])[:512] for key in fields
-                       if isinstance(row.get(key), str)}, ensure_ascii=False) + '\n'
+              'request_path', 'request_sha256', 'recovery_command', 'recovery_kind',
+              'evidence_path', 'first_observed_at', 'last_observed_at', 'pipeline_path', 'pipeline_status')
+    projected = {key: redact(row[key])[:512] for key in fields if isinstance(row.get(key), str)}
+    gaps = row.get('source_gaps')
+    if isinstance(gaps, list):
+        projected['source_gap_count'] = len(gaps)
+        projected['source_gaps'] = []
+        for gap in gaps[:12]:
+            if not isinstance(gap, dict):
+                continue
+            codes = gap.get('missing_codes')
+            codes = codes if isinstance(codes, list) else []
+            projected['source_gaps'].append({
+                **{key: redact(gap[key])[:128] for key in ('source', 'status')
+                   if isinstance(gap.get(key), str)},
+                'missing_code_count': len(codes),
+                'missing_codes': [code for code in codes[:20] if isinstance(code, str)
+                                  and re.fullmatch(r'\d{6}\.(XSHG|XSHE|BJSE)', code)],
+            })
+    return json.dumps(projected, ensure_ascii=False) + '\n'
 
 
 def business_environment(env: dict[str, str], root: Path) -> dict[str, str]:
@@ -266,7 +286,8 @@ def command(args: list[str]) -> int:
     attempt = 1 + sum(e.get('stage') == stage and e.get('program') == program and
                       e.get('input_hashes') == identity['input_hashes'] and e.get('type') == 'command_started'
                       for e in existing)
-    command_id = f"{manifest['run_id']}:{len(existing) + 1}"
+    command_key = uuid.uuid4().hex
+    command_id = f"{manifest['run_id']}:{command_key}"
     base = {'schema_version': 1, 'run_id': manifest['run_id'], 'command_id': command_id,
             'stage': stage, 'program': program, 'attempt': attempt, **identity}
     changed = source_changes(root, manifest['source_hashes'])
@@ -276,7 +297,7 @@ def command(args: list[str]) -> int:
         print(f'runtime command refused: source_changed run_id={manifest["run_id"]}', file=sys.stderr)
         return 78
     append_event(events_path, {**base, 'type': 'command_started', 'ts': now(), 'status': 'running'})
-    output = run_dir / 'commands' / f'{len(existing) + 1}.log'
+    output = run_dir / 'commands' / f'{command_key}.log'
     output.parent.mkdir(exist_ok=True)
     try:
         result = stream_process([os.environ['XIAOCAO_DAILY_PYTHON'], *args], cwd=root,

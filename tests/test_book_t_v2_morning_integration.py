@@ -76,7 +76,7 @@ def test_public_morning_execute_creates_and_consumes_shadow_input_without_ledger
     kronos.mkdir(parents=True)
     (kronos / "paper_record.py").write_text(
         """
-import hashlib, json, sys
+import hashlib, json, sys, os
 from pathlib import Path
 root = Path.cwd()
 args = sys.argv[1:]
@@ -110,6 +110,8 @@ body = {
     "as_of": date,
     "artifact_paths": paths,
     "artifact_hashes": hashes,
+    "writer_identity": {"automation_id": os.environ.get("CODEX_AUTOMATION_ID"),
+        "thread_id": os.environ.get("CODEX_THREAD_ID"), "run_id": os.environ.get("XIAOCAO_DAILY_RUN_ID")},
     "daily_semantics": semantics,
 }
 try:

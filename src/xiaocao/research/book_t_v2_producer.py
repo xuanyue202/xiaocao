@@ -36,7 +36,7 @@ from xiaocao.research.book_t_v2_lifecycle import (
 from xiaocao.research.book_t_shadow import bind_book_t_shadow_input, run_book_t_shadow
 from xiaocao.strategy.book_t_selector import select_book_t
 from xiaocao.strategy.theme_instrument_resolver import resolve_theme_instruments
-from xiaocao.strategy.trend_snapshot import build_trend_snapshot
+from xiaocao.strategy.trend_snapshot import build_trend_snapshot, current_publication_heads, publication_from_report_readback
 
 
 BOOK_T_V2_PRODUCER_VERSION = "book-t-v2-production-adapters-v1"
@@ -169,6 +169,11 @@ def _load_receipt(root: Path, date_iso: str) -> dict[str, Any]:
         raise BookTV2ProducerError(f"dated v1 control receipt failed integrity validation: {path}")
     if _text(receipt.get("as_of"))[:10] != date_iso:
         raise BookTV2ProducerError(f"dated v1 control receipt is not for {date_iso}")
+    expected_run = os.environ.get("XIAOCAO_DAILY_RUN_ID")
+    if expected_run and receipt.get("writer_identity") != {
+            "automation_id": os.environ.get("CODEX_AUTOMATION_ID"),
+            "thread_id": os.environ.get("CODEX_THREAD_ID"), "run_id": expected_run}:
+        raise BookTV2ProducerError("dated v1 control receipt is not from this original writer run")
     semantics = receipt.get("daily_semantics")
     semantics_hash = _text(receipt.get("daily_semantics_sha256"))
     if not isinstance(semantics, Mapping) or semantics_hash != canonical_sha256(semantics):
@@ -192,7 +197,11 @@ def _load_receipt(root: Path, date_iso: str) -> dict[str, Any]:
     for name, relative in expected_paths.items():
         if _text(artifact_paths.get(name)) != relative:
             raise BookTV2ProducerError(f"dated v1 control receipt path mismatch for {name}")
-        target = root / relative
+        snapshot = (receipt.get("artifact_snapshots") or {}).get(name)
+        target = root / (snapshot or relative)
+        if snapshot and (target.is_symlink() or not target.resolve().is_relative_to(
+                (root / "output/live/book_t_v1_control_artifacts" / date_iso).resolve())):
+            raise BookTV2ProducerError("dated v1 control snapshot path invalid")
         if not target.exists():
             raise BookTV2ProducerError(f"dated v1 control artifact is missing: {target}")
         actual_artifact_hash = hashlib.sha256(target.read_bytes()).hexdigest()
@@ -201,7 +210,7 @@ def _load_receipt(root: Path, date_iso: str) -> dict[str, Any]:
     return receipt
 
 
-def _load_publications(root: Path) -> tuple[list[dict[str, Any]], list[str]]:
+def _load_publications(root: Path, *, as_of: datetime | None = None) -> tuple[list[dict[str, Any]], list[str]]:
     ledger = PublicationLedger(root / "output/live/kol_daily/publications")
     try:
         statuses = ledger.status_snapshot()
@@ -209,7 +218,19 @@ def _load_publications(root: Path) -> tuple[list[dict[str, Any]], list[str]]:
         return [], [f"publication_ledger_read:{type(exc).__name__}"]
     readbacks: list[dict[str, Any]] = []
     errors: list[str] = []
-    for key, status in sorted(statuses.items()):
+    completed = [{**status, "source_key": key} for key, status in sorted(statuses.items())
+                 if status.get("completed") is True]
+    bound_as_of = as_of or datetime.now(timezone.utc)
+    head_candidates = list(completed)
+    for path in sorted((root / "output/live/kol_daily/publication_readbacks").glob("*.json")):
+        raw = path.read_bytes()
+        if path.stem != hashlib.sha256(raw).hexdigest():
+            raise BookTV2ProducerError("current report readback cache hash mismatch")
+        readback = publication_from_report_readback(json.loads(raw), as_of=bound_as_of)
+        if readback:
+            completed.append(readback)
+    for status in current_publication_heads(head_candidates, as_of=bound_as_of):
+        key = status["source_key"]
         if status.get("completed") is True:
             artifact = status.get("artifact")
             records = artifact.get("records", []) if isinstance(artifact, Mapping) else []
@@ -231,6 +252,38 @@ def _load_publications(root: Path) -> tuple[list[dict[str, Any]], list[str]]:
                 errors.append(
                     f"publication_shape_skipped:{key}:viewpoints={viewpoint_count}:evaluations={evaluation_count}"
                 )
+    # Relations need exact old targets even when a current report no longer
+    # lists them. Load only those direct targets from terminal history; these
+    # rows are evidence-only and can never become current supporting views.
+    historical = {}
+    for status in completed:
+        stamp = datetime.fromisoformat(status["publish_receipt"]["serverTime"].replace("Z", "+00:00"))
+        if stamp > bound_as_of:
+            continue
+        for record in status["artifact"]["records"]:
+            if record.get("kind") != "viewpoint":
+                continue
+            vid = record["record_id"]
+            if (vid in historical and stamp == historical[vid][0]
+                    and status["publish_receipt"]["manifestSha256"] != historical[vid][1]["publish_receipt"]["manifestSha256"]):
+                raise BookTV2ProducerError("BOOK_T_HISTORICAL_RELATION_TARGET_AMBIGUOUS:" + str(vid))
+            if vid not in historical or stamp > historical[vid][0]:
+                historical[vid] = (stamp, status)
+    seen = {r["viewpoint_id"] for r in readbacks}
+    for source in tuple(readbacks):
+        for record in source["artifact"]["records"]:
+            payload = record.get("payload") or {}
+            if record.get("kind") != "viewpoint_relation" or payload.get("from_viewpoint_id") != source["viewpoint_id"]:
+                continue
+            target = payload.get("to_viewpoint_id")
+            if target in seen:
+                continue
+            if target not in historical:
+                raise BookTV2ProducerError("BOOK_T_HISTORICAL_RELATION_TARGET_UNPROVED:" + str(target))
+            old = historical[target][1]
+            readbacks.append({**old, "viewpoint_id": target, "historical_reference_only": True,
+                "source_key": f"{old['source_key']}:{target}:relation-target"})
+            seen.add(target)
     return readbacks, errors
 
 
@@ -241,15 +294,17 @@ def _load_dated_optional(root: Path, stem: str, date_iso: str) -> Any | None:
     return _read_json(path)
 
 
-def _load_portfolio(root: Path) -> dict[str, Any]:
+def _load_portfolio(root: Path, receipt: Mapping[str, Any] | None = None) -> dict[str, Any]:
     live = root / "output/live"
-    account_path = live / "paper_account_T.json"
+    snapshots = (receipt or {}).get("artifact_snapshots") or {}
+    account_path = root / snapshots["account"] if snapshots else live / "paper_account_T.json"
+    positions_path = root / snapshots["positions"] if snapshots else live / "positions.jsonl"
     account = _read_json(account_path) if account_path.exists() else {}
     if not isinstance(account, dict):
         account = {}
     positions = [
         row
-        for row in _read_jsonl(live / "positions.jsonl")
+        for row in _read_jsonl(positions_path)
         if _text(row.get("book")) == "T" and _text(row.get("status") or "open").lower() == "open"
     ]
     cash = float(account.get("cash") or 0.0)
@@ -269,7 +324,8 @@ def _load_real_sources(root: Path, date_iso: str, *, client: Any = None) -> dict
     """Read production adapters with bounded, cache-aware degradation."""
 
     errors: list[str] = []
-    publications, publication_errors = _load_publications(root)
+    observed_at = datetime.now(timezone.utc)
+    publications, publication_errors = _load_publications(root, as_of=observed_at)
     errors.extend(publication_errors)
     registry_path = root / "reference/experience/book_t_v2_theme_registry.json"
     if not registry_path.exists():
@@ -356,6 +412,8 @@ def _load_real_sources(root: Path, date_iso: str, *, client: Any = None) -> dict
         if _normal_code(row)
     }
     return {
+        "as_of": observed_at.isoformat(),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
         "publications": publications,
         "publication_errors": errors,
         "theme_registry": registry,
@@ -598,6 +656,9 @@ def build_book_t_v2_shadow_day(
         raise BookTV2ProducerError("run_mode must be real or rehearsal")
     receipt = _load_receipt(root, day)
     sources = _copy(dict(capsule)) if capsule is not None else _load_real_sources(root, day, client=client)
+    if capsule is None:
+        # Match the exact successful control writer, even if B later updates shared files.
+        sources["portfolio"] = _load_portfolio(root, receipt)
     market_input = sources.get("market_input")
     if not isinstance(market_input, Mapping):
         raise BookTV2ProducerError("market_input adapter did not return an object")

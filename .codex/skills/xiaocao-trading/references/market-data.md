@@ -62,6 +62,11 @@ Read this file only for quotes, market state, pools, sectors, indices, indicator
 
 - Cache first (`output/.cache/xiaocao.db`). For more than a few symbols/dates, batch small, space requests roughly 0.5–1 second and keep concurrency at or below about 8. Empty/null responses after bursts can be silent throttling.
 - Always use exchange suffixes: `.XSHG`, `.XSHE` or `.BJSE`.
+- Today's morning producer resolves raw pool/direction codes against a successful
+  fresh security directory under Operating Contract §1b. Directory-orphan codes
+  are excluded with proof; an empty/broken directory or missing data for an
+  admitted security is not an exclusion. Historical queries keep their original
+  universe and never apply today's directory as a survival filter.
 - Minute-line price is `trade`; `open/high/low/close` may be null. Historical minute requests need both `trade_date=YYYYMMDD` and `count=241`.
 - Recent `date_kline` may lag. For live/EOD work, reconstruct recent daily OHLC/VWAP from minute `trade` rather than swallowing an empty daily response.
 - Historical concept ranks are deeper than concept returns: `prePctChangeRate` is zero before roughly 2024-05-13. Cross-cycle return research must use stock-level `date_kline` or constituent reconstruction.
@@ -153,3 +158,9 @@ PYTHONPATH=src python3 -m xiaocao catalog indicators --format table
 ```
 
 Live API health check: `PYTHONPATH=src python3 -m pytest tests/e2e -q`.
+
+Morning publication additionally binds content-addressed raw directory response
+bytes/request/observed time and the normalized hash. Freshness uses original
+observation start, including slow reads; a price-only gap has the same immediate
+recovery routing as a source gap. See automation-morning.md for the original
+process recheck and commit-boundary freshness contract.
