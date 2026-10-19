@@ -1,0 +1,229 @@
+{
+  "date": "2026-10-15",
+  "kind": "review",
+  "author": "吕晓彤",
+  "source": "baidu_subscription_share_browser",
+  "authority": 0,
+  "application": "research_only",
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_subscription_videos/enrichment/6fc117ea476078e91295e16d559babb297864fa267a941aaae3ab55a420e3fd3/artifacts/kol-netdisk-cloud-a5a48df252bc63ca/10月15日.txt",
+      "sha256": "53bf7832e390a45fdb23e5a35f5d952630726c0b84cf71951b1ffad01e90d5f4",
+      "size": 75974
+    }
+  ],
+  "summary": "本期可复用的完整候选是交易场所差异、港股折价配售和家庭创业本金保护；大模型段落只部分支持低价竞争与利润压力，不足以建立关于大规模预训练、强化学习和系统优化推动能力提升的整条复合命题；美股段落只支持损失厌恶、踏空恐惧和情绪化卖出后追入，不足以建立预压力窗口规则化止盈能够降低回撤的完整命题。后两项仅保留为方法和反馈。开源“完胜”闭源、平台类比、光伏转述和DeepSeek“船票”仍是待检线索。全部内容保持零权威。",
+  "posture": {
+    "regime": "条件性观察",
+    "dominant_style": "科技方向仍受关注，但高利率和估值约束并存",
+    "risk": "A股底部、回购执行、Kimi上市和解禁事件均未确认",
+    "style_ranking": [
+      "先验证市场与事件条件",
+      "再观察科技相对强度",
+      "不追逐未核实的港股IPO或解禁"
+    ]
+  },
+  "regime_call": {
+    "horizon": "下一交易日及随后数个交易日",
+    "call": "作者认为美股稳住并叠加国内回购因素、加上A股此前急跌时，次日及短期可能企稳；美股暴跌则该判断失效。",
+    "system_confirmation": "A股开盘量价和公司级回购执行由系统另行验证，不归为作者明说的前提。",
+    "what_would_falsify": [
+      "美股重新明显下跌",
+      "回购因素没有执行证据",
+      "A股实际走势继续明显走弱"
+    ]
+  },
+  "directions": [
+    {
+      "name": "科技与人工智能",
+      "view": "产业趋势被作者视为未结束，但高无风险收益率、估值和大模型低价竞争构成约束；他另有当前开源“完胜”闭源的强判断。",
+      "boundary": "没有公司级盈利、估值、证券和入场条件，也没有统一的开源/闭源能力、成本与商业化基准，不能生成仓位动作。"
+    },
+    {
+      "name": "香港新股与A+H",
+      "view": "新增供给、低流动性、折价配售和监管变化可能重塑风险收益。",
+      "boundary": "茶百道调查不是定罪，Kimi上市未核，A/H反馈需要样本检验。"
+    },
+    {
+      "name": "美股长期配置",
+      "view": "执行纪律和承受盈利回撤比历史年化数字更关键。",
+      "boundary": "10%至12%定投结果没有独立统计核验。"
+    }
+  ],
+  "stocks": [
+    {
+      "name": "茶百道",
+      "role": "香港IPO监管个案",
+      "status": "调查存在，违法与首例说法未确认"
+    },
+    {
+      "name": "Kimi",
+      "role": "假设赴港上市案例",
+      "status": "上市事实、实体、代码和时间未确认"
+    },
+    {
+      "name": "云迹（语音身份待核）",
+      "role": "假设次日解禁案例",
+      "status": "公司、代码、公告和规模未确认"
+    },
+    {
+      "name": "英伟达",
+      "role": "长期涨幅、回购和持有纪律例子",
+      "status": "历史涨幅与回购时点未在本次核验"
+    }
+  ],
+  "method_principles": [
+    "隔夜市场判断要区分盘前已计价变化与正式开盘后的新增变化；A股开盘量价是系统结果确认项，不改写成作者前提。",
+    "同一资产在不同交易场所要分别评估上市供给、流动性、融资制度、投资者结构和行为偏差。",
+    "静态低估不能覆盖港股反复配售造成的稀释，A股高流动性也不能覆盖控制人减持风险。",
+    "讨论大模型竞争时，要把价格、单位成本和股东回报分开；本期只支持低价竞争可能压低利润，不支持从本期外推预训练、强化学习或系统优化能够持续提升能力。",
+    "开源与闭源路线要用统一能力、采用、单位成本和商业化指标比较，不能把强语气直接固化为知识。",
+    "家庭创业先固定最大可损失本金和验证阶段，用选择权替代一次性押注。"
+  ],
+  "exit_lessons": [
+    "美股盈利回撤会触发损失厌恶，过早止盈后又因踏空追入，形成低卖高买。",
+    "A股大波段观点若缺少事先退出条件，关键位置容易把阶段趋势误当永久趋势。",
+    "港股因低流动性和折价配售出现的便宜，可能是稀释前的静态错觉。",
+    "十倍杠杆会把一次方向错误变成不可逆尾部损失。"
+  ],
+  "decision_trace": [
+    {
+      "observation": "作者观察美股当晚只有轻微波动，并认为A股此前下跌过快、国内大公司开始回购。",
+      "inference": "若美股稳住并叠加回购因素，A股次日及短期可能企稳；美股暴跌则该推断失效。",
+      "action": "只形成次日验证清单；系统另看A股开盘量价和回购执行，不形成提前抄底。",
+      "why": "系统只能确认美股日收盘未继续大跌，没有公司级回购执行和A股底部证据。"
+    },
+    {
+      "observation": "香港新股供给、配售和流动性被作者反复描述为价格压力来源。",
+      "inference": "交易场所结构可能系统性改变同类资产的适宜持有期限和策略。",
+      "action": "复用并细化XH-196与XH-212，按场所和融资事件建立样本。",
+      "why": "单一口播和静态折价不能证明机制强度。"
+    },
+    {
+      "observation": "作者认为大模型公司同质竞争并把价格压低；他另称开源当前“完胜”闭源，并用平台和光伏价格战解释利润压力。",
+      "inference": "低价竞争可能压低行业利润；路线胜负和跨行业类比必须分开验证，而预训练、强化学习和系统优化能否继续提升能力不是本期来源建立的命题。",
+      "action": "只把价格竞争与利润压力保留为方法和对XH-237的部分支持反馈；不把本期记为XH-237整条复合命题的复现，也不新增近义候选。",
+      "why": "本期没有覆盖XH-237关于大规模预训练、强化学习和系统优化推动能力提升的前半部分，且被转述采访未核。"
+    },
+    {
+      "observation": "作者建议有积累的中年家庭避免押上本金，可用技能、资源、兼职或加入团队低成本参与创业。",
+      "inference": "分阶段低资本验证可能降低返贫尾部风险并保留选择权。",
+      "action": "新增一个家庭创业风险研究候选。",
+      "why": "现有XH-072关注单一收入、教育支出和全职配偶叠加风险，不是同一条件集合。"
+    }
+  ],
+  "judgment_heuristics": [
+    "先问观点的必要条件是否已经发生，再问是否具备可交易证券、价格、仓位和退出。",
+    "对具名事件同时核公司身份、公告、规模、可售数量和说话人的利益关系。",
+    "对收益率主张统一扣除费用、税费、汇率和回撤，并公开执行失败的结果。",
+    "对价格战同时观察价格下降和单位成本下降，只有后者更快且需求扩大才可能改善利润。",
+    "对类比、转述和含义不明的资本市场术语分别记录归属与证据边界，禁止用总体行业结论吸收。"
+  ],
+  "hypotheses": [
+    {
+      "existing_id": "XH-196",
+      "claim": "同一类资产在上市供给、市场深度和投资者结构显著不同的交易场所，适宜持有期限和有效策略可能系统不同。",
+      "implied_rule": "分别量化A股减持、港股配售、美股行为回撤以及各市场流动性，再选择持有期限和退出纪律。",
+      "falsifiable_test": "在A股、港股和美股同类行业样本中，按供给增速、流动性和制度事件分层，比较长期持有、波段和事件策略的费用后收益、回撤、换手和容量。",
+      "expected_effect": "若场所效应成立，高供给低流动性组的长期持有风险调整收益更弱，且同一规则跨市场迁移表现更差。",
+      "category": "market_venue_strategy_fit",
+      "dedup_action": "refine_existing"
+    },
+    {
+      "existing_id": "XH-212",
+      "claim": "高频折价配售且缺少回购约束的公司，后续回撤和相对收益可能显著弱于同业。",
+      "implied_rule": "配售公告后提高风险折扣，直到稀释、资金用途和交割后供给均被验证。",
+      "falsifiable_test": "收集港股配售事件，按频率、折价率和新增股份占比分组，比较公告后2日、5日、20日和60日超额收益、成交量与再次配售概率。",
+      "expected_effect": "高频、高折价和高稀释组应出现更深回撤和更高再次配售概率。",
+      "category": "placement_dilution",
+      "dedup_action": "reuse_existing"
+    },
+    {
+      "claim": "已经积累较多家庭本金的中年创业者，若用低资本、技能或资源投入先验证项目，可能比押上本金创业更能保留家庭选择权并降低返贫尾部风险。",
+      "implied_rule": "创业前固定最大可损失本金、家庭流动性覆盖期和分阶段验证门槛，未验证前不扩大不可逆投入。",
+      "falsifiable_test": "比较同等家庭净资产下，低资本分阶段验证与一次性高本金投入项目在三年内的现金流缺口、被迫卖出概率、家庭净资产回撤和项目存活率。",
+      "expected_effect": "分阶段组应降低家庭最大回撤和被迫变现，同时保持不低于一次性投入组的项目验证率。",
+      "category": "household_entrepreneurship_risk",
+      "dedup_action": "reuse_existing_after_prior_terminal_ingest",
+      "existing_id": "XH-253"
+    }
+  ],
+  "feedback": [
+    {
+      "prior": "XH-196",
+      "assessment": "refines",
+      "reason": "新增A股减持、港股配售和美股损失厌恶三个具体场所机制。"
+    },
+    {
+      "prior": "XH-212",
+      "assessment": "confirms",
+      "reason": "作者再次把港股折价配售与流动性稀缺视为长期持有风险。"
+    },
+    {
+      "prior": "XH-237",
+      "assessment": "partial_support",
+      "reason": "本期支持同质化低价竞争可能压缩模型公司利润，但没有建立大规模预训练、强化学习和系统优化继续提升能力；因此不构成XH-237整条复合命题的真实复现。"
+    },
+    {
+      "prior": "XH-172",
+      "assessment": "does_not_establish_full_claim",
+      "reason": "本期支持盈利回撤中的损失厌恶、踏空恐惧和情绪化卖出后追入，但没有建立在市场进入高压力窗口前规则化止盈能够降低尾部回撤；因此不构成XH-172整条主张的来源。"
+    },
+    {
+      "prior": "XH-072",
+      "assessment": "does_not_address",
+      "reason": "当前案例没有单一收入、刚性教育支出和全职配偶等原条件。"
+    }
+  ],
+  "timing_notes": [
+    "A股短线条件只对2026年10月16日及随后数个交易日有效，必须与长期知识分开。",
+    "茶百道调查在2026年10月13日公布，等待后续监管定性。",
+    "Kimi上市和“云迹”解禁都没有完整事件证据，不写入确定性知识。"
+  ],
+  "typo_corrections": [
+    {
+      "raw": "云迹/云际/云气",
+      "normalized": null,
+      "reason": "无法从本次证据确认准确公司，保留歧义。"
+    },
+    {
+      "raw": "老八",
+      "normalized": null,
+      "reason": "语境可能指巴菲特，但来源未明确确认。"
+    },
+    {
+      "raw": "曾玉群/曾雨婷",
+      "normalized": null,
+      "reason": "语境疑似曾毓群，转写歧义未独立核验。"
+    },
+    {
+      "raw": "cloud",
+      "normalized": null,
+      "reason": "可能指Claude，但不强行映射。"
+    },
+    {
+      "raw": "詹米奈",
+      "normalized": null,
+      "reason": "可能指Gemini，但不强行映射。"
+    }
+  ],
+  "action_summary": {
+    "posture_update": "not_applied_other_author_and_current_call_is_time_bounded",
+    "playbook_update": "no_change_authority_zero",
+    "hypothesis_update": "reuse_or_refine_XH-196_XH-212_preserve_XH-253; XH-237_partial_support_only_and_XH-172_does_not_establish_full_claim; no_recurrence_or_near_duplicate_candidate_for_either",
+    "audit_evidence": "full_source_191_segments_reviewed_and_bound_to_sha256_53bf7832e390a45fdb23e5a35f5d952630726c0b84cf71951b1ffad01e90d5f4",
+    "instrumentation_todo": "build_cross_market_supply_liquidity_panel_and_household_entrepreneurship_stress_test; retain_model_price_competition_and_loss_aversion_as_method_feedback_only",
+    "routing": [
+      "research_backlog_only",
+      "no_parameter_change",
+      "no_book_effect",
+      "human_gate_required"
+    ]
+  },
+  "attribution_limits": [
+    "A股开盘承接是系统确认项，不是作者明说的见底前提。",
+    "十年期美债的“牺牲流动性”是作者用语，不等于十年锁定；具体工具和价格风险未核。",
+    "光伏观点来自姓名尚未核清的受访者转述，不能当作作者原创或已证事实。",
+    "DeepSeek“A股船票”含义未明，不映射证券或方向。"
+  ]
+}

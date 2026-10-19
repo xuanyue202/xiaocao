@@ -1,11 +1,112 @@
 # Morning automation
 
+Morning producer/paper children execute one verified behavior snapshot while
+sharing the original output, account and ledger locks. Read source_integrity
+for the executed snapshot; deployment_source_changes records other writers.
+Prewake producer preparation may compute strictly prior-day K/P scores for the
+previous immutable universe, ending before capture. The hot path consumes a
+hash/model/date-bound score archive; missing scores stay neutral and degraded,
+never remove a candidate. Auction contrast enrichment follows original bundle
+publication and cannot rewrite its economic fields.
+
+Resolve today's pool/direction codes through Contract §1b's current security
+directory before requiring detail coverage. The producer automatically excludes
+directory-orphan codes with raw/directory hashes and reasons in the checkpoint;
+this is ordinary universe resolution. Empty/failed/malformed directories and
+missing details/prices for admitted securities remain genuine dependencies.
+Reuse a proved complete source version for at most60 seconds, then revalidate
+the whole version. A source-gap event names the exact missing codes; inspect it
+promptly instead of waiting for shell termination. An unchecked price count is
+unknown. Preserve the existing producer and completed-day no-replay boundary.
+
+## Source capture recovery and end-to-end readback
+
+On a forwarded source or price dependency, inspect the exact evidence and
+`pipeline_path` immediately. The producer persists first/last observations,
+missing codes and an immutable request while remaining alive. For
+`recovery_kind=original_source_recheck`, repair the data/auth dependency, then
+run `CODEX_AUTOMATION_ID=xiaocao-daily-morning PYTHONPATH=src .venv/bin/python
+scripts/morning_source_recovery.py --request <exact request_path>` once in its
+original task. It claims one cache recheck, never launches or replaces code.
+A signal means recheck requested, not ready. Code changes apply to a later
+pinned run; terminal/committed/expired/other-owner requests remain fenced.
+Committed bundle repair continues through `morning_bundle_recovery.py`.
+
+Source reuse ends 60 seconds after original `observed_at`, including network
+latency. Individual entry-price observations share that limit. The original
+capture validates inside its publication lock immediately before the first
+immutable checkpoint; expiry returns to the same process's full capture loop.
+This rule concerns input observation, preserving the separate 09:25–09:30
+exchange quote timestamp rule. Raw directory bytes have a content-addressed
+artifact and hash in addition to the normalized response hash.
+
+Calendar/history/mode evidence is loaded during prewake; only post-09:25:01
+facts enter the original capture. Preserve actual readiness/capture durations,
+09:27 support cutoff and original APP deadline. A short/expired support budget
+uses the deterministic baseline; it never borrows native submission time or
+extends decision validity. Current account/quote/risk guards remain at use.
+
+After an event or a terminal consumer result, run the read-only
+`scripts/morning_pipeline_status.py --date <date>` and read its dated artifact.
+It lists producer/paper owners, exact APP owner/checklist/deadline and matched
+terminal receipts separately. Missing, pending and blocked remain explicit.
+Bundle ready never establishes APP or paper execution success. This derived
+observation has no writer, budget, trade or notification authority.
+
+Book B waits and Book T execute concurrently in the original paper supervisor.
+T's fill-window wait occurs outside the shared ledger lock. Formal writes
+remain serialized with lock-time reload/recovery. Its successful control
+writer archives immutable account/position/trade bytes under that lock; T v2
+consumes that receipt's exact snapshots even if B later updates shared files.
+T failure prevents its shadow consumer. Report each child from its own outcome;
+retain B failure even when T succeeds. A report-only KOL revision may restage
+old viewpoints: verify the full terminal manifest, shared publication identity,
+each original viewpoint/evaluation binding and relation's originating binding.
+Preserve both report and semantic revisions in evidence. The T adapter selects
+one complete terminal report head by proved server receipt time; maintenance
+history does not duplicate its viewpoints. Conflicting simultaneous heads and
+incomplete manifests remain blocked. Use actual input observation time, keeping
+original evaluation/review validity clocks. Load only explicitly referenced historical relation targets from exact terminal manifests; they remain reference-only and cannot add current support. A missing local
+publication may be repaired by exact read-only LiangHui report/manifest and
+immutable record readback in `output/live/kol_daily/publication_readbacks/`.
+Use content-addressed capsules, actual observed time and complete matched hashes;
+this mirrors existing published records and never stages or republishes them.
+Mirror capsules populate only the historical lookup, never the current input
+set; direct historical targets do not recursively import their older relations.
+
+For `app_session_reset`, load [session recovery](morning-session-recovery.md).
+For latest APP settlement gaps, use Operating Contract §2a's approved complete
+current-mark path. A conservative cash/NAV bound does not prove economic loss
+or create a new peak/pause. EOD and exact old order reconciliation remain strict.
+
 Read this file only for the daily morning recommendation/paper-book branch.
+
+## Prior-day SELL deferral (2026-10-12 user authorization)
+
+For the current dynamic APP capital policy, independent new BUYs use fresh account-bound available cash and proved current owned-lot marks. Prior-day SELL history/zero-fill proof is post-batch reconciliation, never a global opening dependency. Keep the old UNKNOWN/claim/order identity and same-code BUY fence before intent binding; current BUY, same-day SELL, missing identity and uncertain cash reserves still block. Record deferred_prior_day_sell_plan_ids and let the same owner perform exact readback after business; EOD remains strict. An original blocked preflight or read-only review_account receipt with zero intents/preparations/execution receipts may claim one continuation under its exact original absolute deadline. A receipt with recovery_of cannot become another continuation source; consumed or uncertain claims stay fenced.
 
 ## Execute
 
+Scheduler wakes are preparation only: producer and paper wake at 09:18; APP
+wakes at 08:53. Start the original entrypoint promptly. Python waits until
+09:25:01 before capture/paper consumption, and until 09:00 before fresh APP
+preflight notices and its 2100-second preparation budget. Continuations retain
+their exact prior absolute deadline. Required data and every active candidate's
+dated entry price must be ready together; the original producer retries every
+two seconds until ready. Paper waits for that same original bundle every two
+seconds. Review support retains its separate bounded budget and is bound to
+the consumer's checkpoint. Failed-run context packs read existing queues.
+
+Recover saved credentials within the current owner. A pre-secret APP receipt
+with both action flags false is not a consumed password attempt. The helper
+may dismiss the uniquely proven old error sheet, reprove the same account and
+window, then use Keychain once. True confirmations and uncertain transports
+retain their fence. Proven no-action dependency failures recheck every two
+seconds within the original budget. Missing credentials, locked accounts and
+explicit human-only authentication remain distinct blockers.
+
 For producer or consumer handoff faults, apply Operating Contract §1c and
-[book-b-live-repair.md](book-b-live-repair.md). The original 09:23 capture commits
+[book-b-live-repair.md](book-b-live-repair.md). The original 09:25:01 capture commits
 one execution bundle before optional news/report work. Both consumers verify
 its exact checkpoint and consume the proved original or recovered copy.
 Read `morning_bundle_repair_required.request_path`, repair the local dependency,
@@ -20,6 +121,8 @@ producer owner; only that runtime identity can finish its interrupted commit.
 Consumers cannot create a commitment. A zero-row proven capture needs no support
 artifact. Missing shadow support/review queue is explicit degradation. Empty
 new support cannot withdraw an earlier valid event; the typed policy owns expiry.
+After a proved bundle commit, a conflicting compatibility freeze is preserved
+and reported as supporting degradation; it does not abort derived support work.
 
 For the bounded KOL overlay, also read
 [kol-trading-judgment.md](kol-trading-judgment.md). Keep the original runner and
@@ -37,7 +140,7 @@ Scheduled delivery is split across two Automations because the recommendation
 is ready before opening-window execution can finish:
 
 ```bash
-# 09:23 task: commit execution bundle, then deliver derived report/review queue
+# 09:25:01 task: commit execution bundle, then deliver derived report/review queue
 CODEX_AUTOMATION_ID=xiaocao-daily-morning bash scripts/auto_daily.sh morning-prerecommend
 
 # 09:25 task: wait for those frozen artifacts, review, and paper-record
@@ -90,8 +193,9 @@ observation/journal hashes and distinguish marked NAV from exit-fee NAV. Cash
 classification and statement work reads `docs/BOOK_B_ACCOUNTING.md` after the
 time-critical runner start. Routine tasks consume proved facts without classifying
 balance differences as capital.
-An old zero-fill SELL with exact fresh order/trade/holding proof may remain
-reconcile-only while other codes proceed; block a new BUY in that SELL's code.
+A prior-day SELL remains reconcile-only while independent codes proceed under
+the current dynamic capital policy; historical zero-fill proof is deferred,
+and a new BUY in that SELL's code stays blocked.
 The
 complete allocation capsule binds its capital
 basis source, NAV, cash, exposure and broker summary under one canonical hash,
@@ -181,9 +285,9 @@ The orchestration must reach these stages:
 1. The prerecommendation stage runs `live_recommend.py`, freezes the usable 9:25 signal/evidence set, and writes `output/live/recommend_<date>.md` plus ★/★B/★M/★E snapshots. K/P is an optional ranking overlay: a missing model/cache must fall back to neutral K/P ranks and must not skip deterministic snapshot capture or ★E selection. Snapshot-capture failure is fatal and must never be reported as a genuine `★E NONE`.
 2. The same stage runs `build_intelligence_review_queue.py` to create the zero-fetch, zero-score review queue, then terminates so its final/inbox result is user-visible. Priority is open Book-B positions, then ★E, ★B and ★.
 3. The execution stage uses `wait_for_morning_freeze.py` to require the matching dated report and queue. Missing, malformed or wrong-date evidence fails closed; it never regenerates the signal set.
-4. `wait_for_agent_reviews.py` opens a bounded rendezvous. While the execution shell waits, read the dated queue and frozen evidence, then write structured reviews with `scripts/agent_intelligence_review.py`. Never substitute keyword scoring. For this local paper branch, if time expires, let base picks continue and report supporting-layer fallback. The independent APP opening runner follows §1b instead.
+4. `wait_for_agent_reviews.py` opens a bounded rendezvous. A missing derived queue waits within that same budget; its later arrival never resets the deadline. Invalid or wrong-date queues remain explicit degradation. While the execution shell waits, read the dated queue and frozen evidence, then write structured reviews with `scripts/agent_intelligence_review.py`. Supply each queue item's exact `evidence_freeze_ref` using `--evidence-freeze-ref`; an absent or different reference is rejected before writing. Never substitute keyword scoring. For this local paper branch, if time expires, let base picks continue and report supporting-layer fallback. The independent APP opening runner follows §1b instead.
 5. `paper_record.py --pick mode_exec_star --intelligence-trade shadow` records only executable ★E Book-B fills plus the matching Book-A reference rows. K/P, auxiliary indicators, intelligence and manual notional cannot restore a failed mode gate.
-6. Book T runs independently after the Book-B attempt, including a missing Book-B freeze or failed Book-B paper record. The original shell preserves the Book-B failure exit status after finishing Book T; it skips B review/buy when B evidence is missing. A Book-T error remains deterministic failure and prevents its optional shadow consumer. Shared ledger recovery/locking and Book-T market gates still apply. Report each book as checked, failed, or not started from its own receipt.
+6. Book T runs concurrently with Book B’s wait in the original supervisor; consume each child’s own outcome under the source recovery and end-to-end readback rules above. Shared ledger recovery/locking and Book T market gates remain required.
 7. `paper_record.py --trend-only` first checks whether Book T has an empty slot or a sellable switch candidate. A full aligned book returns immediately; otherwise it waits for the opening window and fills or performs a paired switch. No candidate or an unfilled replacement is normal.
 
 The current formal Book T consumer remains the v1 control path until Issue 06's
@@ -357,13 +461,36 @@ the trading runner. On macOS the relay uses the native curl TLS stack, keeping
 credentials/body on stdin and preserving the configured TLS verification policy.
 
 The single authentication-only market probe runs at this preparation boundary.
+Recovery events from the producer and paper freeze wait reach the operator
+stream immediately through the daily supervisor, even while detailed output
+is logged or the shell waits for its result. On an event, recover the exact
+original dependency; read its cited request instead of starting another run.
+When the latest bound producer has a failed terminal and no original bundle,
+the paper consumer records producer failure and proceeds with independent
+Book T once. An active producer or a committed bundle still follows the
+original wait/repair path; failed data never becomes NONE.
+
+On `dependency_recovery_wait` with `recovery_kind=app_client_login`, keep the
+original runner alive and follow the first-client-login sequence in
+`foundersc-native-ax.md` immediately. The authorized morning workflow includes
+saved-password fill and visual CAPTCHA completion; routine client login is
+agent recovery. Preserve the exact request and signal its recheck only after
+same-account native readiness is proved. Missing credentials, macOS permission,
+actual credential rejection or uncertain password action retain human-only
+handling. Typed Keychain read timeout before helper invocation retries every
+two seconds only with durable no-password/no-confirmation evidence.
+
 If it reports `MARKET_LOGIN_REQUIRES_USER` or another authentication block,
 preserve the original runner's wait. For `MARKET_LOGIN_CAPTCHA_REQUIRED`, the
 current client has not submitted the saved password: run the local
 `--captcha-from-keychain` command in a PTY with short yield, inspect its
 emitted image with `view_image`, and enter one visually verified code into
 the waiting process. OCR may assist but cannot be the sole evidence for an
-ambiguous character. Do not repeat a rejected password/captcha login. After
+ambiguous character. The recovery lock covers challenge fetch, agent input,
+login and token storage. An explicitly rejected/expired CAPTCHA fetches a new
+challenge, at most three in this owner; inspect each image before entering its
+code. Password/account rejection stops; unknown rejection retains its distinct
+category and cooldown rather than claiming the saved password is wrong. After
 agent recovery, verify
 with one fresh-process probe and consume only a valid immutable producer freeze.
 
@@ -375,18 +502,54 @@ The 09:00 readiness surface is deliberately small:
 2. The one uncached market authentication read proves the stored token; on
    990502 the agent obtains a new token through the single challenge flow,
    then verifies one fresh-process read. Pre-open empty rows are not source
-   completeness failure. The 09:23 producer validates its actual dated inputs.
+   completeness failure. The 09:25:01 producer validates its actual dated inputs.
 3. Run `scripts/morning_preflight_alert.py --date today --kind transport`
    once to prove a trading WeCom recipient and relay configuration exist;
    this is read-only and does not claim delivery. Save the KOL projection and
    its quality separately; degraded coverage uses the deterministic baseline.
 4. If authentication remains blocked after repair, run the alert command with
    `--kind market-auth`. If the original runner ends blocked, use `--kind book-b
-   --receipt <exact terminal receipt_path>`. A failed original 09:23 producer
+   --receipt <exact terminal receipt_path>`. A failed original 09:25:01 producer
    uses `--kind producer --receipt <exact run_flow path>`. The alert script
    makes a dated durable incident, sends urgent trading WeCom once for a
    delivered incident, and prints delivery readback; `unproven` or missing
    transport is still a blocker to report, never human acknowledgement.
+
+The original runner emits `book_b_morning_checklist` with its dated owner-bound
+`checklist_path`. Read it with `scripts/morning_checklist.py --checklist <path>`;
+passed/recovered need evidence, stale is distinct, and pending is never green.
+It is local audit, not execution authority. Record the one market-auth/transport
+checks using the same script's `--item market_auth|transport --evidence <saved-proof>`
+under this Automation/Thread; choose recovered/degraded/blocked accurately.
+Record delivery and post-business accounting/history separately. A saved operator
+attestation is labelled as such; do not infer current API/account proof from it.
+
+On `book_b_kol_inputs_prepared`, use the runner's exact input/projection paths:
+do not run a second projection build. Before 09:20 dispatch one §2a Sol xhigh
+worker to load every eligible viewpoint and the hash-bound rules only. No source
+summary, conditional opening draft or early current-applicability judgment.
+Persist the actual accepted routing/worker ID plus `loaded_viewpoint_ids` under
+`output/live/kol_policy/analysis/`; then acknowledge full coverage with
+`CODEX_AUTOMATION_ID=xiaocao-book-b-live-morning PYTHONPATH=src .venv/bin/python
+scripts/morning_checklist.py --checklist <path> --input <exact input_path>
+--loaded <worker coverage JSON>`. Do not attest before the worker has loaded.
+Worker JSON contains `worker_id`, `loaded_viewpoint_ids` and `dispatch_path`.
+The dispatch JSON records the actually accepted `worker_id`, `accepted=true`,
+`model=gpt-6-sol`, `reasoning_effort=xhigh`, aware `dispatched_at`, exact input
+`input_sha256` and capsule `binding`; save the actual accepted tool arguments
+and return in `tool_arguments` / `tool_result` alongside it (`fork_turns=none`, returned `task_name` equals worker_id). The acknowledgement binds both receipt paths/hashes. Keep the same worker
+available for the original frozen review. Late/missing load immediately defers new model work; reuse only an already independently valid published policy under existing gates, otherwise baseline.
+
+The frozen review request includes one fresh cache-only projection/fingerprint
+check, changed-source flag, valid coverage/rules binding and warm worker ID.
+Read its brief immediately and dispatch the exact request to that worker before
+other supporting reads. If inputs changed, reload the new complete compact
+projection; do not re-analyse source semantics. Save dispatch time/arguments and
+actual remaining seconds. `dispatch_budget` includes model, citation verification,
+independent parent review and publication together; it is not model-only time.
+Stop support waits at the existing cutoff, do not extend freshness/backdate or
+publish a late draft. Source quality gaps and unavailable routing use baseline.
+The runner records successful boundary heartbeat observations independently.
 
 The 09:24 native session recheck and 09:25 account/quote/market guards remain
 fresh action-time checks; a 09:00 green status cannot pre-authorize them.
@@ -431,6 +594,16 @@ empty response proves reachability only. Leave the APP untouched after initial
 preflight until the runner's 09:24 recovery event. Source freshness and current
 applicability remain independent.
 
+### Opening auction quote timestamps
+
+Apply Contract §9: during China 09:25 inclusive to 09:30 exclusive, a live BUY
+may use the same-day auction quote timestamped from 09:25 through the current
+time. Do not apply the continuous-auction 60-second expiry to this fixed
+auction result. Pre-09:25, wrong-date, future or missing evidence does not gain
+permission; at 09:30 the continuous-auction freshness check applies again.
+Trading status, down price, basket, account/capital and exact-once gates remain.
+This correction never replays a terminal plan.
+
 ### Submit the batch before waiting for fills
 
 The runner supplies hash-bound account/allocation facts and account-risk receipt
@@ -438,7 +611,7 @@ before final review. Use that exact request; do not duplicate the account read.
 Send only a changed `source_fingerprint` and current applicability facts. Never invent
 an opening fact or publish an authority=0 projection as a current decision.
 
-The runner holds one account fence across full-batch allocation and serialized submissions. A fully mapped, chain-certain ACK/PARTIAL allows the next reserved order; UNKNOWN or incomplete identity stops new writes. Fill polling starts after the submission pass. Inspect submission_observations for actual counter-acceptance proof and deadline performance; prepare completion is not submission. Preserve APP raw order states: queued is not exchange-accepted and neither is a fill. If orders remain open, the original task owns exact-plan reconciliation until terminal or an explicit recorded checkpoint handoff; never leave a bare unresolved receipt without naming the pending orders and next owner.
+The runner holds one account fence across full-batch allocation and serialized submissions. A fully mapped, chain-certain ACK/PARTIAL allows the next reserved order; UNKNOWN or incomplete identity stops new writes. After the submission pass, the original runner remains in `awaiting_fill`, releases batch leases and uses only the claimed-plan readback port. Chain-certain ACK/PARTIAL waits quietly until 09:30; then exact reads are bounded by the original absolute preparation deadline. Durable claims/reservations and every UNKNOWN fence remain. At exhaustion record exact pending orders and the original owner; do not claim an accepted handoff or extend the deadline. Normal queued ACK is waiting, not failure. Fill polling starts after the submission pass. Inspect submission_observations for actual counter-acceptance proof and deadline performance; prepare completion is not submission. Preserve APP raw order states: queued is not exchange-accepted and neither is a fill. If orders remain open, the original task owns exact-plan reconciliation until terminal or an explicit recorded checkpoint handoff; never leave a bare unresolved receipt without naming the pending orders and next owner.
 
 
 ### Bounded counter-submission hot path
@@ -488,3 +661,19 @@ to runner stage events. Read `brief_path` first, fetch missing fields from
 `request_path` only as needed, and select fields from the terminal artifact.
 Never print full candidate arrays, account tables, report-id arrays or source
 caches into the operator stream. Full detail stays in immutable artifacts.
+
+
+## Book T budget and historical corrections
+
+Operating Contract §4b/§6 governs the independent T sleeve. The production
+producer freezes the original T capital, exposure cap, held cost and cash.
+Never apply the total-capital 30% allocation a second time to T equity, resize
+a canonical control fill or reuse a post-control held lot as a new shadow fill.
+
+The shadow consumer resolves registered corrections under
+`output/research/book_t_v2_budget_repairs` and verifies source and derived hashes.
+Keep original freezes, v1 receipts and global lifecycle evidence unchanged.
+Historical correction inputs are research rehearsals and are excluded from
+both 5/20-day natural acceptance and strategy promotion; report their count
+separately. Missing/corrupt registration is a binding failure. Do not regenerate
+history from current market facts or rerun the formal T writer to repair it.

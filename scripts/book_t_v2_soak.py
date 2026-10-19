@@ -20,6 +20,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
+from xiaocao.research.book_t_budget_repair import resolve_budget_input  # noqa: E402
 from xiaocao.kol.publication import canonical_sha256  # noqa: E402
 from xiaocao.research.book_t_shadow import (  # noqa: E402
     BookTShadowError,
@@ -41,6 +42,10 @@ def _load_inputs(root: Path) -> list[dict[str, Any]]:
     for path in sorted(live.glob("book_t_v2_shadow_input_*.json")):
         value = _read_json(path)
         if not isinstance(value, dict):
+            continue
+        effective = resolve_budget_input(root, value)
+        if effective.get("budget_repair"):
+            rows.append(effective)
             continue
         date_iso = path.stem.removeprefix("book_t_v2_shadow_input_")
         manifest_path = root / "output/research/book_t_v2_shadow" / f"{date_iso}-book-t-v2-shadow" / "manifest.json"
@@ -143,6 +148,7 @@ def _evaluate_soak(
         "required_real_trading_days": required_days,
         "real_trading_days": len(real),
         "rehearsal_days_excluded": len(lifecycles) - len(real),
+        "budget_replay_days_excluded": sum(bool(value.get("budget_repair")) for value in inputs),
         "trading_day_indices": indices,
         "contiguous": contiguous,
         "engineering_failures": engineering_failures,

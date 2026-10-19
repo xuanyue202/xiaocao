@@ -63,7 +63,7 @@ class NavObservation:
     initial_capital: float
     external_flow_total: float
     nav_basis: str
-    status: str  # history: settled; current_nav: reconciled
+    status: str  # history: settled; current: reconciled or conservative_bound
     observed_at: str  # timezone-aware ISO timestamp; settlement completion/mark
     evidence_digest: str  # SHA-256 of upstream validated source evidence
 
@@ -91,6 +91,7 @@ class AccountRiskReceipt:
     risk_nav_basis: str = "cash_plus_liquidation"
     strategy_nav: float | None = None
     capital_flow_head_sha256: str | None = None
+    current_nav_lower_bound: float | None = None
 
     def as_dict(self) -> dict[str, Any]:
         payload = asdict(self)
@@ -160,13 +161,17 @@ def evaluate_account_risk(
     previous_receipt: AccountRiskReceipt | None = None,
     require_settled_history: bool = True,
     allow_proven_sell_gap: bool = False,
+    allow_current_mark_gap: bool = False,
 ) -> AccountRiskReceipt:
     """Return an immutable, JSON-safe cap; invalid evidence yields BLOCKED/0.
 
     asof is timezone-aware. expected_settlement_date is the exact latest
     completed settlement date required by the caller's trading calendar in
     strict mode, even when current_nav is supplied. Only a proved old zero-fill
-    live SELL may opt into allow_proven_sell_gap with a current mark. Only paper:B may opt out
+    live SELL may opt into allow_proven_sell_gap with a current mark. The user-
+    approved live current-mark gap preserves a validated historical seed and
+    all existing high-water/pause evidence. Conservative bounds never create
+    economic pauses or peaks. Only paper:B may opt out
     explicitly; its fresh current_nav is mandatory and the expected date may
     be None. With no history its peak is max(initial_capital, current, prior
     peak), never a newly inferred principal. History timestamps must be post-close on
@@ -187,6 +192,9 @@ def evaluate_account_risk(
         errors.add("HISTORY_REQUIREMENT_INVALID")
     if type(allow_proven_sell_gap) is not bool or (allow_proven_sell_gap and (account_id != "live:B" or current_nav is None)):
         errors.add("PROVEN_SELL_GAP_INVALID")
+    if type(allow_current_mark_gap) is not bool or (allow_current_mark_gap and (
+            account_id != "live:B" or current_nav is None or epoch_mode)):
+        errors.add("CURRENT_MARK_GAP_INVALID")
     if epoch_mode and account_id != "paper:B":
         errors.add("TRACKING_EPOCH_PAPER_ONLY")
     if epoch_mode and current_nav is None:
@@ -275,6 +283,7 @@ def evaluate_account_risk(
 
     dated: dict[date, tuple[Decimal, datetime]] = {}
     current = None
+    conservative_current = False
     # Sorting all evidence before validation makes failures deterministic too.
     ordered = sorted(rows, key=_canonical)
     for row, is_current in [(row, False) for row in ordered] + (
@@ -304,8 +313,12 @@ def evaluate_account_risk(
             if not _valid_digest(row.evidence_digest):
                 raise ValueError("SOURCE_DIGEST_INVALID")
             if is_current:
-                if row.status != "reconciled":
+                if row.status not in {"reconciled", "conservative_bound"}:
                     raise ValueError("CURRENT_NAV_NOT_RECONCILED")
+                if row.status == "conservative_bound":
+                    if account_id != "live:B":
+                        raise ValueError("CONSERVATIVE_BOUND_ACCOUNT_INVALID")
+                    conservative_current = True
                 if day != now.astimezone(_CHINA).date() or (now - observed).total_seconds() > 300:
                     raise ValueError("CURRENT_NAV_STALE")
                 current = (day, nav, observed)
@@ -321,12 +334,13 @@ def evaluate_account_risk(
 
     if not dated and not epoch_mode:
         errors.add("SETTLED_HISTORY_REQUIRED")
-    elif dated and not epoch_mode and max(dated) != expected and not allow_proven_sell_gap:
+    elif dated and not epoch_mode and max(dated) != expected and not (allow_proven_sell_gap or allow_current_mark_gap):
         errors.add("SETTLED_HISTORY_STALE_OR_UNEXPECTED")
     if current is not None and current[0] in dated and dated[current[0]][0] != current[1]:
         errors.add("DUPLICATE_DATE_CONFLICT")
 
     nav_out = drawdown = None
+    nav_lower_bound = None
     observed_out = previous_observed
     if not errors:
         # Replay chronology from the original seed, NOT the previous peak:
@@ -344,8 +358,17 @@ def evaluate_account_risk(
             errors.add("NAV_OBSERVATION_REGRESSION")
             observed_out = previous_observed
         else:
-            peak = max(peak, nav_out)
-            paused |= nav_out * 100 <= peak * 80
+            if conservative_current:
+                # Unknown cash/asset attribution supplies a lower bound, not
+                # proof of an economic loss or a new high. If even that bound
+                # is above the loss floor it can conservatively cap new risk.
+                nav_lower_bound = float(nav_out)
+                if nav_out * 100 <= peak * 80 and not paused:
+                    errors.add("UNQUALIFIED_NAV_DRAWDOWN_UNPROVEN")
+                nav_out = min(nav_out, peak)
+            else:
+                peak = max(peak, nav_out)
+                paused |= nav_out * 100 <= peak * 80
             drawdown = (peak - nav_out) * 100 / peak
             if epoch_mode and epoch_started is None:
                 epoch_started = now
@@ -365,6 +388,10 @@ def evaluate_account_risk(
         reasons = ("WITHIN_PILOT_LOSS_BUDGET",)
     if allow_proven_sell_gap and not errors:
         reasons = tuple(sorted(set(reasons) | {"PRIOR_SELL_ZERO_FILL_CURRENT_MARK_BASIS"}))
+    if allow_current_mark_gap and not errors:
+        reasons = tuple(sorted(set(reasons) | {"LATEST_SETTLEMENT_GAP_CURRENT_MARK_BASIS"}))
+    if conservative_current:
+        reasons = tuple(sorted(set(reasons) | {"CONSERVATIVE_NAV_BOUND_UNCLASSIFIED_CASH"}))
 
     digest = hashlib.sha256(_canonical({
         "policy_id": POLICY_ID, "nav_basis": NAV_BASIS,
@@ -374,6 +401,7 @@ def evaluate_account_risk(
         "previous_receipt": previous_receipt, "reasons": reasons,
         "require_settled_history": require_settled_history,
         "allow_proven_sell_gap": allow_proven_sell_gap,
+        "allow_current_mark_gap": allow_current_mark_gap,
         "history_basis": history_basis,
         "tracking_epoch_started_at": epoch_started,
     }).encode("utf-8")).hexdigest()
@@ -391,4 +419,5 @@ def evaluate_account_risk(
         evidence_digest=digest,
         history_basis=history_basis,
         tracking_epoch_started_at=epoch_started.isoformat() if epoch_started is not None else None,
+        current_nav_lower_bound=nav_lower_bound,
     )

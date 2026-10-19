@@ -282,6 +282,7 @@ def _write_book_t_control_receipt(
         "trades": "output/live/paper_trades.jsonl",
     }
     hashes: dict[str, str] = {}
+    snapshots: dict[str, str] = {}
     for name, relative_path in paths.items():
         path = ROOT / relative_path
         if not path.exists():
@@ -290,7 +291,12 @@ def _write_book_t_control_receipt(
                 path.touch()
             else:
                 raise FileNotFoundError(path)
-        hashes[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+        from xiaocao.utils.atomic_files import atomic_write
+        raw = path.read_bytes()
+        hashes[name] = hashlib.sha256(raw).hexdigest()
+        archived = ROOT / "output/live/book_t_v1_control_artifacts" / date_iso / (hashes[name] + path.suffix)
+        atomic_write(archived, raw, immutable=True)
+        snapshots[name] = str(archived.relative_to(ROOT))
     body = {
         "consumer": "book_t_v1_control",
         "producer": "kronos_screen/scripts/paper_record.py",
@@ -299,6 +305,10 @@ def _write_book_t_control_receipt(
         "as_of": date_iso,
         "artifact_paths": paths,
         "artifact_hashes": hashes,
+        "artifact_snapshots": snapshots,
+        "writer_identity": {"automation_id": os.environ.get("CODEX_AUTOMATION_ID"),
+            "thread_id": os.environ.get("CODEX_THREAD_ID"),
+            "run_id": os.environ.get("XIAOCAO_DAILY_RUN_ID")},
     }
     semantics = daily_semantics or _book_t_daily_semantics(date_iso)
     if str(semantics.get("as_of") or "")[:10] != date_iso:
@@ -895,7 +905,7 @@ def _audit_intelligence_vetoes(
         })
 
 
-def _main_locked():
+def _parse_args():
     ap = argparse.ArgumentParser()
     ap.add_argument("--date", default=datetime.now().strftime("%Y-%m-%d"))
     ap.add_argument("--morning-freeze-receipt", type=Path)
@@ -964,7 +974,11 @@ def _main_locked():
             "never changes eligibility/order/fills"
         ),
     )
-    a = ap.parse_args()
+    return ap.parse_args()
+
+
+def _main_locked(a=None):
+    a = a or _parse_args()
     if a.allow_legacy_snapshots and os.environ.get("CODEX_AUTOMATION_ID"):
         raise ValueError("LEGACY_SNAPSHOTS_FORBIDDEN_IN_AUTOMATION")
     _parse_hhmm(a.fill_window_start)
@@ -977,7 +991,7 @@ def _main_locked():
             receipt_path = _write_book_t_control_receipt(a.date)
             print(f"{a.date}: Book T v1 control receipt -> {receipt_path}")
         except OSError as exc:
-            print(f"{a.date}: Book T v1 control receipt DEGRADED: {exc}")
+            raise RuntimeError("BOOK_T_CONTROL_RECEIPT_FAILED_AFTER_LEDGER_WRITE") from exc
         return
     if a.pick == "mode_exec_star":
         # A consumed zero-buy batch and an interrupted claimed writer are
@@ -2218,9 +2232,16 @@ def _load_positions_from_file(path: Path) -> list[dict]:
 
 
 def main() -> None:
+    args = _parse_args()
+    if args.trend_only and not args.no_wait_fill_window:
+        _parse_hhmm(args.fill_window_start)
+        _parse_hhmm(args.fill_window_end)
+        _validate_fill_window(args.fill_window_start, args.fill_window_end)
+        _wait_until_fill_window_complete(args.date, args.fill_window_end, args.fill_settle_seconds)
+        args.no_wait_fill_window = True
     with accounts.ledger_lock(accounts.ledger_lock_path(POS.parent)):
         accounts.recover_ledger_transaction(POS.parent)
-        _main_locked()
+        _main_locked(args)
 
 
 if __name__ == "__main__":

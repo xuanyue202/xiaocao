@@ -1559,6 +1559,58 @@ def test_live_sell_unproven_market_guard_stops_before_probe(
     assert broker.submit_calls == 0
 
 
+@pytest.mark.app_simulation
+@pytest.mark.parametrize(
+    ("observed_at", "checked_at", "expected"),
+    [
+        ("2026-08-15T09:25:00+08:00", "2026-08-15T09:26:01+08:00", None),
+        ("2026-08-15T09:25:00+08:00", "2026-08-15T09:27:01+08:00", None),
+        ("2026-08-15T09:25:00+08:00", "2026-08-15T09:29:59+08:00", None),
+        ("2026-08-15T09:25:00+08:00", "2026-08-15T09:30:00+08:00", "LIMIT_DOWN_CHECK_UNAVAILABLE"),
+        ("2026-08-15T09:24:59+08:00", "2026-08-15T09:27:01+08:00", "LIMIT_DOWN_CHECK_UNAVAILABLE"),
+        ("2026-08-15T09:24:59+08:00", "2026-08-15T09:25:10+08:00", "LIMIT_DOWN_CHECK_UNAVAILABLE"),
+        ("2026-08-14T09:25:00+08:00", "2026-08-15T09:27:01+08:00", "LIMIT_DOWN_CHECK_UNAVAILABLE"),
+        ("2026-08-15T09:29:00+08:00", "2026-08-15T09:27:01+08:00", "LIMIT_DOWN_CHECK_UNAVAILABLE"),
+        ("2026-08-15T09:27:30+08:00", "2026-08-15T09:27:01+08:00", "LIMIT_DOWN_CHECK_UNAVAILABLE"),
+        ("2026-08-15T01:25:00+00:00", "2026-08-15T01:29:59+00:00", None),
+    ],
+)
+def test_live_buy_auction_quote_age_follows_market_phase(observed_at, checked_at, expected) -> None:
+    observed = datetime.fromisoformat(observed_at)
+    plan = replace(
+        _plan(environment="live", deadline=observed + timedelta(days=2)),
+        market_guard_required=True,
+        market_guard_observed_at=observed,
+        market_guard_latest_price=10.0,
+        market_guard_down_price=9.0,
+    )
+    assert plan.guard_reason(now=datetime.fromisoformat(checked_at)) == expected
+
+
+@pytest.mark.app_simulation
+@pytest.mark.parametrize(
+    ("change", "expected"),
+    [
+        ({"market_guard_observed_at": None}, "LIMIT_DOWN_CHECK_UNAVAILABLE"),
+        ({"market_guard_status": "halt"}, "LIMIT_DOWN_CHECK_UNAVAILABLE"),
+        ({"market_guard_down_price": None}, "LIMIT_DOWN_CHECK_UNAVAILABLE"),
+        ({"market_guard_latest_price": 9.0}, "LIMIT_DOWN_BUY_BLOCKED"),
+        ({"market_guard_latest_price": 10.11}, "REALTIME_ABOVE_BASKET"),
+    ],
+)
+def test_live_buy_auction_quote_preserves_other_market_guards(change, expected) -> None:
+    observed = datetime(2026, 8, 15, 1, 25, tzinfo=timezone.utc)
+    plan = replace(
+        _plan(environment="live", deadline=observed + timedelta(hours=5)),
+        market_guard_required=True,
+        market_guard_observed_at=observed,
+        market_guard_latest_price=10.0,
+        market_guard_down_price=9.0,
+    )
+    plan = replace(plan, **change)
+    assert plan.guard_reason(now=observed + timedelta(minutes=2)) == expected
+
+
 def test_bound_market_guard_refresh_preserves_intent_hash_and_abandon_line() -> None:
     observed = datetime(2026, 8, 15, 1, 30, tzinfo=timezone.utc)
     base = replace(
@@ -2194,6 +2246,7 @@ def test_book_b_ledger_records_proved_fill_once_and_rebuilds_ownership(tmp_path:
     assert rows[0]["source_execution_event_id"] == first.event_id
 
 
+@pytest.mark.app_simulation
 def test_account_writer_fence_and_takeover_capsule_are_durable(tmp_path: Path) -> None:
     class UnknownBroker(FakeBroker):
         def submit(self, plan: TradePlan, claim_id: str, *, requested_shares: int | None = None) -> BrokerReceipt:
@@ -2218,7 +2271,11 @@ def test_account_writer_fence_and_takeover_capsule_are_durable(tmp_path: Path) -
 
     def notify(_title: str, _body: str) -> object:
         notifications.append(object())
-        return "ok" if len(notifications) > 1 else "failed"
+        return "ok" if len(notifications) > 1 else {
+            "wecom": "failed", "wecom_recipients": {
+                "recipient": {"status": "failed", "retry_safety": "safe", "failure_phase": "connect"},
+            },
+        }
 
     engine = TradingExecution(store=store, notifier=notify)
     first = engine.execute(_plan(), broker)
@@ -2237,6 +2294,94 @@ def test_account_writer_fence_and_takeover_capsule_are_durable(tmp_path: Path) -
     assert any(row.get("status") == "delivered" for row in (
         json.loads(line) for line in (tmp_path / "trading_incidents.jsonl").read_text().splitlines()
     ))
+
+
+@pytest.mark.app_simulation
+@pytest.mark.parametrize("failure", ["failed", "exception", "interrupt", "partial", "ambiguous"])
+def test_uncertain_order_incident_send_is_not_replayed_after_restart(tmp_path, failure):
+    messages = []
+
+    def notify(*args):
+        messages.append(args)
+        if failure == "exception":
+            raise ConnectionError("response lost after possible delivery")
+        if failure == "interrupt":
+            raise SystemExit("process interrupted after possible delivery")
+        if failure in {"partial", "ambiguous"}:
+            return {"wecom": "failed", "wecom_recipients": {
+                "first": {"status": "failed", "retry_safety": "safe"},
+                "second": {"status": "delivered"} if failure == "partial" else None,
+            }}
+        return "failed"
+
+    plan = _plan()
+    receipt = ExecutionReceipt(plan_id=plan.plan_id, plan_hash=plan.plan_hash,
+                               state=ExecutionState.UNKNOWN, reason="response_lost")
+    for attempt in range(2):
+        engine = TradingExecution(store=InMemoryExecutionStore(tmp_path / "events.jsonl"),
+                                  notifier=notify)
+        if failure == "interrupt" and attempt == 0:
+            with pytest.raises(SystemExit):
+                engine._incident(plan, receipt)
+        else:
+            engine._incident(plan, receipt)
+    assert len(messages) == 1
+    rows = [json.loads(line) for line in (tmp_path / "trading_incidents.jsonl").read_text().splitlines()]
+    assert len(rows) == 1 and rows[0]["status"] == "pending"
+
+
+@pytest.mark.app_simulation
+def test_legacy_pending_order_incident_cannot_gain_retry_proof(tmp_path):
+    messages = []
+    plan = _plan()
+    receipt = ExecutionReceipt(plan_id=plan.plan_id, plan_hash=plan.plan_hash,
+                               state=ExecutionState.UNKNOWN, reason="response_lost")
+    engine = TradingExecution(store=InMemoryExecutionStore(tmp_path / "events.jsonl"),
+                              notifier=lambda *args: messages.append(args))
+    # Reproduce a legacy durable pending row with no attempt-sidecar evidence.
+    engine._incident(plan, receipt)
+    for path in tmp_path.glob("trading_incidents.jsonl.attempts/*.json"):
+        path.unlink()
+    engine._incident(plan, receipt)
+    assert len(messages) == 1
+
+
+@pytest.mark.app_simulation
+def test_morning_local_incident_deferral_keeps_later_delivery_available(tmp_path):
+    plan = _plan()
+    receipt = ExecutionReceipt(plan_id=plan.plan_id, plan_hash=plan.plan_hash,
+                               state=ExecutionState.UNKNOWN, reason="response_lost")
+    deferred = TradingExecution(store=InMemoryExecutionStore(tmp_path / "events.jsonl"),
+                               notifier=lambda *_: {"wecom": "deferred_to_morning_result"})
+    deferred._incident(plan, receipt)
+    messages = []
+    later = TradingExecution(store=InMemoryExecutionStore(tmp_path / "events.jsonl"),
+                             notifier=lambda *args: (messages.append(args) or "ok"))
+    later._incident(plan, receipt)
+    later._incident(plan, receipt)
+    assert len(messages) == 1
+
+
+@pytest.mark.app_simulation
+def test_order_incident_without_transport_configuration_can_send_after_repair(tmp_path, monkeypatch):
+    from xiaocao.live import notify as notify_module
+
+    ready = False
+    messages = []
+    monkeypatch.setattr(notify_module, "wecom_transport_readiness",
+                        lambda **_: {"status": "configured" if ready else "unconfigured"})
+    monkeypatch.setattr(TradingExecution, "_default_notifier",
+                        staticmethod(lambda *args: (messages.append(args) or {"wecom": "ok"})))
+    plan = _plan()
+    receipt = ExecutionReceipt(plan_id=plan.plan_id, plan_hash=plan.plan_hash,
+                               state=ExecutionState.UNKNOWN, reason="response_lost")
+    engine = TradingExecution(store=InMemoryExecutionStore(tmp_path / "events.jsonl"))
+    engine._incident(plan, receipt)
+    assert messages == []
+    ready = True
+    engine._incident(plan, receipt)
+    engine._incident(plan, receipt)
+    assert len(messages) == 1
 
 
 def test_ownership_evidence_rejects_canonical_account_files(tmp_path: Path) -> None:
@@ -2801,3 +2946,29 @@ def test_sell_accepts_exact_positive_odd_lot_but_buy_still_requires_board_lot() 
     )
     assert live_sell.shares == 37
     assert live_sell.validation_error() is None
+
+
+@pytest.mark.app_simulation
+def test_reconcile_existing_partial_cannot_prepare_cancel_or_resubmit(tmp_path):
+    broker = FakeBroker(reconcile=[BrokerReceipt(status=BrokerStatus.PARTIAL,
+        order_id="o-1", strategy_id="s-1", filled_shares=100, remaining_shares=100,
+        retry_allowed=True, conclusive=True)])
+    execution = TradingExecution(broker=broker, store=InMemoryExecutionStore(tmp_path / "events.jsonl"))
+    plan = _plan()
+    before = execution.execute(plan)
+    counts = (broker.prepare_calls, broker.submit_calls, broker.cancel_calls, broker.probe_calls)
+    observed = execution.reconcile_existing(plan)
+    assert observed.state == ExecutionState.PARTIAL
+    assert observed.submit_claim_id == before.submit_claim_id
+    assert observed.filled_shares == 100
+    assert (broker.prepare_calls, broker.submit_calls, broker.cancel_calls, broker.probe_calls) == counts
+    assert broker.reconcile_calls == 1
+
+
+@pytest.mark.app_simulation
+def test_reconcile_existing_unclaimed_plan_cannot_start_execution(tmp_path):
+    broker = FakeBroker()
+    execution = TradingExecution(broker=broker, store=InMemoryExecutionStore(tmp_path / "events.jsonl"))
+    with pytest.raises(ValueError, match="SUBMIT_CLAIM_REQUIRED"):
+        execution.reconcile_existing(_plan())
+    assert broker.prepare_calls == broker.submit_calls == broker.cancel_calls == broker.reconcile_calls == 0

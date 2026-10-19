@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 import time as _time
@@ -961,6 +962,14 @@ def main() -> None:
         )
         return
 
+    from xiaocao.utils.business_clock import wait_for_business_time
+    from datetime import time as wall_time
+    automation_times = {"xiaocao-intraday-risk-precheck-1425": wall_time(14, 25),
+                        "xiaocao-intraday-monitor-1455": wall_time(14, 45),
+                        "xiaocao-daily-eod": wall_time(15, 10)}
+    start = automation_times.get(os.environ.get("CODEX_AUTOMATION_ID", ""))
+    if start is not None:
+        wait_for_business_time(today_iso, start)
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     book = args.book
     positions = _load_positions(book)

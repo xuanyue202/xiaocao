@@ -6,6 +6,7 @@ records describe process outcomes, never infer an order/fill from stdout.
 from __future__ import annotations
 
 import argparse
+import fcntl
 import hashlib
 import json
 import os
@@ -72,10 +73,11 @@ def source_manifest(root: Path) -> dict[str, str]:
     """Hash source/config names only; private/runtime files and env are excluded."""
     paths = {root / 'scripts/auto_daily.sh', root / 'pyproject.toml',
              root / 'docs/OPERATING_CONTRACT.md'}
-    for name in ('scripts', 'src/xiaocao', 'kronos_screen/scripts'):
+    for name in ('scripts', 'src/xiaocao', 'kronos_screen/scripts', 'native', 'Kronos'):
         folder = root / name
         if folder.exists():
-            paths.update(p for p in folder.rglob('*') if p.suffix in {'.py', '.sh', '.swift'})
+            paths.update(p for p in folder.rglob('*') if p.suffix in {'.py', '.sh', '.swift'}
+                         or name in {'src/xiaocao', 'Kronos'} and p.suffix == '.json')
     return {str(p.relative_to(root)): sha256(p) for p in sorted(paths)
             if p.is_file() and not p.is_symlink()}
 
@@ -145,10 +147,13 @@ def operational_inputs(root: Path, market_date: str) -> dict[str, Any]:
 
 def append_event(path: Path, row: dict[str, Any]) -> None:
     with path.open('a', encoding='utf-8') as stream:
+        fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
         stream.write(json.dumps(row, ensure_ascii=False) + '\n')
+        stream.flush()
 
 
-def stream_process(args: list[str], *, cwd: Path, env: dict[str, str], output_path: Path | None = None) -> int:
+def stream_process(args: list[str], *, cwd: Path, env: dict[str, str], output_path: Path | None = None,
+                   operator_fd: int | None = None) -> int:
     """Forward sanitized streams; detailed output is retained separately."""
     with output_path.open('a', encoding='utf-8') if output_path else open(os.devnull, 'w') as evidence:
         process = None
@@ -184,6 +189,13 @@ def stream_process(args: list[str], *, cwd: Path, env: dict[str, str], output_pa
                 with lock:
                     evidence.write(clean)
                     evidence.flush()
+                    if operator_fd is not None:
+                        event = recovery_event_line(clean)
+                        if event is not None:
+                            try:
+                                os.write(operator_fd, event.encode('utf-8'))
+                            except OSError:
+                                pass  # Local evidence and the original command remain authoritative.
                     try:
                         target.write(clean)
                         target.flush()
@@ -202,6 +214,38 @@ def stream_process(args: list[str], *, cwd: Path, env: dict[str, str], output_pa
             for signum, previous in previous_handlers.items():
                 signal.signal(signum, previous)
     return 128 - result if result < 0 else result
+
+
+def recovery_event_line(line: str) -> str | None:
+    """Project only recovery routing fields; never forward full business payloads."""
+    try:
+        row = json.loads(line)
+    except ValueError:
+        return None
+    if not isinstance(row, dict) or not isinstance(row.get('event'), str) or row['event'] not in {
+            'market_dependency_recovery_wait', 'morning_bundle_repair_required'}:
+        return None
+    fields = ('event', 'trade_date', 'status', 'reason', 'failure_category',
+              'request_path', 'request_sha256', 'recovery_command', 'recovery_kind',
+              'evidence_path', 'first_observed_at', 'last_observed_at', 'pipeline_path', 'pipeline_status')
+    projected = {key: redact(row[key])[:512] for key in fields if isinstance(row.get(key), str)}
+    gaps = row.get('source_gaps')
+    if isinstance(gaps, list):
+        projected['source_gap_count'] = len(gaps)
+        projected['source_gaps'] = []
+        for gap in gaps[:12]:
+            if not isinstance(gap, dict):
+                continue
+            codes = gap.get('missing_codes')
+            codes = codes if isinstance(codes, list) else []
+            projected['source_gaps'].append({
+                **{key: redact(gap[key])[:128] for key in ('source', 'status')
+                   if isinstance(gap.get(key), str)},
+                'missing_code_count': len(codes),
+                'missing_codes': [code for code in codes[:20] if isinstance(code, str)
+                                  and re.fullmatch(r'\d{6}\.(XSHG|XSHE|BJSE)', code)],
+            })
+    return json.dumps(projected, ensure_ascii=False) + '\n'
 
 
 def business_environment(env: dict[str, str], root: Path) -> dict[str, str]:
@@ -242,7 +286,8 @@ def command(args: list[str]) -> int:
     attempt = 1 + sum(e.get('stage') == stage and e.get('program') == program and
                       e.get('input_hashes') == identity['input_hashes'] and e.get('type') == 'command_started'
                       for e in existing)
-    command_id = f"{manifest['run_id']}:{len(existing) + 1}"
+    command_key = uuid.uuid4().hex
+    command_id = f"{manifest['run_id']}:{command_key}"
     base = {'schema_version': 1, 'run_id': manifest['run_id'], 'command_id': command_id,
             'stage': stage, 'program': program, 'attempt': attempt, **identity}
     changed = source_changes(root, manifest['source_hashes'])
@@ -252,11 +297,12 @@ def command(args: list[str]) -> int:
         print(f'runtime command refused: source_changed run_id={manifest["run_id"]}', file=sys.stderr)
         return 78
     append_event(events_path, {**base, 'type': 'command_started', 'ts': now(), 'status': 'running'})
-    output = run_dir / 'commands' / f'{len(existing) + 1}.log'
+    output = run_dir / 'commands' / f'{command_key}.log'
     output.parent.mkdir(exist_ok=True)
     try:
         result = stream_process([os.environ['XIAOCAO_DAILY_PYTHON'], *args], cwd=root,
-                                env=business_environment(dict(os.environ), root), output_path=output)
+                                env=business_environment(dict(os.environ), root), output_path=output,
+                                operator_fd=3 if os.environ.get('XIAOCAO_DAILY_EVENT_FD') == '3' else None)
         reason = 'process_exit' if result else 'completed'
     except OSError as exc:
         result, reason = 127, f'process_start_{type(exc).__name__}'
@@ -267,9 +313,13 @@ def command(args: list[str]) -> int:
 
 
 def launch(script: Path, root: Path, args: list[str]) -> int:
+    from xiaocao.utils.trading_session import A_SHARE_TZ
     market_date = (os.environ.get('XIAOCAO_BOOK_T_V2_REHEARSAL_DATE')
-                   if os.environ.get('XIAOCAO_BOOK_T_V2_RUN_MODE') == 'rehearsal' else None) or datetime.now().strftime('%Y-%m-%d')
+                   if os.environ.get('XIAOCAO_BOOK_T_V2_RUN_MODE') == 'rehearsal' else None) or datetime.now(A_SHARE_TZ).strftime('%Y-%m-%d')
     if args[:1] == ['eod']:
+        from datetime import time as wall_time
+        from xiaocao.utils.business_clock import wait_for_business_time
+        wait_for_business_time(market_date, wall_time(15, 10))
         # Imported only in the launcher: the frozen command observer does not
         # load business modules from the mutable checkout.
         from xiaocao.live.eod_automation_gate import EodGateRejected, claim_eod_slot
@@ -291,6 +341,15 @@ def _launch(script: Path, root: Path, args: list[str], market_date: str) -> int:
     stable_script.chmod(0o400)
     hashes = source_manifest(root)
     automation = args[0] if args else 'unknown'
+    deployment_root = root
+    revision = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=root,
+                              capture_output=True, text=True, timeout=5)
+    pinned_revision = revision.stdout.strip() if revision.returncode == 0 else ''
+    if automation in {'morning-prerecommend', 'morning-execute'}:
+        from .runtime_snapshot import freeze_runtime
+        root = freeze_runtime(root, run_dir / 'runtime', hashes)
+        if source_manifest(root) != hashes:
+            raise ValueError('RUNTIME_SNAPSHOT_MANIFEST_MISMATCH')
     # Freeze the observer as well: future Python source edits cannot break or
     # bypass the command boundary that checks the original source manifest.
     helper_root = run_dir / 'observer'
@@ -308,6 +367,8 @@ def _launch(script: Path, root: Path, args: list[str], market_date: str) -> int:
                 'initial_inputs': operational_inputs(root, market_date), 'python_version': sys.version.split()[0],
                 'observer_hashes': {p.name: sha256(p) for p in helper_package.glob('*.py')},
                 'automation_id': os.environ.get('CODEX_AUTOMATION_ID'), 'thread_id': os.environ.get('CODEX_THREAD_ID')}
+    manifest.update(execution_root=str(root), deployment_root=str(deployment_root),
+                    git_revision=pinned_revision, behavior_snapshot=root != deployment_root)
     # The exact contract/config source digest and interpreter version are in the manifest.
     write_json(run_dir / 'manifest.json', manifest)
     events_path = run_dir / 'events.jsonl'
@@ -317,6 +378,7 @@ def _launch(script: Path, root: Path, args: list[str], market_date: str) -> int:
            'XIAOCAO_DAILY_RUN_DIR': str(run_dir), 'XIAOCAO_DAILY_RUN_ID': run_id,
            'XIAOCAO_DAILY_PYTHON': str(root / '.venv/bin/python'),
            'XIAOCAO_DAILY_HELPER': str(helper_root), 'XIAOCAO_DAILY_LOG': str(log_path)}
+    env.update(XIAOCAO_DEPLOYMENT_ROOT=str(deployment_root), XIAOCAO_DAILY_SOURCE_REVISION=pinned_revision)
     process_exit = 127
     failure_reason = 'process_start_failed'
     try:
@@ -381,6 +443,8 @@ def _launch(script: Path, root: Path, args: list[str], market_date: str) -> int:
                     finalization={'context_pack_exit_code': context_exit, 'snapshot_error': finalization_error},
                     evidence={'manifest_path': str(run_dir / 'manifest.json'), 'events_path': str(events_path), 'events_sha256': sha256(events_path),
                               'log_path': str(log_path), 'console_path': str(run_dir / 'console.log')})
+    if root != deployment_root:
+        snapshot['deployment_source_changes'] = source_changes(deployment_root, hashes)
     write_json(run_dir / 'terminal.json', snapshot)
     try:
         run_flow.write_snapshot(root / f'output/live/run_flow_{market_date}_{automation}.json', snapshot)

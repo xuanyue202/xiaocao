@@ -234,6 +234,30 @@ def test_prior_day_unknown_sell_read_is_deferred_during_exit_window(tmp_path: Pa
     assert store.current(old.plan_id).state == ExecutionState.UNKNOWN
 
 
+@pytest.mark.app_simulation
+@pytest.mark.parametrize("side,trade_date", [("BUY", "2026-08-31"),
+    ("BUY", "2026-09-01"), ("SELL", "2026-09-01")])
+def test_morning_old_sell_deferral_preserves_other_uncertainty(tmp_path, side, trade_date):
+    from xiaocao.live.book_b_live_lifecycle import deferred_prior_day_sell_ids
+    from xiaocao.live.book_b_live_morning import _uncertain_execution_plan_ids
+    old = _bind_plan_intent(tmp_path, _plan(side="SELL", lot_id="old-lot", trade_date="2026-08-31"))
+    other = _bind_plan_intent(tmp_path, replace(
+        _plan(side=side, lot_id="other-lot", trade_date=trade_date),
+        plan_id="other-uncertain-plan"))
+    store = ExecutionStore(tmp_path / "events.jsonl")
+    for plan in (old, other):
+        store.append(plan=plan, receipt=ExecutionReceipt(
+            plan.plan_id, plan.plan_hash, ExecutionState.UNKNOWN,
+            remaining_shares=plan.shares, next_action="reconcile_only"))
+    assert deferred_prior_day_sell_ids(tmp_path, trade_date="2026-09-01") == (old.plan_id,)
+    assert _uncertain_execution_plan_ids(tmp_path, trade_date="2026-09-01",
+        defer_prior_day_sells=True) == (other.plan_id,)
+    assert set(_uncertain_execution_plan_ids(tmp_path, trade_date="2026-09-01")) == {old.plan_id, other.plan_id}
+    assert old.code in unresolved_prior_sell_codes(tmp_path, trade_date="2026-09-01")
+    assert store.current(old.plan_id).state == ExecutionState.UNKNOWN
+    assert store.current(old.plan_id).next_action == "reconcile_only"
+
+
 def _record_fill(
     state_dir: Path,
     plan: TradePlan,
@@ -1530,6 +1554,7 @@ def test_intraday_eod_only_reconciles_projects_and_settles(tmp_path: Path) -> No
     assert receipt.status == "settled"
     assert receipt.settlement is not None
     assert receipt.settlement["settled_nav"] == 30_000
+    assert receipt.broker_snapshot == _snapshot(observed_at=EOD_NOW)
 
 
 def _prior_zero_fill_sell_after_independent_exit(tmp_path: Path, state=ExecutionState.UNKNOWN):
@@ -1596,6 +1621,7 @@ def test_blocked_eod_retains_fresh_account_and_exact_reconciliation(tmp_path: Pa
     assert receipt.status == "blocked"
     assert receipt.reason == "LIVE_BOOK_B_EOD_OPEN_EXECUTION_RECONCILE_REQUIRED"
     assert receipt.account["broker_snapshot_sha256"] == snapshot["snapshot_sha256"]
+    assert receipt.broker_snapshot == snapshot
     assert receipt.account["cash"] == 30_099.79
     assert receipt.reconciliation_receipts == (unresolved.as_dict(),)
     assert receipt.decisions == receipt.execution_receipts == ()

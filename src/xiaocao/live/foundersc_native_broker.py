@@ -683,6 +683,16 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
     ) -> dict[str, Any]:
         payload = self.native.probe(table_audit=True).as_dict()
         surface = str(payload.get("surface_state") or payload.get("status") or "")
+        if surface in {"client_login_required", "app_absent"}:
+            # A fresh adapter must recover the previous process's attempt fence
+            # before emitting a route that can authorize another login action.
+            prior = self._previous_credential_health()
+            if prior and prior.get("state") not in {
+                "attempt_claimed", "unproven_no_retry", "not_attempted",
+                "not_checked_session_already_ready", "verified_by_single_unlock",
+                "verified_by_account_bound_readback",
+            }:
+                raise FounderscNativeAXError("NATIVE_AX_CREDENTIAL_HEALTH_UNPROVEN")
         credential_health = {
             "trade_account_fingerprint": self.expected_fund_account_fingerprint,
             "state": "not_checked_session_already_ready",
@@ -691,7 +701,18 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
         if unlock_once and surface == "authentication_required":
             prior = self._previous_credential_health()
             if prior.get("state") in {"attempt_claimed", "unproven_no_retry"}:
-                raise FounderscNativeAXError("NATIVE_AX_UNLOCK_UNPROVEN_NO_RETRY:PRIOR_ATTEMPT")
+                evidence = prior.get("unlock_evidence") or {}
+                proved_old_alert = (prior.get("helper_status") == "unlock_error_alert_pending"
+                    and prior.get("password_action_attempted") is False
+                    and prior.get("confirmation_pressed") is False
+                    and isinstance(evidence, dict) and evidence.get("stage") == "preflight"
+                    and prior.get("trade_account_fingerprint") == self.expected_fund_account_fingerprint
+                    and prior.get("failure_category") == "trade_password_incorrect")
+                if proved_old_alert:
+                    self._save_credential_health({**prior, "state": "not_attempted",
+                        "classification_repair": "helper_proved_pre_secret_stale_alert"})
+                else:
+                    raise FounderscNativeAXError("NATIVE_AX_UNLOCK_UNPROVEN_NO_RETRY:PRIOR_ATTEMPT")
             # Persist before the helper or Keychain boundary. A crash or transport
             # timeout cannot turn an uncertain password action into another try.
             credential_health.update(attempt_id=uuid.uuid4().hex, stage="helper_call")
@@ -754,6 +775,14 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                     "unlock_confirmation_unproven", "trade_password_input_invalid", "unlock_keyboard_or_focus_busy", "unlock_focus_unproven"}
                     and action.get("attempted") is False and action.get("confirm_pressed") is False
                     and category == "unclassified")
+                not_attempted = not_attempted or (helper_status == "unlock_overlay_unproven"
+                    and action.get("attempted") is False and action.get("confirm_pressed") is False
+                    and category == "trade_password_incorrect"
+                    and credential_health["unlock_evidence"].get("stage") == "overlay_check")
+                not_attempted = not_attempted or (helper_status == "unlock_error_alert_pending"
+                    and action.get("attempted") is False and action.get("confirm_pressed") is False
+                    and category == "trade_password_incorrect"
+                    and credential_health["unlock_evidence"].get("stage") == "preflight")
                 self._save_credential_health({**credential_health, "state": "not_attempted" if not_attempted else "unproven_no_retry",
                     "helper_status": helper_status,
                     "password_action_attempted": action.get("attempted") if type(action.get("attempted")) is bool else None,
@@ -885,6 +914,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
         target: str,
         expected_current: str = "any",
         logical_account_id: str = "primary",
+        require_order_capability: bool = False,
         **_kwargs: Any,
     ) -> dict[str, Any]:
         if str(target).lower() != "live":
@@ -893,9 +923,11 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             raise FounderscNativeAXError("NATIVE_APP_ENVIRONMENT_EXPECTATION_MISMATCH")
         if logical_account_id != "primary":
             raise FounderscNativeAXError("NATIVE_APP_LOGICAL_ACCOUNT_MISMATCH")
-        ready = self.ensure_native_ready(unlock_once=True)
+        ready = self.ensure_native_ready(unlock_once=True,
+            require_order_capability=require_order_capability)
         return {
             **ready,
+            "native_readiness": ready,
             "status": "environment_ready",
             "environment": "live",
             "environment_proof_complete": True,

@@ -1,0 +1,163 @@
+{
+  "schema_version": 1,
+  "knowledge_status": "reusable_knowledge",
+  "authority": 0,
+  "author": "吕晓彤",
+  "source": "百度网盘订阅视频《10月13日》",
+  "date": "2026-10-13",
+  "date_boundary": "发布日期精度为日；基金经理的私下沟通、产品身份、规模、净值和赎回执行结果均没有独立凭证。",
+  "kind": "review",
+  "summary": "本场可复用的是来源直接给出的量化成交环境机制：量化依赖成交量和波动，管理人称当前A股成交量不足、同类量化争夺有限成交，因此策略很难做；本场没有给出当前波动测量。该机制保留为authority=0的方法与证伪条件，但不足以完整复现任何既有legacy claim；本场不新增候选，也不增加任何既有候选的来源日期。管理人建议赎回与作者意见冲突仍属本次决策证据；相对基准、回撤、风格比较以及有限信任、独立核验均是分析者方法，不是来源原话。",
+  "posture": {
+    "regime": "not_applied_other_author",
+    "dominant_style": "来源同时呈现量化管理人的谨慎判断和作者的逆向底部判断，系统不选边，只保留条件与证伪。",
+    "risk": "基金、管理人、产品净值和赎回执行均未核；每天1.5万亿元是口语数字；来源没有给当前波动测量；行情快照不能证明量化策略收益、市场底部或未来三个月。",
+    "style_ranking": [
+      "来源机制只覆盖成交量、波动依赖和同类量化争量；当前波动没有测量",
+      "未具名产品不映射证券或策略",
+      "赎回建议、系统性风险否认和作者异议保留为本次决策事实",
+      "相对基准、回撤、风格比较及独立核验属于系统分析边界",
+      "任何候选进入策略前均需research_run和人工门槛"
+    ]
+  },
+  "regime_call": {
+    "horizon": "跨市场状态的量化容量与拥挤评估方法",
+    "claim": "来源提出的可复用机制是：量化依赖成交量和波动；当成交量不足且同类量化争夺有限成交时，策略会更难做。本场只明确观察到管理人所称的缺量与争量，没有观察到当前波动偏低，也没有给出产品规模、交易成本或回测衰减数据。",
+    "what_would_falsify": "若独立数据中，市场成交量和同类策略拥挤变化不能稳定解释量化策略后续扣费超额、回撤或相关性，则该机制不能用于产品评估。"
+  },
+  "directions": [
+    {
+      "name": "量化成交容量与拥挤",
+      "view": "来源把成交量、波动依赖及同类量化争夺有限成交列为策略难做的原因；当前波动没有测量，产品规模、容量利用率和交易成本也未披露。",
+      "authority": 0,
+      "provenance_type": "source_derived"
+    }
+  ],
+  "stocks": [
+    {
+      "name": "未具名A股量化基金",
+      "role": "量化容量、拥挤和管理人沟通案例",
+      "boundary": "产品、管理人、策略、规模、净值、赎回条款和真实执行均未识别，不形成具体产品动作。"
+    },
+    {
+      "name": "中国A股市场",
+      "role": "成交量与波动环境案例",
+      "boundary": "10月13日收盘行情只能核对指数与成交金额，不能证明市场底部、未来三个月方向或量化产品收益。"
+    }
+  ],
+  "method_principles": [
+    "将市场成交量、独立波动测量和同类策略拥挤作为量化表现的待检验条件；不能把本场未测量的当前波动写成来源事实。",
+    "来源只支持缺量与争量会增加量化难度，没有给出产品规模、交易成本、基准、回撤、风格或滚动样本外结果。"
+  ],
+  "exit_lessons": [],
+  "hypotheses": [],
+  "timing_notes": [
+    "来源发布日为2026年10月13日；经理所说未来三个月对应来源当时起算，未给精确截止日。",
+    "经理说量化依赖波动，但没有给当前波动测量或明确的低波动判断；波动只能作为后续独立检验变量。",
+    "行情证据复用10月13日15:01:57的不可变收盘快照，检查时未重新抓取盘后或下一交易日行情。",
+    "家庭上下文读取于2026-10-13T13:39:23.203Z，但其as_of只有2026-10-13日期精度。"
+  ],
+  "deduplication_review": {
+    "ledger_read": "/Users/xuanyue202/Documents/project/xiaocao/reference/experience/xiaocao_hypotheses.jsonl",
+    "candidate_records_reviewed": 234,
+    "conclusion": "本场没有新增候选，也没有可摄入的既有候选复现。缺量与同类量化争夺有限成交只构成相邻的部分机制，不能代表XH-093或XH-101完整claim；XH-102的多维产品评价和XH-169的有限信任、独立核验同样未被来源完整陈述。四条均不增加来源日期。",
+    "adjacent_hypotheses": [
+      {
+        "id": "XH-093",
+        "relationship": "adjacent_partial_not_recurrence",
+        "reason": "来源只说当前成交量不足、同类量化争夺有限成交会使策略难做；没有陈述资产规模扩张、策略容量接近上限、交易成本上升或历史排名预测失效，不能把完整legacy claim计为复现。"
+      },
+      {
+        "id": "XH-101",
+        "relationship": "adjacent_partial_not_recurrence",
+        "reason": "来源只说同类量化在有限成交中竞争；没有陈述同行学习、市场反制、回测有效性衰减、持续升级或滚动样本外重验，不能把完整legacy claim计为复现。"
+      },
+      {
+        "id": "XH-102",
+        "relationship": "adjacent_not_recurrence",
+        "reason": "来源出现管理人建议赎回及作者异议，但没有提出以相对基准、回撤和风格比较决定继续观察或追加；这些评价维度属于分析者综合，不能增加该候选的来源日期。"
+      },
+      {
+        "id": "XH-169",
+        "relationship": "not_addressed",
+        "reason": "来源呈现作者与管理人的观点冲突，但没有提出有限信任、独立核验，也没有讨论盲目跟随、过度集中或高杠杆左尾风险；不能增加该候选的来源日期。"
+      },
+      {
+        "id": "XH-103",
+        "relationship": "adjacent_not_duplicate",
+        "reason": "XH-103讨论量化产品首次配置与试仓，本场重点是既有产品的缺量、拥挤和赎回争议。"
+      }
+    ],
+    "posture_update": "not_applied：吕晓彤为其他作者，不修改posture_current或REGIME_TIMELINE。"
+  },
+  "typo_corrections": [
+    {
+      "raw": "存",
+      "normalized": "可能指存储板块，但不确定",
+      "reason": "上下文前段有‘存储为王’双关，经理随后说‘存也很危险’；缺少完整实体，不能强行归一。"
+    }
+  ],
+  "decision_trace": [
+    {
+      "observation": "未具名量化经理称A股当前成交量不足，量化依赖成交量和波动，同类量化在有限成交中互相争夺；他没有给当前波动测量。",
+      "inference": "来源直接支持的是成交环境与同类争量会增加量化难度；这可作为独立方法与证伪条件，但没有覆盖XH-093或XH-101完整claim。",
+      "action": "保留来源机制，不生成新候选，不把XH-093或XH-101放入可摄入hypotheses，也不增加来源日期。",
+      "evidence": {
+        "segment_id": "f39b77bc864bee1533af98b61b1e50f60087afa404d60937a4bc20f2a85223be",
+        "quote": "量化第一靠量第二靠波动。他说a呢，没量现在。"
+      }
+    },
+    {
+      "observation": "管理人否认系统性风险，却建议作者多赎回；作者质疑该动作并最终决定赎回。",
+      "inference": "这组材料是本次产品决策证据，但没有陈述相对基准、回撤、风格比较，也没有提出有限信任和独立核验方法。",
+      "action": "把XH-102记为相邻但非复现，把XH-169记为本场未涉及；两者均不进入可摄入hypotheses。",
+      "evidence": {
+        "segment_id": "82d58a37275c2fa948265df129ae510f30a069ad99ad357acc05f0960681ba56",
+        "quote": "赎回一半怎么样？他说。建议多赎回点。"
+      }
+    }
+  ],
+  "judgment_heuristics": [
+    "来源层只保留量化依赖成交量和波动、当前缺量以及同类量化争量的机制。",
+    "未测量的当前波动、未披露的产品规模与交易成本不写成来源事实。",
+    "相对基准、回撤、风格比较以及有限信任、独立核验单列为分析者方法，不路由为本场来源复现。",
+    "未具名产品和私人损失不进入执行。"
+  ],
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_subscription_videos/enrichment/0937394b43e21e190c35a34445e8ee090fe298f646ea743c7a2986eeb87ba3ec/artifacts/kol-netdisk-cloud-74ac843b3ac7bfe4/10月13日.txt",
+      "sha256": "c1785c3fb9610f9f68438d76d85e9cfb804523b7fdf7acb4ed8c281ae63a081b",
+      "size": 18611
+    }
+  ],
+  "action_summary": {
+    "posture_update": "not_applied：其他作者，不修改小草全局姿态或时间线。",
+    "playbook_update": "no_deterministic_change：仅保留authority=0的量化成交环境与同类争量机制；分析者方法不归给来源。",
+    "hypothesis_update": "no_ingestible_hypothesis：XH-093、XH-101仅为相邻部分机制，XH-102相邻非复现，XH-169本场未涉及；无新增候选，四条均不增加来源日期。",
+    "audit_evidence": "bound_to_complete_transcript_sha256_c1785c3fb9610f9f68438d76d85e9cfb804523b7fdf7acb4ed8c281ae63a081b_and_54_stable_segments",
+    "instrumentation_todo": "若进入研究，独立补市场波动、产品规模、容量利用率、换手、费用、冲击成本和拥挤数据。",
+    "routing": [
+      "authority=0可复用方法",
+      "无可摄入hypotheses",
+      "XH-093与XH-101相邻部分机制但非复现",
+      "XH-102相邻但非复现",
+      "XH-169本场未涉及",
+      "不更新小草全局姿态",
+      "不修改确定性策略或参数"
+    ]
+  },
+  "analyst_synthesis_non_ingestible": [
+    {
+      "topic": "产品级多维复核",
+      "relationship_to_prior": "XH-102 adjacent_not_recurrence",
+      "heuristic": "管理人主动建议赎回时，可由系统进一步核对相对基准、回撤、风格、费用和产品条款。",
+      "boundary": "这是分析者综合；来源没有陈述这些比较维度，不增加XH-102的来源日期。"
+    },
+    {
+      "topic": "有限信任与独立核验",
+      "relationship_to_prior": "XH-169 not_addressed",
+      "heuristic": "面对作者与管理人的冲突观点，可由系统补充主体、期限、产品条款和独立事实核验。",
+      "boundary": "这是分析者风险控制方法；来源没有提出该方法，不增加XH-169的来源日期。"
+    }
+  ]
+}

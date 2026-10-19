@@ -176,7 +176,9 @@ def build_execution_repair_watch(root: Path, *, as_of: dt.date) -> dict:
                 missing_settlements.append(day)
         elif day_eods and not holiday:
             missing_settlements.append(day)
-        if day_eods and not review.is_file():
+        # A failed scheduled EOD may leave only the closing receipt. Keep its
+        # missing daily review visible instead of requiring the absent EOD.
+        if (day_eods or day_closings) and not review.is_file():
             missing_daily_reviews.append(day)
 
     open_plans: list[dict] = []
@@ -373,9 +375,15 @@ def _kol_item(kind: str, row: dict, reference: dict) -> dict:
                 raise ValueError("paper terminal binding mismatch")
         else:
             claim = row
-        observed = claim["kol_decision"]["evaluated_at"]
-        item.update(book="B", runtime="paper", observed_at=observed,
-                    timestamp_basis="policy_evaluated_at; terminal clock not recorded",
+        if "evaluated_at" in claim["kol_decision"]:
+            item.update(observed_at=claim["kol_decision"]["evaluated_at"],
+                        timestamp_basis="policy_evaluated_at; terminal clock not recorded")
+        else:
+            # The production v1 claim records a trade date, not a policy clock.
+            # Retain its dated evidence without inventing midnight/as-of time.
+            item.update(observed_date=dt.date.fromisoformat(claim["date"]).isoformat(),
+                        timestamp_basis="claim_trade_date_not_consumption_clock")
+        item.update(book="B", runtime="paper",
                     decision_id=claim["kol_decision"].get("decision_id"),
                     decision_sha256=claim["kol_decision"].get("decision_sha256"),
                     policy_status=claim["kol_decision"]["status"], terminal=terminal,
@@ -562,18 +570,22 @@ def _kol_execution_chain(items: list[dict], decisions: list[dict]) -> dict:
                                     for c in (r.get("policy_consumptions") or [])))]
             requests = [r for r in scoped if r["kind"] == "requests"
                         and any(r.get("context_sha256") == p["context_sha256"] for p in proofs)]
-            missing_clocks = any(r["kind"] == "live_morning" and any(
-                c.get("decision_id") == identifier and not c.get("consumed_at")
-                for c in (r.get("policy_consumptions") or [])) for r in consumes)
+            missing_clocks = any(
+                (r["kind"] == "paper_consumption" and "observed_at" not in r)
+                or (r["kind"] == "live_morning" and any(
+                    c.get("decision_id") == identifier and not c.get("consumed_at")
+                    for c in (r.get("policy_consumptions") or [])))
+                for r in consumes)
             links.append({"account_id": f"{runtime}:{decision['book']}", "decision_id": identifier,
                           "decision_sha256": digest, "decision": decision["evidence"],
                           "source_verifications": [r["evidence"] for r in proofs],
                           "context": [r["evidence"] for r in contexts],
                           "same_context_requests_not_proven_model_runs": [r["evidence"] for r in requests],
                           "consumption": [r["evidence"] for r in consumes],
+                          "missing_consumption_clock": missing_clocks,
                           "missing": ([] if proofs else ["来源复核绑定"]) + ([] if contexts else ["对应 context"])
                                      + ([] if consumes else ["本 runtime 的 hash-bound 消费"])
-                                     + (["精确消费时钟；run.trade_date 仅供日期分组"] if missing_clocks else [])
+                                     + (["精确消费时钟；记录交易日仅供日期分组"] if missing_clocks else [])
                                      + ["成交/费用对账及模型请求的精确关联"],
                           "execution_verification": "not_performed", "profit_attribution": "not_established"})
     return {"status": "available" if links else "missing", "links": links,
@@ -1384,7 +1396,10 @@ def _render_report(plan: dict, *, mode: str, validation: list[str], created_issu
                   f"- 当前修复负责人：{incident['owner']}；验收边界：{incident['next_verification']}",
                   f"- 完整订单、任务轨迹、5 Why 与修复证据：[执行复核]({incident['report_path']})。"]
     lines.extend(_render_kol_system_review(plan))
-    lines += ["", *weekly_evidence.render_weekly_evidence(plan.get("data_evidence_review") or {})]
+    lines += ["", *weekly_evidence.render_weekly_evidence(
+        plan.get("data_evidence_review") or {},
+        include_exploration_proposals=not bool(plan.get("kol_system_review", {}).get("experiment_slots")),
+    )]
     lines += [
         "",
         "## 需要你看/确认的事项",

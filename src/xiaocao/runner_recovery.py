@@ -59,12 +59,14 @@ def signal_recheck(path: Path) -> dict:
 class DependencyRecovery:
     def __init__(self, *, root, identity, deadline, boundary, recoverable,
                  on_event, on_failure=None, evidence=lambda: {}, failure_evidence=None,
+                 automatic_retry=None,
                  clock=lambda: datetime.now(timezone.utc), monotonic=time.monotonic, sleep=time.sleep):
         self.root, self.identity = Path(root), identity
         self.deadline, self.boundary = deadline, boundary
         self.recoverable, self.on_event, self.on_failure = recoverable, on_event, on_failure
         self.evidence, self.clock, self.monotonic, self.sleep = evidence, clock, monotonic, sleep
         self.failure_evidence = failure_evidence
+        self.automatic_retry = automatic_retry
         self.requests = []
 
     def run(self, check):
@@ -95,6 +97,7 @@ class DependencyRecovery:
                 self.on_failure(record)
 
         failed(last)
+        next_retry = self.monotonic() + 2.0
         signal_path = path.with_suffix(".resume.json")
         while self.monotonic() < self.deadline:
             signal = None
@@ -106,9 +109,13 @@ class DependencyRecovery:
             resume = bool(signal and signal.get("request_sha256") == record["request_sha256"]
                           and signal.get("sequence") == record["sequence"])
             boundary_due = not boundary_checked and self.clock() >= self.boundary
-            if resume or boundary_due:
+            retry_due = (self.automatic_retry is not None
+                         and self.automatic_retry(record["failures"][-1])
+                         and self.monotonic() >= next_retry)
+            if resume or boundary_due or retry_due:
                 boundary_checked = boundary_checked or boundary_due
-                record["last_recheck_trigger"] = "repair_signal" if resume else "recovery_boundary"
+                record["last_recheck_trigger"] = ("repair_signal" if resume else
+                    "no_action_dependency_retry" if retry_due else "recovery_boundary")
                 # Consume this generation before checking; stale signals never
                 # cause a poll loop or repeat a dependency action.
                 record["sequence"] += 1
@@ -121,6 +128,7 @@ class DependencyRecovery:
                         raise
                     last = exc
                     failed(exc)
+                    next_retry = self.monotonic() + 2.0
                 else:
                     record.update(status="recovered", recovered_at=self.clock().isoformat())
                     _write(path, record)

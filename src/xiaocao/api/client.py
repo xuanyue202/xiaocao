@@ -59,6 +59,7 @@ class XiaocaoClient:
     backoff: float = 0.4
     cache: Any | None = None  # optional SQLiteCache instance
     pool_size: int = 128  # HTTP connection pool size for concurrent workers
+    minimum_request_interval: float = 0.0
 
     def __post_init__(self) -> None:
         # Use a Session with adapter-level connection pooling so concurrent
@@ -104,7 +105,8 @@ class XiaocaoClient:
         from .cache import ENDPOINT_POLICY
 
         interval = float(ENDPOINT_POLICY.get(path, {}).get("min_interval", 0.0) or 0.0)
-        if interval <= 0:
+        global_interval = max(0.0, self.minimum_request_interval)
+        if interval <= 0 and global_interval <= 0:
             return
         lock = getattr(self, "_rate_limit_lock", None)
         if lock is None:
@@ -118,9 +120,13 @@ class XiaocaoClient:
             now = time.monotonic()
             last = last_requests.get(path)
             wait_for = interval - (now - last) if last is not None else 0.0
+            global_last = last_requests.get("*")
+            if global_last is not None:
+                wait_for = max(wait_for, global_interval - (now - global_last))
             if wait_for > 0:
                 time.sleep(wait_for)
             last_requests[path] = time.monotonic()
+            last_requests["*"] = last_requests[path]
 
     def _do_post(self, path: str, payload: dict[str, Any], *, _auth_replayed: bool = False) -> Any:
         url = f"{self.base_url.rstrip('/')}/{path.lstrip('/')}"
@@ -158,7 +164,7 @@ class XiaocaoClient:
                 code = body.get("code")
                 if code == 990502:
                     invalidate_token_cache()
-                    if official and path.startswith("/stock/") and not _auth_replayed:
+                    if official and path.startswith("/stock/"):
                         try:
                             renew_market_token(headers.get("token", ""))
                         except ApiAuthError as error:
@@ -167,7 +173,10 @@ class XiaocaoClient:
                                 failure_category=error.failure_category,
                                 official_login_code=error.official_login_code,
                             ) from None
-                        return self._do_post(path, payload, _auth_replayed=True)
+                        if not _auth_replayed:
+                            return self._do_post(path, payload, _auth_replayed=True)
+                        raise ApiAuthError("MARKET_SESSION_ROTATED_RETRY_PENDING",
+                                           failure_category="MARKET_LOGIN_BUSY")
                     raise ApiAuthError(
                         f"API returned code=990502 for {path}: 登录已失效，请重新登录"
                     )
@@ -310,8 +319,36 @@ class XiaocaoClient:
     def get_block_score(self, date: str) -> Any:
         return self.post("/stock/xiao_cao_block_score", {"date": date})
 
-    def stock_info(self) -> list[dict[str, Any]]:
-        result = self.post("/stock/stock_info", {})
+    def stock_info(self, *, use_cache: bool = True, strict: bool = False) -> list[dict[str, Any]]:
+        from datetime import datetime, timezone
+        observed_at = datetime.now(timezone.utc).isoformat()
+        self.stock_info_evidence = None
+        result = (self.post("/stock/stock_info", {}) if use_cache else
+                  self._do_post("/stock/stock_info", {"params": {}}))
+        if strict:
+            # Universe exclusions need the original directory's validity, before
+            # the compatibility normalizer can discard malformed entries.
+            import re
+            if not isinstance(result, list) or any(
+                not isinstance(row, dict)
+                or not isinstance(row.get("code"), str)
+                or re.fullmatch(r"[A-Za-z0-9]+\.[A-Z0-9]+", row["code"]) is None
+                or not (type(row.get("statusType")) is int or type(row.get("blockType")) is int)
+                for row in result
+            ):
+                raise ApiSchemaError("MORNING_SECURITY_DIRECTORY_INVALID")
+        if strict:
+            import hashlib
+            import json
+            from pathlib import Path
+            from xiaocao.utils.atomic_files import atomic_write
+            raw = json.dumps(result, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode()
+            digest = hashlib.sha256(raw).hexdigest()
+            path = Path("output/live/morning_sources/raw") / (digest + ".json")
+            atomic_write(path, raw, immutable=True)
+            self.stock_info_evidence = {"path": str(path.resolve()), "sha256": digest,
+                "bytes": len(raw), "request": {"endpoint": "/stock/stock_info", "params": {}},
+                "observed_at": observed_at}
         rows = _as_list(result)
         output = []
         for row in rows:

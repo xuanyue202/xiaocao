@@ -22,6 +22,7 @@ from typing import Any, Callable
 
 from .foundersc_session import app_session
 from .app_test_window import app_test_context_active, require_app_test_window
+from .authentication_test_scope import authentication_test_mode, require_authentication_command
 from .foundersc_keychain import (
     SECURITY_COMMAND,
     TRADE_SERVICE,
@@ -394,16 +395,17 @@ class FounderscNativeAXClient:
 
     def _run(self, command: str, args: list[str] | None = None, *,
              secret_input: bytes | bytearray | None = None) -> NativeAXReceipt:
+        require_authentication_command(command)
         started = time.monotonic()
         started_at = datetime.now(timezone.utc).isoformat()
         query_kind = None
         if command == "read-query" and args and args[:1] == ["--kind"] and len(args) > 1:
             if args[1] in {"positions", "today-orders", "today-trades", "funds", "history-orders", "history-trades"}:
                 query_kind = args[1]
-        if self._app_test_only or app_test_context_active():
+        if (self._app_test_only or app_test_context_active()) and not authentication_test_mode():
             require_app_test_window()
         with app_session() as descriptor:
-            if self._app_test_only or app_test_context_active():
+            if (self._app_test_only or app_test_context_active()) and not authentication_test_mode():
                 require_app_test_window()
             acquired = time.monotonic()
             try:
@@ -466,8 +468,8 @@ class FounderscNativeAXClient:
         refresh_history: bool = False,
         history_trade_date: str | None = None,
     ) -> NativeAXReceipt:
-        # The current helper cannot bind date controls or prove all pages.
-        # Record the request without manufacturing native history_scope proof.
+        # The helper sets exact dates only after account/page binding, then
+        # observes the actual controls and coverage; requested metadata is not proof.
         if history_trade_date is not None and kind not in {"history-orders", "history-trades"}:
             raise ValueError("history date is only valid for history queries")
         if refresh_history and kind not in {"history-orders", "history-trades"}:
@@ -482,6 +484,11 @@ class FounderscNativeAXClient:
         ]
         if refresh_history:
             args.append("--refresh-history-query")
+        if history_trade_date is not None:
+            from datetime import date
+            if date.fromisoformat(history_trade_date).isoformat() != history_trade_date:
+                raise ValueError("history date must be canonical ISO date")
+            args.extend(["--history-trade-date", history_trade_date, "--refresh-history-query"])
         receipt = self._run("read-query", args)
         if history_trade_date is None:
             return receipt
@@ -617,6 +624,10 @@ class FounderscNativeAXClient:
             keychain_runner=keychain_runner,
             keychain_timeout_seconds=keychain_timeout_seconds,
         )
+
+    def terminate_rejected_session(self, *, expected_fingerprint: str) -> NativeAXReceipt:
+        return self._run("terminate-rejected-session", ["--allow-session-reset",
+            "--expected-fingerprint", expected_fingerprint])
 
     def unlock_from_keychain(
         self,

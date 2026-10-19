@@ -19,7 +19,8 @@ CHINA = ZoneInfo("Asia/Shanghai")
     [
         (datetime(2026, 10, 8, 14, 40, 0, tzinfo=CHINA), 300.0),
         (datetime(2026, 10, 8, 14, 40, 8, 259390, tzinfo=CHINA), 291.74061),
-        (datetime(2026, 10, 8, 14, 39, 59, tzinfo=CHINA), 0.0),
+        (datetime(2026, 10, 8, 14, 39, 59, tzinfo=CHINA), 301.0),
+        (datetime(2026, 10, 9, 14, 33, tzinfo=CHINA), 720.0),
         (datetime(2026, 9, 17, 14, 41, 0, tzinfo=CHINA), 240.0),
         (datetime(2026, 9, 17, 14, 42, 31, tzinfo=CHINA), 149.0),
         (datetime(2026, 9, 17, 14, 44, 0, tzinfo=CHINA), 60.0),
@@ -41,7 +42,11 @@ def test_wait_for_closing_window_applies_computed_delay() -> None:
     sleeps: list[float] = []
     current = datetime(2026, 9, 17, 14, 42, 40, tzinfo=CHINA)
 
-    waited = wait_for_closing_window(now=lambda: current, sleep=sleeps.append)
+    def advance(seconds):
+        nonlocal current
+        sleeps.append(seconds)
+        current += timedelta(seconds=seconds)
+    waited = wait_for_closing_window(now=lambda: current, sleep=advance)
 
     assert waited == 140.0
     assert sleeps == [60.0, 60.0, 20.0]

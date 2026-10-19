@@ -18,6 +18,7 @@ from typing import Any, Callable
 from urllib.parse import parse_qs, quote, urlsplit, urlunsplit
 
 from .enrichment_store import EnrichmentJobStore
+from ._shared import DecisionError
 from .enrichment_types import (
     EnrichmentDiagnosticError,
     EnrichmentError,
@@ -55,6 +56,29 @@ _NETDISK_GENERATION_POLL_INTERVAL = timedelta(minutes=1)
 _AI_NOTE_MAX_TRIGGER_ATTEMPTS = 2
 _AI_NOTE_POSTCLICK_ZERO_MIN_AGE = timedelta(minutes=5)
 _NETDISK_DIRECTORY = "/课程/自己的课/小草"
+
+
+def _decision_process_diagnostic(exc: BaseException) -> EnrichmentDiagnosticError | None:
+    """Keep safe failure identities through the video decision adapter."""
+    if isinstance(exc, EnrichmentDiagnosticError):
+        return exc
+    if isinstance(exc, DecisionError) and str(exc) == "household context provider failed":
+        return EnrichmentDiagnosticError(
+            "household context provider failed",
+            category="processor_error",
+            code="household_context_provider_failed",
+            stage="business_processing",
+        )
+    if isinstance(exc, DecisionError) and str(exc) == "亮灰 MCP request failed":
+        return EnrichmentDiagnosticError(
+            "LiangHui transport request failed",
+            category="processor_error",
+            code="lianghui_transport_failed",
+            stage="business_processing",
+        )
+    return None
+
+
 _NETDISK_FOLDER_URL = (
     "https://pan.baidu.com/disk/main#/index?category=all&path="
     "%2F%E8%AF%BE%E7%A8%8B%2F%E8%87%AA%E5%B7%B1%E7%9A%84%E8%AF%BE%2F%E5%B0%8F%E8%8D%89"
@@ -391,6 +415,9 @@ _VISIBLE_STATE_PATTERNS = {
 }
 _TRANSIENT_FAILURE_FIELDS = {
     "diagnostic",
+    "diagnostic_category",
+    "diagnostic_code",
+    "diagnostic_stage",
     "cause_diagnostic",
     "error_type",
     "failure_stage",
@@ -4859,6 +4886,10 @@ class NetdiskEnrichmentService:
                     "semantic duplicate requires one decision item"
                 )
             item = items[0]
+            source_event_alias = (
+                isinstance(reconciliation, dict)
+                and reconciliation.get("proof_kind") == "accepted_source_event_alias"
+            )
             evidence_path = Path(
                 str(item.get("evidence_path") or "")
             ).expanduser().resolve()
@@ -4909,7 +4940,7 @@ class NetdiskEnrichmentService:
                 "position_risk_budget",
                 "named_asset_inventory",
             }
-            if (
+            if not source_event_alias and (
                 not isinstance(coverage, list)
                 or {row.get("row_id") for row in coverage if isinstance(row, dict)}
                 != required_coverage
@@ -4963,7 +4994,16 @@ class NetdiskEnrichmentService:
                 autojunk=False,
             ).ratio()
             containment = current_text in prior_text or prior_text in current_text
-            if (
+            if source_event_alias:
+                from .source_event_alias import verify_source_event_alias
+
+                checked = verify_source_event_alias(
+                    bundle_file, reconciliation.get("alias_proof"),
+                    Path(decision_output_dir).expanduser().resolve(),
+                )
+                if checked != reconciliation:
+                    raise EnrichmentError("source event alias reconciliation changed")
+            elif (
                 len(current_text) < 2_000
                 or len(prior_text) < 2_000
                 or similarity < 0.995
@@ -4997,6 +5037,27 @@ class NetdiskEnrichmentService:
                     "建议和既有 Book KOL-US 纸面结果，未产生新副作用。"
                 ),
             }
+            if source_event_alias:
+                old_terminal = reconciliation["prior_daily_terminal"]
+                result_item["daily_terminal"] = {
+                    **old_terminal,
+                    "event_id": item["source_identity"],
+                    "source_binding": {
+                        "source_identity": item["source_identity"],
+                        "publication_version": item["source_version_key"],
+                    },
+                    "reconciled_existing": True,
+                    "source_event_alias": {
+                        "canonical_source_binding": old_terminal["source_binding"],
+                        "canonical_event_id": old_terminal["event_id"],
+                        "proof_sha256": reconciliation_sha,
+                        "new_external_side_effect_count": 0,
+                    },
+                }
+                result_item["decision_reason"] = (
+                    "完整双源复核确认同一直播重新上传、无新增投资观点；"
+                    "复用已发布报告、已送达提醒、既有纸面不交易和知识凭证。"
+                )
             result = {
                 "status": "completed",
                 "items": [result_item],
@@ -5013,6 +5074,16 @@ class NetdiskEnrichmentService:
                 },
                 "processed_at": self._time().isoformat(timespec="seconds"),
             }
+            if source_event_alias:
+                result["semantic_duplicate_reconciliation"] = {
+                    "proof_kind": "accepted_source_event_alias",
+                    "prior_evidence_path": str(prior_path),
+                    "prior_evidence_sha256": prior_sha,
+                    "proof_sha256": reconciliation_sha,
+                    "side_effects_reused": ["gray_report", "household_notification",
+                                            "book_kol_us", "knowledge"],
+                    "new_external_side_effect_count": 0,
+                }
             validated_notification, validated_paper = (
                 validate_decision_completion(result)
             )
@@ -5177,6 +5248,15 @@ class NetdiskEnrichmentService:
                         row["attempted_decision_bundle_sha256"] = bundle_sha
                     else:
                         row["decision_bundle_sha256"] = bundle_sha
+                for field in ("diagnostic_category", "diagnostic_code", "diagnostic_stage"):
+                    row.pop(field, None)
+                diagnostic = (
+                    _decision_process_diagnostic(exc) if stage == "process" else None
+                )
+                if diagnostic is not None:
+                    row["diagnostic_category"] = diagnostic.diagnostic_category
+                    row["diagnostic_code"] = diagnostic.diagnostic_code
+                    row["diagnostic_stage"] = diagnostic.diagnostic_stage
                 self.store.append(row)
 
             if not bundle_file.is_file():
@@ -5390,6 +5470,11 @@ class NetdiskEnrichmentService:
                 result = pipeline.process(bundle)
             except Exception as exc:
                 record_failure("process", exc, bundle_sha=bundle_sha)
+                diagnostic = _decision_process_diagnostic(exc)
+                if diagnostic is not None:
+                    if diagnostic is exc:
+                        raise
+                    raise diagnostic from exc
                 raise EnrichmentError("ticket 01 decision pipeline failed") from exc
             try:
                 validate_decision_process_result(result)

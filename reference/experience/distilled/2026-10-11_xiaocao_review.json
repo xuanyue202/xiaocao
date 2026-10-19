@@ -1,0 +1,630 @@
+{
+  "action_summary": {
+    "audit_evidence": "完整绑定15463字符、113个稳定段、行情和名称目录。",
+    "hypothesis_update": "已完成单文件定向入库：新增 XH-219、XH-220、XH-221 三条 authority=0 候选，未做权威提升。",
+    "instrumentation_todo": "保存开盘环境、逐秒分数、完整候选、首次出现、涨幅、成交、封板、退出、费用、累计仓位和失败样本。",
+    "playbook_update": "proposal_only：红绿盘退出、封板时点、紫薇左尾及五日线卖／模式内低吸点补入等待研究。",
+    "posture_update": "not_applied：全局姿态已过期，本场只作开盘重验候选。",
+    "routing": [
+      "parent_deterministic_validation",
+      "research_candidate_only",
+      "no_posture_or_parameter_change",
+      "no_book_or_trade",
+      "deterministic_candidate_ingest_completed",
+      "no_reingest"
+    ]
+  },
+  "author": "小草",
+  "authority": 0,
+  "date": "2026-10-11",
+  "decision_trace": [
+    {
+      "action": "10月12日开盘重验。",
+      "evidence_claim_ids": [
+        "c01-regime",
+        "c03-switch",
+        "c05-env"
+      ],
+      "inference": "边际修复不等于全面强势。",
+      "observation": "10月9日局部改善但绝对短线分数仍弱。",
+      "why": "来源也把关键模式留到早盘。"
+    },
+    {
+      "action": "只选一个合格模式并控总仓。",
+      "evidence_claim_ids": [
+        "c04-lowbuy",
+        "c07-ziwei",
+        "c08-fit",
+        "c09-position"
+      ],
+      "inference": "模式是风险分工，不是同时下单清单。",
+      "observation": "下跌低吸保守，紫薇和起爆更高波动。",
+      "why": "减少模式漂移。"
+    },
+    {
+      "action": "保留三条authority=0候选。",
+      "evidence_claim_ids": [
+        "c10-exit",
+        "c11-stats"
+      ],
+      "inference": "价值在研究设计，不在复制个股。",
+      "observation": "来源给出红绿盘、封板时点和统计口径。",
+      "why": "缺完整成交与失败样本。"
+    }
+  ],
+  "directions": [
+    {
+      "conditions": [
+        "赚钱效应继续改善",
+        "模式评分确认"
+      ],
+      "falsifiers": [
+        "修复失败",
+        "其他板块持续领先"
+      ],
+      "horizon": "10月12日",
+      "name": "主板与北交所",
+      "stance": "相对关注"
+    },
+    {
+      "conditions": [
+        "音频澄清且模式条件成立"
+      ],
+      "falsifiers": [
+        "持续领涨并获评分确认"
+      ],
+      "horizon": "10月12日",
+      "name": "创业板、科创板与科技",
+      "stance": "总体回避，低位科创板例外听写冲突"
+    },
+    {
+      "conditions": [
+        "评分有效",
+        "风险预算内"
+      ],
+      "falsifiers": [
+        "评分失效",
+        "越过停止条件"
+      ],
+      "horizon": "二至四日低置信路径",
+      "name": "下跌低吸",
+      "stance": "保守默认"
+    },
+    {
+      "conditions": [
+        "早盘模式条件确认",
+        "高位亏钱效应未扩大",
+        "风险预算内"
+      ],
+      "falsifiers": [
+        "继续退潮且高位亏钱效应扩大",
+        "前瞻统计不支持爆发覆盖左尾"
+      ],
+      "horizon": "次日盘中",
+      "name": "紫薇与盘中起爆",
+      "stance": "高波动条件分支；紫薇本应躲退潮，但作者自述七至九月少数爆发曾对冲过程退潮"
+    }
+  ],
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_netdisk_enrichment/artifacts/kol-netdisk-f9275c53e356dc6f/20261011 大师班专场(晚18：00开播)-compressed.txt",
+      "sha256": "bd6b199727f31970514df63897f0a9477143081a443bb52871bf7cc33dfcf18a",
+      "size": 45652
+    },
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_xiaocao_live/semantic_requests/kol-4337663a3956/market_evidence_20261012.json",
+      "sha256": "05ac5a36cc52be80831a2c865ccc9d2369fd819c4755c15781fe94e93457ba22",
+      "size": 5782
+    },
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_4337663a3956_stock_catalog.json",
+      "sha256": "1cf9819b8e3b7a2944712acfe499849f6ed5476c72805ca2d70864626fed492f",
+      "size": 2886529
+    },
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_4337663a3956_environment_20261009.json",
+      "sha256": "5bc7f20aa0c2f0a9934f805ba68240edd69beb14fbe1efe20d0a0fd015d00e56",
+      "size": 18069
+    }
+  ],
+  "exit_lessons": [
+    "上午与下午首次封板应分组研究。",
+    "红盘起爆和绿盘低吸使用不同次日退出假设并按环境分层。",
+    "10:30或14:50卖出的轶事不能证明收益最优。",
+    "退出研究必须包含成交、费用、不可成交和失败样本。"
+  ],
+  "feedback_review": {
+    "assessment": "父流程已完成反馈读取；posture_current的as_of为2026-07-01、valid_until为2026-07-03，已经过期，不能当作10月12日当前事实。",
+    "effect": "本场不覆写姿态、时间线、正式假设或规则。",
+    "status": "completed_read_only"
+  },
+  "hypotheses": [
+    {
+      "authority": 0,
+      "category": "entry_shape_exit",
+      "claim": "控制环境、首日涨幅和流动性后，红盘起爆次日延续性可能高于绿盘低吸，后者更适合次日冲高退出。",
+      "expected_effect": "匹配不同入场形态的退出。",
+      "falsifiable_test": "按环境、当日封板和首次出现时点分层，比较费用后收益、最大不利变动、成交率与尾损；差异不稳则否决。",
+      "implied_rule": "冻结两类完整候选并统一入场、成交和退出。"
+    },
+    {
+      "authority": 0,
+      "category": "limit_up_timing",
+      "claim": "控制环境与个股强度后，上午首次封板可能比下午首次封板有更高次日连板或溢价。",
+      "expected_effect": "避免等同处理早板与尾板。",
+      "falsifiable_test": "比较两组次日连板率、开盘溢价、收盘收益、最大不利变动与不可成交；无稳定差异则否决。",
+      "implied_rule": "记录首次封板、开板与回封时点并统一退出。"
+    },
+    {
+      "authority": 0,
+      "category": "regime_conditioned_mode_tail",
+      "claim": "紫薇高位趋势模式按作者规则本应躲开退潮；但作者自述七至九月曾由少数爆发收益对冲过程退潮，同时承认退潮中继续运作仍会亏，爆发能否稳定覆盖左尾需要验证。",
+      "expected_effect": "验证少数爆发能否在不同退潮强度下覆盖回撤与尾损，而不把作者自述当成已验证收益。",
+      "falsifiable_test": "跨阶段冻结完整候选，比较费用后收益、最大回撤、尾损、爆发贡献、成交率与不同退潮强度；爆发贡献不能稳定覆盖左尾则否决。",
+      "implied_rule": "预定义环境与紫薇候选，固定仓位退出，不用回看排名。"
+    }
+  ],
+  "judgment_heuristics": [
+    "同时看边际改善和绝对强度。",
+    "“明早决定”在开盘前保持未触发。",
+    "单批仓与累计敞口分开。",
+    "历史赢家不承担当前推荐。",
+    "近音名称不强制映射。",
+    "长期统计含失败、成交、情绪与预先登记的退出或补入方案。"
+  ],
+  "kind": "短线轮动、模式选择、仓位与统计方法",
+  "knowledge_ingestion": {
+    "authority": 0,
+    "candidate_ids": [
+      "XH-219",
+      "XH-220",
+      "XH-221"
+    ],
+    "new_candidate_count": 3,
+    "receipt_path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_4337663a3956_knowledge_ingest_receipt.json",
+    "recorded_at": "2026-10-12T01:06:36.942154Z",
+    "recurrence_merge_count": 0,
+    "reingest_policy": "read_only_reconciliation",
+    "semantic_draft_knowledge_sha256": "b6861a49aa5abfcc925b123f1be1cd48b79c30dc07e312bcc270c265f93d06b4",
+    "status": "completed"
+  },
+  "method_principles": [
+    "晚间复盘只定义待验证条件，不能替代开盘确认。",
+    "先满足市场阶段，再按熟悉度选择一个模式；仓位到上限停止。",
+    "滚动仓位按累计敞口计量，两个20%批次约40%。",
+    "历史案例、分数、回看画面和容量宣传不能替代时点、成交、失败样本与成本。",
+    "统计同时覆盖开盘卖、收盘卖、第二至第四日、五日线退出、仅在模式内低吸点补入、亏损样本和情绪反应；各方案必须预先登记并同口径比较。",
+    "精确名称才确认代码，近音只留候选。"
+  ],
+  "posture": {
+    "as_of": "2026-10-11T16:05:00+08:00",
+    "assessment": "来源称退潮中转势但仍轮动，重点主板与北交所；10月9日行情支持边际改善但绝对短线分数仍弱。",
+    "boundary": "晚间复盘、过期姿态和10月9日收盘快照均不能证明10月12日开盘触发。",
+    "dominant_style": "相对关注主板与北交所；保守者偏下跌低吸，高波动模式先等早盘。",
+    "regime": "来源称退潮中转势但仍轮动；只作10月12日开盘重验候选。",
+    "risk": "10月9日绝对短线分数仍弱；晚间复盘、过期姿态和未核验回看数字不能证明开盘触发。",
+    "status": "candidate_not_applied",
+    "style_ranking": [
+      "主板与北交所相对关注",
+      "下跌低吸作为保守默认",
+      "N字、断板与倒接力等待早盘",
+      "盘中起爆与紫薇按高波动分支审视",
+      "创业板、科创板科技总体置后，低位科创板例外有听写冲突"
+    ],
+    "valid_until": "2026-10-12T15:00:00+08:00"
+  },
+  "prior_comparison": {
+    "boundary": "提取时三条候选尚未编号、未入库；父执行端随后完成一次定向摄取并绑定 XH-219、XH-220、XH-221。均未研究验证。",
+    "comparisons": [
+      {
+        "assessment": "高分盘中起爆与约6%追高边界相邻，不重复建假设。",
+        "prior_id": "XH-206",
+        "relationship": "overlap_no_new_candidate"
+      },
+      {
+        "assessment": "盘中低吸与等待拐头相邻，未提供可复现拐头定义。",
+        "prior_id": "XH-207",
+        "relationship": "overlap_no_new_candidate"
+      },
+      {
+        "assessment": "市场机会与个人适配再次出现，只作来源复现。",
+        "prior_id": "XH-208",
+        "relationship": "direct_method_recurrence"
+      },
+      {
+        "assessment": "小盈小亏后按规则执行再次出现，二至四日后大肉仍未验证。",
+        "prior_id": "XH-218",
+        "relationship": "direct_recurrence"
+      },
+      {
+        "assessment": "阶段调整框架相符但未验证优劣。",
+        "prior_id": "XH-075",
+        "relationship": "regime_method_support"
+      },
+      {
+        "assessment": "既有紫薇评分研究之外，本场新增爆发能否补偿左尾的候选。",
+        "prior_id": "XH-134",
+        "relationship": "partial_extension"
+      },
+      {
+        "assessment": "绿盘次日冲高退出相邻，新候选要求与红盘同口径比较。",
+        "prior_id": "XH-044",
+        "relationship": "partial_extension"
+      },
+      {
+        "assessment": "退潮时高位模式应降权并冻结风险；少数爆发能否覆盖过程退潮的左尾仍待研究。",
+        "prior_id": "XH-189",
+        "relationship": "consistent_boundary"
+      }
+    ],
+    "status": "compared_with_existing_authority_0_backlog"
+  },
+  "regime_call": {
+    "authority": 0,
+    "call": "把退潮中转势、仍属轮动视为10月12日开盘待重验状态，不当作已完成反转。",
+    "decision": "只作10月12日开盘重验候选。",
+    "horizon": "2026年10月12日开盘至收盘；盘面不符即失效。",
+    "kol_view": "退潮且转势、仍属轮动；主板与北交所相对受关注。",
+    "system_check": "10月9日局部题材上涨且短线分数较前值改善，创业板、科创板和全市场短线环境分数仍为负。",
+    "triggers": [
+      "主板或北交所相对强度延续",
+      "短线评分继续改善且高位亏钱效应未扩大"
+    ],
+    "what_would_falsify": [
+      "开盘后赚钱效应与短线评分重新恶化",
+      "主板和北交所相对强度不能延续",
+      "高位亏钱效应扩大或关键模式条件不成立"
+    ]
+  },
+  "schema_version": 1,
+  "source": "小草直播",
+  "stocks": [
+    {
+      "current_recommendation": false,
+      "market": "深交所主板",
+      "official_name": "贝瑞基因",
+      "resolution_status": "resolved",
+      "role": "N字或首板断板历史例",
+      "surface_form": "贝瑞基因",
+      "ticker": "000710.XSHE"
+    },
+    {
+      "current_recommendation": false,
+      "market": "深交所主板",
+      "official_name": "圣阳股份",
+      "resolution_status": "resolved",
+      "role": "下跌低吸历史例",
+      "surface_form": "圣阳股份",
+      "ticker": "002580.XSHE"
+    },
+    {
+      "current_recommendation": false,
+      "market": "上交所主板",
+      "official_name": "大连热电",
+      "resolution_status": "resolved",
+      "role": "下跌低吸历史例",
+      "surface_form": "大连热电",
+      "ticker": "600719.XSHG"
+    },
+    {
+      "candidate_matches": [
+        "世名科技 300522.XSHE"
+      ],
+      "current_recommendation": false,
+      "exclusion_reason": "两种听写均不与目录正式名称完全一致，不能凭近音强制映射。",
+      "resolution_status": "unresolved",
+      "role": "盘中高分起爆历史例",
+      "surface_form": "视民科技／视频科技"
+    },
+    {
+      "current_recommendation": false,
+      "market": "深交所主板",
+      "official_name": "神剑股份",
+      "resolution_status": "resolved",
+      "role": "盘中超跌历史例",
+      "surface_form": "神剑股份",
+      "ticker": "002361.XSHE"
+    },
+    {
+      "current_recommendation": false,
+      "market": "深交所创业板",
+      "official_name": "同大股份",
+      "resolution_status": "resolved",
+      "role": "盘中低吸高分历史例",
+      "surface_form": "同大股份",
+      "ticker": "300321.XSHE"
+    },
+    {
+      "candidate_matches": [
+        "中红医疗 300981.XSHE"
+      ],
+      "current_recommendation": false,
+      "exclusion_reason": "近音但无代码，不确认映射或表现。",
+      "resolution_status": "unresolved",
+      "role": "紫薇次日二十厘米历史例",
+      "surface_form": "中弘医疗"
+    },
+    {
+      "current_recommendation": false,
+      "market": "深交所主板",
+      "official_name": "澳洋健康",
+      "resolution_status": "resolved",
+      "role": "紫薇收益历史例",
+      "surface_form": "澳洋健康",
+      "ticker": "002172.XSHE"
+    },
+    {
+      "current_recommendation": false,
+      "market": "上交所主板",
+      "official_name": "蔚蓝生物",
+      "resolution_status": "resolved",
+      "role": "盘中断板历史例",
+      "surface_form": "蔚蓝生物",
+      "ticker": "603739.XSHG"
+    },
+    {
+      "candidate_matches": [
+        "尚水智能 301513.XSHE"
+      ],
+      "current_recommendation": false,
+      "exclusion_reason": "近音但无代码，不确认映射。",
+      "resolution_status": "unresolved",
+      "role": "盘中断板历史例",
+      "surface_form": "上水智能"
+    },
+    {
+      "current_recommendation": false,
+      "market": "深交所主板",
+      "official_name": "我爱我家",
+      "resolution_status": "resolved",
+      "role": "上午封板或绿盘低吸历史例",
+      "surface_form": "我爱我家",
+      "ticker": "000560.XSHE"
+    },
+    {
+      "candidate_matches": [
+        "北自科技 603082.XSHG"
+      ],
+      "current_recommendation": false,
+      "exclusion_reason": "同场两种近音，不强制合并。",
+      "resolution_status": "unresolved",
+      "role": "上午封板或绿盘低吸历史例",
+      "surface_form": "北思科技／北致科技"
+    },
+    {
+      "current_recommendation": false,
+      "market": "上交所主板",
+      "official_name": "福建水泥",
+      "resolution_status": "resolved",
+      "role": "上午封板历史例",
+      "surface_form": "福建水泥",
+      "ticker": "600802.XSHG"
+    }
+  ],
+  "strategy_hit_audit": {
+    "boundary": "四个作者点名赢家与九个方向／形态示例分开；全部历史表现仍未核验，本地strategy exact match统一为no_evidence，未宣称审计完成或任何收益。",
+    "direction_core_observations": [
+      {
+        "local_strategy_classification": "no_evidence",
+        "observation": "N字及盘中断板模式例，不是明确赢家声明。",
+        "reason": "本包没有与该历史例精确绑定的本地策略发出或不发出证据。",
+        "source_role": "direction_core_observation",
+        "surface_form": "贝瑞基因",
+        "ticker": "000710.XSHE"
+      },
+      {
+        "local_strategy_classification": "no_evidence",
+        "observation": "高分盘中起爆与约十一点可做的示意，身份及结果未确认。",
+        "reason": "本包没有与该历史例精确绑定的本地策略发出或不发出证据。",
+        "source_role": "direction_core_observation",
+        "surface_form": "视民科技／视频科技"
+      },
+      {
+        "local_strategy_classification": "no_evidence",
+        "observation": "下跌超跌起爆模式例，来源未在该处声明结果。",
+        "reason": "本包没有与该历史例精确绑定的本地策略发出或不发出证据。",
+        "source_role": "direction_core_observation",
+        "surface_form": "神剑股份",
+        "ticker": "002361.XSHE"
+      },
+      {
+        "local_strategy_classification": "no_evidence",
+        "observation": "盘中低吸偏高分的模式例，来源未在该处声明结果。",
+        "reason": "本包没有与该历史例精确绑定的本地策略发出或不发出证据。",
+        "source_role": "direction_core_observation",
+        "surface_form": "同大股份",
+        "ticker": "300321.XSHE"
+      },
+      {
+        "local_strategy_classification": "no_evidence",
+        "observation": "盘中断板起爆／低吸的模式例，来源未在该处声明结果。",
+        "reason": "本包没有与该历史例精确绑定的本地策略发出或不发出证据。",
+        "source_role": "direction_core_observation",
+        "surface_form": "蔚蓝生物",
+        "ticker": "603739.XSHG"
+      },
+      {
+        "local_strategy_classification": "no_evidence",
+        "observation": "首板断板条件的旧例，名称只保留近音候选。",
+        "reason": "本包没有与该历史例精确绑定的本地策略发出或不发出证据。",
+        "source_role": "direction_core_observation",
+        "surface_form": "上水智能"
+      },
+      {
+        "local_strategy_classification": "no_evidence",
+        "observation": "上午强势封板及绿盘低吸当日封板的形态例，不是独立收益声明。",
+        "reason": "本包没有与该历史例精确绑定的本地策略发出或不发出证据。",
+        "source_role": "direction_core_observation",
+        "surface_form": "我爱我家",
+        "ticker": "000560.XSHE"
+      },
+      {
+        "local_strategy_classification": "no_evidence",
+        "observation": "上午强势封板及绿盘低吸当日封板的形态例，身份未解析。",
+        "reason": "本包没有与该历史例精确绑定的本地策略发出或不发出证据。",
+        "source_role": "direction_core_observation",
+        "surface_form": "北思科技／北致科技"
+      },
+      {
+        "local_strategy_classification": "no_evidence",
+        "observation": "上午强势封板的形态例，不是独立收益声明。",
+        "reason": "本包没有与该历史例精确绑定的本地策略发出或不发出证据。",
+        "source_role": "direction_core_observation",
+        "surface_form": "福建水泥",
+        "ticker": "600802.XSHG"
+      }
+    ],
+    "local_strategy_benchmark_hits": [],
+    "per_named_security": [
+      {
+        "classification": "no_evidence",
+        "reason": "来源回看未绑定可审计的本地推荐、时点、成交、退出、费用与失败样本。",
+        "surface_form": "圣阳股份",
+        "ticker": "002580.XSHE"
+      },
+      {
+        "classification": "no_evidence",
+        "reason": "来源回看未绑定可审计的本地推荐、时点、成交、退出、费用与失败样本。",
+        "surface_form": "大连热电",
+        "ticker": "600719.XSHG"
+      },
+      {
+        "classification": "no_evidence",
+        "reason": "来源回看未绑定可审计的本地推荐、时点、成交、退出、费用与失败样本。",
+        "surface_form": "中弘医疗",
+        "ticker": null
+      },
+      {
+        "classification": "no_evidence",
+        "reason": "来源回看未绑定可审计的本地推荐、时点、成交、退出、费用与失败样本。",
+        "surface_form": "澳洋健康",
+        "ticker": "002172.XSHE"
+      },
+      {
+        "classification": "no_evidence",
+        "reason": "本包没有与该历史例精确绑定的本地策略发出或不发出证据。",
+        "surface_form": "贝瑞基因",
+        "ticker": "000710.XSHE"
+      },
+      {
+        "classification": "no_evidence",
+        "reason": "本包没有与该历史例精确绑定的本地策略发出或不发出证据。",
+        "surface_form": "视民科技／视频科技",
+        "ticker": null
+      },
+      {
+        "classification": "no_evidence",
+        "reason": "本包没有与该历史例精确绑定的本地策略发出或不发出证据。",
+        "surface_form": "神剑股份",
+        "ticker": "002361.XSHE"
+      },
+      {
+        "classification": "no_evidence",
+        "reason": "本包没有与该历史例精确绑定的本地策略发出或不发出证据。",
+        "surface_form": "同大股份",
+        "ticker": "300321.XSHE"
+      },
+      {
+        "classification": "no_evidence",
+        "reason": "本包没有与该历史例精确绑定的本地策略发出或不发出证据。",
+        "surface_form": "蔚蓝生物",
+        "ticker": "603739.XSHG"
+      },
+      {
+        "classification": "no_evidence",
+        "reason": "本包没有与该历史例精确绑定的本地策略发出或不发出证据。",
+        "surface_form": "上水智能",
+        "ticker": null
+      },
+      {
+        "classification": "no_evidence",
+        "reason": "本包没有与该历史例精确绑定的本地策略发出或不发出证据。",
+        "surface_form": "我爱我家",
+        "ticker": "000560.XSHE"
+      },
+      {
+        "classification": "no_evidence",
+        "reason": "本包没有与该历史例精确绑定的本地策略发出或不发出证据。",
+        "surface_form": "北思科技／北致科技",
+        "ticker": null
+      },
+      {
+        "classification": "no_evidence",
+        "reason": "本包没有与该历史例精确绑定的本地策略发出或不发出证据。",
+        "surface_form": "福建水泥",
+        "ticker": "600802.XSHG"
+      }
+    ],
+    "reason": "当前绑定证据没有可用于同日或原始推荐日精确匹配的本地策略产物、信号、成交与退出；不能把目录命中或方向相似当作策略命中。",
+    "status": "not_completed_no_local_strategy_evidence",
+    "teacher_named_winners": [
+      {
+        "local_strategy_classification": "no_evidence",
+        "reason": "来源回看未绑定可审计的本地推荐、时点、成交、退出、费用与失败样本。",
+        "source_claim_verification": "unverified",
+        "source_role": "teacher_named_winner",
+        "surface_form": "圣阳股份",
+        "teacher_claim": "下跌低吸旧例，被作者称为“大肉”、第二天涨停。",
+        "ticker": "002580.XSHE"
+      },
+      {
+        "local_strategy_classification": "no_evidence",
+        "reason": "来源回看未绑定可审计的本地推荐、时点、成交、退出、费用与失败样本。",
+        "source_claim_verification": "unverified",
+        "source_role": "teacher_named_winner",
+        "surface_form": "大连热电",
+        "teacher_claim": "下跌低吸旧例，被作者称为“大肉”。",
+        "ticker": "600719.XSHG"
+      },
+      {
+        "local_strategy_classification": "no_evidence",
+        "reason": "来源回看未绑定可审计的本地推荐、时点、成交、退出、费用与失败样本。",
+        "source_claim_verification": "unverified",
+        "source_role": "teacher_named_winner",
+        "surface_form": "中弘医疗",
+        "teacher_claim": "紫薇旧例，被作者称为第二天二十厘米涨停；名称只保留近音候选。"
+      },
+      {
+        "local_strategy_classification": "no_evidence",
+        "reason": "来源回看未绑定可审计的本地推荐、时点、成交、退出、费用与失败样本。",
+        "source_claim_verification": "unverified",
+        "source_role": "teacher_named_winner",
+        "surface_form": "澳洋健康",
+        "teacher_claim": "紫薇旧例，被作者称为当组第一名约四点、第二名约七点。",
+        "ticker": "002172.XSHE"
+      }
+    ]
+  },
+  "summary": "可复用的是环境确认—模式选择—累计仓位—退出统计链条，以及红绿盘退出、封板时点、紫薇尾部三类可证伪研究候选。全部authority=0，不直接修改姿态、策略、参数或仓位。",
+  "timing_notes": [
+    "发布时间为10月11日16:05+08:00，“明天”按上下文指10月12日。",
+    "市场快照截至10月12日00:39:33Z，仅核验10月9日收盘。",
+    "短线观点原则上到10月12日15:00+08:00，次日退出延至10月13日收盘。"
+  ],
+  "typo_corrections": [
+    {
+      "basis": "两种近音均非正式名称。",
+      "corrected": "保持未解析；候选世名科技",
+      "raw": "视民科技／视频科技",
+      "uncertainty": "不确认代码、分数或表现。"
+    },
+    {
+      "basis": "近音无代码。",
+      "corrected": "保持未解析；候选中红医疗",
+      "raw": "中弘医疗",
+      "uncertainty": "不确认表现。"
+    },
+    {
+      "basis": "近音无代码。",
+      "corrected": "保持未解析；候选尚水智能",
+      "raw": "上水智能",
+      "uncertainty": "不确认角色。"
+    },
+    {
+      "basis": "同场两种近音。",
+      "corrected": "保持未解析；候选北自科技",
+      "raw": "北思科技／北致科技",
+      "uncertainty": "不确认案例。"
+    }
+  ]
+}

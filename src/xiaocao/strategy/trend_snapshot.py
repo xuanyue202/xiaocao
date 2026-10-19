@@ -256,6 +256,7 @@ class _SourceEvidence:
     horizon: tuple[str, ...]
     relations: tuple[dict[str, Any], ...]
     subject: str
+    historical_reference_only: bool = False
 
 
 def _role_for_source(*, kol_id: str) -> str:
@@ -349,6 +350,85 @@ def _validate_manifest(
     return expected_hash
 
 
+def publication_from_report_readback(capsule: Mapping, *, as_of: datetime) -> dict | None:
+    """Normalize a read-only LiangHui current-envelope proof, without staging."""
+    observed = _parse_time(capsule.get("observed_at"), field="readback.observed_at")
+    if observed > as_of:
+        return None
+    report = capsule.get("report")
+    records = capsule.get("records")
+    if (capsule.get("source") != "lianghui.get_kol_record" or not isinstance(report, Mapping)
+            or report.get("kind") != "report" or report.get("state") != "published"
+            or not isinstance(records, list)):
+        raise PublicationBindingError("published report readback proof is incomplete")
+    matching = [r for r in records if r.get("kind") == "report"]
+    if matching != [report] or any(r.get("state") != "immutable" for r in records if r.get("kind") != "report"):
+        raise PublicationBindingError("published report readback envelopes mismatch")
+    updated = _parse_time(report.get("updated_at"), field="readback.report.updated_at")
+    if updated > observed:
+        raise PublicationBindingError("published report readback clock invalid")
+    # These fields project the actual current published envelope; the capsule
+    # retains every original server field and is not a local publication event.
+    receipt = {"recordState": report["state"], "recordId": report["record_id"],
+        "manifestSha256": report.get("manifest_sha256"), "serverTime": report["updated_at"],
+        "proof_kind": "current_published_report_readback"}
+    artifact = {"records": records, "manifest": report.get("manifest")}
+    _validate_manifest(artifact=artifact, records=records, receipt=receipt)
+    return {"completed": True, "artifact": artifact, "publish_receipt": receipt,
+        "source_key": "current-readback:" + str(report["record_id"])}
+
+
+def current_publication_heads(publications: Iterable[Mapping], *, as_of: datetime) -> list[dict]:
+    """Select one complete terminal report version, preserving semantic clocks.
+
+    Maintenance republishes the full report manifest. Receipt time selects its
+    head; it never refreshes a viewpoint's evaluation or validity timestamp.
+    """
+    heads = {}
+    versions = {}
+    for raw in publications:
+        artifact, records, receipt = _publication_parts(raw)
+        if str(receipt.get("recordState") or receipt.get("record_state")) not in PUBLISHED_STATES:
+            raise PublicationBindingError("current publication is not terminal")
+        published = _parse_time(receipt.get("serverTime"), field="publication.serverTime")
+        if published > as_of:
+            continue
+        digest = _validate_manifest(artifact=artifact, records=records, receipt=receipt)
+        reports = [r for r in records if r.get("kind") == "report"]
+        if len(reports) != 1:
+            raise PublicationBindingError("current publication must contain exactly one report")
+        report = reports[0]
+        rid = str(report.get("record_id") or "")
+        if not rid or str(receipt.get("recordId") or receipt.get("record_id")) != rid:
+            raise PublicationBindingError("current publication report receipt mismatch")
+        binding = report.get("source_binding") or {}
+        publication_id = binding.get("publication_id")
+        if not publication_id:
+            raise PublicationBindingError("current publication identity missing")
+        version = (rid, published)
+        if version in versions and versions[version] != digest:
+            raise PublicationBindingError("current report has ambiguous simultaneous manifests")
+        versions[version] = digest
+        previous = heads.get(rid)
+        if previous and previous[1] != publication_id:
+            raise PublicationBindingError("current report has conflicting publication identities")
+        if (previous is None or published > previous[0]
+                or published == previous[0] and str(raw.get("source_key") or "") < str(previous[3].get("source_key") or "")):
+            heads[rid] = (published, publication_id, digest, dict(raw))
+    result = []
+    for rid in sorted(heads):
+        raw = heads[rid][3]
+        artifact, records, _ = _publication_parts(raw)
+        report = next(r for r in records if r.get("kind") == "report")
+        expected = set(_record_payload(report, field="current.report").get("viewpoint_ids") or [])
+        actual = {r.get("record_id") for r in records if r.get("kind") == "viewpoint"}
+        evaluated = {r.get("payload", {}).get("viewpoint_id") for r in records if r.get("kind") == "viewpoint_evaluation"}
+        if expected != actual or not actual.issubset(evaluated):
+            raise PublicationBindingError("current report viewpoint/evaluation manifest is incomplete")
+        result.append(raw)
+    return result
+
+
 def _latest_evaluation(
     evaluations: list[dict[str, Any]],
     *,
@@ -404,6 +484,7 @@ def _normalize_relations(
     source_key: str,
     source_binding: Mapping[str, Any],
     as_of: datetime,
+    viewpoint_bindings: Mapping[str, Mapping] | None = None,
 ) -> tuple[dict[str, Any], ...]:
     parsed: list[dict[str, Any]] = []
     for relation in relations:
@@ -416,7 +497,10 @@ def _normalize_relations(
         relation_source_binding = relation.get("source_binding")
         if not isinstance(relation_source_binding, Mapping):
             raise PublicationBindingError(f"{source_key} relation source binding is missing")
-        if dict(relation_source_binding) != dict(source_binding):
+        expected_binding = (viewpoint_bindings or {}).get(
+            str(relation_payload.get("from_viewpoint_id") or ""), source_binding)
+        if (dict(relation_source_binding) != dict(expected_binding)
+                or relation_source_binding.get("publication_id") != source_binding.get("publication_id")):
             raise PublicationBindingError(
                 f"{source_key} relation source binding does not match publication"
             )
@@ -530,14 +614,22 @@ def _bind_publication(
     binding = {str(key): copy.deepcopy(value) for key, value in source_binding.items()}
     if not binding.get("publication_id") or not binding.get("publication_version"):
         raise PublicationBindingError(f"{source_key} publication identity binding is incomplete")
-    for record_name, record in (
-        ("viewpoint", viewpoint),
-        ("evaluation", evaluation),
-    ):
-        if record.get("source_binding") != binding:
-            raise PublicationBindingError(
-                f"{source_key} {record_name} source binding does not match report"
-            )
+    viewpoint_binding = viewpoint.get("source_binding")
+    if not isinstance(viewpoint_binding, Mapping) or not viewpoint_binding.get("publication_version"):
+        raise PublicationBindingError(f"{source_key} viewpoint source binding missing")
+    for field in ("publication_id", "extraction_contract_version"):
+        if not binding.get(field) or viewpoint_binding.get(field) != binding[field]:
+            raise PublicationBindingError(f"{source_key} viewpoint source binding does not match report")
+    if evaluation.get("source_binding") != viewpoint_binding:
+        raise PublicationBindingError(f"{source_key} evaluation source binding does not match viewpoint")
+    # The terminal manifest includes exact report/viewpoint/evaluation hashes.
+    # Report revisions may restage unchanged old viewpoints, but their semantic
+    # evaluation must retain that viewpoint's own original provenance.
+    normalized_relations = _normalize_relations(
+        relations, source_key=source_key, source_binding=binding, as_of=as_of,
+        viewpoint_bindings={str(r["record_id"]): r.get("source_binding") or {} for r in viewpoints})
+    if any(r["from_viewpoint_id"] not in report_viewpoint_ids for r in normalized_relations):
+        raise PublicationBindingError(f"{source_key} relation source viewpoint is not in its report")
     return _BoundPublication(
         source_key=source_key,
         publication_state=publication_state,
@@ -548,13 +640,8 @@ def _bind_publication(
         viewpoint_payload=viewpoint_payload,
         evaluation=evaluation,
         evaluation_payload=evaluation_payload,
-        relations=_normalize_relations(
-            relations,
-            source_key=source_key,
-            source_binding=binding,
-            as_of=as_of,
-        ),
-        source_binding=binding,
+        relations=tuple(r for r in normalized_relations if r["from_viewpoint_id"] == viewpoint_id),
+        source_binding={**dict(viewpoint_binding), "report_source_binding": binding},
     )
 
 
@@ -676,6 +763,7 @@ def _normalize_source(
         horizon=tuple(str(value).strip() for value in raw_horizon if str(value).strip()),
         relations=bound.relations,
         subject=subject,
+        historical_reference_only=raw.get("historical_reference_only") is True,
     )
 
 
@@ -932,6 +1020,8 @@ def _source_status(
     replaced_by: Mapping[str, str],
     theme_review_not_after: datetime | None,
 ) -> dict[str, Any]:
+    if source.historical_reference_only:
+        return {"status": "reference_only", "current": False, "freshness_basis": "historical_relation_target"}
     status = source.evaluation_status
     if status in INVALID_EVALUATION_STATES:
         return {"status": status, "current": False, "freshness_basis": f"evaluation_{status}"}
@@ -1583,6 +1673,8 @@ def _replacement_index(sources: Iterable[_SourceEvidence]) -> dict[str, str]:
 
     replaced_by: dict[str, str] = {}
     for source in source_list:
+        if source.historical_reference_only:
+            continue
         for relation in source.relations:
             if relation.get("from_viewpoint_id") != source.viewpoint_id:
                 raise PublicationBindingError(
@@ -1732,6 +1824,7 @@ def build_trend_snapshot(
                 "viewpoint_id": source.viewpoint_id,
                 "evaluation_id": source.evaluation_id,
                 "evaluation_status": source.evaluation_status,
+                "historical_reference_only": source.historical_reference_only,
                 "source_published_at": source.source_published_at,
                 "evaluated_at": source.evaluated_at,
                 "review_not_after": source.review_not_after,

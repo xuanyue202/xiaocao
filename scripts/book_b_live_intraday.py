@@ -28,6 +28,7 @@ from xiaocao.live.foundersc_keychain import FounderscKeychainPreflight  # noqa: 
 from xiaocao.live.trading_runner import build_foundersc_native_execution  # noqa: E402
 from xiaocao.live.live_decision_support import calendar_provider, read_policy  # noqa: E402
 from xiaocao.live.eod_automation_gate import EodGateRejected, claim_eod_slot  # noqa: E402
+from book_b_eod_alert import notify_eod_blocker  # noqa: E402
 
 
 def _china_now() -> datetime:
@@ -56,6 +57,17 @@ def _write_json_atomic(path: Path, payload: dict) -> None:
     os.replace(temporary, path)
 
 
+def _notify_blocked_eod(path: Path, payload: dict) -> None:
+    if payload.get("phase") != "eod" or payload.get("status") != "blocked":
+        return
+    try:
+        notify_eod_blocker(path, root=ROOT)
+    except Exception as exc:
+        # Keep the original business result and archived evidence unchanged.
+        print(json.dumps({"event": "eod_notice_failed", "reason": type(exc).__name__,
+                          "receipt_path": str(path)}, sort_keys=True), file=sys.stderr)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--date", default="today", help="YYYY-MM-DD or today")
@@ -78,6 +90,12 @@ def main(argv: list[str] | None = None) -> int:
 
     current = _china_now()
     trade_date = current.date().isoformat() if args.date == "today" else args.date
+    from datetime import time as wall_time
+    from xiaocao.utils.business_clock import wait_for_business_time
+    start_times = {"precheck": wall_time(14, 25), "closing": wall_time(14, 45), "eod": wall_time(15, 10)}
+    if args.phase in start_times:
+        wait_for_business_time(trade_date, start_times[args.phase])
+        current = _china_now()
     identity = None
     if args.phase == "eod":
         try:
@@ -231,7 +249,14 @@ def main(argv: list[str] | None = None) -> int:
             payload["automation_identity"] = identity
         _write_json_atomic(archive_path, payload)
         _write_json_atomic(run_path, payload)
-        print(json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str))
+        _notify_blocked_eod(archive_path, payload)
+        summary = {key: value for key, value in payload.items() if key != "broker_snapshot"}
+        if payload.get("broker_snapshot") is not None:
+            summary["broker_snapshot_evidence"] = {
+                "receipt_path": str(archive_path),
+                "snapshot_sha256": payload["broker_snapshot"]["snapshot_sha256"],
+            }
+        print(json.dumps(summary, ensure_ascii=False, sort_keys=True, default=str))
         return 0 if payload["status"] in {"settled", "no_action", "observed", "executed"} else 2
     except Exception as exc:
         payload = {
@@ -250,6 +275,7 @@ def main(argv: list[str] | None = None) -> int:
         _write_json_atomic(archive_path, payload)
         if payload["reason"] != "LIVE_BOOK_B_CHECKPOINT_ALREADY_RUNNING":
             _write_json_atomic(run_path, payload)
+        _notify_blocked_eod(archive_path, payload)
         print(json.dumps(payload, ensure_ascii=False, sort_keys=True), file=sys.stderr)
         return 2
 

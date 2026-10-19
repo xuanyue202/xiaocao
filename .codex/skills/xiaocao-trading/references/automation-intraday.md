@@ -4,11 +4,24 @@ Read this file only for Book-B/Book-T monitoring, the 14:25 precheck or the 14:4
 
 ## Execute and scope
 
-For opening and 14:25 precheck, start with:
+For opening, start with:
 
 ```bash
 python3 scripts/show_journal.py --date today
 ```
+
+For the 14:25 precheck, start one retained process after minimal instructions:
+
+```bash
+CODEX_AUTOMATION_ID=xiaocao-intraday-risk-precheck-1425 bash scripts/book_b_live_precheck_startup.sh
+```
+
+Verify the exact initial scheduler ID and retain its runtime `CODEX_THREAD_ID`.
+The launcher runs paper once, then APP once without another model turn between
+them. Each entrypoint keeps its own calendar, 14:25 and economic guards. A paper
+failure remains a nonzero launcher result while the independent APP check still
+runs. Wait for the original shell to terminate, then inspect both branch results;
+do not invoke either monitor separately or restart the launcher.
 
 The existing sparse task runs only at 10:25, 10:55, 13:25 and 13:55, and starts
 with the local `scripts/kol_trading_tick.py poll` gate. On this remote host the
@@ -54,8 +67,8 @@ Default Book B:
 
 Fallback: `PYTHONPATH=src python3 scripts/live_monitor.py --execute-sells`.
 
-After the paper monitor terminates, run the matching independent live-lifecycle
-checkpoint exactly once:
+For opening/sparse, after the paper monitor terminates, run the matching
+independent live-lifecycle checkpoint exactly once:
 
 ```bash
 PYTHONPATH=src .venv/bin/python scripts/book_b_live_intraday.py --date today --phase <opening|sparse|precheck|closing> --execute-sells
@@ -65,20 +78,24 @@ The 14:45 closing pass is the deliberate ordering exception because it opens
 the final continuous-auction exit window. After reading this reference, its first
 executable business command must be the live `--phase closing` command above.
 Do not put journal inspection, git checks, paper monitoring, status, data-doctor
-or other diagnostics ahead of it. After that live process terminates, run the
-paper monitor exactly once and complete both branches' reconciliation. This
+or other diagnostics ahead of it. The retained launcher runs the paper monitor
+once immediately after the APP process terminates, then the task reconciles both branches. This
 priority changes orchestration only; it does not broaden the time gate, capital
 authority or exact-once rules.
 
 The closing Automation uses `scripts/book_b_live_closing_startup.sh` as its
 prebuilt first tool invocation. That launcher performs only the required
-instruction/memory reads and then the exact live command in one shell process;
-it exists to remove model-composed startup work from the two-minute deadline.
-Do not add discovery, journal, Git, KOL, paper, broker or diagnostic work to the
-launcher, and do not use it outside the single scheduled closing pass.
-The schedule remains 14:41. The launcher also waits to 14:45 when that dispatch
-arrives during 14:40; its total wait stays bounded to five minutes and each
-sleep to 60 seconds. Earlier calls still reach the existing rejecting time gate.
+instruction/memory reads, the wall-clock gate, then APP once followed by paper
+once in the same shell. It requires the exact closing Automation ID and the
+runtime Thread ID before entry. Both branch exit codes are printed; an APP
+failure remains nonzero while the independent paper branch still runs. A gate
+failure stops both. Retain this original launcher until it exits, then inspect
+both results; do not invoke either monitor separately or restart the launcher.
+Keep discovery, journal, Git, KOL and diagnostics outside this scheduled pass.
+The nominal wake is 14:38. The launcher waits to the absolute 14:45 start,
+including dispatches before 14:40, with each sleep at most 60 seconds and a
+fresh wall-clock read after each chunk. The 14:25 precheck wakes at 14:18;
+both paper and APP entrypoints wait before holdings, reconciliation or sells.
 This tolerance changes startup waiting only; the legal exit window stays
 14:45:00–14:56:59. Verify it at the next natural scheduled close, never by
 replaying a missed checkpoint.

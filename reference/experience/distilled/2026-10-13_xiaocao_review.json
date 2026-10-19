@@ -1,0 +1,513 @@
+{
+  "date": "2026-10-13",
+  "kind": "review",
+  "author": "小草",
+  "source": "小草直播",
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_netdisk_enrichment/artifacts/kol-netdisk-f926650198997da5/20261013 盘前大师班直播10月13日-compressed.txt",
+      "sha256": "c58383aae07a642a2efa6bd55667a589ca576fba4defe15e733405c821d29daf",
+      "size": 17103
+    }
+  ],
+  "authority": 0,
+  "knowledge_status": "reusable_knowledge",
+  "summary": "本场可复用的是极端低开日的顺序化风险控制：先把大面积低开与开盘后的自然修复分开，明确修复不等于行情转强；若仍参与，只动用约10%，最多约20%的机动仓位，一份仓位分给两只，最多观察两至三只，做不到也可以不做。候选选择上，作者偏向下跌低吸、低位倒接力和早时点高分，但要求不追无法成交的第一名、不要把事后上涨倒推成可复制收益；排名方向点反、人工间歇查看和回看记录异常都属于数据与执行风险。具体阈值、分数、个股涨幅及收益自述尚未独立验证，只能作为authority=0研究材料。",
+  "posture": {
+    "regime": "10月13日开盘前后约4600至5100家下跌，作者将其视为极端弱开局，预期低开后的自然修复，但反复强调修复不代表行情好或进入牛市。",
+    "dominant_style": "若参与，优先下跌低吸、低位倒接力和早时点高分候选；避免追赶开盘过快、难以成交的第一名，并接受当日完全不做。",
+    "risk": "科技与创业板被作者描述为显著偏弱，局部逆势个股不应替代市场风险判断；所有当日分数、排名、入场和高抛窗口均已过期。",
+    "style_ranking": [
+      "不做或仅观察",
+      "约10%、最多约20%的机动仓位参与下跌低吸",
+      "同一份仓位内分散到两只、最多两至三只候选",
+      "低位倒接力与早时点高分候选",
+      "开盘过快、难买或仅凭事后涨幅追入"
+    ],
+    "currentness": "expired_at_2026-10-13_close",
+    "global_posture_write": "not_applied"
+  },
+  "regime_call": {
+    "call": "极端低开提高日内修复概率，但修复只是从过度恐慌回到较弱状态，不能据此扩大仓位或宣告趋势转强。",
+    "horizon": "本场具体判断只覆盖2026年10月13日盘中；其决策顺序可用于未来同类极端低开样本的研究。",
+    "triggers": [
+      "全市场出现极端大面积低开或下跌",
+      "开盘后下跌家数减少、指数跌幅收窄或候选出现承接",
+      "候选仍处低位、具备可成交性且符合事前仓位预算"
+    ],
+    "what_would_falsify": [
+      "低开后亏钱效应继续扩大而没有修复",
+      "样本外统计显示极端低开并不提高日内修复概率",
+      "扣除滑点、不可成交和费用后，低位低吸或倒接力不优于空仓"
+    ],
+    "evidence_boundary": "本地行情支持上证和创业板早盘大幅低开、收盘明显修复，但不能核验来源口述的4600至5100家下跌、只有银行上涨、科技全面走弱、模式分数、排名和实时可成交价格。"
+  },
+  "directions": [
+    {
+      "direction": "极端低开后的下跌低吸",
+      "role": "弱市中的有限参与模式",
+      "conditions": "只在极端低开后出现修复迹象、候选仍低位且可成交时观察；不做也可以。",
+      "limitations": "不能把当日低吸篮子的事后表现写成已验证胜率。"
+    },
+    {
+      "direction": "低位倒接力",
+      "role": "弱市中的第二类有限参与模式",
+      "conditions": "候选不要在开盘瞬间过快脱离可成交区；第一名买不到时可放弃，第二名只有在同一模式内仍满足条件时才观察。",
+      "limitations": "来源没有给出统一入场价、止损或持有期。"
+    },
+    {
+      "direction": "早时点高分候选",
+      "role": "盘中排序线索",
+      "conditions": "冻结首次出现秒点、当时分数、涨幅、排名方向与可成交价；作者举出9:31、9:32:30和9:33附近的不同观察点。",
+      "limitations": "分数越高越强只是来源统计印象，回看记录还出现异常，不能凭单日赢家改参数。"
+    }
+  ],
+  "stocks": [
+    {
+      "name": "华智数媒",
+      "code": "300426",
+      "market": "深圳证券交易所",
+      "source_role": "9:33附近约200分、从约2%升至约12%至13%的高分案例",
+      "knowledge_use": "用于审计首次出现时点、分数、涨幅与事后结果，不能作为未来推荐。",
+      "local_classification": "cohort_watchlist",
+      "local_classification_reason": "绑定的10月13日本地推荐把华智数媒列入观察名单，标注二级筛选未入选；这不是买入、成交或模式命中。"
+    },
+    {
+      "name": "首航新能",
+      "code": "301658",
+      "market": "深圳证券交易所",
+      "source_role": "当日倒接力被口头认可的具体候选",
+      "knowledge_use": "用于研究极端低开下倒接力的可成交性和左尾；收盘跌幅不能替代盘中路径。",
+      "local_classification": "not_emitted",
+      "local_classification_reason": "完整绑定的10月13日本地推荐未出现首航新能；只能确认其未被该文件输出，不能推断原始池或未入选原因。"
+    },
+    {
+      "name": "醋化股份",
+      "code": "603968",
+      "market": "上海证券交易所",
+      "source_role": "大面积下跌背景下弱转强并被作者认可的案例",
+      "knowledge_use": "用于检验局部逆势是否具有独立增量，避免以单一涨停证明模式。",
+      "local_classification": "not_emitted",
+      "local_classification_reason": "完整绑定的10月13日本地推荐未出现醋化股份；不能用来源中的涨停结果补作本地策略命中。"
+    },
+    {
+      "name": "凯美特气",
+      "code": "002549",
+      "market": "深圳证券交易所",
+      "source_role": "学员把排名方向点反后误买第六名、事后仍盈利的执行错误案例",
+      "knowledge_use": "用于建立排序方向、候选序号和实际下单前的界面校验。",
+      "local_classification": "not_emitted",
+      "local_classification_reason": "完整绑定的10月13日本地推荐未出现凯美特气；来源中的误点第六名和收盘涨停都不能补作本地策略命中。"
+    },
+    {
+      "name": "内蒙新华",
+      "code": "603230",
+      "market": "上海证券交易所",
+      "source_role": "前一日持仓在低开反弹后按高抛信号退出的案例",
+      "knowledge_use": "用于区分原持仓退出与新开仓，不把事后盈亏口述当作已验证成交。",
+      "local_classification": "not_emitted",
+      "local_classification_reason": "完整绑定的10月13日本地推荐未出现内蒙新华；来源中的前一日持仓和退出不属于本地当日推荐。"
+    },
+    {
+      "name": "万向德农",
+      "code": "600371",
+      "market": "上海证券交易所",
+      "source_role": "N板与倒接力第二候选的盘中案例",
+      "knowledge_use": "用于研究同模式前三名与60分资格的完整候选分布。",
+      "local_classification": "not_emitted",
+      "local_classification_reason": "完整绑定的10月13日本地推荐未出现万向德农；来源中的N板与倒接力口述不能替代本地输出证据。"
+    },
+    {
+      "name": "江淮汽车",
+      "code": "600418",
+      "market": "上海证券交易所",
+      "source_role": "前一日持仓及当日逆势上行的复盘案例",
+      "knowledge_use": "用于审计事后赢家偏差，不作为10月13日新推荐。",
+      "local_classification": "not_emitted",
+      "local_classification_reason": "完整绑定的10月13日本地推荐未出现江淮汽车；来源中的前一日持仓和当日复盘不能补作本地当日推荐。"
+    }
+  ],
+  "method_principles": [
+    "先判断全市场宽度和指数状态，再区分自然修复与真正转强；修复本身不能解除仓位上限。",
+    "极端弱市若仍参与，先冻结总风险预算：约10%，最多约20%的机动仓位；做两只时分同一份仓位，最多两至三只。",
+    "把做与不做都视为合格决策，避免为了参与感强行选择候选。",
+    "第一名因速度太快买不到时直接放弃，不用事后涨幅反推应该追；第二名也必须保留同一模式的条件。",
+    "高分只有与首次出现时间、当时涨幅、排名方向、可成交价和失败样本一起冻结才有研究价值。",
+    "人工用眼睛间歇查看容易遗漏秒级变化，监控系统应记录底层数据，但自动监控是否改善净收益仍需前瞻验证。",
+    "榜单升降序、候选序号和实际标的必须在下单前交叉确认；误买后赚钱仍是流程错误，不能倒推操作正确。"
+  ],
+  "exit_lessons": [
+    "逆势强股也要服从原先的退出合同：澳弘电子的来源表面词虽不确定，作者仍建议原持有人高抛并卖一半；不因随后继续上涨撤销事前风险决定。",
+    "内蒙新华前一日持仓在低开后获得反弹与高抛窗口，作者明确要求退出；地板割和反弹高抛的收益口述未核验。",
+    "个股涨停、接近涨停或收盘上涨只说明事后路径，不能证明早盘可以买到，也不能证明所用排序或误操作有效。"
+  ],
+  "hypotheses": [],
+  "timing_notes": [
+    "来源正文从开盘后的低开与盘中排名讲起，虽文件名含“盘前”，对外场次只称“10月13日大师班”；内部kind使用review，不发明新的盘中场次。",
+    "具体观察集中在9:31、9:32:30与9:33附近；作者还提到9:30:45、9:33:15和9:33:35等回看点，但回看系统被其本人质疑有异常。",
+    "所有具体入场、高抛和排名窗口在2026年10月13日收盘前结束；后续只能复盘，不能顺延到下一交易日。"
+  ],
+  "typo_corrections": [
+    {
+      "raw": "奥宏电子、二红电子、澳红电子",
+      "corrected": "可能对应澳弘电子（605058），未证实",
+      "basis": "行情证据仅提供近音候选，来源没有代码或业务信息足以完成唯一映射。"
+    },
+    {
+      "raw": "红柏、红白",
+      "corrected": "可能对应宏柏新材（605366），未证实",
+      "basis": "近音和N板上下文形成候选，但没有来源代码，继续保留歧义。"
+    },
+    {
+      "raw": "托伦斯",
+      "corrected": "可能对应拓尔思（300229），未证实",
+      "basis": "股票目录与近音支持候选，来源没有代码或业务信息确认。"
+    },
+    {
+      "raw": "上水、上水节能",
+      "corrected": "无法唯一映射",
+      "basis": "行情包明确记录无法解析，不能擅自对应双良节能等证券。"
+    },
+    {
+      "raw": "晨光",
+      "corrected": "无法唯一映射",
+      "basis": "当前A股存在多个晨光名称候选，来源没有代码或业务线索。"
+    },
+    {
+      "raw": "醋化、粗化",
+      "corrected": "醋化股份（603968）",
+      "basis": "来源的弱转强和涨停上下文与行情证据中的正式名称一致。"
+    }
+  ],
+  "decision_trace": [
+    {
+      "observation": "开盘前后约4600家低开，盘中口述下跌家数扩大到约4800、5000和5100家；上证与创业板指数分钟证据确认明显低开。",
+      "inference": "极端低开后可能自然修复，但不能据此认定行情健康。",
+      "action": "允许不做；若做，只在低位模式内使用约10%、最多约20%的机动预算。"
+    },
+    {
+      "observation": "第一名候选可能开盘过快而难买，早时点高分候选和倒接力案例随后分化。",
+      "inference": "候选质量与可成交性必须同时满足，排名和高分不能覆盖追价风险。",
+      "action": "第一名买不到就放弃；冻结秒点、涨幅和完整候选，不用收盘结果倒推。"
+    },
+    {
+      "observation": "科技和创业板被作者描述为弱势，但澳弘、江淮等局部个股逆势；只有银行上涨的口述未由行业全量行情核验。",
+      "inference": "局部强股是例外，不能直接升级为科技或全市场转强。",
+      "action": "已有持仓按高抛与退出合同处理，不因局部逆势扩大新风险。"
+    }
+  ],
+  "judgment_heuristics": [
+    "极端低开后的修复与行情转强是两个命题，分别记录。",
+    "先定总仓位，再分票数；两只股票共享一份预算，不把每只都当成独立满额。",
+    "高分、早时点和低涨幅分别冻结，避免把三个条件事后合并成赢家画像。",
+    "排序方向错误属于执行缺陷，事后盈利不改变缺陷性质。",
+    "原持仓退出、新开仓候选和历史赢家必须分开归类。"
+  ],
+  "prior_comparisons": [
+    {
+      "prior_id": "XH-190",
+      "relationship": "partial_method_support_not_recurrence",
+      "reason": "本场完整表达人工用眼睛难以覆盖秒级变化、未来应改用后台底层数据监控，但没有完整复述“同时限制涨幅”以及自动监控相对人工与无信号基线的原claim，因此不进入hypotheses。"
+    },
+    {
+      "prior_id": "XH-222",
+      "relationship": "adjacent_regime_example_not_recurrence",
+      "reason": "本场在极端弱市偏向下跌低吸并反复展示局部案例，但没有完整复述10厘米与绿盘低吸相对红盘追涨的风险调整结果，不能增加source_dates。"
+    },
+    {
+      "prior_id": "XH-223",
+      "relationship": "partial_score_timing_detail_not_recurrence",
+      "reason": "本场强调往高分靠并提到多个秒点及60分以上资格，但没有完整复述评分稳定大于零、较早出现与越晚提高门槛的组合claim，故只作相邻证据。"
+    },
+    {
+      "prior_id": "XH-224",
+      "relationship": "single_session_example_not_recurrence",
+      "reason": "作者称下跌低吸篮子基本为红或赚钱，只是单场自述，没有完整复述弱势阶段小盈小亏与偶发大盈利的分布命题。"
+    }
+  ],
+  "action_summary": {
+    "posture_update": "not_applied：10月13日盘中姿态已过期，不修改posture_current或REGIME_TIMELINE。",
+    "playbook_update": "proposal_only：保留极端低开修复的两层判断、10%至20%机动仓位、一份仓位分两只、排名方向校验和监控记录方法，需研究与人审后再决定是否晋级。",
+    "hypothesis_update": "hypotheses为空；XH-190、XH-222、XH-223和XH-224都只获得部分、相邻或单场支持，按摄入器的exact-claim规则不复现既有claim，也不新增近重复。",
+    "audit_evidence": "完整读取17103字节来源、49个稳定分段、绑定行情、家庭上下文和不可变本地推荐；每个来源分段独立复核，并按正式身份、明确缺席和名称不确定性逐股给出本地分类。",
+    "instrumentation_todo": "未来同类样本需冻结下跌家数、指数分钟状态、首次出现秒点、分数、涨幅、排序方向、可成交价、完整候选池、未成交样本、退出与费用。",
+    "routing": [
+      "parent_deterministic_validation",
+      "knowledge_dedup_review",
+      "no_exact_hypothesis_recurrence",
+      "no_automatic_ingestion",
+      "no_strategy_or_parameter_write"
+    ],
+    "parameter_update": "no_change_authority_0",
+    "knowledge_ingestion": "not_applied_by_analyst",
+    "external_effects": "none"
+  },
+  "strategy_hit_audit": {
+    "status": "completed_read_only_with_limits",
+    "audit_date": "2026-10-13",
+    "evidence_bindings": [
+      {
+        "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/recommend_2026-10-13.md",
+        "sha256": "79da50214b4e4ed2f99b082ba19ccba3c0b6d123ed16440129f266381c11aa91",
+        "scope": "dated_local_strategy_output_only_not_teacher_pool_not_broker_fill"
+      },
+      {
+        "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_61d19ea5/market_evidence.json",
+        "sha256": "f31a78e53c8e3eadbddca369e77903bb0d94a49b2d0c410844d124fb963425f7",
+        "scope": "catalog_quotes_indices_and_local_recommendation_binding"
+      }
+    ],
+    "teacher_named_winners": [
+      {
+        "surface": "华智数媒",
+        "candidate_mapping": {
+          "name": "华智数媒",
+          "code": "300426.XSHE",
+          "status": "resolved"
+        },
+        "source_role": "9:33附近约200分的盘中高分案例",
+        "teacher_claim": "作者口述其从约2%升至约12%至13%，并用于支持近期往高分靠。",
+        "classification": "source_claimed_current_winner_unverified",
+        "verification": "日行情只支持收盘+6.93%；200分、首次秒点、约2%到12%至13%的路径、可成交价与老师真实交易均未证。",
+        "local_classification": "cohort_watchlist",
+        "local_classification_reason": "绑定的10月13日本地推荐把华智数媒列入观察名单，标注二级筛选未入选；这不是买入、成交或模式命中。"
+      },
+      {
+        "surface": "醋化／粗化",
+        "candidate_mapping": {
+          "name": "醋化股份",
+          "code": "603968.XSHG",
+          "status": "resolved"
+        },
+        "source_role": "大面积下跌中的弱转强候选",
+        "teacher_claim": "作者称其顶着约5000家下跌弱转强并涨停，评价为‘可以’。",
+        "classification": "source_claimed_current_winner_partially_fact_checked",
+        "verification": "日行情支持收盘+10.04%；弱转强时点、当时排名、可成交价、持仓和收益未证。",
+        "local_classification": "not_emitted",
+        "local_classification_reason": "完整绑定的10月13日本地推荐未出现醋化股份；不能用来源中的涨停结果补作本地策略命中。"
+      },
+      {
+        "surface": "奥宏／二红／澳红电子",
+        "candidate_mapping": {
+          "name": "澳弘电子",
+          "code": "605058.XSHG",
+          "status": "plausible_unproven"
+        },
+        "source_role": "前一日倒接力、当日逆势强且被要求高抛卖半",
+        "teacher_claim": "作者多次称其逆势上涨、接近或达到涨停，同时要求已有持仓高抛并卖一半。",
+        "classification": "source_claimed_current_winner_identity_unverified",
+        "verification": "澳弘电子日行情支持收盘+10.00%，但近音目录不能证明来源表面词就是该股；老师持仓、卖半成交与收益未证。",
+        "local_classification": "no_evidence",
+        "local_classification_reason": "来源名称只能形成澳弘电子的未证实近音候选；即使澳弘电子出现在本地观察名单，也不能把候选身份当成精确同股证据。"
+      },
+      {
+        "surface": "凯美特气／开美特漆",
+        "candidate_mapping": {
+          "name": "凯美特气",
+          "code": "002549.XSHE",
+          "status": "resolved"
+        },
+        "source_role": "反向排序误买第六名的流程错误案例",
+        "teacher_claim": "作者称学员点反排名误买第六名但碰巧赚钱。",
+        "classification": "source_claimed_accidental_winner_not_strategy_hit",
+        "verification": "日行情支持收盘+10.04%；学员界面、订单、成交与收益未证，事后上涨不把错误排序变成模式命中。",
+        "local_classification": "not_emitted",
+        "local_classification_reason": "完整绑定的10月13日本地推荐未出现凯美特气；来源中的误点第六名和收盘涨停都不能补作本地策略命中。"
+      },
+      {
+        "surface": "江淮汽车",
+        "candidate_mapping": {
+          "name": "江淮汽车",
+          "code": "600418.XSHG",
+          "status": "resolved"
+        },
+        "source_role": "前一日已有持仓、当日逆势上行的复盘案例",
+        "teacher_claim": "作者口述其约6至8个百分点并可能冲击涨停，强调前一日已有学员持仓。",
+        "classification": "source_claimed_historical_position_winner_unverified",
+        "verification": "日行情支持收盘+4.72%；前一日入场、当日分钟涨幅、实际持仓和收益未证，不属于10月13日新推荐。",
+        "local_classification": "not_emitted",
+        "local_classification_reason": "完整绑定的10月13日本地推荐未出现江淮汽车；来源中的前一日持仓和当日复盘不能补作本地当日推荐。"
+      },
+      {
+        "surface": "红柏／红白",
+        "candidate_mapping": {
+          "name": "宏柏新材",
+          "code": "605366.XSHG",
+          "status": "plausible_unproven"
+        },
+        "source_role": "前一日N板、当日反弹案例",
+        "teacher_claim": "作者称前一日N板，今天涨回来。",
+        "classification": "source_claimed_historical_winner_identity_unverified",
+        "verification": "宏柏新材日行情支持收盘+4.80%，但来源只有近音，身份、N板、持仓与收益未证。",
+        "local_classification": "no_evidence",
+        "local_classification_reason": "来源名称只能形成宏柏新材的未证实近音候选；身份未确认，不能据本地推荐中的缺席判定精确标的未输出。"
+      },
+      {
+        "surface": "万向德农／万向德龙",
+        "candidate_mapping": {
+          "name": "万向德农",
+          "code": "600371.XSHG",
+          "status": "resolved"
+        },
+        "source_role": "当日N板与倒接力第二候选案例",
+        "teacher_claim": "作者称其和第二个N板都很强，并口述前三名约7、6、8个百分点。",
+        "classification": "source_claimed_current_candidate_unverified",
+        "verification": "日行情仅支持收盘+0.21%；N板、第二候选、盘中分数、口述涨幅、成交和收益未证。",
+        "local_classification": "not_emitted",
+        "local_classification_reason": "完整绑定的10月13日本地推荐未出现万向德农；来源中的N板与倒接力口述不能替代本地输出证据。"
+      },
+      {
+        "surface": "托伦斯",
+        "candidate_mapping": {
+          "name": "拓尔思",
+          "code": "300229.XSHE",
+          "status": "plausible_unproven"
+        },
+        "source_role": "9:33附近约1000分、当时约2%的监控案例",
+        "teacher_claim": "作者用它说明人工查看会漏掉短时高分，需要后台监控。",
+        "classification": "source_claimed_high_score_candidate_identity_unverified",
+        "verification": "拓尔思日行情支持收盘+0.76%，但近音、1000分、秒点、约2%、可成交价和收益均未证。",
+        "local_classification": "no_evidence",
+        "local_classification_reason": "来源名称只能形成拓尔思的未证实近音候选；身份未确认，不能据本地推荐中的缺席判定精确标的未输出。"
+      }
+    ],
+    "local_strategy_benchmark_hits": {
+      "verified_hits": [],
+      "exact_identity_overlaps": [
+        {
+          "name": "华智数媒",
+          "code": "300426.XSHE",
+          "local_role": "观察名单，标杆短线起爆，二级筛选未入选",
+          "teacher_role": "9:33附近约200分的盘中高分案例",
+          "classification": "identity_overlap_not_verified_hit",
+          "reason": "本地不可变推荐是9:25独立策略样本；观察名单不是买入、成交或Book命中，也不能证明老师的秒级模式池和分数。",
+          "local_classification": "cohort_watchlist",
+          "local_classification_reason": "绑定推荐文件把华智数媒列在观察名单，且明确二级筛选未入选。"
+        }
+      ],
+      "unresolved_possible_overlap": [
+        {
+          "surface": "奥宏／二红／澳红电子",
+          "candidate": "澳弘电子605058.XSHG",
+          "local_role": "观察名单，标杆短线起爆，二级筛选未入选",
+          "classification": "no_exact_match_due_source_identity_uncertainty",
+          "reason": "目录近音不能把老师表面词静默解析成澳弘电子；即使身份以后证实，观察名单也不是9:25买入或成交。",
+          "local_classification": "no_evidence",
+          "local_classification_reason": "来源证券身份未确认；澳弘电子虽在观察名单，也不能作为老师所指证券的精确本地分类。"
+        }
+      ],
+      "local_selected_candidates": [
+        {
+          "name": "新 华 都",
+          "code": "002264.XSHE",
+          "local_role": "二级筛选入选，非默认Book B可执行集合"
+        },
+        {
+          "name": "汇嘉时代",
+          "code": "603101.XSHG",
+          "local_role": "N字低吸ACTIVE，★E默认Book B候选"
+        },
+        {
+          "name": "三柏硕",
+          "code": "001300.XSHE",
+          "local_role": "二级筛选入选，非默认Book B可执行集合"
+        }
+      ],
+      "conclusion": "没有可验证的老师模式与本地策略命中。逐股分类仅支持华智数媒为cohort_watchlist；其余身份已确认的来源标的是not_emitted，所有身份未解名称为no_evidence。",
+      "non_inference": "不把观察名单、相关板块、同股历史持仓、纸面样例、默认篮子价格或收盘上涨写成9:25买入、老师命中、真实成交或收益。",
+      "classification_contract": "每个来源具名证券只使用已绑定的10月13日本地推荐分类；未运行API、策略、测试或Book。",
+      "named_stock_local_classifications": [
+        {
+          "source_asset": "华智数媒",
+          "resolved_identity": "华智数媒300426.XSHE",
+          "local_classification": "cohort_watchlist",
+          "reason": "绑定的10月13日本地推荐把华智数媒列入观察名单，标注二级筛选未入选；这不是买入、成交或模式命中。"
+        },
+        {
+          "source_asset": "首航新能",
+          "resolved_identity": "首航新能301658.XSHE",
+          "local_classification": "not_emitted",
+          "reason": "完整绑定的10月13日本地推荐未出现首航新能；只能确认其未被该文件输出，不能推断原始池或未入选原因。"
+        },
+        {
+          "source_asset": "醋化／粗化",
+          "resolved_identity": "醋化股份603968.XSHG",
+          "local_classification": "not_emitted",
+          "reason": "完整绑定的10月13日本地推荐未出现醋化股份；不能用来源中的涨停结果补作本地策略命中。"
+        },
+        {
+          "source_asset": "凯美特气／开美特漆",
+          "resolved_identity": "凯美特气002549.XSHE",
+          "local_classification": "not_emitted",
+          "reason": "完整绑定的10月13日本地推荐未出现凯美特气；来源中的误点第六名和收盘涨停都不能补作本地策略命中。"
+        },
+        {
+          "source_asset": "内蒙新华",
+          "resolved_identity": "内蒙新华603230.XSHG",
+          "local_classification": "not_emitted",
+          "reason": "完整绑定的10月13日本地推荐未出现内蒙新华；来源中的前一日持仓和退出不属于本地当日推荐。"
+        },
+        {
+          "source_asset": "万向德农／万向德龙",
+          "resolved_identity": "万向德农600371.XSHG",
+          "local_classification": "not_emitted",
+          "reason": "完整绑定的10月13日本地推荐未出现万向德农；来源中的N板与倒接力口述不能替代本地输出证据。"
+        },
+        {
+          "source_asset": "江淮汽车",
+          "resolved_identity": "江淮汽车600418.XSHG",
+          "local_classification": "not_emitted",
+          "reason": "完整绑定的10月13日本地推荐未出现江淮汽车；来源中的前一日持仓和当日复盘不能补作本地当日推荐。"
+        },
+        {
+          "source_asset": "晨光",
+          "resolved_identity": null,
+          "local_classification": "no_evidence",
+          "reason": "来源简称可对应多个证券，无法唯一确认身份；本地推荐中的缺席不能转成某一正式证券的未输出结论。"
+        },
+        {
+          "source_asset": "上水／上水节能",
+          "resolved_identity": null,
+          "local_classification": "no_evidence",
+          "reason": "来源转写无法映射到唯一证券；不得猜成双良节能或其他标的，也没有精确本地分类证据。"
+        },
+        {
+          "source_asset": "奥宏／二红／澳红电子",
+          "resolved_identity": "可能对应澳弘电子605058.XSHG，未证实",
+          "local_classification": "no_evidence",
+          "reason": "来源名称只能形成澳弘电子的未证实近音候选；即使澳弘电子出现在本地观察名单，也不能把候选身份当成精确同股证据。"
+        },
+        {
+          "source_asset": "红柏／红白",
+          "resolved_identity": "可能对应宏柏新材605366.XSHG，未证实",
+          "local_classification": "no_evidence",
+          "reason": "来源名称只能形成宏柏新材的未证实近音候选；身份未确认，不能据本地推荐中的缺席判定精确标的未输出。"
+        },
+        {
+          "source_asset": "托伦斯",
+          "resolved_identity": "可能对应拓尔思300229.XSHE，未证实",
+          "local_classification": "no_evidence",
+          "reason": "来源名称只能形成拓尔思的未证实近音候选；身份未确认，不能据本地推荐中的缺席判定精确标的未输出。"
+        }
+      ]
+    },
+    "direction_core_observations": [
+      "老师点名的盘中高分、倒接力、N板、弱转强、高抛和本地9:25推荐是不同证据体系；必须按证券身份、模式、时点和动作逐项对齐。",
+      "本地当天唯一★E可执行候选为汇嘉时代603101.XSHG，来源没有点名汇嘉时代，不能据此形成老师命中。",
+      "本地华智数媒和澳弘电子均在观察名单且二级筛选未入选；观察不等于买入、成交或收益。",
+      "本地N字低吸ACTIVE不能与来源ASR中的“N半/N板”自动视为同一模式；缺老师完整秒点候选池和稳定模式标识时，不作方向核心命中。",
+      "凯美特气误买、江淮汽车前一日持仓和内蒙新华高抛属于老师叙述中的不同角色，均不能被本地推荐文件补作原交易。"
+    ],
+    "systemic_issue": "not_established",
+    "parameter_change": "none_authority_0",
+    "boundary": "只读已绑定的10月13日不可变推荐与行情；逐股本地分类只证明明确观察名单、明确缺席或无证据。未运行策略、API、测试、Book或补交易，缺老师完整候选池、代码、秒点、持仓或成交时均保持未证。"
+  },
+  "limitations": [
+    "来源下跌家数、行业宽度、模式分数、排名、个股分钟涨幅、信号与收益口述没有完整逐分钟和成交证据支持。",
+    "“晨光”“上水节能”无法唯一映射；“奥宏/二红/澳红”“红柏/红白”“托伦斯”只有近音候选，均不得静默转成正式证券。",
+    "行情包只支持指数早盘大跌后修复及部分个股收盘表现，不能证明当时可成交、真实持仓、真实卖出或口述收益。",
+    "家庭上下文是只读账本快照且总盈亏覆盖不完整，未触发券商同步；它不参与知识claim的真实性判断。",
+    "知识没有摄取、没有研究验证，也没有通过永久策略或参数晋级的人审门槛。",
+    "逐股本地分类只使用已绑定的10月13日不可变推荐：华智数媒为观察名单，其他已确认来源标的仅能判定未在该文件输出，未解名称保持无证据；未运行API、策略、测试或Book。"
+  ]
+}

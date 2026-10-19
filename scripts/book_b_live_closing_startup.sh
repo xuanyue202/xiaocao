@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+runtime_thread="${CODEX_THREAD_ID:-}"
+if [[ "${CODEX_AUTOMATION_ID:-}" != "xiaocao-intraday-monitor-1455" || -z "${runtime_thread//[[:space:]]/}" ]]; then
+  echo "CLOSING_AUTOMATION_IDENTITY_REQUIRED" >&2
+  exit 78
+fi
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
@@ -21,4 +27,16 @@ rg -n -i -m 80 \
   /Users/xuanyue202/.codex/memories/MEMORY.md || true
 
 PYTHONPATH=src .venv/bin/python -m xiaocao.live.closing_startup
-PYTHONPATH=src .venv/bin/python scripts/book_b_live_intraday.py --date today --phase closing --execute-sells
+
+app_exit=0
+PYTHONPATH=src .venv/bin/python scripts/book_b_live_intraday.py --date today --phase closing --execute-sells || app_exit=$?
+echo "closing branch=app exit=$app_exit"
+
+paper_exit=0
+PYTHONPATH=src .venv/bin/python scripts/live_monitor.py --execute-sells || paper_exit=$?
+echo "closing branch=paper exit=$paper_exit"
+
+if (( app_exit != 0 )); then
+  exit "$app_exit"
+fi
+exit "$paper_exit"

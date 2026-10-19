@@ -9,6 +9,10 @@ unclassified cash and estimated fees. Paper A/B/T and historical settlements sta
 
 ## Execute
 
+The scheduler wakes at 15:03. Enter the retained command promptly; both paper
+and APP EOD entrypoints wait until 15:10 before their slot claims or business
+effects. Each sleep is at most 60 seconds and rereads China wall time.
+
 Before applying the command prefix, require this task's initial scheduler header
 to say exactly `Automation ID: xiaocao-daily-eod`. If an inherited
 `CODEX_AUTOMATION_ID` is nonempty and different, stop rather than replacing it.
@@ -61,6 +65,11 @@ intent/event chain stays open and the strict settlement writer still blocks.
 If the strict settlement writer blocks after a valid
 post-close projection, the blocked receipt retains that account and exact
 reconciliation receipts; these are current observations, not settled NAV.
+The original archive also retains `broker_snapshot`: the exact normalized
+positions/orders/trades and positions-funds evidence used by that projection,
+with its original clocks and snapshot hash. Default CLI output gives its archive
+reference instead of printing the tables. Historical receipts without that field
+retain an evidence gap; do not reconstruct or overwrite them from a later read.
 Preserve any older settlement written through that
 exception as historical evidence and disclose its failed terminal-plan audit.
 The settlement loader and risk history exclude a hash-matched settlement whose
@@ -68,6 +77,12 @@ original EOD archive contains a nonterminal reconciliation receipt; report the
 remaining valid basis and exact historical gap without rewriting either file.
 Never add
 `--execute-sells` to the EOD call.
+The APP entrypoint durably queues a blocked-result WeCom notice after saving its
+original archive, including native login/read failures before a snapshot exists.
+If a code repair adds this delivery to an already terminated run, use
+`scripts/book_b_eod_alert.py --receipt <exact-original-archive>` under the original
+Automation/Thread identity. This notice-only recovery never queries APP or reruns
+EOD; uncertain delivery remains pending for exact reconciliation.
 After the original business process terminates, run
 `PYTHONPATH=src .venv/bin/python scripts/book_b_accounting.py statement` once to
 export cumulative JSON/CSV. Retain its dated mark or missing/stale status even if
@@ -245,6 +260,9 @@ decision row is incomplete coverage, not a no-sell judgment.
    focused validation and a future natural-run readback; do not defer it merely
    because the EOD command cannot submit a trade. Check durable incident
    delivery separately from whether the final summary mentioned the alert.
+   Order incidents and EOD/change notices share the durable delivery claim.
+   Retry only proved pre-send failures; legacy pending, interrupted sends and
+   uncertain/partial delivery require exact reconciliation, never another send.
 6. Write `output/live/daily_execution_review_<date>.md`: expected versus actual,
    evidence paths/timestamps, impact, stable failure fingerprint, concise cause/fix/verification for
    defects, repair and regression proof, production verification status and

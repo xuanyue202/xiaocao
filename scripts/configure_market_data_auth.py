@@ -14,7 +14,9 @@ import requests
 
 from xiaocao.api.auth import (
     configure_credentials,
+    captcha_recovery_owner,
     read_credentials,
+    read_keychain_token,
     request_market_captcha,
     store_market_token,
 )
@@ -87,20 +89,32 @@ def main() -> int:
             else:
                 username = read("小草行情登录手机号（隐藏输入，仅供官方登录及 Keychain 保存）：")
                 password = read("小草行情登录密码（隐藏输入，将验证官方登录并保存到 Keychain）：")
-            with requests.Session() as session:
-                image, suffix = request_market_captcha(username, session=session)
-                image_path = save_captcha_image(image, suffix)
-                try:
-                    print(json.dumps({"status": "awaiting_user_captcha" if args.dialog else "awaiting_agent_captcha",
-                                      "captcha_image_path": str(image_path)},
-                                     ensure_ascii=False), flush=True)
-                    code = (hidden_dialog if args.dialog else agent_captcha_input)(
-                        "请查看验证码图片，并在此隐藏输入验证码："
-                    )
-                    configure_credentials(username, password, captcha_code=code, session=session)
-                    code = ""
-                finally:
-                    image_path.unlink(missing_ok=True)
+            observed_token = read_keychain_token() if args.captcha_from_keychain else None
+            with captcha_recovery_owner(observed_token) as owns_recovery:
+                if owns_recovery:
+                    for attempt in range(3):
+                        with requests.Session() as session:
+                            image, suffix = request_market_captcha(username, session=session)
+                            image_path = save_captcha_image(image, suffix)
+                            try:
+                                print(json.dumps({"status": "awaiting_user_captcha" if args.dialog else "awaiting_agent_captcha",
+                                                  "captcha_image_path": str(image_path), "attempt": attempt + 1},
+                                                 ensure_ascii=False), flush=True)
+                                code = (hidden_dialog if args.dialog else agent_captcha_input)(
+                                    "请查看验证码图片，并在此隐藏输入验证码："
+                                )
+                                configure_credentials(username, password, captcha_code=code, session=session)
+                                code = ""
+                                break
+                            except ApiAuthError as error:
+                                if error.failure_category != "MARKET_CAPTCHA_REJECTED" or attempt == 2:
+                                    raise
+                                print(json.dumps({"status": "retrying_fresh_captcha",
+                                                  "failure_category": error.failure_category}), flush=True)
+                            finally:
+                                image_path.unlink(missing_ok=True)
+                else:
+                    print(json.dumps({"status": "concurrent_session_reused"}), flush=True)
             username = password = ""
     except ApiAuthError as error:
         print(json.dumps({

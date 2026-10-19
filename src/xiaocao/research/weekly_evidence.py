@@ -658,7 +658,7 @@ def build_weekly_evidence(root: Path, *, as_of: dt.date, snapshot_dir: Path | No
                      'cash movements are not profit; absent accounting and actual fees remain unknown'])
 
 
-def render_weekly_evidence(report: dict) -> list[str]:
+def render_weekly_evidence(report: dict, *, include_exploration_proposals: bool = True) -> list[str]:
     if not report:
         return ['- 缺少冻结研究证据；收益、成本与样本外结论未知。']
     labels = {'supported': '支持（限定已保存样本）', 'rejected': '拒绝',
@@ -696,8 +696,9 @@ def render_weekly_evidence(report: dict) -> list[str]:
     for observation in report['accounting_observations']:
         value = observation['valuation']
         lines.append(f"- 会计观测 {observation['observed_at']}：净投入 {value.get('net_contributed_capital', 'N/A')}，标记净值 {value.get('marked_nav', 'N/A')}，累计盈亏 {value.get('cumulative_pnl') if value.get('cumulative_pnl') is not None else 'N/A'}，已实现/浮动 {value.get('realized_pnl', 'N/A')}/{value.get('unrealized_pnl', 'N/A')}；费用 {value.get('fee_basis', 'unknown')}，状态 {value.get('status', 'unknown')}（已保存观测，未认证收益）。")
-    lines += ['', *render_production_observations(report.get('production_observations') or {}),
-              '', '### 下一步探索（提案，未运行）', '']
-    for proposal in report['exploration_proposals']:
-        lines.append(f"- `{proposal['experiment_id']}`：{proposal['objective']}；证伪：{proposal['falsifier']}；负责人 {proposal['owner']}；复核 {proposal['next_review']}；回滚 {proposal['rollback']}。")
+    lines += ['', *render_production_observations(report.get('production_observations') or {})]
+    if include_exploration_proposals:
+        lines += ['', '### 下一步探索（提案，未运行）', '']
+        for proposal in report['exploration_proposals']:
+            lines.append(f"- `{proposal['experiment_id']}`：{proposal['objective']}；证伪：{proposal['falsifier']}；负责人 {proposal['owner']}；复核 {proposal['next_review']}；回滚 {proposal['rollback']}。")
     return lines

@@ -27,7 +27,7 @@ def review_brief(request: dict) -> dict:
             'request_id', 'request_sha256', 'requested_at', 'entry_deadline',
             'freeze_path', 'freeze_sha256', 'strategy_sha', 'trade_date',
             'allocation_facts_path', 'allocation_capsule_sha256',
-            'account_facts', 'account_risk',
+            'account_facts', 'account_risk', 'kol_inputs', 'dispatch_budget',
         )},
         'review_deadline': deadline.isoformat(),
         'candidates': [{k: row[k] for k in _CANDIDATE_FIELDS if k in row}
@@ -42,13 +42,25 @@ def review_notice(request: dict, request_path: Path, receipt_path: Path, brief_p
             'request_id': request['request_id'], 'request_sha256': request['request_sha256'],
             'request_path': str(request_path), 'receipt_path': str(receipt_path),
             'brief_path': str(brief_path), 'review_deadline': brief['review_deadline'],
-            'candidate_count': len(brief['candidates'])}
+            'candidate_count': len(brief['candidates']),
+            'kol_inputs': request.get('kol_inputs'), 'dispatch_budget': request.get('dispatch_budget')}
 
 
 def dependency_user_action(reason: object, health: dict | None = None) -> dict:
     """Only explicit typed failures require a human; unknown counters do not."""
     health = health or {}
     atoms = str(reason or '').split(':')
+    pre_secret_session_conflict = (health.get('state') == 'not_attempted'
+        and health.get('password_action_attempted') is False
+        and health.get('confirmation_pressed') is False
+        and health.get('failure_category') == 'trade_password_incorrect')
+    proved_rejection = (health.get('state') == 'unproven_no_retry'
+        and health.get('password_action_attempted') is True
+        and health.get('confirmation_pressed') is True
+        and health.get('failure_category') == 'trade_password_incorrect'
+        and type(health.get('remaining_attempts')) is int and health['remaining_attempts'] > 1)
+    if pre_secret_session_conflict or proved_rejection:
+        return {'required': False, 'request': None, 'recovery_kind': 'app_session_reset'}
     requests = {
         'FOUNDER_NATIVE_TRADE_KEYCHAIN_NOT_READY': '请配置或授权读取本机保存的 APP 交易凭据。',
         'FOUNDER_TRADE_ACCOUNT_FINGERPRINT_MISSING': '请确认本机保存的 APP 交易账户。',
@@ -56,16 +68,18 @@ def dependency_user_action(reason: object, health: dict | None = None) -> dict:
         'NATIVE_AX_KEYCHAIN_READ_FAILED': '请检查本机保存的 APP 交易凭据是否可读取。',
         'NATIVE_AX_KEYCHAIN_SECRET_EMPTY': '请补充本机保存的 APP 交易凭据。',
         'NATIVE_AX_UNLOCK_UNPROVEN_NO_RETRY': '请确认 APP 当前登录状态；系统不会再次尝试密码。',
+        'NATIVE_AX_CREDENTIAL_HEALTH_UNPROVEN': '请核验 APP 的账户绑定和上次凭据动作记录。',
         'screen_locked': '请解锁 macOS，随后系统重新核验 APP。',
         'screen_lock_state_unavailable': '请恢复可核验的 macOS 登录状态，随后系统重新核验 APP。',
         'accessibility_denied': '请为 Codex 或终端授予 macOS 辅助功能权限。',
-        'client_login_required': '请完成 APP 登录或当前验证码验证。',
     }
     for atom in atoms:
         if atom in requests:
             return {'required': True, 'request': requests[atom]}
     if health.get('state') in {'attempt_claimed', 'unproven_no_retry'}:
         return {'required': True, 'request': requests['NATIVE_AX_UNLOCK_UNPROVEN_NO_RETRY']}
+    if 'client_login_required' in atoms or 'app_absent' in atoms:
+        return {'required': False, 'request': None, 'recovery_kind': 'app_client_login'}
     return {'required': False, 'request': None}
 
 
@@ -86,7 +100,8 @@ def _compact_order(row: dict) -> dict:
     return result
 
 
-def terminal_notice(payload: dict, receipt_path: Path, *, include_durable_pending=True) -> dict:
+def terminal_notice(payload: dict, receipt_path: Path, *, include_durable_pending=True,
+                    include_incidents=True) -> dict:
     receipts = list(payload.get('execution_receipts', []))
     reconciliations = [*payload.get('open_plan_reconciliations', []),
                        *payload.get('prior_reconciliations', [])]
@@ -123,7 +138,7 @@ def terminal_notice(payload: dict, receipt_path: Path, *, include_durable_pendin
             'user_action_required': payload.get('user_action_required') is True or action.get('required') is True,
             'user_action': action, 'pending_evidence_unproven': payload.get('pending_evidence_unproven', False),
             'pending_orders': [_compact_order(r) for r in pending],
-            'incident_notifications': _incident_notifications(receipt_path, receipts + pending),
+            'incident_notifications': _incident_notifications(receipt_path, receipts + pending) if include_incidents else [],
             'receipt_path': str(receipt_path.resolve()),
             'stage_times': payload.get('stage_times', {}),
             'orders': [_compact_order(r) for r in receipts],

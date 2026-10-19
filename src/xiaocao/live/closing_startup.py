@@ -4,22 +4,17 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
-from datetime import datetime, timedelta
+from datetime import datetime, time as wall_time
 from zoneinfo import ZoneInfo
 
 
 _CHINA = ZoneInfo("Asia/Shanghai")
 _CLOSING_HOUR = 14
 _CLOSING_MINUTE = 45
-# The 14:41 scheduler dispatch was observed arriving during 14:40. Wait
-# through that bounded early arrival instead of consuming the close too soon.
-_PREARM_MINUTES = 5
-_MAX_PREARM_WAIT_SECONDS = float(_PREARM_MINUTES * 60)
-_MAX_SLEEP_CHUNK_SECONDS = 60.0
 
 
 def closing_prearm_wait_seconds(current: datetime) -> float:
-    """Return the bounded delay to 14:45, or zero outside 14:40–14:45."""
+    """Return the same-day delay to 14:45, including scheduler early wakes."""
 
     local = current.astimezone(_CHINA)
     target = local.replace(
@@ -28,13 +23,7 @@ def closing_prearm_wait_seconds(current: datetime) -> float:
         second=0,
         microsecond=0,
     )
-    prearm_start = target - timedelta(minutes=_PREARM_MINUTES)
-    if not prearm_start <= local < target:
-        return 0.0
-    return min(
-        _MAX_PREARM_WAIT_SECONDS,
-        max(0.0, (target - local).total_seconds()),
-    )
+    return max(0.0, (target - local).total_seconds())
 
 
 def wait_for_closing_window(
@@ -44,14 +33,11 @@ def wait_for_closing_window(
 ) -> float:
     """Sleep in bounded chunks inside the pre-arm span and return the delay."""
 
-    current = (now or (lambda: datetime.now(_CHINA)))()
-    wait_seconds = closing_prearm_wait_seconds(current)
-    remaining = wait_seconds
-    while remaining > 0:
-        chunk = min(_MAX_SLEEP_CHUNK_SECONDS, remaining)
-        sleep(chunk)
-        remaining -= chunk
-    return wait_seconds
+    from xiaocao.utils.business_clock import wait_for_business_time
+    now = now or (lambda: datetime.now(_CHINA))
+    current = now()
+    return wait_for_business_time(current.astimezone(_CHINA).date().isoformat(),
+                                  wall_time(14, 45), now=now, sleep=sleep)
 
 
 def main() -> int:

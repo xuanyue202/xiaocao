@@ -30,6 +30,11 @@ read `guidance.status` and `guidance.next_action` before acting.
 
 ## Mandatory Agent state machine
 
+On `dependency_recovery_wait` with `recovery_kind=app_session_reset`, read
+[the session recovery branch](morning-session-recovery.md) and complete it in
+the original owner. This distinct, claim-bound generation replaces endless
+pre-secret polling; ordinary unknown password actions retain their fence.
+
 After every permitted action, rerun `remote-bootstrap`; never chain remembered
 steps from an earlier receipt.
 
@@ -40,11 +45,19 @@ steps from an earlier receipt.
 | `launch_foundersc` | Run the returned fixed-bundle command once, wait for a stable window, rerun bootstrap. |
 | `grant_accessibility_to_codex_or_terminal` | Human blocker; rerun after the permission is granted. |
 | `configure_trade_keychain` | Human interactive TTY only; do not run in Automation or transfer the item. |
-| `fill_login_password_then_solve_captcha` | Requires current user authorization. Run the returned fill once, then fresh screenshot -> exactly four digits -> field readback -> one login press. Only an explicit transport timeout gets one retry. |
+| `fill_login_password_then_solve_captcha` | The authorized morning recovery includes this step. Run the returned fill once, then fresh screenshot -> exactly four digits -> field readback -> one login press; prove same-account readiness before signalling the original runner. |
 | `unlock_trade_once` | Requires current user authorization. Run the returned command once. Unknown, mismatch, or `unlock_unproven` never retries. |
 | `open_ordinary_trade_surface_then_reprobe` | Navigate without touching code/price/quantity/submit controls, then rerun. |
 | `none` | Helper foundation is ready. The live runner must still prove native positions/orders/trades, the account-bound funds summary embedded in the positions capture, and order-page capabilities before `supports_submit=true`. |
 | `inspect_native_receipt` | Stop on unknown/incomplete state; preserve the receipt and do not improvise clicks. |
+
+The in-session empty-confirm validation uses a distinct exact `AXWindow` with `AXDialog` subrole:
+`请输入交易密码解锁!`, alert description, and one `确定` button with identifier
+`action-button--998`. Only the pre-secret unlock path may close this bound
+validation dialog; require disappearance and fresh target binding before the
+one permitted unlock attempt. It is not a credential rejection and does not
+relax the durable prohibition on repeating an attempted/uncertain password.
+First-client-login recovery does not gain this dialog authority.
 
 Manual password assistance is `focus-unlock`. It only raises the app and
 focuses the unique secure field; the user types and confirms.
@@ -54,12 +67,36 @@ An app restart is a distinct `client_login_required` state. The explicit
 Keychain-backed trade password and focus the unique CAPTCHA field. It must
 never press `登录`; CAPTCHA stays in the slow recovery plane and unattended
 recovery remains unproven.
+After activating the client, the helper re-observes and binds the same account,
+process, window, password and CAPTCHA controls before receiving the secret.
+An empty password field requires a successful string readback; a missing or
+non-string AX value never proves clearing.
 
-Codex visual recognition may handle CAPTCHA in this slow recovery path when the
-user authorizes it. Require a fresh screenshot, exactly four recognized digits,
-field readback, and one login press. Permit at most one retry for an explicit
-transport timeout; never loop on password/CAPTCHA or unknown outcomes. This
-agent-assisted recovery is outside the millisecond order hot path.
+Before a first-login secret is read, check blocking notices. Only one exact
+account/window-bound `请输入交易密码!` validation sheet may be dismissed;
+prove disappearance and rebind the same controls before fill. Credential
+rejection and unknown/ambiguous dialogs return `client_login_notice_blocked`.
+Check the same binding and absence of blocking dialogs again after fill/focus. The secure-field
+readback length must also match the supplied secret; a silent AX no-op fails.
+`client_login_password_filled` means ready for CAPTCHA, not authenticated;
+`client_login_notice_dismissed` records that bounded validation-notice action.
+
+The authorized morning recovery includes Codex visual CAPTCHA recognition.
+Before any saved-password fill, require the original runner's account-bound
+canonical credential-health readback to permit `app_client_login`. A persisted
+`attempt_claimed`/`unproven_no_retry`, damaged record or mismatched account permits
+readback only; bootstrap and the raw fill helper do not clear that fence.
+Use `remote-bootstrap --table-audit`; if absent, launch the returned fixed
+bundle and re-probe. On the bound login page execute the returned
+`fill-login-keychain --acknowledge-local-password-fill` once. Require a fresh
+screenshot, exactly four recognized digits, field readback, and one login
+press. Re-probe after authentication, open ordinary trade through read-only
+navigation if needed, and prove the same-account ready surface. Signal the
+exact original dependency request once; the runner performs its own readback.
+Keep GUI actions under the existing APP session guard. Unknown, rejected or
+uncertain login outcomes require readback and retain their action fence.
+This recovery stays outside the order hot path; saved credentials and routine
+CAPTCHA do not by themselves require a new user confirmation.
 
 `unlock-keychain --acknowledge-local-passguard-input` is an explicit
 single-attempt local capability. It may read only the fixed
@@ -73,6 +110,13 @@ a quiet keyboard before setting the field and again before confirmation. A
 recognized broker password-error dialog is a recorded attempt, not a reason to
 submit the secret again; acknowledge the exact dialog and diagnose focus or
 credential state before a separately authorized attempt. It
+has one pre-secret exception: the helper may dismiss a uniquely matched stale
+password-error sheet only when both password_action_attempted and
+confirmation_pressed are false, its exact known text/control geometry and
+account are bound, and the same unlock target is proved after dismissal.
+Record that dismissal separately; this does not clear a previous uncertain or
+confirmed password attempt. Such a proved no-action dependency is locally
+recoverable without asking the user.
 must never print, log, persist, return, place in argv, or place in environment
 the raw account/password. `unlock_unproven` is terminal for that attempt and
 must not be retried automatically. Before setting either login or in-session
@@ -380,10 +424,26 @@ settlement or convert an uncertain earlier write into a new submit.
 History reconciliation accepts only a native `history_scope` receipt that binds
 verified date controls to the requested exact day, the same timezone-aware capture
 time, all pages and the complete row count. Post-capture row filtering, a requested
-date or a visible empty table alone never proves coverage. The current helper does
-not emit this proof: it therefore produces explicit incomplete-history UNKNOWN,
-never order absence or terminality. Actual date-control/pagination implementation
-and APP verification remain required before this capability is claimed. Keep
+date or a visible empty table alone never proves coverage. The helper observes
+the actual two date controls before and after capture. An exact requested date
+sets both unique account/page-bound AX date controls, proves their readback,
+commits each control through its unique AX-bound increment/decrement arrows
+(this APP's advertised AX actions return attributeUnsupported), waits for the
+actual changes with bounded readback,
+restores both exact dates, then refreshes. AX assignment alone changes the
+display without updating this APP's query model. Missing/ineffective control
+arrows, unsupported setters or changed targets fail explicitly. The helper
+selects the day segment first and revalidates unique arrow geometry,
+account/window identity and Founder foreground before every click. A retained
+year/month selection can clamp at the APP's maximum date. The requested date
+itself never supplies coverage proof. The day step moves backwards first,
+then restores, so the maximum date remains queryable. A positive capture can prove coverage when all rows match
+that exact day, the uniquely observed total equals all fully visible parsed/AX
+rows, and those rows fit the table and window. Empty captures remain incomplete
+until a native response-binding witness proves query completion. Scrolled,
+truncated or ambiguous captures also remain UNKNOWN, never absence or terminality.
+Bind each history page's own date controls separately before exact reconciliation.
+Keep
 current query facts separate from the previous immutable event reference; preserve
 original submit/cancel authority and every UNKNOWN/reconcile-only fence.
 Execution receipts retain immutable credential-redacted capture artifacts under

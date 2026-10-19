@@ -19,7 +19,8 @@ class ApiAuthError(ApiError):
         official_login_code: int | None = None,
     ) -> None:
         super().__init__(message)
-        self.failure_category = failure_category
+        self.failure_category = failure_category or (message if message.startswith("MARKET_")
+                                                     and message.replace("_", "").isalnum() else None)
         self.official_login_code = official_login_code
 
 
@@ -29,6 +30,10 @@ class ApiRateLimitError(ApiError):
 
 class ApiSchemaError(ApiError):
     pass
+
+
+class ApiSourceNotReadyError(ApiSchemaError):
+    """A dated source still serves an older session; never consume its rows."""
 
 
 class NoTradeDayError(XiaocaoError):

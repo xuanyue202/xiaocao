@@ -40,6 +40,7 @@ _CODE = re.compile(r"\d{6}\.(?:XSHG|XSHE|BJSE)")
 _ACCOUNT_FIELDS = ("initial_capital", "cash", "realized_pnl", "fee_rate")
 _LEGACY_PAPER_RISK_FIELDS = frozenset({
     "risk_nav_basis", "strategy_nav", "capital_flow_head_sha256",
+    "current_nav_lower_bound",
 })
 
 

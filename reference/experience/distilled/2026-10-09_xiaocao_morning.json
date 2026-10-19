@@ -1,0 +1,552 @@
+{
+  "date": "2026-10-09",
+  "kind": "盘前大师班直播（含盘中跟踪）",
+  "author": "小草",
+  "source": "小草直播",
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/reference/experience/transcripts/2026-10/2026-10-09_xiaocao_morning_61a7bf29.txt",
+      "sha256": "b6b291c24bb56499304eafdbe1fd62ce4c44a1c4ecd20156a77e152bed6cb322",
+      "size": 24638
+    }
+  ],
+  "authority": 0,
+  "knowledge_status": "reusable_knowledge",
+  "summary": "本场可复用的是弱市中的条件化决策顺序：先确认空仓或主跌环境，再判断前一日放量大跌后的低开是否具备修复条件；只有关键风险股跌停封单显著缩小、低位模式仍占优时，才允许有限参与倒接力或下跌超跌。来源对仓位的口述是：手顺可在轮动上用多一点仓位，手不顺则不做，若仍要做，最后一个仓位形容词听写不清，不能据此设定具体上限。盘中高分必须连同出现时点、当时涨幅、可成交性和排名变化一起记录。连续大幅盈利后出现小盈小亏时，不应仅凭单笔结果随意更换规则。所有内容仅为authority=0研究先验，不改变策略、参数、仓位、Book或账户。",
+  "posture": {
+    "regime": "小草把10月9日定义为空仓环境。早盘因前一日放量大跌、当日低开而预期修复，但盘中创业板与科创板继续走弱，最终仍偏防守；对近期手顺者保留条件化参与，对手不顺者主张不做或进一步收缩风险。该日内姿态已经随10月9日收盘失效。",
+    "dominant_style": "原则上休息；确需参与时，优先下跌超跌、低位倒接力和低涨幅的盘中起爆候选，回避高涨幅追入和主跌环境中的紫薇模式。",
+    "risk": "修复预期必须受开盘结构和关键风险股封单变化约束；个股盘中涨幅、排名和分数不能顺延到下一交易日。",
+    "style_ranking": [
+      "空仓或观望",
+      "按近期手顺和事前风险合同参与下跌超跌低吸与低涨幅盘中起爆",
+      "前一日放量大跌且当日低开时的低位倒接力窄例外",
+      "高涨幅候选与主跌环境中的紫薇模式"
+    ],
+    "currentness": "expired_at_2026-10-09_close",
+    "global_posture_write": "not_applied"
+  },
+  "regime_call": {
+    "call": "弱市低开并不自动等于可买；只有修复条件、关键风险股封单和低位模式同时改善时，才允许按事前风险预算有限参与，否则继续空仓。",
+    "horizon": "可复用于未来出现同类开盘结构的研究，但本场所有具体动作只覆盖2026年10月9日盘中。",
+    "triggers": [
+      "前一交易日出现放量大跌，当日再次低开",
+      "关键风险股的巨大跌停封单在开盘前后显著缩小或开板",
+      "低位、下跌超跌或倒接力候选保持相对优势，且入场涨幅不过高"
+    ],
+    "what_would_falsify": [
+      "低开后亏钱效应继续扩散，关键风险股封单重新放大",
+      "样本外统计显示同类低开结构没有更高修复概率",
+      "扣除滑点和费用后，低位倒接力或下跌超跌不优于空仓"
+    ],
+    "evidence_boundary": "来源中的盘中排名、分数、涨幅和封单变化未由完整逐分钟行情独立核验，只能作为可证伪候选，不能当作已验证规律。"
+  },
+  "directions": [
+    {
+      "direction": "弱市下跌超跌",
+      "role": "空仓环境中的可选过渡模式",
+      "conditions": "仓位按近期手顺和个人风险合同区分；来源说手顺可在轮动上用多一点仓位，手不顺可不做，最后一个仓位形容词听写不清，不能据此设具体上限。",
+      "limitations": "不是下一交易日的延续信号，也不是扩大仓位的依据。"
+    },
+    {
+      "direction": "低位倒接力",
+      "role": "前一日放量大跌、当日低开后的修复窄例外",
+      "conditions": "关键风险股跌停封单缩小或开板，且候选处于低位。",
+      "limitations": "高开或继续分歧时不做；北交所权限、流动性与高波动另行约束。"
+    },
+    {
+      "direction": "盘中起爆",
+      "role": "弱市中只观察高分且涨幅较低的候选",
+      "conditions": "必须冻结首次出现时点、分数、当时涨幅和可成交价。",
+      "limitations": "收盘涨停不能倒推早盘可成交，六个百分点边界仍待样本外检验。"
+    }
+  ],
+  "stocks": [
+    {
+      "name": "力王股份",
+      "code": "920627",
+      "market": "北京证券交易所",
+      "source_role": "10月9日低位倒接力候选与事后强势案例",
+      "knowledge_use": "仅用于低开修复与低位倒接力条件链，不作为未来买入建议。"
+    },
+    {
+      "name": "雪龙集团",
+      "code": "603949",
+      "market": "上海证券交易所",
+      "source_role": "下跌低吸候选，是否可看取决于江淮汽车跌停封单变化",
+      "knowledge_use": "用于研究相关风险股微结构如何改变候选权限。"
+    },
+    {
+      "name": "江淮汽车",
+      "code": "600418",
+      "market": "上海证券交易所",
+      "source_role": "新能源汽车方向的风险指示股",
+      "knowledge_use": "用于检验巨大跌停封单缩小或开板是否真的提高同方向候选的修复概率。"
+    },
+    {
+      "name": "东岳硅材",
+      "code": "300821",
+      "market": "深圳证券交易所",
+      "source_role": "盘中起爆高分第一候选，但出现时涨幅已经较高",
+      "knowledge_use": "用于检验高分与高涨幅之间的收益、回撤和成交权衡。"
+    },
+    {
+      "name": "海科新源",
+      "code": "301292",
+      "market": "深圳证券交易所",
+      "source_role": "盘中高分且相对低涨幅的备选",
+      "knowledge_use": "用于与高涨幅第一名做前瞻对照。"
+    }
+  ],
+  "method_principles": [
+    "先判断环境和参与权，再选择模式，最后才看个股；空仓环境本身可以成为不交易的决定。",
+    "前一日放量大跌加当日低开只提供修复假设，必须用关键跌停股封单、开板和亏钱效应继续验证。",
+    "下跌超跌、低位倒接力和盘中起爆是不同入口，不能把不同触发条件拼成一个万能模式。",
+    "盘中高分必须与首次出现秒点、当时涨幅、可成交价、完整候选池和失败样本一起冻结。",
+    "高涨幅候选可能有更强爆发力，但波动也更大；作者个人约六个百分点的追高边界只能作为待研究约束。",
+    "把对象、条件、期限和失效点说清楚，不能用布局、战略配置或筹码聚合等大词替代可验证规则。",
+    "连续大肉后的几笔小肉小面不应自动触发换模式；应按事前规则保持执行一致性，并单独定义真正的停止条件。"
+  ],
+  "exit_lessons": [
+    "盘中已经大涨或涨停只证明当时强势，不能把收盘结果倒推成可复制入场，更不能顺延到下一交易日。",
+    "同一持仓可以有不同退出合同：日内交易可在冲高中退出，五日线持有法则以跌破五日线为失效点；两者不能混用。",
+    "来源只给出中天服务可按自身计划离场，并明确说作者没有复核；这种低置信退出不能升级为统一卖出指令。"
+  ],
+  "hypotheses": [
+    {
+      "existing_id": "XH-206",
+      "disposition": "reuse_exact_existing_claim",
+      "claim": "盘中下跌超跌起爆候选在涨幅约6%以下，可能比已经涨到6%至7%的候选有更低的追高风险。",
+      "category": "intraday_breakout_price_extension",
+      "implied_rule": "记录首次排名时点、分数、当时涨幅和可成交价；约6%只作待检验边界。",
+      "falsifiable_test": "预注册多个涨幅边界，使用完整候选池比较含成本收益、最大不利变动、成交率和漏失率，并控制多重比较。",
+      "expected_effect": "只有约6%边界在样本外稳定降低追高损失时才支持；否则拒绝。",
+      "authority": 0,
+      "rationale": "与当前完整backlog中的XH-206逐字同文，供摄取器做复现合并，不分配新编号。"
+    },
+    {
+      "disposition": "new_candidate_after_full_backlog_dedup",
+      "claim": "同一短线模式在连续大幅盈利后经历少量小盈小亏时，继续按事前规则执行，可能比因单笔结果随意停用或换模式更能保持长期一致性。",
+      "category": "execution_consistency",
+      "implied_rule": "事前定义模式启停条件、风险预算和统计窗口，不以最近一笔是否大赚作为继续或停止的唯一依据。",
+      "falsifiable_test": "比较事前环境规则持续执行、单笔结果驱动停用和临时换模式三组的费用后收益、回撤、换手、纪律偏差和样本外稳定性。",
+      "expected_effect": "若成立，规则持续组应减少模式漂移；若尾部回撤显著恶化，则补充停止条件或拒绝。",
+      "authority": 0,
+      "rationale": "完整读取当前217条JSON backlog后未发现同文或可直接合并的交易一致性命题。"
+    }
+  ],
+  "timing_notes": [
+    "10月9日所有具体入场、日内高抛、榜单和封单窗口已经过期；圣阳五日线持有分支按来源是跨日条件合同，不因10月9日收盘自动失效。",
+    "盘中起爆观察集中在9:30:30至9:33左右；这些秒点只作审计，不转成下一交易日新开仓指令。",
+    "倒接力判断依赖前一日放量大跌、当日低开以及江淮汽车封单从9:20前到9:25附近的变化；来源口述封单约4至接近5亿元，未独立核验。",
+    "圣阳五日线分支是否仍满足条件，需要原持仓合同、当前价格和五日线状态；缺少这些事实只限制执行判断，不改变来源观点的跨日期限。"
+  ],
+  "typo_corrections": [
+    {
+      "raw": "水龙、血龙、消防",
+      "corrected": "雪龙集团",
+      "basis": "同段上下文与绑定股票名称目录共同支持。"
+    },
+    {
+      "raw": "沈阳、圣阳",
+      "corrected": "圣阳股份",
+      "basis": "储能电池、电力和动力电池业务描述与绑定股票名称目录一致。"
+    },
+    {
+      "raw": "冬夜归财、东岳潍柴、东岳鬼才、东岳飞彩",
+      "corrected": "东岳硅材",
+      "basis": "盘中起爆上下文与绑定股票名称目录共同支持。"
+    },
+    {
+      "raw": "海海科、海克、凯科星",
+      "corrected": "海科新源",
+      "basis": "来源后文直接说出海科新源，绑定目录确认代码。"
+    },
+    {
+      "raw": "治疗力王、力完",
+      "corrected": "力王股份",
+      "basis": "倒接力北交所上下文与绑定目录共同支持。"
+    },
+    {
+      "raw": "四明科技、视民科技",
+      "corrected": "可能对应世名科技（300522），未证实",
+      "basis": "股票目录只提供近音候选；来源没有代码或业务信息，不能确认身份。"
+    },
+    {
+      "raw": "花溪",
+      "corrected": "可能对应花溪科技（920895），未证实",
+      "basis": "股票目录存在同名候选，但来源只有极短表面词和分数，不能确认身份。"
+    }
+  ],
+  "decision_trace": [
+    {
+      "observation": "作者先把10月9日定为低开、空仓环境，并看到江淮汽车一度有巨大跌停封单。",
+      "inference": "若巨大封单维持，市场会从正常分歧转向主跌，所有试探都应取消。",
+      "action": "先防守，不把低开本身当成买点。"
+    },
+    {
+      "observation": "江淮汽车封单在开盘前后显著缩小并开板，而前一日为放量大跌。",
+      "inference": "作者把这视为日内修复概率上升，允许低位倒接力和下跌超跌出现窄例外。",
+      "action": "只在低位、手顺、不追高且符合事前风险预算的条件下观察候选；来源没有给出统一仓位上限。"
+    },
+    {
+      "observation": "盘中创业板与科创板继续下跌，高涨幅候选波动显著，农业和房地产只出现局部逆势或提前止跌。",
+      "inference": "早盘修复预期没有演化成可外推的全面转强，市场仍是电风扇式轮动。",
+      "action": "不做长期布局，不把当日赢家顺延到下一交易日。"
+    }
+  ],
+  "judgment_heuristics": [
+    "环境参与权优先于个股分数和事后涨幅。",
+    "低开修复必须有风险指标改善，不能用一个低开标签替代。",
+    "同一标的的高分、涨幅和可成交性要同时看；高分不抵消追高风险。",
+    "退出合同必须在入场前确定，日内高抛与五日线持有不能事后混用。",
+    "用具体对象、触发器和失效点说话，避免宏大术语造成虚假的确定感。"
+  ],
+  "prior_comparisons": [
+    {
+      "prior_id": "XH-066",
+      "relationship": "related_refinement_not_recurrence",
+      "reason": "本场增加前一日放量大跌、次日低开和关键风险股跌停封单缩小或开板的微结构条件；不把改写后的近重复放入hypotheses。"
+    },
+    {
+      "prior_id": "XH-137",
+      "relationship": "partially_supports",
+      "reason": "本场低开时偏向下跌超跌，与开盘条件切换相关，但没有完整复述高开选择起爆的双向规则。"
+    },
+    {
+      "prior_id": "XH-182",
+      "relationship": "related_contract_distinction",
+      "reason": "本场五日线不破不走是持仓合同分支，没有部分止盈和保留仓位比例，不能当作XH-182同文复现。"
+    },
+    {
+      "prior_id": "XH-194",
+      "relationship": "refines",
+      "reason": "本场继续以空仓环境为总闸门，同时按近期手顺和特定修复条件给出有限参与例外；来源未给统一仓位上限。"
+    },
+    {
+      "prior_id": "XH-206",
+      "relationship": "confirms_exact_claim",
+      "reason": "作者再次明确自己通常不买约6个百分点以上的盘中起爆候选；hypotheses复用原claim以供复现合并。"
+    }
+  ],
+  "action_summary": {
+    "posture_update": "not_applied：10月9日盘中姿态已经过期，本草稿不改posture_current或REGIME_TIMELINE。",
+    "playbook_update": "proposal_only：保留环境参与权、封单条件、低位模式、追高边界和执行一致性，需研究与人审后再决定是否校准。",
+    "hypothesis_update": "实际一次性摄取回执确认：XH-206同文复现已合并，交易一致性新候选已建立为XH-218，没有其他路由ID；两者仍为authority=0。",
+    "audit_evidence": "完整读取24638字节的不可变归档原文、67个稳定分段、实际一次性摄取回执及当前218条唯一ID的hypothesis backlog；strategy_hit_audit保留老师口述角色，并为11个具名证券逐只补充本地发射类别。",
+    "instrumentation_todo": "未来同类样本需冻结开盘缺口、前一日量价、关键风险股封单、候选首次出现秒点、分数、当时涨幅、可成交价、完整候选池、失败样本和退出费用。",
+    "routing": [
+      "parent_deterministic_validation",
+      "parent_copy_final_distillation",
+      "parent_refresh_action_index",
+      "no_reingest",
+      "no_republication",
+      "no_strategy_or_parameter_write"
+    ],
+    "parameter_update": "no_change_authority_0",
+    "knowledge_ingestion": "completed_once_before_finalization：XH-206复现合并、XH-218新建；本分析员未再次摄取。",
+    "external_effects": "none_by_semantic_analyst；只记录已经发生且有回执绑定的一次性摄取事实。"
+  },
+  "limitations": [
+    "来源盘中排名、分数、涨幅、跌停封单和个股收益未由完整逐分钟行情独立核验。",
+    "10月9日入场与日内退出窗口已失效；圣阳五日线合同的当前触发状态缺少持仓合同、价格和五日线回读。",
+    "世名科技300522与花溪科技920895仅为目录候选映射，未获来源代码或业务证据确认。",
+    "绑定推荐文件缺失；本地快照无身份重合不能推定从未emit，也不能据此评价策略优劣。",
+    "知识候选已按实际回执完成一次性摄取：XH-206复现合并、XH-218新建；两者仍为authority=0，尚未研究验证，也未通过永久策略晋级的人审门槛。"
+  ],
+  "strategy_hit_audit": {
+    "status": "completed_read_only_with_limits",
+    "audit_date": "2026-10-09",
+    "evidence_bindings": [
+      {
+        "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_xiaocao_live/semantic_requests/kol-a5b479b7e70d/parent_oct09_signal_snapshots.json",
+        "sha256": "31e88678759221586a703855b342eacac544b3f6886a39fb1724caf59453998b",
+        "rows": 0
+      },
+      {
+        "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_xiaocao_live/semantic_requests/kol-a5b479b7e70d/parent_oct09_paper_trades.json",
+        "sha256": "9a3b15070dd644008c283194d41ea492f194d1dd70c0aae49ce0e3ff331ad0a2",
+        "rows": 3
+      },
+      {
+        "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_xiaocao_live/semantic_requests/kol-a5b479b7e70d/parent_oct09_positions.json",
+        "sha256": "2586860456c7e73602bbb47b8a7ad7402b50d862f79bf7d6d652a3b6ca816b4b",
+        "rows": 3
+      },
+      {
+        "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_xiaocao_live/semantic_requests/kol-a5b479b7e70d/parent_oct09_decision_journal.json",
+        "sha256": "1ac7c3a6332f34a02e69d27239a9fd9bb7be2ca890e5e489b86b58f5df379dd9",
+        "rows": 11
+      }
+    ],
+    "teacher_claimed_short_line_outcomes": [
+      {
+        "surface": "力王股份",
+        "candidate_mapping": {
+          "name": "力王股份",
+          "code": "920627.BJSE",
+          "status": "resolved"
+        },
+        "source_role": "倒接力第一候选",
+        "teacher_claim": "在倒接力与北交所语境中先后口述约10、14、15、18至19个百分点，并明确说连板接力倒着排时为倒数第一个。",
+        "classification": "source_claimed_current_winner_unverified",
+        "verification": "分时涨幅、榜单、入场、成交、费用和最终收益未独立核验。"
+      },
+      {
+        "surface": "水龙／血龙／雪龙",
+        "candidate_mapping": {
+          "name": "雪龙集团",
+          "code": "603949.XSHG",
+          "status": "context_supported"
+        },
+        "source_role": "下跌低吸第一候选",
+        "teacher_claim": "封单改善后口述约3至4个百分点，后被大盘拖到小盈小亏附近，结束前又拉回。",
+        "classification": "source_claimed_fluctuating_candidate_unverified",
+        "verification": "分钟路径、入场、成交和最终收益未独立核验。"
+      },
+      {
+        "surface": "东岳硅材／东月／东岳鬼才等",
+        "candidate_mapping": {
+          "name": "东岳硅材",
+          "code": "300821.XSHE",
+          "status": "context_supported"
+        },
+        "source_role": "盘中起爆第一候选兼高涨幅回避案例",
+        "teacher_claim": "作者口述开盘约7%，9:30:30、9:30:45、9:31至9:32附近反复居首，出现时约8至9个百分点、另有11个百分点口述，后称20%涨停。",
+        "classification": "source_claimed_avoided_winner_unverified",
+        "verification": "秒点排名、分数、涨幅、可成交价和涨停均未独立核验。"
+      },
+      {
+        "surface": "海海科／海科新源",
+        "candidate_mapping": {
+          "name": "海科新源",
+          "code": "301292.XSHE",
+          "status": "context_supported"
+        },
+        "source_role": "200分、较低涨幅替代候选",
+        "teacher_claim": "来源在不同时点称其第二名或第四名，并口述约1至2、5、8及8个百分点以上的变化。",
+        "classification": "source_claimed_alternative_winner_unverified",
+        "verification": "排名会随时间变化，不能固化为单一第二名；分数、涨幅、成交和收益未独立核验。"
+      },
+      {
+        "surface": "花溪",
+        "candidate_mapping": {
+          "name": "花溪科技",
+          "code": "920895.BJSE",
+          "status": "plausible_unproven"
+        },
+        "source_role": "9:33左右100分以上的简短备选",
+        "teacher_claim": "只说“33分有100分以上的花溪……也可以”，没有明确后续收益。",
+        "classification": "source_candidate_no_verified_identity_or_outcome",
+        "verification": "目录同名只提供候选映射，不能证明来源表面词就是花溪科技。"
+      }
+    ],
+    "local_strategy_benchmark_hits": {
+      "exact_target_matches": [],
+      "signal_snapshot_rows": 0,
+      "paper_trade_rows": 3,
+      "position_rows": 3,
+      "decision_journal_rows": 11,
+      "observed_local_codes": [
+        "000710.XSHE",
+        "000725.XSHE"
+      ],
+      "conclusion": "绑定的信号快照为空；纸面交易、持仓和决策日志只见贝瑞基因000710与京东方A000725，未见上述来源候选身份重合。",
+      "non_inference": "推荐文件在回读时缺失，空快照和无身份重合不能证明从未发出策略，也不能证明漏选、实现故障或策略优劣。"
+    },
+    "direction_core_observations": [
+      "老师口述赢家、来源候选、系统emit、实际成交和最终收益是五类独立证据。",
+      "本地Book B与A于10月9日买入贝瑞基因，Book T买入京东方A；这些事实与来源候选没有身份重合，不能拿来确认或否定老师模式。",
+      "决策日志在早段多次记录bear或divergence，14:25后转为trend_continuing；只可作为本地环境轨迹，不证明来源的秒级榜单或封单。",
+      "世名科技和花溪科技仅是同音或同名目录候选，不进入精确命中。"
+    ],
+    "systemic_issue": "not_established",
+    "parameter_change": "none_authority_0",
+    "boundary": "逐只具名证券使用规定的本地发射分类词汇；本包没有支持emitted_strategy_hit、emitted_qibao_hit、raw_pool_only、cohort_benchmark、cohort_watchlist或not_emitted的逐股证据，故11只均标为no_evidence。缺失推荐文件、0行信号快照及无身份重合均不等于not_emitted；不执行摄取或策略变更。",
+    "named_stock_local_emission_classifications": [
+      {
+        "surface": "江淮汽车、江淮、江淮V80",
+        "candidate_mapping": {
+          "name": "安徽江淮汽车集团股份有限公司",
+          "code": "600418.XSHG",
+          "status": "resolved"
+        },
+        "source_role": "新能源汽车方向风险指示股，不是来源买入候选",
+        "local_emission_category": "no_evidence",
+        "local_evidence": "绑定信号快照为0行；纸面交易、持仓和决策日志只见000710.XSHE与000725.XSHE，未与本证券身份重合；推荐文件在回读时缺失。",
+        "non_inference": "no_evidence仅表示绑定本地材料不能判定发射类别；不推定not_emitted、漏选、实现故障或策略优劣。"
+      },
+      {
+        "surface": "力王股份、治疗力王、力完",
+        "candidate_mapping": {
+          "name": "广东力王新能源股份有限公司",
+          "code": "920627.BJSE",
+          "status": "resolved"
+        },
+        "source_role": "倒接力主要候选；来源口述当日强势案例",
+        "local_emission_category": "no_evidence",
+        "local_evidence": "绑定信号快照为0行；纸面交易、持仓和决策日志只见000710.XSHE与000725.XSHE，未与本证券身份重合；推荐文件在回读时缺失。",
+        "non_inference": "no_evidence仅表示绑定本地材料不能判定发射类别；不推定not_emitted、漏选、实现故障或策略优劣。"
+      },
+      {
+        "surface": "雪龙集团、水龙、血龙、消防",
+        "candidate_mapping": {
+          "name": "雪龙集团股份有限公司",
+          "code": "603949.XSHG",
+          "status": "resolved"
+        },
+        "source_role": "江淮汽车封单改善后才可观察的下跌低吸条件候选",
+        "local_emission_category": "no_evidence",
+        "local_evidence": "绑定信号快照为0行；纸面交易、持仓和决策日志只见000710.XSHE与000725.XSHE，未与本证券身份重合；推荐文件在回读时缺失。",
+        "non_inference": "no_evidence仅表示绑定本地材料不能判定发射类别；不推定not_emitted、漏选、实现故障或策略优劣。"
+      },
+      {
+        "surface": "中天服务",
+        "candidate_mapping": {
+          "name": "中天服务股份有限公司",
+          "code": "002188.XSHE",
+          "status": "resolved"
+        },
+        "source_role": "已有持仓者按既定计划冲高退出的低置信提及",
+        "local_emission_category": "no_evidence",
+        "local_evidence": "绑定信号快照为0行；纸面交易、持仓和决策日志只见000710.XSHE与000725.XSHE，未与本证券身份重合；推荐文件在回读时缺失。",
+        "non_inference": "no_evidence仅表示绑定本地材料不能判定发射类别；不推定not_emitted、漏选、实现故障或策略优劣。"
+      },
+      {
+        "surface": "东岳硅材、东月、冬夜归财、东岳潍柴、东岳鬼才、东岳飞彩",
+        "candidate_mapping": {
+          "name": "山东东岳有机硅材料股份有限公司",
+          "code": "300821.XSHE",
+          "status": "resolved"
+        },
+        "source_role": "盘中起爆高分第一候选兼高涨幅回避案例",
+        "local_emission_category": "no_evidence",
+        "local_evidence": "绑定信号快照为0行；纸面交易、持仓和决策日志只见000710.XSHE与000725.XSHE，未与本证券身份重合；推荐文件在回读时缺失。",
+        "non_inference": "no_evidence仅表示绑定本地材料不能判定发射类别；不推定not_emitted、漏选、实现故障或策略优劣。"
+      },
+      {
+        "surface": "海科新源、海海科、海克、凯科星",
+        "candidate_mapping": {
+          "name": "山东海科新源材料科技股份有限公司",
+          "code": "301292.XSHE",
+          "status": "resolved"
+        },
+        "source_role": "盘中高分且相对低涨幅的备选",
+        "local_emission_category": "no_evidence",
+        "local_evidence": "绑定信号快照为0行；纸面交易、持仓和决策日志只见000710.XSHE与000725.XSHE，未与本证券身份重合；推荐文件在回读时缺失。",
+        "non_inference": "no_evidence仅表示绑定本地材料不能判定发射类别；不推定not_emitted、漏选、实现故障或策略优劣。"
+      },
+      {
+        "surface": "沈阳、圣阳",
+        "candidate_mapping": {
+          "name": "山东圣阳电源股份有限公司",
+          "code": "002580.XSHE",
+          "status": "resolved"
+        },
+        "source_role": "日内高抛与五日线持有两个不同退出合同的对象",
+        "local_emission_category": "no_evidence",
+        "local_evidence": "绑定信号快照为0行；纸面交易、持仓和决策日志只见000710.XSHE与000725.XSHE，未与本证券身份重合；推荐文件在回读时缺失。",
+        "non_inference": "no_evidence仅表示绑定本地材料不能判定发射类别；不推定not_emitted、漏选、实现故障或策略优劣。"
+      },
+      {
+        "surface": "四明科技、视民科技",
+        "candidate_mapping": {
+          "name": "可能对应苏州世名科技股份有限公司",
+          "code": "300522.XSHE（候选）",
+          "status": "plausible_candidate_unproven"
+        },
+        "source_role": "前一日20%涨停的历史例子；近音身份未获来源代码或业务证据确认",
+        "local_emission_category": "no_evidence",
+        "local_evidence": "绑定信号快照为0行；纸面交易、持仓和决策日志只见000710.XSHE与000725.XSHE，未与本证券身份重合；推荐文件在回读时缺失。",
+        "non_inference": "no_evidence仅表示绑定本地材料不能判定发射类别；不推定not_emitted、漏选、实现故障或策略优劣。"
+      },
+      {
+        "surface": "百合花",
+        "candidate_mapping": {
+          "name": "百合花集团股份有限公司",
+          "code": "603823.XSHG",
+          "status": "resolved"
+        },
+        "source_role": "未知原因跌停的无关风险背景，不是来源推荐",
+        "local_emission_category": "no_evidence",
+        "local_evidence": "绑定信号快照为0行；纸面交易、持仓和决策日志只见000710.XSHE与000725.XSHE，未与本证券身份重合；推荐文件在回读时缺失。",
+        "non_inference": "no_evidence仅表示绑定本地材料不能判定发射类别；不推定not_emitted、漏选、实现故障或策略优劣。"
+      },
+      {
+        "surface": "天赐材料",
+        "candidate_mapping": {
+          "name": "广州天赐高新材料股份有限公司",
+          "code": "002709.XSHE",
+          "status": "resolved"
+        },
+        "source_role": "学员用紫薇模式选出的例子，来源未认可买入",
+        "local_emission_category": "no_evidence",
+        "local_evidence": "绑定信号快照为0行；纸面交易、持仓和决策日志只见000710.XSHE与000725.XSHE，未与本证券身份重合；推荐文件在回读时缺失。",
+        "non_inference": "no_evidence仅表示绑定本地材料不能判定发射类别；不推定not_emitted、漏选、实现故障或策略优劣。"
+      },
+      {
+        "surface": "花溪",
+        "candidate_mapping": {
+          "name": "可能对应新乡市花溪科技股份有限公司",
+          "code": "920895.BJSE（候选）",
+          "status": "plausible_candidate_unproven"
+        },
+        "source_role": "9:33左右100分以上的低置信备选；同名身份未证实",
+        "local_emission_category": "no_evidence",
+        "local_evidence": "绑定信号快照为0行；纸面交易、持仓和决策日志只见000710.XSHE与000725.XSHE，未与本证券身份重合；推荐文件在回读时缺失。",
+        "non_inference": "no_evidence仅表示绑定本地材料不能判定发射类别；不推定not_emitted、漏选、实现故障或策略优劣。"
+      }
+    ]
+  },
+  "operational_finalization": {
+    "status": "actual_once_only_ingest_confirmed",
+    "actual_ingest_receipt": {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_xiaocao_live/semantic_requests/kol-a5b479b7e70d/.semantic_delegation/506989eec2b1c0fcb20f20d01dc51a91cf425b10ac323e829bd69592984db9bc/context-b1419a026a903090425a2e837ad450a0702e40d99dff3397c5305a703dcb5039/knowledge_ingest_receipt.json",
+      "sha256": "8c13b6678efff3b27c32e37e9fe262c59baa27cb47dd2156cd9848b5b08724f0",
+      "size": 4171,
+      "occurred_at": "2026-10-10T08:51:29.314108Z",
+      "exit_code": 0,
+      "source_path": "/Users/xuanyue202/Documents/project/xiaocao/reference/experience/distilled/2026-10-09_xiaocao_morning.json",
+      "source_sha256": "eb7659953e91fbb6c141a0b6a2724c06439b505ec24e4c02cc8e9dcfa1c58837",
+      "backlog_before_sha256": "244b345d23331a3bbdb982efb745824e3328fe108cff4f74722290ae3e2c823d",
+      "backlog_after_sha256": "cc635fe2fa22eb2e79bc1da1dbc8ba585ea57ebe3ea2d852f7fce545180804ad"
+    },
+    "actual_routed_hypothesis_ids": [
+      "XH-206",
+      "XH-218"
+    ],
+    "ingest_results": [
+      {
+        "id": "XH-206",
+        "result": "exact_claim_recurrence_merged",
+        "source_dates": [
+          "2026-10-07",
+          "2026-10-09"
+        ],
+        "authority": 0
+      },
+      {
+        "id": "XH-218",
+        "result": "new_candidate_created",
+        "source_dates": [
+          "2026-10-09"
+        ],
+        "authority": 0
+      }
+    ],
+    "no_other_ids": true,
+    "backlog_readback": {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/reference/experience/xiaocao_hypotheses.jsonl",
+      "sha256": "cc635fe2fa22eb2e79bc1da1dbc8ba585ea57ebe3ea2d852f7fce545180804ad",
+      "json_rows": 218,
+      "unique_ids": 218
+    },
+    "source_archive": {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/reference/experience/transcripts/2026-10/2026-10-09_xiaocao_morning_61a7bf29.txt",
+      "sha256": "b6b291c24bb56499304eafdbe1fd62ce4c44a1c4ecd20156a77e152bed6cb322",
+      "size": 24638
+    },
+    "local_final_distillation_target": "/Users/xuanyue202/Documents/project/xiaocao/reference/experience/distilled/2026-10-09_xiaocao_morning.json",
+    "analyst_effects": "none：本次只按既有实际回执定稿，没有再次摄取、发布、通知、Book写入或策略参数变更。"
+  }
+}
