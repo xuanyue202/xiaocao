@@ -160,11 +160,12 @@ def _incident_notifications(receipt_path: Path, orders: list[dict]) -> list[dict
     except (OSError, ValueError):
         return [{'status': 'delivery_readback_unproven'}]
     matches = {}
+    from .incident_delivery import notice_retired
     for row in rows:
         if not isinstance(row, dict):
             return [{'status': 'delivery_readback_unproven'}]
         order = re.search(r'(?:^|\s)order_id=([^\s]+)', str(row.get('body', '')))
-        if order and order.group(1) in ids:
+        if order and order.group(1) in ids and not notice_retired(path, row.get('incident_id', '')):
             matches[row.get('incident_id')] = order.group(1)
     results = {}
     for row in rows:

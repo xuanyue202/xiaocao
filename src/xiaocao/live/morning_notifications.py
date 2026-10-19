@@ -14,6 +14,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from .notify import configured_wecom_recipients, send_wecom_recipient_detailed
+from .incident_delivery import notice_retired
 
 AUTOMATION_ID = "xiaocao-book-b-live-morning"
 DEFAULT_ROOT = Path("output/live/book_b_morning_notifications")
@@ -326,6 +327,9 @@ class MorningNotifications:
         with path.with_suffix(".lock").open("a+") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
             record = json.loads(path.read_text())
+            if notice_retired(path, record["notification_id"]):
+                return {"notification_id": record["notification_id"], "status": "retired_by_user",
+                        "receipt_path": str(path.resolve()), "delivered_at": None}
             if local_only(record):
                 return {"notification_id": record["notification_id"], "kind": record["kind"],
                         "status": "recorded_only", "receipt_path": str(path.resolve()), "delivered_at": None}
@@ -371,6 +375,7 @@ class MorningNotifications:
                                       "receipt_path": str(path.resolve())})
                 continue
             if (record.get("automation_id") == self.automation_id
+                and not notice_retired(path, record.get("notification_id", ""))
                 and record.get("status") != "delivered"
                 and not local_only(record)
                 and record.get("delivery_policy") != "reconcile_only"):

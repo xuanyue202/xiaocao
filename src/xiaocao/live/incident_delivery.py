@@ -22,6 +22,46 @@ def _attempt(path: Path, identifier: str, status: str):
         "observed_at": datetime.now(timezone.utc).isoformat()})
 
 
+def _retirement_path(path: Path, identifier: str) -> Path:
+    return path.parent / (path.name + ".retirements") / (hashlib.sha256(identifier.encode()).hexdigest() + ".json")
+
+
+def notice_retired(path: Path, identifier: str) -> bool:
+    """A user-retired reminder is not a proved delivery or an order outcome."""
+    record_path = _retirement_path(path, identifier)
+    if not record_path.exists():
+        return False
+    record = json.loads(record_path.read_text())
+    if (record.get("notice_id") != identifier or record.get("status") != "retired_by_user"
+            or not record.get("approval_reference")):
+        raise ValueError("NOTICE_RETIREMENT_UNPROVEN")
+    return True
+
+
+def retire_notice(path: Path, *, identifier: str, approval_reference: str, reason: str) -> dict:
+    """Retire one existing reminder on explicit user instruction; keep receipts."""
+    if not identifier or not approval_reference.strip() or not reason.strip():
+        raise ValueError("NOTICE_RETIREMENT_USER_DIRECTION_REQUIRED")
+    lock_path = (path.with_suffix(".lock") if path.suffix == ".json" else
+                 path.with_suffix(path.suffix + ".delivery.lock"))
+    with lock_path.open("a+") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        raw = path.read_bytes()
+        rows = ([json.loads(raw)] if path.suffix == ".json" else
+                [json.loads(line) for line in raw.splitlines() if line.strip()])
+        if not any(row.get("incident_id", row.get("notification_id")) == identifier for row in rows):
+            raise ValueError("NOTICE_RETIREMENT_EXISTING_CLAIM_REQUIRED")
+        target = _retirement_path(path, identifier)
+        if notice_retired(path, identifier):
+            return json.loads(target.read_text())
+        record = {"notice_id": identifier, "status": "retired_by_user",
+            "approval_reference": approval_reference, "reason": reason,
+            "source_sha256": hashlib.sha256(raw).hexdigest(),
+            "observed_at": datetime.now(timezone.utc).isoformat()}
+        _write(target, record)
+        return record
+
+
 def enqueue_notice(path: Path, *, identifier: str, title: str, body: str):
     """New notices have proof of no prior send; legacy pending claims do not."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -54,7 +94,8 @@ def pending_notices(path: Path) -> list[dict]:
             delivered.add(identifier)
         else:
             raise ValueError("TRADING_CHANGE_NOTICE_STATUS_INVALID")
-    return [row for identifier, row in claims.items() if identifier not in delivered]
+    return [row for identifier, row in claims.items()
+            if identifier not in delivered and not notice_retired(path, identifier)]
 
 
 def deliver_pending(path: Path, *, sender=notify_detailed, readiness=wecom_transport_readiness,
