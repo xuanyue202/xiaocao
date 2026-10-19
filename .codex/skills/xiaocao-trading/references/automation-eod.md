@@ -261,7 +261,13 @@ decision row is incomplete coverage, not a no-sell judgment.
    because the EOD command cannot submit a trade. Check durable incident
    delivery separately from whether the final summary mentioned the alert.
    Order incidents and EOD/change notices share the durable delivery claim.
-   Retry only proved pre-send failures; legacy pending, interrupted sends and
+   The paper status digest also uses the shared delivery claim, with exact dated
+text in `output/live/paper_eod_status_notices.jsonl`. Include this outbox in the
+post-business safe retry through `scripts/trading_change_notice.py --outbox
+output/live/paper_eod_status_notices.jsonl --retry-pending`; never replay the
+status digest command to recover an uncertain send. Historical direct-send
+logs without a durable claim remain a delivery evidence gap.
+Retry only proved pre-send failures; legacy pending, interrupted sends and
    uncertain/partial delivery require exact reconciliation, never another send.
 6. Write `output/live/daily_execution_review_<date>.md`: expected versus actual,
    evidence paths/timestamps, impact, stable failure fingerprint, concise cause/fix/verification for
