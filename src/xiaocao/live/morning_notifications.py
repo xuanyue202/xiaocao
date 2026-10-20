@@ -85,7 +85,6 @@ def message(kind: str, trade_date: str, facts: dict) -> tuple[str, str]:
     orders = facts.get("orders") or []
     pending = facts.get("pending_orders") or []
     status = facts.get("status", "unproven")
-    ok = status in {"completed", "no_action", "skipped"} and not pending and not facts.get("pending_evidence_unproven")
     preflight = facts.get("failed_stage") == "preflight"
     # Historical reconciliation is reported separately from today's outcome.
     terminal = status in {"completed", "no_action", "skipped"} and not preflight
@@ -115,7 +114,7 @@ def message(kind: str, trade_date: str, facts: dict) -> tuple[str, str]:
             lines.append("结果：本次没有新增买入。")
         if working:
             lines.append("原因：柜台已收单，原任务继续核对成交；无需重报委托。")
-        elif not ok or not orders:
+        elif not terminal or not orders:
             lines.append(f"原因：{_cause(facts.get('reason'))}")
         lines.extend(_order_line(row) for row in orders)
         if pending:
@@ -125,7 +124,7 @@ def message(kind: str, trade_date: str, facts: dict) -> tuple[str, str]:
             lines.append("历史委托证据暂无法读取，未决数量尚未证明。")
         if facts.get("user_action_required") is True:
             lines.append(f"需要你处理：{(facts.get('user_action') or {}).get('request') or '请打开 Codex 查看具体请求。'}")
-        elif pending or not ok:
+        elif pending or facts.get("pending_evidence_unproven") or not terminal:
             lines.append("需要你处理：暂不需要操作。系统负责精确对账；未决委托不会自动重发。")
         else:
             lines.append("需要你处理：无需操作。")
