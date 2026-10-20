@@ -64,6 +64,23 @@ sources. Report the busy source without claiming a scan, completion, or an
 Agent-owned repair. Do not rerun the hour gate or create a replacement capture.
 Status/audit remain readable during source waits.
 
+A retained capture repair must not starve metadata discovery. The local source
+has a separate `discover` capability: under its existing source slot, it polls
+the exact contact, persists each distinct original message, applies the normal
+72-hour ungenerated expiry gate and reports fresh `discovery.scanned_at`,
+`discovered_count` and `pending_items`. It performs no Browser/native/PAC,
+download, upload or mailbox actions. `discovery.status=failed` is a failed scan,
+never no-update; its diagnostic is separate from the original retained repair.
+The original fingerprint/claims remain unchanged. Status includes this inventory.
+
+Do not end by repeating only the old repair/expired item. Reconcile every newly
+discovered pending original entry, then continue eligible exact items through
+`capture-xiaocao-item --source-identity <identity>` one at a time, without another
+hour gate or source-wide rescan. Each original entry is independent work, not a
+replacement for the failed one. Existing native security, consent, source/media,
+cleanup and transfer gates still apply. Report a concrete blocker if they prevent
+capture; a saved inventory or offline code fix is not Handoff completion.
+
 Native identity/activation replies have a total 20-minute stdin deadline,
 including partial JSON. A timeout releases execution ownership when the source
 returns; it retains the original capture and claims and is Agent-owned repair,

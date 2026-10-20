@@ -2123,6 +2123,28 @@ class DailyCoordinator:
         return outcome, receipt
 
     @staticmethod
+    def _discover_retained_source(
+        source: dict[str, Any],
+    ) -> dict[str, Any]:
+        """A metadata failure must not replace the retained execution failure."""
+        try:
+            result = source["discover"]()
+            if not isinstance(result, dict) or result.get("status") != "scanned":
+                raise DailyError("source discovery returned invalid metadata")
+            return result
+        except TransientSourceError as exc:
+            return {"status": "failed", "failure": exc.diagnostic()}
+        except Exception:
+            return {
+                "status": "failed",
+                "failure": {
+                    "category": "code_error",
+                    "code": "source_discovery_failed",
+                    "stage": "source_discovery",
+                },
+            }
+
+    @staticmethod
     def _invoke_source_step(
         source: dict[str, Any],
         *,
@@ -2458,6 +2480,7 @@ class DailyCoordinator:
                     "code",
                     "stage",
                     "busy",
+                    "discovery",
                 )
                 if key in row
             }
@@ -3013,6 +3036,13 @@ class DailyCoordinator:
                 reconciliation_receipt: dict[str, Any] | None = None
                 structured_input_receipt: dict[str, Any] | None = None
                 try:
+                    if retained_outcome is not None and callable(source.get("discover")):
+                        discovery = self._discover_retained_source(source)
+                        self._append(
+                            "source_discovery_completed",
+                            slot=slot, source=name, discovery=discovery,
+                        )
+                        retained_outcome = {**retained_outcome, "discovery": discovery}
                     outcome = self._invoke_source_step(
                         source,
                         runner=runner,

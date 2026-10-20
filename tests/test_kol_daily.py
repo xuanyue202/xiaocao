@@ -4711,7 +4711,9 @@ def test_daily_resume_user_action_runs_only_exact_blocked_source(tmp_path):
 def test_reconciled_transfer_resumes_exact_unfinished_item(
     tmp_path, receipt_identity, receipt_version, observed,
 ):
-    service = DailyCoordinator(tmp_path / "daily")
+    service = DailyCoordinator(
+        tmp_path / "daily", now=Clock("2026-10-20T18:00:00+08:00"),
+    )
     blocker = UserActionBlocker(
         "lv-cloud-transfer-not-materialized", "转存结果未确认",
         waiting_items=[{

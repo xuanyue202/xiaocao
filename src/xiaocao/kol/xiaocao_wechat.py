@@ -1090,6 +1090,34 @@ class XiaocaoWechatLiveSubscription:
             }
         self._save(manifest)
 
+    def discover(self) -> dict[str, Any]:
+        """Persist original-message inventory without activating any capture."""
+        manifest = self._load()
+        previous = set(manifest["items"])
+        self._poll(manifest)
+        expired = self.expire_stale_waits(manifest)
+        pending = sorted(
+            (item for item in manifest["items"].values()
+             if item.get("status") not in _TERMINAL),
+            key=lambda item: (item["published_at"], item["identity"]),
+            reverse=True,
+        )
+        result = {
+            "status": "scanned",
+            "scanned_at": self._now(),
+            "discovered_count": len(set(manifest["items"]) - previous),
+            "expired_count": len(expired),
+            "pending_items": [
+                {key: item[key] for key in (
+                    "identity", "published_at", "status", "capture_job_id",
+                ) if key in item}
+                for item in pending
+            ],
+        }
+        manifest["last_discovery"] = result
+        self._save(manifest)
+        return result
+
     def _supersede_older_unarmed_previews(
         self,
         manifest: dict[str, Any],
