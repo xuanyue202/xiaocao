@@ -467,6 +467,8 @@ def parse_xiaocao_live_messages(payload: dict[str, Any]) -> list[dict[str, Any]]
 
 
 class CaptureDriver(Protocol):
+    def validate_handoff_media(self, identity: str, capture_job_id: str, capsule: dict[str, Any]) -> None: ...
+
     def can_expire_wait(self, identity: str, capture_job_id: str) -> bool: ...
 
     def prepare_playback(self, identity: str, capture_job_id: str) -> dict[str, Any]: ...
@@ -953,6 +955,13 @@ class XiaocaoLiveCaptureDriver:
             None,
         )
 
+    def validate_handoff_media(self, identity: str, capture_job_id: str, capsule: dict[str, Any]) -> None:
+        """Revalidate local bytes before the first external mailbox effect."""
+        media = self._service(identity).validate_media(capture_job_id)
+        for field in ("capture_job_id", "media_sha256", "media_size_bytes", "media_duration_seconds"):
+            if media.get(field) != capsule.get(field):
+                raise EnrichmentError("Xiaocao handoff media no longer matches its capsule")
+
 class XiaocaoWechatLiveSubscription:
     """Exactly-once WeChat discovery and capture state machine.
 
@@ -1431,6 +1440,7 @@ class XiaocaoWechatLiveSubscription:
         item: dict[str, Any],
     ) -> dict[str, Any]:
         capsule = self._load_handoff(item)
+        self.capture_driver.validate_handoff_media(item["identity"], item["capture_job_id"], capsule)
         media_basename = str(capsule.get("media_basename") or "").strip()
         if (
             not media_basename

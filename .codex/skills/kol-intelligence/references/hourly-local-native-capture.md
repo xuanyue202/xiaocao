@@ -380,6 +380,17 @@ lists enrich asynchronously with an incremental cache; they cannot bind a source
    产物 `20260906 大师班专场(晚18：00开播)-compressed.mp4`，382641026 bytes，
    3345.534247 秒；仅供对照，不是下次运行的参数或整个 Handoff 的成功证明。
 
+   A recovered connection is not proof of a complete replay. Re-probe the exact
+   artifact against its bound finite-HLS duration, allowing at most 2 seconds of
+   codec/container rounding rather than 1% of a long recording. Missing or
+   non-finite HLS evidence fails closed. A previous `done`, `media_validated` or
+   cloud receipt cannot bypass this check before the first mailbox send. A
+   mismatch records `compressed_media_duration_mismatch`; preserve original
+   capture/task/upload claims and diagnose the same item. Never send its capsule,
+   overwrite the claimed file or repeat its cloud upload to conceal a deficit.
+   Within-process reconnect is distinct from durable process-exit checkpoint
+   resume; report only the recovery actually observed.
+
 6. **Stay through upload and Handoff.** Keep the PTY open while it downloads and
    compresses, validates the MP4, cleans the sniffer/PAC, and uploads. Follow any
    Browser recovery through the existing upload job and persistent session.

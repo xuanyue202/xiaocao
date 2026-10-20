@@ -2556,3 +2556,83 @@ def test_validate_collision_numbered_compressed_media(tmp_path, raw_name):
         receipt = service.validate_media(job_id)
         assert receipt["media_sha256"] == _sha256(numbered)
         assert receipt["media_basename"] == numbered.name
+
+
+@pytest.mark.parametrize("cached", [False, True])
+def test_validate_media_rejects_network_shortened_long_replay(tmp_path, cached):
+    ledger, job_id, media, _ = _capture_fixture(tmp_path)
+    store = CaptureJobStore(ledger)
+    current = store.latest(job_id)
+    task = current['download_task']
+    task['meta']['labels']['hls_duration_sec'] = '6228.206'
+    store.transition(current, 'download_completed', download_task=task)
+    service = XiaocaoLiveService(tmp_path / 'live', capture_ledger=ledger,
+                                runner=_probe_runner(media, 6228.206))
+    if cached:
+        service.validate_media(job_id)
+    service._runner = _probe_runner(media, 6190.762887)
+    with pytest.raises(EnrichmentError, match='duration'):
+        service.validate_media(job_id)
+    rejection = service._event('media_integrity_rejected', capture_job_id=job_id)
+    assert rejection['accepted'] is False
+    assert rejection['media_sha256'] == _sha256(media)
+    assert store.latest(job_id)['status'] == 'downloaded'
+
+
+def test_reconcile_downloaded_rechecks_shortened_artifact_without_sniffer(tmp_path):
+    ledger, job_id, media, _ = _capture_fixture(tmp_path)
+    store = CaptureJobStore(ledger)
+    current = store.latest(job_id)
+    task = current['download_task']
+    task['meta']['labels']['hls_duration_sec'] = '6228.206'
+    store.transition(current, 'download_completed', download_task=task)
+    service = XiaocaoLiveService(tmp_path / 'live', capture_ledger=ledger,
+        runner=_probe_runner(media, 6190.762887),
+        sniffer_client=SimpleNamespace(tasks=lambda: pytest.fail('do not restart/query cleaned sniffer')))
+    with pytest.raises(EnrichmentError, match='duration'):
+        service.reconcile_completed_capture(job_id)
+
+
+@pytest.mark.parametrize('expected,actual,accepted', [
+    ('120.0', 119.9, True), ('120.0', 117.0, False),
+    ('nan', 120.0, False), ('inf', 120.0, False),
+    ('120.0', float('nan'), False), ('120.0', float('inf'), False),
+    ('', 120.0, False),
+])
+def test_validate_finite_replay_duration_evidence(tmp_path, expected, actual, accepted):
+    ledger, job_id, media, _ = _capture_fixture(tmp_path)
+    store = CaptureJobStore(ledger)
+    current = store.latest(job_id)
+    task = current['download_task']
+    task['meta']['labels']['hls_duration_sec'] = expected
+    # This is the production HLS path, not a recorded non-HLS source.
+    candidate = {**current['candidate'], 'media_type': 'm3u8'}
+    store.transition(current, 'download_completed', download_task=task, candidate=candidate)
+    service = XiaocaoLiveService(tmp_path / 'live', capture_ledger=ledger,
+                                runner=_probe_runner(media, actual))
+    if accepted:
+        assert service.validate_media(job_id)['media_duration_seconds'] == actual
+    else:
+        with pytest.raises(EnrichmentError, match='duration'):
+            service.validate_media(job_id)
+
+
+@pytest.mark.parametrize('media_type', [None, 'unknown', 'm3u8', 'mp4'])
+def test_missing_duration_is_compatible_only_with_explicit_mp4(tmp_path, media_type):
+    ledger, job_id, media, _ = _capture_fixture(tmp_path)
+    store = CaptureJobStore(ledger)
+    current = store.latest(job_id)
+    task = current['download_task']
+    task['meta']['labels'].pop('hls_duration_sec')
+    candidate = dict(current['candidate'])
+    candidate.pop('media_type', None)
+    if media_type:
+        candidate['media_type'] = media_type
+    store.transition(current, 'download_completed', candidate=candidate, download_task=task)
+    service = XiaocaoLiveService(tmp_path / 'live', capture_ledger=ledger,
+                                runner=_probe_runner(media, 120.0))
+    if media_type == 'mp4':
+        service.validate_media(job_id)
+    else:
+        with pytest.raises(EnrichmentError, match='duration'):
+            service.validate_media(job_id)

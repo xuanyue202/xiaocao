@@ -188,6 +188,9 @@ def test_unsupported_merchant_entry_is_retained_without_arming_or_retry(tmp_path
 
 
 class _CaptureDriver:
+    def validate_handoff_media(self, identity, capture_job_id, capsule):
+        pass
+
     def __init__(self):
         self.arms: list[tuple[str, str | None]] = []
         self.advances = 0
@@ -2378,7 +2381,8 @@ def test_live_driver_preserves_original_message_date_before_advance(tmp_path):
     assert len(observed) == 1
 
 
-def test_published_handoff_recovery_is_read_only_until_remote_dispatch(tmp_path):
+@pytest.mark.parametrize("integrity_rejected", [False, True])
+def test_published_handoff_recovery_is_read_only_until_remote_dispatch(tmp_path, integrity_rejected):
     payload = _history(
         "[2026-08-06 16:48] 福利官小花四: 今晚见："
         "https://yv9lc.xetslk.com/sl/3qV2x"
@@ -2419,6 +2423,12 @@ def test_published_handoff_recovery_is_read_only_until_remote_dispatch(tmp_path)
     )
 
     class RecoveryCapture(_CaptureDriver):
+        def validate_handoff_media(self, identity, capture_job_id, capsule_value):
+            assert (identity, capture_job_id, capsule_value) == (
+                parsed["identity"], "kol-capture-current", capsule)
+            if integrity_rejected:
+                raise EnrichmentError("compressed capture duration is implausible")
+
         def published_handoff(self, identity, capture_job_id):
             assert identity == parsed["identity"]
             assert capture_job_id == "kol-capture-current"
@@ -2433,6 +2443,7 @@ def test_published_handoff_recovery_is_read_only_until_remote_dispatch(tmp_path)
             raise AssertionError("recovery must not advance or replay capture")
 
     def exchange(capsule_value, *, object_kind, title):
+        assert not integrity_rejected, "rejected media cannot reach a mailbox side effect"
         assert capsule_value == capsule
         assert object_kind == "video"
         assert title == "target-compressed"
@@ -2455,6 +2466,13 @@ def test_published_handoff_recovery_is_read_only_until_remote_dispatch(tmp_path)
         clock=lambda: datetime.fromisoformat("2026-08-06T23:00:00+08:00"),
     )
 
+    if integrity_rejected:
+        with pytest.raises(EnrichmentError, match="duration"):
+            subscription.dispatch_published_handoff()
+        retained = subscription._load()["items"][parsed["identity"]]
+        assert retained["status"] == "handoff_ready"
+        assert retained["capture_job_id"] == "kol-capture-current"
+        return
     result = subscription.dispatch_published_handoff()
 
     assert result == {

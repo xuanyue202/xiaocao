@@ -45,6 +45,7 @@ from .claim_coverage import (
 from .author_profiles import semantic_author_profile
 from .enrichment_types import EnrichmentDiagnosticError, EnrichmentError
 from .netdisk_enrichment import NetdiskEnrichmentService
+from .media_integrity import finite_duration_matches
 from .semantic_bundle import read_validated_bundle, validate_receipt_bindings
 
 
@@ -1509,6 +1510,7 @@ class XiaocaoLiveService:
         if current is None:
             raise EnrichmentError("capture job does not exist")
         if current.get("status") == "downloaded":
+            self.validate_media(capture_job_id)
             return {**current, "idempotent_replay": True}
         if current.get("status") != "downloading":
             raise EnrichmentError("capture is not awaiting download reconciliation")
@@ -1589,8 +1591,7 @@ class XiaocaoLiveService:
             size = int(probe["size"])
         except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
             raise EnrichmentError("paused compressed capture could not be probed") from exc
-        tolerance = max(15.0, expected_duration * 0.01)
-        if duration < 60 or abs(duration - expected_duration) > tolerance:
+        if not finite_duration_matches(duration, expected_duration):
             raise EnrichmentError("paused compressed capture duration does not match HLS")
 
         return self.capture_store.transition(
@@ -1726,10 +1727,27 @@ class XiaocaoLiveService:
         labels = ((capture.get("download_task") or {}).get("meta") or {}).get(
             "labels"
         ) or {}
-        expected_duration = float(labels.get("hls_duration_sec") or duration)
-        tolerance = max(15.0, expected_duration * 0.01)
-        if duration < 60 or abs(duration - expected_duration) > tolerance:
-            raise EnrichmentError("compressed capture duration is implausible")
+        expected_duration = labels.get("hls_duration_sec")
+        if not expected_duration and (capture.get("candidate") or {}).get("media_type") == "mp4":
+            expected_duration = duration
+        if not finite_duration_matches(duration, expected_duration):
+            media_sha = _sha256_file(media)
+            rejected = self._event("media_integrity_rejected", capture_job_id=capture_job_id)
+            if rejected is None or rejected.get("media_sha256") != media_sha:
+                self._append(
+                    "media_integrity_rejected", status="repair_required",
+                    capture_job_id=capture_job_id,
+                    download_task_id=capture.get("download_task_id"),
+                    media_sha256=media_sha,
+                    media_size_bytes=media.stat().st_size,
+                    failure_code="compressed_media_duration_mismatch",
+                    accepted=False,
+                )
+            raise EnrichmentDiagnosticError(
+                "compressed capture duration is implausible",
+                category="contract_error", code="compressed_media_duration_mismatch",
+                stage="compressed_capture",
+            )
         media_sha = _sha256_file(media)
         existing = self._event("media_validated")
         if (
