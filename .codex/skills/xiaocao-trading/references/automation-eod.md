@@ -5,9 +5,18 @@ Read this file only for the daily post-close capture/evaluation branch.
 APP Book B cash/NAV and performance use Operating Contract §6's dynamic
 SQLite financial journal. Consume `account.accounting` and cite its observation,
 journal and funding heads. Apply `docs/BOOK_B_ACCOUNTING.md` for profit/cost,
-unclassified cash and estimated fees. Paper A/B/T and historical settlements stay independent.
+unclassified cash and actual fee finality. Missing itemized native fees keep net
+profit unknown and block formal settlement even when cash happens to match;
+report pending exact order identities. Accepted actual fee receipts append
+differences to the shared journal; never classify a balance gap as a fee or
+replace historical postings. Budget/exit-fee estimates retain their existing
+scope. Paper A/B/T and historical settlements stay independent.
 
 ## Execute
+
+The scheduler wakes at 15:03. Enter the retained command promptly; both paper
+and APP EOD entrypoints wait until 15:10 before their slot claims or business
+effects. Each sleep is at most 60 seconds and rereads China wall time.
 
 Before applying the command prefix, require this task's initial scheduler header
 to say exactly `Automation ID: xiaocao-daily-eod`. If an inherited
@@ -61,6 +70,11 @@ intent/event chain stays open and the strict settlement writer still blocks.
 If the strict settlement writer blocks after a valid
 post-close projection, the blocked receipt retains that account and exact
 reconciliation receipts; these are current observations, not settled NAV.
+The original archive also retains `broker_snapshot`: the exact normalized
+positions/orders/trades and positions-funds evidence used by that projection,
+with its original clocks and snapshot hash. Default CLI output gives its archive
+reference instead of printing the tables. Historical receipts without that field
+retain an evidence gap; do not reconstruct or overwrite them from a later read.
 Preserve any older settlement written through that
 exception as historical evidence and disclose its failed terminal-plan audit.
 The settlement loader and risk history exclude a hash-matched settlement whose
@@ -68,6 +82,12 @@ original EOD archive contains a nonterminal reconciliation receipt; report the
 remaining valid basis and exact historical gap without rewriting either file.
 Never add
 `--execute-sells` to the EOD call.
+The APP entrypoint durably queues a blocked-result WeCom notice after saving its
+original archive, including native login/read failures before a snapshot exists.
+If a code repair adds this delivery to an already terminated run, use
+`scripts/book_b_eod_alert.py --receipt <exact-original-archive>` under the original
+Automation/Thread identity. This notice-only recovery never queries APP or reruns
+EOD; uncertain delivery remains pending for exact reconciliation.
 After the original business process terminates, run
 `PYTHONPATH=src .venv/bin/python scripts/book_b_accounting.py statement` once to
 export cumulative JSON/CSV. Retain its dated mark or missing/stale status even if
@@ -245,6 +265,19 @@ decision row is incomplete coverage, not a no-sell judgment.
    focused validation and a future natural-run readback; do not defer it merely
    because the EOD command cannot submit a trade. Check durable incident
    delivery separately from whether the final summary mentioned the alert.
+   Order incidents and EOD/change notices share the durable delivery claim.
+   The paper status digest also uses the shared delivery claim, with exact dated
+text in `output/live/paper_eod_status_notices.jsonl`. Include this outbox in the
+post-business safe retry through `scripts/trading_change_notice.py --outbox
+output/live/paper_eod_status_notices.jsonl --retry-pending`; never replay the
+status digest command to recover an uncertain send. Historical direct-send
+logs without a durable claim remain a delivery evidence gap.
+Include `output/live/sell_result_notices.jsonl` in the same post-business
+`trading_change_notice.py --outbox <path> --retry-pending` pass for paper/APP
+sale outcomes. Recover only queued exact claims; never replay a trade or invent
+a historical notification claim to fill a delivery gap.
+Retry only proved pre-send failures; legacy pending, interrupted sends and
+   uncertain/partial delivery require exact reconciliation, never another send.
 6. Write `output/live/daily_execution_review_<date>.md`: expected versus actual,
    evidence paths/timestamps, impact, stable failure fingerprint, concise cause/fix/verification for
    defects, repair and regression proof, production verification status and

@@ -22,6 +22,7 @@ import argparse
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
+import math
 import os
 import subprocess
 import sys
@@ -39,9 +40,11 @@ sys.path.insert(0, str(ROOT / "kronos_screen" / "scripts"))
 
 from xiaocao.api.cache import SQLiteCache  # noqa: E402
 from xiaocao.api.client import XiaocaoClient  # noqa: E402
+from xiaocao.api.errors import ApiAuthError, ApiError, ApiNotFoundError, ApiSchemaError, ApiSourceNotReadyError  # noqa: E402
 from xiaocao.config import load_settings  # noqa: E402
 from xiaocao.datasource.api_source import ApiDataSource  # noqa: E402
 from xiaocao.live import agent_signals, intelligence, intelligence_evidence, intelligence_policy  # noqa: E402
+from xiaocao.live.source_observation import CaptureInputsExpired, require_capture_inputs
 from xiaocao.live.morning_bundle import publish_captured_batch  # noqa: E402
 from xiaocao.utils.atomic_files import atomic_write  # noqa: E402
 from xiaocao.strategy import run_strategy  # noqa: E402
@@ -66,18 +69,18 @@ TRAINING_ROWS_FILE = OUT_DIR / "training_rows.parquet"
 STOCK_SENTIMENT_FILE = OUT_DIR / "stock_sentiment.json"
 STOCK_SENTIMENT_HISTORY_FILE = OUT_DIR / "stock_sentiment_history.jsonl"
 POSITIONS_FILE = OUT_DIR / "positions.jsonl"
-WAIT_START = time(9, 20)
 WAIT_TARGET = time(9, 25, 1)
 DEFAULT_MAX_CANDIDATES = 3
 DEFAULT_MAX_PER_MODE = 2
 DEFAULT_MAX_STANDBY = 2
-DEFAULT_READY_TIMEOUT_SEC = 30.0
-DEFAULT_READY_POLL_SEC = 1.0
+DEFAULT_READY_TIMEOUT_SEC = -1.0
+DEFAULT_READY_POLL_SEC = 2.0
 DEFAULT_READY_CONFIRM_SEC = 8.0
 DEFAULT_READY_STABLE_SAMPLES = 2
 STANDBY_MAX_RANK_GAP = 3.0
 _ENTRY_DETAIL_CACHE: dict[tuple[str, str], dict[str, object] | None] = {}
 _MISSING_ENTRY_DETAIL = object()
+_SOURCE_RECOVERY = None
 BASKET_POLICY = {
     "接力低弱转1": {"premium": 2.0, "min": 1.5, "max": 2.5, "cap_pct": 10.0, "exec_cap_pct": 6.0},
     "接力低弱转2": {"premium": 1.2, "min": 0.8, "max": 1.8, "cap_pct": 8.0, "exec_cap_pct": 5.5},
@@ -111,7 +114,7 @@ def _client() -> XiaocaoClient:
     cache = SQLiteCache(ROOT / "output" / ".cache" / "xiaocao.db")
     return XiaocaoClient(
         base_url=settings.base_url, timeout=settings.timeout,
-        retries=settings.retries, cache=cache,
+        retries=settings.retries, cache=cache, minimum_request_interval=0.5,
     )
 
 
@@ -532,7 +535,7 @@ def _seconds_until_recommendation_start(date_iso: str, now: datetime) -> float:
     if date_iso != now.date().isoformat():
         return 0.0
     current = now.time()
-    if not (WAIT_START <= current < WAIT_TARGET):
+    if current >= WAIT_TARGET:
         return 0.0
     target = datetime.combine(now.date(), WAIT_TARGET, tzinfo=A_SHARE_TZ)
     return max(0.0, (target - now).total_seconds())
@@ -546,7 +549,9 @@ def _wait_for_recommendation_start(date_iso: str) -> None:
         f"[wait] 当前为 {date_iso} 早盘集合竞价窗口，等待 {wait_seconds:.1f}s 到 09:25:01 后开跑",
         file=sys.stderr,
     )
-    _time.sleep(wait_seconds)
+    from xiaocao.utils.business_clock import wait_for_business_time
+    wait_for_business_time(date_iso, WAIT_TARGET,
+                           now=lambda: datetime.now(A_SHARE_TZ), sleep=_time.sleep)
 
 
 def _today_iso() -> str:
@@ -557,6 +562,16 @@ def _is_today_live_run(date_iso: str) -> bool:
     return date_iso == _today_iso()
 
 
+def _excluded_security_codes(readiness: dict) -> list[str]:
+    return sorted({code for row in readiness.get("sources", [])
+                   for code in row.get("excluded_codes", [])})
+
+
+def _security_exclusion_note(readiness: dict) -> str:
+    codes = _excluded_security_codes(readiness)
+    return ("- 有效证券目录外剔除（不交易，来源证据已保留）: " + ", ".join(codes)) if codes else ""
+
+
 def _run_strategy_when_ready(
     date_iso: str,
     source: ApiDataSource,
@@ -565,22 +580,21 @@ def _run_strategy_when_ready(
     poll_sec: float,
     confirm_sec: float = DEFAULT_READY_CONFIRM_SEC,
     stable_samples: int = DEFAULT_READY_STABLE_SAMPLES,
+    price_probe=None,
 ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
-    """Run live strategy, retrying empty early-morning results.
+    """Wait for one stable, source- and price-complete observation.
 
-    Around 09:25 the exchange-side auction price may be final, while Xiaocao's
-    pool/index APIs can still lag by tens of seconds. An empty strategy result
-    during today's live run is therefore ambiguous: it can mean either "no
-    signals" or "backend not populated yet". Poll briefly before declaring NONE.
+    Negative timeout keeps the original producer waiting. A nonnegative
+    timeout remains available for bounded diagnostics and historical fixtures.
     """
-    if not _is_today_live_run(date_iso) or timeout_sec <= 0:
+    if not _is_today_live_run(date_iso) or timeout_sec == 0:
         if hasattr(source, "begin_observation"):
             source.begin_observation(1)
         rows = run_strategy(date_iso, source, profile="validated_v5", adaptive_modes=False)
         actives = [r for r in rows if r.get("adaptive_active") in (True, None)]
         return rows, actives
 
-    deadline = _time.monotonic() + max(0.0, timeout_sec)
+    deadline = float("inf") if timeout_sec < 0 else _time.monotonic() + timeout_sec
     attempt = 0
     best_rows: list[dict[str, object]] = []
     best_actives: list[dict[str, object]] = []
@@ -588,6 +602,13 @@ def _run_strategy_when_ready(
     first_nonempty_at: float | None = None
     last_fingerprint: tuple[tuple[object, object, object], ...] | None = None
     stable_seen = 0
+    last_failure_category = None
+    last_source_gap = None
+    first_gap_at = None
+    confirm_inputs = False
+    previous_rows, previous_actives = [], []
+    last_price_probe = float('-inf')
+    price_observed_at = None
     def finish(selected_rows, selected_actives, reason, selected_evidence=None):
         if hasattr(source, "readiness"):
             last_observation = source.readiness
@@ -600,14 +621,72 @@ def _run_strategy_when_ready(
                                      "signal_count": len(selected_rows),
                                      "unresolved_sources": unresolved,
                                      "completeness": "unproven" if unresolved or not observations else "observed_responses",
+                                     "readiness_completed_at": datetime.now(A_SHARE_TZ).isoformat(),
                                      "note": "Request date and populated responses do not prove provider completeness."})
         return selected_rows, selected_actives
     while True:
-        attempt += 1
-        if hasattr(source, "begin_observation"):
+        if not _is_today_live_run(date_iso):
+            raise RuntimeError("MORNING_CAPTURE_SESSION_CHANGED")
+        if _SOURCE_RECOVERY is not None and _SOURCE_RECOVERY.consume():
             source.begin_observation(attempt)
-        rows = run_strategy(date_iso, source, profile="validated_v5", adaptive_modes=False)
-        actives = [r for r in rows if r.get("adaptive_active") in (True, None)]
+            confirm_inputs = False
+            last_price_probe = float('-inf')
+        attempt += 1
+        iteration_started = _time.monotonic()
+        confirmed = False
+        try:
+            if confirm_inputs and hasattr(source, "revalidate_observation"):
+                confirmed = (isinstance(source, ApiDataSource)
+                             and source.reuse_ready_observation(attempt))
+                if not confirmed:
+                    confirmed = source.revalidate_observation(attempt)
+                if not confirmed:
+                    source.reuse_validated_observation()
+            elif hasattr(source, "begin_observation"):
+                if isinstance(source, ApiDataSource):
+                    source.begin_observation(attempt, retry_missing=attempt > 1)
+                else:
+                    source.begin_observation(attempt)
+            if confirmed:
+                rows, actives = previous_rows, previous_actives
+            else:
+                rows = run_strategy(date_iso, source, profile="validated_v5", adaptive_modes=False)
+                actives = [r for r in rows if r.get("adaptive_active") in (True, None)]
+            observations = getattr(source, "readiness", {}).get("sources", [])
+            sources_ready = bool(observations) and all(
+                row.get("status") in {"populated", "empty_confirmed"} for row in observations)
+            reuse_prices = confirmed and _time.monotonic() - last_price_probe <= 60
+            missing_prices = []
+            price_checked = bool(price_probe is not None and sources_ready and reuse_prices)
+            if price_probe is not None and sources_ready and not reuse_prices:
+                price_observed_at = datetime.now(A_SHARE_TZ).isoformat()
+                missing_prices = price_probe(actives)
+                price_checked = True
+                if not missing_prices:
+                    last_price_probe = _time.monotonic()
+        except ApiNotFoundError:
+            raise
+        except ApiError as exc:
+            if isinstance(exc, ApiSchemaError) and not isinstance(exc, ApiSourceNotReadyError):
+                raise
+            category = getattr(exc, "failure_category", None) or type(exc).__name__
+            print(json.dumps({"event": "morning_capture_iteration", "attempt": attempt,
+                "elapsed_seconds": round(_time.monotonic()-iteration_started, 6),
+                "status": "waiting", "failure_category": category}), file=sys.stderr, flush=True)
+            if isinstance(exc, ApiAuthError) and category not in {
+                    "MARKET_LOGIN_CAPTCHA_REQUIRED", "MARKET_LOGIN_BUSY", "MARKET_LOGIN_COOLDOWN"}:
+                raise
+            if category != last_failure_category:
+                print(json.dumps({"event": "market_dependency_recovery_wait", "trade_date": date_iso,
+                    "failure_category": category,
+                    "recovery_command": "PYTHONPATH=src .venv/bin/python scripts/configure_market_data_auth.py --captcha-from-keychain"
+                    if isinstance(exc, ApiAuthError) else None}, ensure_ascii=False), file=sys.stderr, flush=True)
+                last_failure_category = category
+            if _time.monotonic() >= deadline:
+                raise
+            _time.sleep(min(max(0.2, poll_sec), deadline - _time.monotonic()))
+            confirm_inputs = False
+            continue
 
         # Equal signal coverage should retain the most recent observation and
         # its matching source evidence, not stale prices from the first tie.
@@ -616,27 +695,83 @@ def _run_strategy_when_ready(
             best_actives = actives
             best_readiness = dict(getattr(source, "readiness", {}))
 
-        if actives:
+        source_version_current = not isinstance(source, ApiDataSource) or source.observation_is_current()
+        sources_ready = sources_ready and source_version_current
+        capture_ready = price_probe is None or (sources_ready and price_checked and not missing_prices)
+        confirm_inputs = bool(capture_ready and sources_ready)
+        previous_rows, previous_actives = rows, actives
+        source_gaps = [{"source": r.get("source"), "status": r.get("status"),
+                        "missing_codes": r.get("missing_codes", [])}
+                       for r in observations if r.get("status") not in {"populated", "empty_confirmed"}]
+        if observations and not source_version_current and not source_gaps:
+            source_gaps.append({"source": "complete_source_version", "status": "expired_or_unproved",
+                                "missing_codes": []})
+        if price_checked and missing_prices:
+            source_gaps.append({"source": "entry_price", "status": "missing",
+                                "missing_codes": missing_prices})
+        gap_fingerprint = json.dumps(source_gaps, sort_keys=True)
+        observed_at = datetime.now(A_SHARE_TZ).isoformat()
+        first_gap_at = (first_gap_at or observed_at) if source_gaps else None
+        readiness_path = OUT_DIR / f"recommend_source_readiness_{date_iso}.json"
+        if hasattr(source, "readiness"):
+            source.readiness["trade_date"] = date_iso
+            source.readiness["dependency"] = {"source_gaps": source_gaps,
+                "first_observed_at": first_gap_at, "last_observed_at": observed_at}
+            atomic_write(readiness_path, json.dumps(source.readiness, ensure_ascii=False,
+                sort_keys=True, indent=2).encode())
+        if source_gaps and gap_fingerprint != last_source_gap:
+            recovery = _SOURCE_RECOVERY.waiting(source.readiness) if _SOURCE_RECOVERY else {}
+            if _SOURCE_RECOVERY:
+                from xiaocao.live.morning_pipeline import save_pipeline_status
+                pipeline = save_pipeline_status(OUT_DIR, date_iso)
+                recovery["pipeline_path"] = pipeline["path"]
+                recovery["pipeline_status"] = pipeline["status"]
+            print(json.dumps({"event": "market_dependency_recovery_wait", "trade_date": date_iso,
+                "failure_category": "MORNING_PRICE_INCOMPLETE" if missing_prices else "MORNING_SOURCE_INCOMPLETE",
+                "source_gaps": source_gaps, **recovery, "evidence_path": str(readiness_path),
+                "first_observed_at": first_gap_at, "last_observed_at": observed_at}),
+                file=sys.stderr, flush=True)
+        last_source_gap = gap_fingerprint
+        excluded_codes = _excluded_security_codes(getattr(source, "readiness", {}))
+        print(json.dumps({"event": "morning_capture_iteration", "attempt": attempt,
+            "elapsed_seconds": round(_time.monotonic()-iteration_started, 6),
+            "confirmation_reused_strategy": confirmed, "sources_ready": sources_ready,
+            "signal_count": len(rows), "active_count": len(actives), "price_checked": price_checked,
+            "unpriced_count": len(missing_prices) if price_checked else None,
+            "excluded_code_count": len(excluded_codes), "excluded_codes": excluded_codes,
+            "unresolved_sources": [r.get("source") for r in observations if r.get("status") not in {"populated", "empty_confirmed"}]}),
+            file=sys.stderr, flush=True)
+        if price_probe is not None:
+            source.readiness["price_enrichment"] = {
+                "status": "complete" if price_checked and not missing_prices else "waiting",
+                "checked": price_checked, "active_count": len(actives),
+                "priced_count": len(actives) - len(missing_prices) if price_checked else None,
+                "unpriced_codes": missing_prices if price_checked else None, "observed_at": price_observed_at,
+                "reused": reuse_prices}
+
+        if actives or capture_ready and sources_ready:
             now = _time.monotonic()
             if first_nonempty_at is None:
                 first_nonempty_at = now
-                deadline = max(deadline, now + max(0.0, confirm_sec))
             fingerprint = tuple(sorted(
                 (str(r.get("code")), str(r.get("mode")), json.dumps(r, sort_keys=True, default=str))
                 for r in rows
             ))
             stable_seen = stable_seen + 1 if fingerprint == last_fingerprint else 1
             last_fingerprint = fingerprint
-            if stable_seen >= max(1, stable_samples) and now - first_nonempty_at >= max(0.0, confirm_sec):
+            if capture_ready and stable_seen >= max(1, stable_samples) and now - first_nonempty_at >= max(0.0, confirm_sec):
                 return finish(rows, actives, "confirmation_window_elapsed")
             remaining = deadline - now
             if remaining <= 0:
+                if price_probe is not None:
+                    raise RuntimeError("MORNING_CAPTURE_READINESS_TIMEOUT")
                 return finish(best_rows or rows, best_actives or actives, "readiness_timeout",
                               best_readiness if best_rows else None)
             sleep_sec = min(max(0.2, poll_sec), remaining)
             print(
                 f"[settle] {date_iso} 第 {attempt} 次已有 {len(rows)} 个信号/"
-                f"{len(actives)} 个 active，继续秒级确认稳定性；{sleep_sec:.1f}s 后重试",
+                f"{len(actives)} 个 active，source_ready={sources_ready}，"
+                f"unpriced={missing_prices if price_checked else 'not_checked'}；{sleep_sec:.1f}s 后重试",
                 file=sys.stderr,
             )
             _time.sleep(sleep_sec)
@@ -644,6 +779,8 @@ def _run_strategy_when_ready(
 
         remaining = deadline - _time.monotonic()
         if remaining <= 0:
+            if price_probe is not None:
+                raise RuntimeError("MORNING_CAPTURE_EMPTY_UNPROVEN")
             return finish(best_rows or rows, best_actives or actives, "empty_unconfirmed_timeout",
                           best_readiness if best_rows else None)
         sleep_sec = min(max(0.2, poll_sec), remaining)
@@ -680,6 +817,8 @@ def _market_detail_for_date(client: XiaocaoClient, code: str, date_iso: str) -> 
         return None
     try:
         detail = _extract_realtime_detail_row(client.second_line_detail_info(code), code)
+    except (ApiAuthError, ApiSchemaError, ApiNotFoundError):
+        raise
     except Exception:
         return None
     if not detail:
@@ -719,12 +858,14 @@ def _entry_price_with_detail(
             price = float(detail.get("open") or 0) or None
         except (TypeError, ValueError):
             price = None
-        if price:
+        if price and math.isfinite(price) and price > 0:
             pre_close = _to_float(detail.get("preClose"))
             return price, "realtime_open", pre_close, detail
 
     try:
         rows = client.date_kline(code, count=10, freq="D", adj="qfq")
+    except (ApiAuthError, ApiSchemaError, ApiNotFoundError):
+        raise
     except Exception:
         rows = []
     # NOTE: a per-candidate empty/failed date_kline degrades gracefully here (we
@@ -742,12 +883,14 @@ def _entry_price_with_detail(
                     price = float(r.get("open") or 0) or None
                 except (TypeError, ValueError):
                     price = None
-                if price:
+                if price and math.isfinite(price) and price > 0:
                     pre_close = _to_float(r.get("preClose"))
                     return price, "open", pre_close, detail
 
     try:
         auction_rows = client.stock_call_auction(code, date_iso)
+    except (ApiAuthError, ApiSchemaError, ApiNotFoundError):
+        raise
     except Exception:
         auction_rows = []
     if isinstance(auction_rows, list):
@@ -760,7 +903,7 @@ def _entry_price_with_detail(
                 price = float(r.get("trade") or r.get("buyPrice1") or r.get("sellPrice1") or 0) or None
             except (TypeError, ValueError):
                 price = None
-            if price:
+            if price and math.isfinite(price) and price > 0:
                 pre_close = _to_float(r.get("preClose"))
                 return price, "auction", pre_close, detail
     return None, "", None, detail
@@ -1073,7 +1216,8 @@ def _select_standby_candidates(
     return standby
 
 
-def main() -> None:
+def _main() -> None:
+    global _SOURCE_RECOVERY
     script_entered_at = datetime.now(A_SHARE_TZ).isoformat()
     parser = argparse.ArgumentParser()
     parser.add_argument("--date", default="today")
@@ -1086,7 +1230,7 @@ def main() -> None:
     parser.add_argument("--max-standby", type=int, default=DEFAULT_MAX_STANDBY,
                         help="小仓候补最多输出几只；仅保留与第 N 名分差很小且不拥挤的候选")
     parser.add_argument("--ready-timeout-sec", type=float, default=DEFAULT_READY_TIMEOUT_SEC,
-                        help="今天实时运行时，空信号疑似 API 未 ready 的最长等待秒数；0 表示不等待")
+                        help="数据就绪等待秒数；默认 -1 持续等待，0 为单次诊断")
     parser.add_argument("--ready-poll-sec", type=float, default=DEFAULT_READY_POLL_SEC,
                         help="今天实时运行时，空信号重试间隔秒数")
     parser.add_argument("--ready-confirm-sec", type=float, default=DEFAULT_READY_CONFIRM_SEC,
@@ -1104,201 +1248,290 @@ def main() -> None:
     _ENTRY_DETAIL_CACHE.clear()
 
     date_iso = _resolve_date(args.date)
-    _wait_for_recommendation_start(date_iso)
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-
+    preparation = None
+    if (os.environ.get("CODEX_AUTOMATION_ID") == "xiaocao-daily-morning"
+            and not args.no_kronos and _seconds_until_recommendation_start(date_iso, datetime.now(A_SHARE_TZ)) > 30):
+        deadline = f"{date_iso}T09:24:45+08:00"
+        try:
+            with (OUT_DIR / f"morning_score_preparation_{date_iso}.log").open("a") as log:
+                preparation = subprocess.Popen([sys.executable, str(ROOT / "scripts/prepare_morning_scores.py"),
+                    "--date", date_iso, "--deadline", deadline], cwd=ROOT,
+                    stdout=log, stderr=log, start_new_session=True)
+        except OSError:
+            print('[K/P preparation unavailable: launch failed]', file=sys.stderr)
     client = _client()
-    source = ApiDataSource(client, hpqb_state=0, lpdx_state=0)
-    cache = client.cache if isinstance(client.cache, SQLiteCache) else None
-
-    # Run both profiles. Their signal generation is IDENTICAL (same EOD logic);
-    # they differ only in scoring (exit rule), so signals should be identical.
-    # We run once and label each signal as "in v5" / "in v6" — they're all in
-    # both. The differentiation is in the STOP price computed below.
-    try:
-        rows, actives = _run_strategy_when_ready(
-            date_iso, source, timeout_sec=max(0.0, args.ready_timeout_sec),
-            poll_sec=max(1.0, args.ready_poll_sec), confirm_sec=max(0.0, args.ready_confirm_sec),
-        )
-    finally:
-        atomic_write(OUT_DIR / f"recommend_source_readiness_{date_iso}.json",
-            json.dumps(source.readiness, ensure_ascii=False, sort_keys=True, indent=2).encode())
-
-    if not actives:
-        if _is_today_live_run(date_iso) and source.readiness.get("completeness") != "observed_responses":
-            raise RuntimeError("MORNING_CAPTURE_EMPTY_UNPROVEN: source readiness incomplete")
-        msg = f"# {date_iso} 候选股: NONE"
-        print(msg)
-        atomic_write(OUT_DIR / f"recommend_{date_iso}.md", msg.encode())
-        from capture_signals import capture
-        capture([], client, date_iso, is_live=_is_today_live_run(date_iso), out=OUT_DIR / "signal_snapshots.jsonl",
-            on_captured=lambda raw: _publish_original_batch(date_iso, source.readiness, script_entered_at, raw))
-        return
-
-    # Enrich each with open price + theoretical stops
-    candidates = []
-    unpriced_codes = []
-    for r in actives:
-        code = r.get("code")
-        if not code:
-            continue
-        # Keep the historical three-value seam here.  A few downstream callers
-        # (and, more importantly, offline recommendation fixtures) replace
-        # ``_entry_price`` directly.  The realtime detail is an optional
-        # enrichment for the market guard and must not make those fixtures lose
-        # their candidate solely because the detail endpoint is unavailable.
-        opn, entry_source, pre_close = _entry_price(client, code, date_iso)
-        cached_detail = _ENTRY_DETAIL_CACHE.pop((date_iso, str(code)), _MISSING_ENTRY_DETAIL)
-        # `_entry_price` already performs the one realtime-detail read and
-        # stores its result.  A missing cache means a compatibility caller
-        # replaced that function; do not issue a second API request merely to
-        # enrich a row (the market guard will fail closed if authoritative
-        # detail was not supplied).
-        market_detail = None if cached_detail is _MISSING_ENTRY_DETAIL else cached_detail
-        if not opn:
-            unpriced_codes.append(str(code))
-            continue
-        open_pct_change = _open_pct_from_entry(opn, pre_close, r.get("openPctChange"))
-        market_status = str((market_detail or {}).get("tradeStatus") or "")
-        candidates.append({
-            "code": code,
-            "name": r.get("name") or "",
-            "mode": r.get("mode") or "",
-            "xcjw": _num(r.get("xcjw")),
-            "cjs": _num(r.get("cjs")),
-            "jsjl": _num(r.get("jsjl")),
-            "jssb": _num(r.get("jssb")),
-            "rawQibaoRank": r.get("rawQibaoRank"),
-            "qibaoRankScore": r.get("qibaoRankScore"),
-            "qibaoBenchmarkKind": r.get("qibaoBenchmarkKind"),
-            "qibaoBenchmarkLayer": r.get("qibaoBenchmarkLayer"),
-            "industryElectronic": r.get("industryElectronic"),
-            "board20": r.get("board20"),
-            "open": opn,
-            "pre_close": pre_close,
-            "entry_source": entry_source,
-            "market_guard_required": bool(_is_today_live_run(date_iso)),
-            "market_guard_status": market_status or None,
-            "trade_status": market_status or None,
-            "market_price": (market_detail or {}).get("trade"),
-            "down_price": (market_detail or {}).get("downPrice"),
-            "up_price": (market_detail or {}).get("upPrice"),
-            "market_observed_at": _normalize_market_observed_at(
-                (market_detail or {}).get("tradeTimestamp"), date_iso
-            ),
-            "v5_stop_initial": _profile_stop(opn, 2.0),
-            "v6_stop_initial": _profile_stop(opn, 0.5),
-            "is_main_line": bool(r.get("is_main_line")),
-            "is_big_cap": bool(r.get("is_big_cap")),
-            "direction": bool(r.get("direction")),
-            "direction_rank": r.get("directionRank", -1),
-            "category_rank": r.get("categoryRank", -1),
-            "regime": r.get("regime") or "",
-            "reason": r.get("reason") or "",
-            "open_pct_change": open_pct_change,
-            "excIndustryCode": r.get("excIndustryCode") or "",
-            "blockCodeList": r.get("blockCodeList") or "",
-            "blockCategoryCodeList": r.get("blockCategoryCodeList") or "",
-        })
-
-    if _is_today_live_run(date_iso):
-        source.readiness["price_enrichment"] = {"status": "degraded" if unpriced_codes else "complete",
-            "active_count": len(actives), "priced_count": len(candidates), "unpriced_codes": unpriced_codes}
-        atomic_write(OUT_DIR / f"recommend_source_readiness_{date_iso}.json",
-            json.dumps(source.readiness, ensure_ascii=False, sort_keys=True, indent=2).encode())
-        if not candidates:
-            raise RuntimeError("MORNING_CAPTURE_PRICES_UNPROVEN: active candidates have no entry prices")
-
+    warm_started = _time.monotonic()
     try:
         trade_days = _trade_days(client, date_iso)
     except Exception:
         trade_days = []
     executable_evidence = load_live_executable_evidence(TRAINING_ROWS_FILE)
-    mode_decisions = decide_mode_switches(
-        {str(c.get("mode") or "") for c in candidates if c.get("mode")},
-        date_iso,
-        executable_evidence,
-        trade_days,
-    )
-    mode_confidence = confidence_map_from_decisions(mode_decisions)
-    candidates = [_annotate_recommendation_score(c, mode_confidence) for c in candidates]
-    candidates = annotate_mode_candidates(candidates, mode_decisions)
-    for c in candidates:
-        mode = str(c.get("mode") or "")
-        confidence = _num(c.get("mode_confidence"))
-        premium_pct, cap_pct, exec_cap_pct = _basket_params(mode, confidence, args.basket_premium_pct)
-        price_limit_pct = _price_limit_pct(c.get("code"), c.get("name"))
-        scaled_exec_cap_pct = _scale_exec_cap_pct(exec_cap_pct, price_limit_pct)
-        basket_price, basket_rule = _basket_price(
-            _num(c.get("open")),
-            _to_float(c.get("pre_close")),
-            premium_pct,
-            cap_pct,
-            scaled_exec_cap_pct,
-        )
-        c["basket_price"] = round(basket_price, 4)
-        c["basket_rule"] = basket_rule
-        c["basket_premium_pct"] = premium_pct
-        c["basket_cap_pct"] = cap_pct
-        c["basket_exec_cap_pct"] = scaled_exec_cap_pct
-        c["price_limit_pct"] = price_limit_pct
-        c["basket_slippage_pct"] = round(
-            (basket_price / _num(c.get("open")) - 1.0) * 100.0
-            if _num(c.get("open")) > 0 else 0.0,
-            2,
-        )
-        c["v5_stop_at_basket"] = _profile_stop(basket_price, 2.0)
-        c["v6_stop_at_basket"] = _profile_stop(basket_price, 0.5)
-
-    # --- Kronos K→P secondary re-rank (defensive overlay; fail-safe) ---
-    # Honest framing: drops the Kronos-worst half, ranks survivors by prior-day
-    # intraday model; validated value is drawdown cushioning + small win-rate
-    # lift (NOT a proven return engine). Never blocks the recommendation.
-    kp_stars: list[dict] = []
-    vb_stars: list[dict] = []
-    mode_stars: list[dict] = []
-    mode_exec_stars: list[dict] = []
-    import importlib.util as _ilu
-
-    def _load_screen_module(modname):
-        module_path = ROOT / "kronos_screen" / "scripts" / f"{modname}.py"
-        spec = _ilu.spec_from_file_location(modname, module_path)
-        module = _ilu.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        return module
-
-    if not args.no_kronos:
-        try:
-            _load_screen_module("secondary_screen").score(
-                candidates,
-                client,
-                date_iso,
-                top_n=max(1, args.kronos_top_n),
-            )
-            kp_stars = [c for c in candidates if c.get("kp_star")]
-        except Exception as e:  # missing model / torch / API — degrade gracefully
-            print(f"[Kronos K→P skipped: {type(e).__name__}: {e}]", file=sys.stderr)
-
-    # Signal capture and the shared ★E mode gate are deterministic morning
-    # outputs, not part of the optional K→P overlay.  Missing K/P scores fall
-    # back to neutral percentiles inside select_executable_candidates().
+    preparation_seconds = round(_time.monotonic() - warm_started, 6)
     try:
-        _load_screen_module("capture_signals").capture(
-            candidates,
-            client,
-            date_iso,
-            is_live=_is_today_live_run(date_iso),
-            top_n=max(1, args.kronos_top_n),
-            out=OUT_DIR / "signal_snapshots.jsonl",
-            on_captured=lambda raw: _publish_original_batch(date_iso, source.readiness, script_entered_at, raw),
-        )
-        vb_stars = [c for c in candidates if c.get("vb_star")]
-        mode_stars = [c for c in candidates if c.get("mode_star")]
-        mode_exec_stars = [c for c in candidates if c.get("mode_exec_star")]
-    except Exception as e:
-        raise RuntimeError(
-            f"required signal capture failed: {type(e).__name__}: {e}"
-        ) from e
+        _wait_for_recommendation_start(date_iso)
+    finally:
+        if preparation is not None and preparation.poll() is None:
+            import signal
+            try:
+                os.killpg(preparation.pid, signal.SIGTERM)
+                preparation.wait(timeout=5)
+            except ProcessLookupError:
+                pass
+            except subprocess.TimeoutExpired:
+                os.killpg(preparation.pid, signal.SIGKILL)
+                preparation.wait(timeout=5)
+
+    source = ApiDataSource(client, hpqb_state=0, lpdx_state=0,
+                           resolve_security_universe=_is_today_live_run(date_iso))
+    cache = client.cache if isinstance(client.cache, SQLiteCache) else None
+    source.readiness["preparation_seconds"] = preparation_seconds
+
+    # Run both profiles. Their signal generation is IDENTICAL (same EOD logic);
+    # they differ only in scoring (exit rule), so signals should be identical.
+    # We run once and label each signal as "in v5" / "in v6" — they're all in
+    # both. The differentiation is in the STOP price computed below.
+    if os.environ.get("CODEX_AUTOMATION_ID") == "xiaocao-daily-morning" and os.environ.get("XIAOCAO_DAILY_RUN_DIR"):
+        from xiaocao.live.morning_source_recovery import SourceRecovery
+        recovery_deadline = (datetime.now(A_SHARE_TZ) + timedelta(seconds=args.ready_timeout_sec)).isoformat() if args.ready_timeout_sec >= 0 else None
+        _SOURCE_RECOVERY = SourceRecovery(Path(os.environ["XIAOCAO_DAILY_RUN_DIR"]), OUT_DIR, date_iso, recovery_deadline)
+    entry_prices = {}
+    entry_price_times = {}
+    entry_price_observations = {}
+    def price_probe(active_rows):
+        missing = []
+        for row in active_rows:
+            code = str(row.get("code") or "")
+            if not code:
+                raise RuntimeError("MORNING_CAPTURE_CODE_MISSING")
+            if code not in entry_prices or not entry_prices[code][0] or _time.monotonic() - entry_price_times[code] > 60:
+                _ENTRY_DETAIL_CACHE.pop((date_iso, code), None)
+                entry_price_times[code] = _time.monotonic()
+                entry_price_observations[code] = {"code": code,
+                    "observed_at": datetime.now(A_SHARE_TZ).isoformat()}
+                entry_prices[code] = _entry_price(client, code, date_iso)
+            if not entry_prices[code][0]:
+                missing.append(code)
+        return sorted(set(missing))
+    capture_deadline = None if args.ready_timeout_sec < 0 else _time.monotonic() + args.ready_timeout_sec
+    while True:
+        try:
+            try:
+                rows, actives = _run_strategy_when_ready(
+                    date_iso, source, timeout_sec=args.ready_timeout_sec,
+                    poll_sec=max(1.0, args.ready_poll_sec), confirm_sec=max(0.0, args.ready_confirm_sec),
+                    price_probe=price_probe if _is_today_live_run(date_iso) else None,
+                )
+            finally:
+                atomic_write(OUT_DIR / f"recommend_source_readiness_{date_iso}.json",
+                    json.dumps(source.readiness, ensure_ascii=False, sort_keys=True, indent=2).encode())
+
+            if not actives:
+                if _is_today_live_run(date_iso) and source.readiness.get("completeness") != "observed_responses":
+                    raise RuntimeError("MORNING_CAPTURE_EMPTY_UNPROVEN: source readiness incomplete")
+                msg = f"# {date_iso} 候选股: NONE"
+                exclusion_note = _security_exclusion_note(source.readiness)
+                if exclusion_note:
+                    msg += "\n\n" + exclusion_note
+                print(msg)
+                atomic_write(OUT_DIR / f"recommend_{date_iso}.md", msg.encode())
+                from capture_signals import capture
+                capture([], client, date_iso, is_live=_is_today_live_run(date_iso), out=OUT_DIR / "signal_snapshots.jsonl",
+                    on_captured=lambda raw: _publish_original_batch(date_iso, source.readiness, script_entered_at, raw))
+                return
+
+            # Enrich each with open price + theoretical stops
+            candidates = []
+            unpriced_codes = []
+            for r in actives:
+                code = r.get("code")
+                if not code:
+                    continue
+                # Keep the historical three-value seam here.  A few downstream callers
+                # (and, more importantly, offline recommendation fixtures) replace
+                # ``_entry_price`` directly.  The realtime detail is an optional
+                # enrichment for the market guard and must not make those fixtures lose
+                # their candidate solely because the detail endpoint is unavailable.
+                opn, entry_source, pre_close = (entry_prices[code] if code in entry_prices
+                                               else _entry_price(client, code, date_iso))
+                cached_detail = _ENTRY_DETAIL_CACHE.pop((date_iso, str(code)), _MISSING_ENTRY_DETAIL)
+                # `_entry_price` already performs the one realtime-detail read and
+                # stores its result.  A missing cache means a compatibility caller
+                # replaced that function; do not issue a second API request merely to
+                # enrich a row (the market guard will fail closed if authoritative
+                # detail was not supplied).
+                market_detail = None if cached_detail is _MISSING_ENTRY_DETAIL else cached_detail
+                if not opn:
+                    unpriced_codes.append(str(code))
+                    continue
+                open_pct_change = _open_pct_from_entry(opn, pre_close, r.get("openPctChange"))
+                market_status = str((market_detail or {}).get("tradeStatus") or "")
+                candidates.append({
+                    "code": code,
+                    "name": r.get("name") or "",
+                    "mode": r.get("mode") or "",
+                    "xcjw": _num(r.get("xcjw")),
+                    "cjs": _num(r.get("cjs")),
+                    "jsjl": _num(r.get("jsjl")),
+                    "jssb": _num(r.get("jssb")),
+                    "rawQibaoRank": r.get("rawQibaoRank"),
+                    "qibaoRankScore": r.get("qibaoRankScore"),
+                    "qibaoBenchmarkKind": r.get("qibaoBenchmarkKind"),
+                    "qibaoBenchmarkLayer": r.get("qibaoBenchmarkLayer"),
+                    "industryElectronic": r.get("industryElectronic"),
+                    "board20": r.get("board20"),
+                    "open": opn,
+                    "pre_close": pre_close,
+                    "entry_source": entry_source,
+                    "market_guard_required": bool(_is_today_live_run(date_iso)),
+                    "market_guard_status": market_status or None,
+                    "trade_status": market_status or None,
+                    "market_price": (market_detail or {}).get("trade"),
+                    "down_price": (market_detail or {}).get("downPrice"),
+                    "up_price": (market_detail or {}).get("upPrice"),
+                    "market_observed_at": _normalize_market_observed_at(
+                        (market_detail or {}).get("tradeTimestamp"), date_iso
+                    ),
+                    "v5_stop_initial": _profile_stop(opn, 2.0),
+                    "v6_stop_initial": _profile_stop(opn, 0.5),
+                    "is_main_line": bool(r.get("is_main_line")),
+                    "is_big_cap": bool(r.get("is_big_cap")),
+                    "direction": bool(r.get("direction")),
+                    "direction_rank": r.get("directionRank", -1),
+                    "category_rank": r.get("categoryRank", -1),
+                    "regime": r.get("regime") or "",
+                    "reason": r.get("reason") or "",
+                    "open_pct_change": open_pct_change,
+                    "excIndustryCode": r.get("excIndustryCode") or "",
+                    "blockCodeList": r.get("blockCodeList") or "",
+                    "blockCategoryCodeList": r.get("blockCategoryCodeList") or "",
+                })
+
+            if _is_today_live_run(date_iso):
+                source.readiness.setdefault("price_enrichment", {}).update(status="degraded" if unpriced_codes else "complete",
+                    active_count=len(actives), priced_count=len(candidates), unpriced_codes=unpriced_codes,
+                    observations=[entry_price_observations[str(r["code"])] for r in actives if str(r["code"]) in entry_price_observations])
+                atomic_write(OUT_DIR / f"recommend_source_readiness_{date_iso}.json",
+                    json.dumps(source.readiness, ensure_ascii=False, sort_keys=True, indent=2).encode())
+                if not candidates:
+                    raise RuntimeError("MORNING_CAPTURE_PRICES_UNPROVEN: active candidates have no entry prices")
+
+            mode_decisions = decide_mode_switches(
+                {str(c.get("mode") or "") for c in candidates if c.get("mode")},
+                date_iso,
+                executable_evidence,
+                trade_days,
+            )
+            mode_confidence = confidence_map_from_decisions(mode_decisions)
+            candidates = [_annotate_recommendation_score(c, mode_confidence) for c in candidates]
+            candidates = annotate_mode_candidates(candidates, mode_decisions)
+            for c in candidates:
+                mode = str(c.get("mode") or "")
+                confidence = _num(c.get("mode_confidence"))
+                premium_pct, cap_pct, exec_cap_pct = _basket_params(mode, confidence, args.basket_premium_pct)
+                price_limit_pct = _price_limit_pct(c.get("code"), c.get("name"))
+                scaled_exec_cap_pct = _scale_exec_cap_pct(exec_cap_pct, price_limit_pct)
+                basket_price, basket_rule = _basket_price(
+                    _num(c.get("open")),
+                    _to_float(c.get("pre_close")),
+                    premium_pct,
+                    cap_pct,
+                    scaled_exec_cap_pct,
+                )
+                c["basket_price"] = round(basket_price, 4)
+                c["basket_rule"] = basket_rule
+                c["basket_premium_pct"] = premium_pct
+                c["basket_cap_pct"] = cap_pct
+                c["basket_exec_cap_pct"] = scaled_exec_cap_pct
+                c["price_limit_pct"] = price_limit_pct
+                c["basket_slippage_pct"] = round(
+                    (basket_price / _num(c.get("open")) - 1.0) * 100.0
+                    if _num(c.get("open")) > 0 else 0.0,
+                    2,
+                )
+                c["v5_stop_at_basket"] = _profile_stop(basket_price, 2.0)
+                c["v6_stop_at_basket"] = _profile_stop(basket_price, 0.5)
+
+            # --- Kronos K→P secondary re-rank (defensive overlay; fail-safe) ---
+            # Honest framing: drops the Kronos-worst half, ranks survivors by prior-day
+            # intraday model; validated value is drawdown cushioning + small win-rate
+            # lift (NOT a proven return engine). Never blocks the recommendation.
+            kp_stars: list[dict] = []
+            vb_stars: list[dict] = []
+            mode_stars: list[dict] = []
+            mode_exec_stars: list[dict] = []
+            import importlib.util as _ilu
+
+            def _load_screen_module(modname):
+                module_path = ROOT / "kronos_screen" / "scripts" / f"{modname}.py"
+                spec = _ilu.spec_from_file_location(modname, module_path)
+                module = _ilu.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                return module
+
+            if not args.no_kronos:
+                try:
+                    kp_started = _time.monotonic()
+                    if os.environ.get("CODEX_AUTOMATION_ID") == "xiaocao-daily-morning":
+                        from xiaocao.live.morning_score_cache import apply_scores, load_scores
+                        kp_health = apply_scores(candidates, load_scores(ROOT, date_iso), top_n=max(1, args.kronos_top_n))
+                        print(json.dumps({"event": "morning_kp_preparation", **kp_health}), file=sys.stderr)
+                        source.readiness["kp_preparation"] = kp_health
+                    else:
+                        _load_screen_module("secondary_screen").score(
+                            candidates, client, date_iso, top_n=max(1, args.kronos_top_n))
+                    kp_stars = [c for c in candidates if c.get("kp_star")]
+                    source.readiness.setdefault("stages", {})["kp_seconds"] = round(_time.monotonic()-kp_started, 6)
+                except Exception as e:  # missing model / torch / API — degrade gracefully
+                    print(f"[Kronos K→P skipped: {type(e).__name__}: {e}]", file=sys.stderr)
+
+            # Signal capture and the shared ★E mode gate are deterministic morning
+            # outputs, not part of the optional K→P overlay.  Missing K/P scores fall
+            # back to neutral percentiles inside select_executable_candidates().
+            try:
+                capture_started = _time.monotonic()
+                def publish_original(raw):
+                    source.readiness.setdefault("stages", {})["preparation_seconds"] = preparation_seconds
+                    source.readiness.setdefault("stages", {})["original_capture_seconds"] = round(_time.monotonic()-capture_started, 6)
+                    _publish_original_batch(date_iso, source.readiness, script_entered_at, raw)
+                _load_screen_module("capture_signals").capture(
+                    candidates,
+                    client,
+                    date_iso,
+                    is_live=_is_today_live_run(date_iso),
+                    top_n=max(1, args.kronos_top_n),
+                    out=OUT_DIR / "signal_snapshots.jsonl",
+                    on_captured=publish_original,
+                    enrich_auction=os.environ.get("CODEX_AUTOMATION_ID") != "xiaocao-daily-morning",
+                )
+                vb_stars = [c for c in candidates if c.get("vb_star")]
+                mode_stars = [c for c in candidates if c.get("mode_star")]
+                mode_exec_stars = [c for c in candidates if c.get("mode_exec_star")]
+                print(json.dumps({"event": "morning_capture_support_complete",
+                    "elapsed_seconds": round(_time.monotonic()-capture_started, 6),
+                    "original_capture_seconds": source.readiness.get("stages", {}).get("original_capture_seconds")}),
+                    file=sys.stderr, flush=True)
+            except CaptureInputsExpired:
+                raise
+            except Exception as e:
+                raise RuntimeError(
+                    f"required signal capture failed: {type(e).__name__}: {e}"
+                ) from e
+
+            break
+        except CaptureInputsExpired as exc:
+            print(json.dumps({"event": "market_dependency_recovery_wait", "trade_date": date_iso,
+                "failure_category": str(exc), "recovery_kind": "original_capture_refresh"}),
+                file=sys.stderr, flush=True)
+            if capture_deadline is not None:
+                args.ready_timeout_sec = max(0, capture_deadline - _time.monotonic())
+                if args.ready_timeout_sec <= 0:
+                    raise
+            source.begin_observation(0)
+            entry_prices.clear()
+            entry_price_times.clear()
+            entry_price_observations.clear()
+            _ENTRY_DETAIL_CACHE.clear()
 
     ranked = _rank_candidates(candidates, mode_confidence)
     selected, overflow = _split_ranked_candidates(
@@ -1369,6 +1602,9 @@ def main() -> None:
     L.append("")
     L.append(f"- 总信号数: {len(rows)}")
     L.append(f"- Active 信号: {len(actives)}")
+    exclusion_note = _security_exclusion_note(source.readiness)
+    if exclusion_note:
+        L.append(exclusion_note)
     L.append(f"- 已 enrich (有开盘价): {len(candidates)}")
     L.append(
         f"- 二级筛选入选: {len(selected)}"
@@ -1579,7 +1815,8 @@ def main() -> None:
 def _publish_original_batch(date_iso: str, readiness: dict, entered_at: str, snapshot: bytes) -> None:
     if os.environ.get("CODEX_AUTOMATION_ID") != "xiaocao-daily-morning":
         return
-    revision = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT,
+    revision = os.environ.get("XIAOCAO_DAILY_SOURCE_REVISION") or subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=ROOT,
         text=True, capture_output=True, check=True, timeout=5).stdout.strip()
     cached = _load_stock_sentiment_map(date_iso)
     rows = []
@@ -1598,15 +1835,37 @@ def _publish_original_batch(date_iso: str, readiness: dict, entered_at: str, sna
             rows.append(row)
     payload = ("\n".join(json.dumps(r, ensure_ascii=False, sort_keys=True, default=str) for r in rows)
         + ("\n" if rows else "")).encode()
-    timing = {"configured_slot": f"{date_iso}T09:23:00+08:00", "script_entered_at": entered_at,
+    timing = {"configured_slot": f"{date_iso}T09:18:00+08:00", "script_entered_at": entered_at,
         "scheduler_dispatched_at": None, "task_started_at": None,
         "scheduler_timing_proof": "unavailable"}
     result = publish_captured_batch(OUT_DIR, date_iso, snapshot=payload,
-        strategy_sha=revision, source_readiness=readiness, timing=timing, raw_capture=snapshot)
+        strategy_sha=revision, source_readiness=readiness, timing=timing, raw_capture=snapshot,
+        precommit=lambda: require_capture_inputs(readiness, required_codes={r["code"] for r in rows}))
     # This compatibility name keeps durable plan references stable. Bundle
     # consumers use verified immutable originals or exact recovery copies.
-    atomic_write(OUT_DIR / f"book_b_live_freeze_{date_iso}.jsonl", payload, immutable=True)
-    print(json.dumps({"event": "morning_bundle_published", **result}, ensure_ascii=False), file=sys.stderr)
+    compatibility_path = OUT_DIR / f"book_b_live_freeze_{date_iso}.jsonl"
+    compatibility = {"path": str(compatibility_path), "status": "written"}
+    try:
+        atomic_write(compatibility_path, payload, immutable=True)
+    except ValueError as exc:
+        if str(exc) != "IMMUTABLE_FILE_CONTENT_CONFLICT":
+            raise
+        compatibility["status"] = "conflict_preserved"
+        print("morning compatibility freeze DEGRADED: conflict preserved; committed bundle remains authoritative", file=sys.stderr)
+    from xiaocao.live.morning_pipeline import save_pipeline_status
+    pipeline = save_pipeline_status(OUT_DIR, date_iso)
+    print(json.dumps({"event": "morning_bundle_published", **result, "pipeline_path": pipeline["path"], "pipeline_status": pipeline["status"],
+        "compatibility_freeze": compatibility}, ensure_ascii=False), file=sys.stderr)
+
+
+def main() -> None:
+    global _SOURCE_RECOVERY
+    try:
+        _main()
+    finally:
+        if _SOURCE_RECOVERY is not None:
+            _SOURCE_RECOVERY.close()
+            _SOURCE_RECOVERY = None
 
 
 if __name__ == "__main__":

@@ -24,6 +24,16 @@ The started task owns repair; do not defer obtainable work.
 Obey seven-state `writer_progress.next_action`; bind input and readback
 receipts; retryability never changes owner.
 
+Video decision failures retain credential-safe diagnostic identities. In
+particular, `household_context_provider_failed` identifies a failed fresh
+household read, rather than a new source or semantic request. Reconcile the
+exact object's effects and restore the provider before its validated narrow
+resume; the diagnostic never authorizes a replacement sweep or effect replay.
+`lianghui_transport_failed` preserves the safe identity of an MCP transport
+failure during processing. Read the exact publication ledger and reconcile
+every outstanding claim before continuing its original request; partial staging
+does not establish publication or authorize a new claim.
+
 `repair_required` is work for the current Agent, not a user blocker: reconcile,
 patch/test/commit/push without user WIP, then continue on the same stdin. Never
 run `run` twice for one slot; after matching repair closure use `resume-mailbox`
@@ -33,6 +43,17 @@ A raw `waiting` result without an immutable provider `next_poll_not_before`
 becomes `repair_required`; diagnostics never manufacture `wait_until` or a user
 blocker. Provider deadlines, auth/CAPTCHA, and uncertain effects retain their
 seven-state `writer_progress` states.
+
+A proved untriggered Lv save failure is `cloud_transfer_pretrigger_failed`,
+Agent-owned `repair_required` for its exact object. The titled outer `保存到`
+panel owns the confirmation footer; never select its smaller nested content
+shell. Multiple eligible panels remain ambiguous and do not authorize a click.
+Recent-destination selection waits up to two seconds for the exact selected
+path after its one click. For a pre-migration isolated video failure omitted
+from the sweep projection, `DailyCoordinator.observe_source_repair` may append
+an observation only after verifying the original source interval, exact failure
+ledger row, current source version and untriggered claim. Bind the real sweep
+event ID and evidence hash; never invent or rewrite an originating sweep.
 
 This sole writer consumes Xiaocao `scope=post_handoff` and URL-only
 `wechat_official_article` LiangHuiMCP capsules as discovery metadata, not full
@@ -106,6 +127,14 @@ fail closed on mismatch; provider waits honor their deadline and reconcile
 uncertain effects. Source repairs use `validate-source-repair` then
 `resume-source-repair` with exact adapter/fingerprint; resume consumes only
 `narrow_resume_surface` and reads neither mailbox nor another source.
+
+The LiangHui publication client may retry the same `get_kol_write_status` or
+`get_kol_record` read up to five times after a transport timeout or connection failure, with
+short backoff. This never retries a write or an application error; uncertain
+writes still require the original claim's authoritative status reconciliation.
+For a source-level video repair with one retained request-bound bundle, narrow
+resume uses that exact pending identity without scanning subscriptions again.
+Multiple retained bundles fail closed until the exact target is resolved.
 
 For an `lv_text_image` household-context transport failure, the same source
 validation command proves provider recovery with a fresh configured read-only
@@ -263,6 +292,21 @@ initial evaluations; maintenance appends evaluations/relations. Do not pause for
 `daily_trading_source_preparation_input_required` or create a second notes packet.
 Trading tasks compose their rebuildable compact projection from these published
 records. Empty/unchanged sweeps remain silent and do not refresh history.
+
+For a renamed reupload whose ASR differs, do not infer a new source event from
+the filename or use a fuzzy transcript score to reuse effects. The fixed analyst
+must read both complete sources and supply `source_event_equivalence=same_event`
+with no material differences and exact, exhaustive claim-to-claim quote matches.
+Both canonical bundles require parent acceptance. Before dispatch, save
+`source_event_alias_readback.json` beside the current bundle, bound to its SHA,
+the immutable prior bundle/result and fresh authoritative report/write-status
+readbacks. The deterministic alias verifier also checks the publication ledger,
+all published records, delivered reminder, paper receipt and knowledge bytes.
+Reuse is currently bounded to prior and current Book KOL-US no-trade intents.
+Missing or changed proof stops the exact object; never fall through to a new
+publication. A verified alias preserves the canonical source binding, gives the
+new intake its own completion claim/receipt and terminal, and creates no new
+report, reminder, trade or knowledge ingestion.
 
 When that projection reports a content-hash-bound `classification_backfill`
 manifest, the remote writer owns the exact listed viewpoint IDs. Reuse the

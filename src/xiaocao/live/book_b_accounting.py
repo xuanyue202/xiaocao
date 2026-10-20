@@ -22,6 +22,7 @@ from .trading_execution import account_writer_lock
 CENT = Decimal(".01")
 DATABASE = "accounting.sqlite3"
 CASH_KINDS = frozenset({"FEE", "DIVIDEND", "INTEREST", "REVERSAL"})
+FINANCIAL_ADJUSTMENT_KINDS = CASH_KINDS | {"TRADE_FEE_EVIDENCE", "TRADE_FEE_ADJUSTMENT"}
 
 
 def cents(value) -> int:
@@ -262,7 +263,8 @@ def _identity(db, root: Path, initial_capital) -> None:
         db.execute("INSERT OR IGNORE INTO metadata VALUES(?,?)", (key, value))
 
 
-def _sync(db, root: Path, book: OwnedBook, *, initial_capital=30000) -> list[dict]:
+def _sync(db, root: Path, book: OwnedBook, *, initial_capital=30000,
+          reconcile_trade_fees: bool = True) -> list[dict]:
     from .book_b_capital import flows
     _identity(db, root, initial_capital)
     opening = cents(initial_capital)
@@ -289,6 +291,9 @@ def _sync(db, root: Path, book: OwnedBook, *, initial_capital=30000) -> list[dic
         raise ValueError("BOOK_B_ACCOUNTING_SOURCE_REGRESSION")
     for entry in source:
         _post(db, entry)
+    if reconcile_trade_fees:
+        from .trade_fee_accounting import sync_adjustment
+        sync_adjustment(db, _entries(db))
     return _entries(db)
 
 
@@ -307,11 +312,16 @@ def sync_journal(root: Path, *, initial_capital=30000) -> dict:
         book = replay_owned(root, initial_capital=initial_capital)
         entries = _sync(db, root, book, initial_capital=initial_capital)
         totals = _balances(entries)
+        from .trade_fee_accounting import projection
+        fees = projection(entries)
         return {"database_path": str(root / DATABASE), "entry_count": len(entries),
             "journal_head_sha256": entries[-1]["entry_hash"],
             "ledger_cash": money(totals.get("cash", 0)),
             "net_contributed_capital": money(-totals.get("capital", 0)),
-            "realized_pnl": money(-totals.get("pnl", 0))}
+            "realized_pnl": money(-totals.get("pnl", 0)) if fees["complete"] else None,
+            "provisional_realized_pnl": money(-totals.get("pnl", 0)),
+            "fee_status": "actual_fees_complete" if fees["complete"] else "actual_fees_pending",
+            "pending_fee_orders": fees["pending_orders"]}
 
 
 def _cash_snapshot_integrity(root: Path, snapshot: dict, book: OwnedBook,
@@ -386,6 +396,8 @@ def observe_account(root: Path, *, cash, market_value, liquidation_value, snapsh
             validate_broker_account_snapshot(snapshot, trade_date=snapshot["trade_date"], now=now)
             _validate_same_day_broker_fill_coverage(snapshot, book.rows, trade_date=snapshot["trade_date"])
         entries = _sync(db, root, book, initial_capital=initial_capital)
+        from .trade_fee_accounting import projection
+        fees = projection(entries)
         from .book_b_capital import POLICY, has_open_buy, has_open_buy_with_possible_effect
         cash_basis = ("owned_replay_including_buy_reserve" if has_open_buy(root) else
             "app_available_cash" if capital_state["capital_policy_id"] == POLICY else "legacy_owned_cash_replay")
@@ -432,7 +444,10 @@ def observe_account(root: Path, *, cash, market_value, liquidation_value, snapsh
             "ownership_head_sha256": book.head, "capital_flow_head_sha256": capital_state["capital_flow_head_sha256"],
             "journal_head_sha256": entries[-1]["entry_hash"], "entry_count": len(entries),
             "status": status,
-            "cash_basis": cash_basis, "fee_basis": "estimated_plan_rate",
+            "cash_basis": cash_basis,
+            "fee_basis": "broker_final_itemized" if fees["complete"] else "provisional_pending_actual_fees",
+            "fee_status": "actual_fees_complete" if fees["complete"] else "actual_fees_pending",
+            "pending_fee_orders": fees["pending_orders"],
             "broker_available_cash": money(broker_available),
             "opening_capital": money(cents(initial_capital)), "cash": money(actual),
             "observed_cash": money(observed_cash),
@@ -445,16 +460,20 @@ def observe_account(root: Path, *, cash, market_value, liquidation_value, snapsh
             "owned_market_value": money(exposure),
             "liquidation_nav": money(actual + liquidation),
             "estimated_exit_fee": money(exposure - liquidation),
-            "remaining_cost": money(inventory), "realized_pnl": money(realized),
-            "unrealized_pnl": money(unrealized),
-            "cumulative_pnl": money(nav - contributed) if reconciled else None,
+            "remaining_cost": money(inventory),
+            "provisional_realized_pnl": money(realized),
+            "provisional_unrealized_pnl": money(unrealized),
+            "realized_pnl": money(realized) if fees["complete"] else None,
+            "unrealized_pnl": money(unrealized) if fees["complete"] else None,
+            "cumulative_pnl": money(nav - contributed) if reconciled and fees["complete"] else None,
             "risk_unit_factor": capital_state["capital_unit_factor"],
             # A positive unclassified difference cannot raise the risk high
             # water. A negative difference remains a conservative loss.
             "conservative_risk_nav": str((Decimal(risk_cash + liquidation)
                 / 100 / number(capital_state["capital_unit_factor"])).quantize(Decimal(".000001"))),
             "lots": [{"owned_lot_id": k, "code": v["code"], "shares": v["shares"],
-                      "remaining_cost": money(v["cost_cents"])} for k, v in book.lots.items() if v["shares"] > 0]}
+                      "remaining_cost": money(fees["lots"][k]["cost"])}
+                     for k, v in book.lots.items() if v["shares"] > 0]}
         body["receipt_sha256"] = digest(body)
         encoded = json.dumps(body, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
         old = db.execute("SELECT body FROM observations WHERE receipt_sha256=?", (body["receipt_sha256"],)).fetchone()
@@ -481,7 +500,7 @@ def verify_observation(root: Path, report: dict, *, current: bool = False) -> di
         totals = _balances(entries)
         if (len(entries) != report["entry_count"] or money(totals.get("cash", 0)) != report["ledger_cash"]
                 or money(-totals.get("capital", 0)) != report["net_contributed_capital"]
-                or money(-totals.get("pnl", 0)) != report["realized_pnl"]):
+                or money(-totals.get("pnl", 0)) != report.get("provisional_realized_pnl", report["realized_pnl"])):
             raise ValueError("BOOK_B_ACCOUNTING_OBSERVATION_BALANCE_MISMATCH")
         if current:
             from .book_b_capital import current_flow_state
@@ -500,11 +519,14 @@ def details(root: Path) -> list[dict]:
         raise ValueError("BOOK_B_ACCOUNTING_DATABASE_REQUIRED")
     with sqlite3.connect(path.as_uri() + "?mode=ro", uri=True) as db:
         entries = _entries(db)
+    from .trade_fee_accounting import projection
+    financial = projection(entries)["fills"]
     running, result = 0, []
     for event in entries:
         lines = event["lines"]
         running += lines.get("cash", 0)
         source = event.get("source", {})
+        valued = financial.get(event["source_hash"], {})
         result.append({"event_id": event["source_id"], "observed_at": event["observed_at"],
             "trade_date": source.get("trade_date", ""), "book": "B", "logical_account_id": "primary",
             "environment": "app_server_simulation", "owned_lot_id": event.get("lot_id", ""),
@@ -518,6 +540,11 @@ def details(root: Path) -> list[dict]:
             "kind": event["kind"], "code": event.get("code", ""),
             "order_id": source.get("broker_order_id", ""), "shares": event.get("shares", 0),
             "fee": money(event.get("fee_cents", 0)), "fee_basis": event.get("fee_basis", ""),
+            "actual_fee": money(valued["fee_cents"]) if valued.get("fee_cents") is not None else None,
+            "final_realized_pnl": money(valued["realized_pnl_cents"]) if valued.get("final") else None,
+            "final_cost_change": money(valued["cost_cents"]) if valued.get("final") else None,
+            "gross_pnl": money(valued["gross_pnl_cents"]) if valued else None,
+            "gross_sold_cost": money(valued["gross_sold_cost_cents"]) if valued else None,
             "cash_change": money(lines.get("cash", 0)), "ledger_cash_after": money(running),
             "cost_change": money(sum(v for k, v in lines.items() if k.startswith("inventory:"))),
             "net_contributed_change": money(-lines.get("capital", 0)),
@@ -547,7 +574,7 @@ def cash_adjustment(root: Path, *, through: str | None = None, as_of: str | None
     with sqlite3.connect(path.as_uri() + "?mode=ro", uri=True) as db:
         rows = _entries(db, through=through)
     return Decimal(sum(e["lines"].get("cash", 0) for e in rows
-        if e["kind"] in CASH_KINDS
+        if e["kind"] in FINANCIAL_ADJUSTMENT_KINDS
         and (as_of is None or datetime.fromisoformat(e["observed_at"]) <= datetime.fromisoformat(as_of)))) / 100
 
 
@@ -556,11 +583,70 @@ def cash_event_head(root: Path, *, no_later_than: str | None = None) -> str | No
     if not path.exists():
         return None
     with sqlite3.connect(path.as_uri() + "?mode=ro", uri=True) as db:
-        events = [e for e in _entries(db) if e["kind"] in CASH_KINDS]
+        events = [e for e in _entries(db) if e["kind"] in FINANCIAL_ADJUSTMENT_KINDS]
         if no_later_than and any(datetime.fromisoformat(e["observed_at"]) > datetime.fromisoformat(no_later_than)
                                  for e in events):
             raise ValueError("BOOK_B_ACCOUNTING_CASH_SNAPSHOT_REGRESSION")
-        return events[-1]["entry_hash"] if events else None
+    return events[-1]["entry_hash"] if events else None
+
+
+def record_trade_fees(root: Path, proof: dict, *, now: datetime | None = None) -> dict:
+    """Import a final itemized native order fee; append differences, never capital.
+
+    Native fee collection is not yet provided by the APP port. The caller must
+    supply the actual statement receipt; a cash discrepancy is not a receipt.
+    """
+    from .book_b_live_lifecycle import (validate_broker_account_snapshot,
+                                       _validate_same_day_broker_fill_coverage)
+    from .book_b_capital import policy
+    from .trade_fee_accounting import (FEE_EVIDENCE, evidence_by_order, order_key,
+                                       validate_fee_proof, sync_adjustment)
+    root = Path(root)
+    batch = "fee_receipts" in proof
+    receipts = proof["fee_receipts"] if batch else [proof]
+    if not isinstance(receipts, list) or not receipts or any(not isinstance(p, dict) for p in receipts):
+        raise ValueError("BOOK_B_ACTUAL_FEE_BATCH_INVALID")
+    snapshot = receipts[0]["broker_snapshot"]
+    if any(p["broker_snapshot"] != snapshot for p in receipts):
+        raise ValueError("BOOK_B_ACTUAL_FEE_BATCH_SNAPSHOT_MISMATCH")
+    validate_broker_account_snapshot(snapshot, trade_date=snapshot["trade_date"], now=now)
+    cfg = policy(root)
+    with _database(root) as db:
+        # A newly discovered fill invalidates old complete_order coverage.
+        # Install its exact superseding proof before revaluing; transaction
+        # rollback preserves the previous prefix if any other order is invalid.
+        book = replay_owned(root)
+        _validate_same_day_broker_fill_coverage(snapshot, book.rows, trade_date=snapshot["trade_date"])
+        entries = _sync(db, root, book, reconcile_trade_fees=False)
+        saved = db.execute("SELECT value FROM metadata WHERE key='fund_account_binding_sha256'").fetchone()
+        binding = cfg["fund_account_binding_sha256"] if cfg else saved[0] if saved else None
+        if binding is None:
+            raise ValueError("BOOK_B_ACTUAL_FEE_ACCOUNT_UNPROVEN")
+        results = []
+        for receipt in receipts:
+            event = validate_fee_proof(receipt, entries, binding=binding, snapshot=snapshot)
+            source_id = "trade-fee:" + binding + ":" + event["event_id"]
+            old = next((e for e in entries if e["source_id"] == source_id), None)
+            replacement = receipt.get("replaces_fee_entry_sha256")
+            if old:
+                if old["event"] != event or old.get("replaces_fee_entry_sha256") != replacement:
+                    raise ValueError("BOOK_B_ACCOUNTING_SOURCE_CONFLICT")
+                head = old["entry_hash"]
+            else:
+                previous = evidence_by_order(entries).get(order_key(event))
+                if replacement != (previous["entry_hash"] if previous else None):
+                    raise ValueError("BOOK_B_ACTUAL_FEE_REVISION_UNPROVEN")
+                if previous and datetime.fromisoformat(previous["observed_at"]) > datetime.fromisoformat(snapshot["observed_at"]):
+                    raise ValueError("BOOK_B_ACTUAL_FEE_REVISION_STALE")
+                entry = {"source_id": source_id, "kind": FEE_EVIDENCE,
+                    "observed_at": snapshot["observed_at"], "source_hash": digest(receipt),
+                    "source": receipt, "event": event, "replaces_fee_entry_sha256": replacement,
+                    "fee_basis": "broker_final_itemized", "lines": {"cash": 0, "pnl": 0}}
+                head = _post(db, entry)
+                entries = _entries(db)
+            results.append({"status": "actual_trade_fee_posted", "entry_sha256": head})
+        sync_adjustment(db, _entries(db))
+        return {"status": "actual_trade_fees_posted", "entries": results} if batch else results[0]
 
 
 def record_cash_event(root: Path, proof: dict, *, now: datetime | None = None) -> dict:

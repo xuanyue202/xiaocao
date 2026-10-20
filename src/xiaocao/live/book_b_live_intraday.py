@@ -39,6 +39,7 @@ from .book_b_live_recovery import check_monitor_pending_plans
 from .trading_runner import frozen_rows_digest
 from .kol_policy import exit_adjustment
 from .live_decision_support import bind_plan_audit, evaluate_live_risk, read_policy
+from .morning_bundle import acquire_bundle, bundle_required, read_consumed_rows
 
 
 _AUTHORIZED_REASONS = frozenset(
@@ -188,21 +189,35 @@ def load_monitor_contexts(
     for lot in lots:
         grouped.setdefault(lot.entry_date, []).append(lot)
     for entry_date, dated_lots in grouped.items():
-        path = Path(freeze_dir) / f"book_b_live_freeze_{entry_date}.jsonl"
-        if not path.is_file():
-            raise ValueError(f"LIVE_BOOK_B_MONITOR_FREEZE_MISSING:{entry_date}")
-        rows: list[dict[str, Any]] = []
-        try:
-            with path.open(encoding="utf-8") as stream:
-                for line in stream:
-                    if not line.strip():
-                        continue
-                    row = json.loads(line)
-                    if not isinstance(row, dict):
-                        raise ValueError
-                    rows.append(row)
-        except (OSError, json.JSONDecodeError, ValueError) as exc:
-            raise ValueError(f"LIVE_BOOK_B_MONITOR_FREEZE_INVALID:{entry_date}") from exc
+        root = Path(freeze_dir)
+        commitment = root / f"morning_bundle_commit_{entry_date}.json"
+        legacy = root / f"book_b_live_freeze_{entry_date}.jsonl"
+        if bundle_required(entry_date) and not commitment.exists():
+            raise ValueError(f"LIVE_BOOK_B_MONITOR_COMMITMENT_MISSING:{entry_date}")
+        if commitment.exists():
+            bundle = acquire_bundle(root, entry_date, repair=False)
+            if bundle.get("status") != "ready":
+                raise ValueError(f"LIVE_BOOK_B_MONITOR_FREEZE_UNPROVEN:{entry_date}")
+            rows = read_consumed_rows(bundle, entry_date, live_dir=root)
+            path = commitment
+        else:
+            # Pre-bundle lots retain their original immutable legacy reference.
+            # A failed committed bundle never falls through to this branch.
+            path = legacy
+            if not path.is_file():
+                raise ValueError(f"LIVE_BOOK_B_MONITOR_FREEZE_MISSING:{entry_date}")
+            rows: list[dict[str, Any]] = []
+            try:
+                with path.open(encoding="utf-8") as stream:
+                    for line in stream:
+                        if not line.strip():
+                            continue
+                        row = json.loads(line)
+                        if not isinstance(row, dict):
+                            raise ValueError
+                        rows.append(row)
+            except (OSError, json.JSONDecodeError, ValueError) as exc:
+                raise ValueError(f"LIVE_BOOK_B_MONITOR_FREEZE_INVALID:{entry_date}") from exc
         digest = frozen_rows_digest(rows)
         for lot in dated_lots:
             match = re.fullmatch(
@@ -316,6 +331,7 @@ class BookBLiveIntradayReceipt:
     settlement: dict[str, Any] | None = None
     risk_receipt: dict[str, Any] | None = None
     deferred_buy_plan_ids: tuple[str, ...] = ()
+    broker_snapshot: dict[str, Any] | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -575,7 +591,8 @@ def _run_book_b_live_intraday_locked(
         try:
             settlement = write_book_b_live_settlement(state_root, account, now=current)
         except ValueError as exc:
-            if str(exc) != "LIVE_BOOK_B_EOD_OPEN_EXECUTION_RECONCILE_REQUIRED":
+            if str(exc) not in {"LIVE_BOOK_B_EOD_OPEN_EXECUTION_RECONCILE_REQUIRED",
+                                "LIVE_BOOK_B_SETTLEMENT_ACTUAL_FEES_REQUIRED"}:
                 raise
             # The strict writer still refuses settlement. Preserve the fresh
             # projection and exact reconciliation already proved by this run.
@@ -585,6 +602,7 @@ def _run_book_b_live_intraday_locked(
                 status="blocked",
                 reason=str(exc),
                 account=account.as_dict(),
+                broker_snapshot=snapshot,
                 decisions=(),
                 execution_receipts=(),
                 reconciliation_receipts=tuple(reconciled),
@@ -597,6 +615,7 @@ def _run_book_b_live_intraday_locked(
             status="settled",
             reason="BROKER_RECONCILED_EOD_SETTLED",
             account=account.as_dict(),
+            broker_snapshot=snapshot,
             decisions=(),
             execution_receipts=(),
             reconciliation_receipts=tuple(reconciled),

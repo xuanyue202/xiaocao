@@ -540,33 +540,82 @@ _CREATE_FOLDER_SCRIPT = r"""(async () => {
 })()"""
 
 
-_SELECT_RECENT_DESTINATION_FUNCTION = r"""(dialog, segments, visible) => {
+_SELECT_RECENT_DESTINATION_FUNCTION = r"""async (dialog, segments, visible) => {
   const expectedPath = '/' + segments.join('/');
+  const providerRoot = '我的网盘/';
+  const canonicalPath = node => {
+    const title = String(node.getAttribute('title') || '');
+    return title.startsWith(providerRoot)
+      ? '/' + title.slice(providerRoot.length) : title;
+  };
   const matches = [...dialog.querySelectorAll('.save-path-item')].filter(
-    node => visible(node) && node.getAttribute('title') === expectedPath
+    node => visible(node) && canonicalPath(node) === expectedPath
   );
   if (matches.length === 0) return {status: 'tree_required'};
   if (matches.length !== 1) {
     return {status: 'destination_recent_path_ambiguous', triggered: false};
   }
-  const selectedRows = () => [...dialog.querySelectorAll('.save-path-item.check')]
-    .filter(visible);
+  const selectedRows = () => [...new Set([
+    ...dialog.querySelectorAll('.save-path-item.check'),
+    ...[...dialog.querySelectorAll(
+      '.save-path-item [role="checkbox"][aria-checked="true"]'
+    )].filter(visible).map(node => node.closest('.save-path-item'))
+  ])].filter(node => node && visible(node));
   const current = selectedRows();
   if (
     current.length === 1
-    && current[0].getAttribute('title') === expectedPath
+    && canonicalPath(current[0]) === expectedPath
   ) {
     return {status: 'selected', selected_path: expectedPath};
   }
   matches[0].click();
-  const selected = selectedRows();
+  const selectionDeadline = Date.now() + 2000;
+  let selected = selectedRows();
+  while (
+    Date.now() < selectionDeadline
+    && !(selected.length === 1 && canonicalPath(selected[0]) === expectedPath)
+  ) {
+    await new Promise(resolve => setTimeout(resolve, 50));
+    selected = selectedRows();
+  }
   if (
     selected.length !== 1
-    || selected[0].getAttribute('title') !== expectedPath
+    || canonicalPath(selected[0]) !== expectedPath
   ) {
     return {status: 'destination_recent_path_not_selected', triggered: false};
   }
   return {status: 'selected', selected_path: expectedPath};
+}"""
+
+
+_SELECT_TRANSFER_DIALOG_FUNCTION = r"""(root, visible) => {
+  const titledDialogs = [...root.querySelectorAll(
+    '#share-save-dialog-title'
+  )].filter(node => (
+    visible(node)
+    && String(node.innerText || node.textContent || '')
+    .replace(/\s+/g, ' ').trim() === '保存到'
+  )).map(node => node.closest('[role="dialog"]')).filter(node => (
+    visible(node)
+    && node.querySelector('#fileTreeDialog[role="dialog"]')
+  ));
+  const legacyDialogs = [...root.querySelectorAll(
+    '.dialog-fileTreeDialog'
+  )].filter(node => (
+    visible(node)
+    && /保存到|选择保存路径|我的网盘/.test(
+    String(node.innerText || node.textContent || '')
+    )
+  ));
+  // The titled outer panel owns the footer confirmation. Its nested
+  // legacy content shell has the smaller area but contains no buttons.
+  const candidates = [...new Set(
+    titledDialogs.length ? titledDialogs : legacyDialogs
+  )];
+  if (candidates.length > 1) {
+    return {status: 'save_dialog_ambiguous', triggered: false};
+  }
+  return {status: candidates.length ? 'ready' : 'missing', dialog: candidates[0] || null};
 }"""
 
 
@@ -686,31 +735,11 @@ _TRANSFER_SCRIPT = r"""(async () => {
   pathControl.click();
   const dialogDeadline = Date.now() + 10000;
   let dialog = null;
+  const selectTransferDialog = __SELECT_TRANSFER_DIALOG__;
   while (Date.now() < dialogDeadline) {
-    const titledDialogs = [...document.querySelectorAll(
-      '#share-save-dialog-title'
-    )].filter(node => (
-      visible(node)
-      && String(node.innerText || node.textContent || '')
-        .replace(/\s+/g, ' ').trim() === '保存到'
-    )).map(node => node.closest('[role="dialog"]')).filter(node => (
-      visible(node)
-      && node.querySelector('#fileTreeDialog[role="dialog"]')
-    ));
-    const legacyDialogs = [...document.querySelectorAll(
-      '.dialog-fileTreeDialog'
-    )].filter(node => (
-      visible(node)
-      && /保存到|选择保存路径|我的网盘/.test(
-        String(node.innerText || node.textContent || '')
-      )
-    ));
-    const candidates = [...new Set([...titledDialogs, ...legacyDialogs])];
-    candidates.sort((left, right) => (
-      left.getBoundingClientRect().width * left.getBoundingClientRect().height
-      - right.getBoundingClientRect().width * right.getBoundingClientRect().height
-    ));
-    dialog = candidates[0] || null;
+    const selection = selectTransferDialog(document, visible);
+    if (selection.status === 'save_dialog_ambiguous') return selection;
+    dialog = selection.dialog;
     if (dialog) break;
     await new Promise(resolve => setTimeout(resolve, 100));
   }
@@ -728,7 +757,7 @@ _TRANSFER_SCRIPT = r"""(async () => {
     return nodes;
   };
   const selectRecentDestination = __SELECT_RECENT_DESTINATION__;
-  const recentDestination = selectRecentDestination(
+  const recentDestination = await selectRecentDestination(
     dialog, destinationSegments, visible
   );
   if (!['selected', 'tree_required'].includes(recentDestination.status)) {
@@ -1016,7 +1045,7 @@ _TRANSFER_SCRIPT = r"""(async () => {
     provider_request_observed: network.requestSeen,
     provider_response_observed: network.responseSeen
   };
-})()""" .replace("__SELECT_RECENT_DESTINATION__", _SELECT_RECENT_DESTINATION_FUNCTION)
+})()""".replace("__SELECT_RECENT_DESTINATION__", _SELECT_RECENT_DESTINATION_FUNCTION).replace("__SELECT_TRANSFER_DIALOG__", _SELECT_TRANSFER_DIALOG_FUNCTION)
 
 
 _TRANSFER_PAGE_SUBMIT_SCRIPT = r"""(async () => {
@@ -5030,8 +5059,11 @@ class SubscriptionVideoService:
                 claim,
                 str(result.get("status") or "cloud_transfer_failed"),
             )
-            raise EnrichmentError(
-                f"Lv cloud transfer was not triggered: {result.get('status')}"
+            raise EnrichmentDiagnosticError(
+                f"Lv cloud transfer was not triggered: {result.get('status')}",
+                category="provider_contract_error",
+                code="cloud_transfer_pretrigger_failed",
+                stage="cloud_transfer_confirmation",
             )
         triggered = {
             **action_claim,
@@ -5544,6 +5576,21 @@ class SubscriptionVideoService:
         ):
             return None
         decision_item = bundle_items[0]
+        equivalence = decision_item.get("source_event_equivalence") or {}
+        if equivalence.get("status") == "same_event":
+            from .source_event_alias import verify_source_event_alias
+
+            proof_path = bundle_file.with_name("source_event_alias_readback.json")
+            if not proof_path.is_file():
+                raise EnrichmentError("same-event reupload needs existing-effect readbacks before dispatch")
+            proof = json.loads(proof_path.read_text(encoding="utf-8"))
+            reconciliation = verify_source_event_alias(
+                bundle_file, proof, Path(decision_output_dir).expanduser().resolve(),
+            )
+            artifact_dir = self.output_dir / "artifacts" / item["version_key"]
+            reconciliation_path = artifact_dir / "semantic_duplicate_input.json"
+            _atomic_write_json(reconciliation_path, reconciliation)
+            return reconciliation_path
         expected_title = f"{item['author']}{PurePosixPath(item['name']).stem}"
         if (
             decision_item.get("author") != item["author"]

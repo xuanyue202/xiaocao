@@ -807,3 +807,20 @@ def test_invalid_argument_repairs_only_unreceipted_record(tmp_path):
             "recordState": "staged",
         }
     }
+
+
+def test_status_snapshot_is_equivalent_and_reads_ledger_once(tmp_path, monkeypatch):
+    ledger = PublicationLedger(tmp_path)
+    report = _initial_report()
+    request = build_publish_request([report], idempotency_key="snapshot-fixture", reason="fixture")
+    for key in ("one", "two"):
+        ledger.prepare(key, [report], request)
+    expected = {key: ledger.status(key) for key in ("one", "two")}
+    original = ledger._events_unlocked
+    calls = []
+    def counted():
+        calls.append(True)
+        return original()
+    monkeypatch.setattr(ledger, "_events_unlocked", counted)
+    assert ledger.status_snapshot() == expected
+    assert len(calls) == 1

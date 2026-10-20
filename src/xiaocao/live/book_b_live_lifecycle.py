@@ -17,7 +17,7 @@ import os
 import sqlite3
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Iterable
@@ -726,12 +726,24 @@ def proven_prior_day_zero_fill_sell_ids(state_dir: Path, *, trade_date: str,
     return tuple(sorted(proven))
 
 
+def deferred_prior_day_sell_ids(state_dir: Path, *, trade_date: str) -> tuple[str, ...]:
+    """Defer old SELL reconciliation without terminalizing its claim or code fence."""
+    date.fromisoformat(trade_date)
+    intents = _load_intent_index(Path(state_dir))
+    return tuple(plan_id for plan_id in open_execution_plan_ids(state_dir)
+                 if plan_id in intents and intents[plan_id].get("side") == "SELL"
+                 and date.fromisoformat(str(intents[plan_id]["trade_date"])) < date.fromisoformat(trade_date))
+
+
 def blocking_open_execution_plan_ids(state_dir: Path, *, trade_date: str,
                                       asof: datetime | None = None,
-                                      max_age_seconds: float = 2700) -> tuple[str, ...]:
-    proven = set(proven_prior_day_zero_fill_sell_ids(state_dir, trade_date=trade_date,
+                                      max_age_seconds: float = 2700,
+                                      defer_prior_day_sells: bool = False) -> tuple[str, ...]:
+    excluded = set(proven_prior_day_zero_fill_sell_ids(state_dir, trade_date=trade_date,
         asof=asof, max_age_seconds=max_age_seconds))
-    return tuple(plan_id for plan_id in open_execution_plan_ids(state_dir) if plan_id not in proven)
+    if defer_prior_day_sells:
+        excluded.update(deferred_prior_day_sell_ids(state_dir, trade_date=trade_date))
+    return tuple(plan_id for plan_id in open_execution_plan_ids(state_dir) if plan_id not in excluded)
 
 
 def ownership_head_sha256(state_dir: Path) -> str | None:
@@ -1003,6 +1015,8 @@ def write_book_b_live_settlement(
             raise ValueError("LIVE_BOOK_B_SETTLEMENT_CAPITAL_CHANGED")
         if current_ownership_head != account.ownership_head_sha256:
             raise ValueError("LIVE_BOOK_B_SETTLEMENT_OWNERSHIP_CHANGED")
+        if current_ownership_head is not None and account.accounting is None:
+            raise ValueError("LIVE_BOOK_B_SETTLEMENT_ACTUAL_FEES_REQUIRED")
         if account.accounting is not None:
             from .book_b_accounting import verify_observation
             from .book_b_capital import verify_account
@@ -1010,6 +1024,8 @@ def write_book_b_live_settlement(
             report = verify_observation(root, account.accounting, current=True)
             if report["status"] not in {"reconciled", "cash_discrepancy_tolerated"}:
                 raise ValueError("LIVE_BOOK_B_SETTLEMENT_CASH_RECONCILE_REQUIRED")
+            if report.get("fee_status") != "actual_fees_complete":
+                raise ValueError("LIVE_BOOK_B_SETTLEMENT_ACTUAL_FEES_REQUIRED")
             if report["status"] == "cash_discrepancy_tolerated":
                 stamp = datetime.fromisoformat(report["observed_at"])
                 if (observed.tzinfo is None

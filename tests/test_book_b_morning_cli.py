@@ -74,6 +74,7 @@ def test_morning_rejects_unbound_task_before_lock_or_notices(monkeypatch, capsys
     assert result["reason"] == "AUTOMATION_RUNTIME_IDENTITY_UNPROVEN"
 
 
+@pytest.mark.app_simulation
 @pytest.mark.parametrize("action", [None, "preflight_repair", "resume", "reconcile", "close", "capital_unavailable"])
 def test_morning_entry_dispatches_without_reproducing_recovery_candidates(tmp_path, monkeypatch, capsys, action):
     repair = action == "preflight_repair"
@@ -90,11 +91,11 @@ def test_morning_entry_dispatches_without_reproducing_recovery_candidates(tmp_pa
         monkeypatch.setattr(cli, "DependencyRecovery", create_recovery)
     def account_call(name, **kwargs):
         calls.append(name)
-        if repair and name == "login" and calls.count("login") == 1:
+        if repair and name == "environment" and calls.count("environment") == 1:
             raise RuntimeError("NATIVE_AX_ACCOUNT_SURFACE_NOT_READY")
         if "expected_fund_account_fingerprint" in kwargs:
             assert kwargs["expected_fund_account_fingerprint"] == "123******890"
-        return {"status": "ready"}
+        return {"status": "ready", "native_readiness": {"status": "native_trade_ready"}}
     broker = SimpleNamespace(
         ensure_login=lambda: account_call("login"),
         ensure_native_ready=lambda **kw: account_call("ready", **kw),
@@ -161,8 +162,8 @@ def test_morning_entry_dispatches_without_reproducing_recovery_candidates(tmp_pa
     lines = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
     result = lines[-1]
     if repair:
-        assert calls.count("login") == 2 and calls.count("execute") == 1
-        assert [line.get("event") for line in lines[:-1]] == ["dependency_recovery_wait", "dependency_recovered"]
+        assert calls.count("environment") == 3 and calls.count("login") == 0 and calls.count("execute") == 1
+        assert [line.get("event") for line in lines if str(line.get("event", "")).startswith("dependency_")] == ["dependency_recovery_wait", "dependency_recovered"]
         assert result["runner_identity"]["automation_id"] == "xiaocao-book-b-live-morning"
     if action == "capital_unavailable":
         assert result["reason"] == "LIVE_CAPITAL_RUNTIME_NOT_READY" and not calls
@@ -206,6 +207,35 @@ def test_preflight_continuation_preserves_original_budget_and_claims_once(tmp_pa
     claim = json.loads((state / 'runs' / 'preflight_continuations' / f"{receipt['run_id']}.json").read_text())
     assert claim['original_receipt_sha256'] == binding['receipt_sha256']
     assert claim['runner_identity']['owner_thread_id'] == 'scheduled-owner'
+
+
+@pytest.mark.app_simulation
+def test_original_no_effect_account_failure_preserves_continuation_deadline(tmp_path):
+    from datetime import datetime
+    cli = importlib.import_module('scripts.book_b_live_morning')
+    state, path, receipt = _preflight_archive(tmp_path)
+    receipt['failed_stage'] = 'review_account'
+    path.write_text(json.dumps(receipt))
+    binding = cli._validate_preflight_continuation(path, state, '2026-10-08',
+        now=datetime.fromisoformat('2026-10-08T09:10:00+08:00'))
+    assert binding['deadline'] == receipt['preparation_deadline']
+
+
+@pytest.mark.app_simulation
+@pytest.mark.parametrize('case', ['derived_receipt', 'preparation', 'execution'])
+def test_account_continuation_rejects_derived_or_effectful_receipt(tmp_path, case):
+    from datetime import datetime
+    cli = importlib.import_module('scripts.book_b_live_morning')
+    state, path, receipt = _preflight_archive(tmp_path)
+    receipt['failed_stage'] = 'review_account'
+    if case == 'derived_receipt':
+        receipt['recovery_of'] = '2026-10-08-abcdef012345'
+    else:
+        receipt['preparation_receipts' if case == 'preparation' else 'execution_receipts'] = [{'status': 'unproven'}]
+    path.write_text(json.dumps(receipt))
+    with pytest.raises(ValueError, match='CONTINUATION_BINDING_UNPROVEN'):
+        cli._validate_preflight_continuation(path, state, '2026-10-08',
+            now=datetime.fromisoformat('2026-10-08T09:10:00+08:00'))
 
 
 @pytest.mark.app_simulation

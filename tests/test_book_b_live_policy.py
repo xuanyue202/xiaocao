@@ -271,13 +271,14 @@ def _dated_snapshot(day, stamp, **kwargs):
 
 
 def _history(tmp_path):
+    from tests.book_b_fee_fixtures import proved_fee_account
     buy = replace(_plan(trade_date="2026-08-28"), shares=2000)
     _record_fill(tmp_path, buy, price=10, event_id="buy-fill")
     for day in ("2026-08-28", "2026-08-31"):
         stamp = datetime.fromisoformat(day + "T07:10:00+00:00")
         snapshot = _dated_snapshot(day, stamp, shares=2000, sellable=2000,
              price=10, broker_fills=(("order-buy-fill", "000001.XSHE", "BUY", 2000, 10),) if day == "2026-08-28" else ())
-        account = project_book_b_live_account(tmp_path, snapshot, trade_date=day, now=stamp)
+        account = proved_fee_account(tmp_path, snapshot)
         write_book_b_live_settlement(tmp_path, account, now=stamp)
     return ["2026-08-28", "2026-08-31", "2026-09-01"]
 
@@ -661,9 +662,9 @@ def test_live_september_migration_shape_warns_for_middle_gap_but_requires_latest
     buy = replace(_plan(trade_date="2026-09-02"), shares=800, limit_price=17.39, basket_price=17.6683)
     _record_fill(tmp_path, buy, price=17.06, event_id="buy-fill")
     mark_time = datetime.fromisoformat("2026-09-03T07:10:00+00:00")
-    marked = project_book_b_live_account(tmp_path,
-        _dated_snapshot("2026-09-03", mark_time, shares=800, sellable=800, price=16.48),
-        trade_date="2026-09-03", now=mark_time)
+    from tests.book_b_fee_fixtures import proved_fee_account
+    marked = proved_fee_account(tmp_path,
+        _dated_snapshot("2026-09-03", mark_time, shares=800, sellable=800, price=16.48))
     write_book_b_live_settlement(tmp_path, marked, now=mark_time)
     sell = replace(_plan(side="SELL", lot_id=buy.plan_id, trade_date="2026-09-04"), shares=800,
                    limit_price=16.66)
@@ -671,7 +672,7 @@ def test_live_september_migration_shape_warns_for_middle_gap_but_requires_latest
     final_time = datetime.fromisoformat("2026-09-04T07:10:00+00:00")
     snapshot = _dated_snapshot("2026-09-04", final_time,
                               broker_fills=(("order-sell-fill", "000001.XSHE", "SELL", 800, 16.66),))
-    final = project_book_b_live_account(tmp_path, snapshot, trade_date="2026-09-04", now=final_time)
+    final = proved_fee_account(tmp_path, snapshot)
     write_book_b_live_settlement(tmp_path, final, now=final_time)
     days = ["2026-09-01", "2026-09-02", "2026-09-03", "2026-09-04"]
     receipt = evaluate_live_risk(tmp_path, now=final_time, account=final, trading_dates_provider=lambda _: days)
@@ -930,29 +931,43 @@ def test_production_morning_cli_passes_real_rendezvous_callback(tmp_path, monkey
                         lambda *a, **k: (object(), SimpleNamespace(submission_batch=batch_scope,
                             ensure_login=lambda: None,
                             ensure_native_ready=lambda **_: {"status": "ready"},
-                            ensure_environment=lambda **_: {"status": "ready"})))
+                            ensure_environment=lambda **_: {"status": "ready",
+                                "native_readiness": {"status": "ready"}})))
     monkeypatch.setattr(cli, "load_settings", lambda _: SimpleNamespace(base_url="fake", timeout=1, retries=0))
     monkeypatch.setattr(cli, "XiaocaoClient", lambda **_: object())
     monkeypatch.setattr(cli, "write_book_b_live_morning_receipt", lambda *args: None)
     seen = []
+    fresh = {"source_fingerprint": "fixture-source", "viewpoint_ids_sha256": "a" * 64,
+             "rules_sha256": "b" * 64, "quality": "ready"}
+    def prepared_inputs(checklist, **kwargs):
+        checklist.record("kol_inputs_loaded", "passed", evidence={**fresh, "worker_id": "fixture-worker"})
+        return fresh
+    monkeypatch.setattr(cli, "prepare_inputs", prepared_inputs)
 
     def rendezvous(request, **kwargs):
         seen.append((request, kwargs))
-        return {"status": "timed_out", "supporting_health": "degraded", "fallback": "neutral"}
+        return {"status": "timed_out", "supporting_health": "degraded", "fallback": "neutral",
+                "receipt_path": "fixture-receipt", "request_sha256": "c" * 64, "reason": "fixture-timeout"}
 
     def core(config, **kwargs):
         assert config.policy_root == Path("output/live/kol_policy/decisions")
         kwargs["preflight"]()
         with kwargs["submission_scope"](["bound-plan"]):
             assert scoped == [["bound-plan"]]
-        review = kwargs["review_rendezvous"]({"test": "production-wiring"})
+        request = {"test": "production-wiring", "freeze_path": "fixture-freeze",
+            "freeze_sha256": "a" * 64, "strategy_sha": "b" * 40,
+            "allocation_facts_path": "fixture-allocation", "allocation_capsule_sha256": "c" * 64,
+            "account_risk": {"deploy_factor": 1},
+            "review_wait_until": (datetime.now(timezone.utc) + timedelta(minutes=1)).isoformat()}
+        review = kwargs["review_rendezvous"](request)
         return BookBLiveMorningReceipt(config.trade_date, "no_action", "FAKE_ONLY", 0, (), (),
             str(config.freeze_path), str(config.allocation_facts_path), str(config.state_dir), review_rendezvous=review)
 
     monkeypatch.setattr(cli, "_review_rendezvous", rendezvous)
     monkeypatch.setattr(cli, "run_book_b_live_morning", core)
     assert cli.main(["--date", "2026-08-24", "--state-dir", str(tmp_path)]) == 0
-    assert seen == [({"test": "production-wiring"}, {"poll_seconds": 1.0})]
+    assert len(seen) == 1 and seen[0][0]["test"] == "production-wiring"
+    assert seen[0][1] == {"poll_seconds": 1.0}
 
 
 def test_rendezvous_does_not_accept_a_policy_read_that_finishes_after_timeout(tmp_path, monkeypatch):

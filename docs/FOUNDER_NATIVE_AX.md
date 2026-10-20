@@ -2,6 +2,15 @@
 
 Status: **production-capable Book-B route, fail-closed**.
 
+For the user's authorized rejected/stale-session rebuild, follow
+[the original-owner recovery sequence](../.codex/skills/xiaocao-trading/references/morning-session-recovery.md).
+The native `terminate-rejected-session --allow-session-reset` atom terminates
+only one same-account fixed Founder process on an unlocked machine. It does
+not read credentials, force-kill another app, or retry an order. Python binds
+it to one durable original request and deadline, then separately claims saved
+password fill and one visual CAPTCHA login; actual account readiness closes
+the credential fence. Unknown actions/account locks retain their protection.
+
 Deployment context and experiment standards: `OPERATING_CONTRACT.md` §1a
 records the user's 2026-09-12 clarification that the current APP connects to a
 black-box simulation service, separate from local digital simulation. Legacy
@@ -200,6 +209,30 @@ fill only the Keychain-backed password and focus CAPTCHA; it never presses
 login automatically. CAPTCHA recognition is a slow, bounded visual recovery
 path and is outside the order hot path.
 
+Before receiving a first-login secret, the helper activates and freshly binds
+the same account, PID, window, password field and CAPTCHA field. Clearing is
+proved only by an actual string empty-value readback. Missing or wrongly typed
+AX values block the fill. The final in-session unlock receipt retains
+`stale_auth_error_dismissed`; this Boolean status uses a credential-free key and
+passes the same Python sensitive-key filter as all other native receipts.
+
+Before a first-login secret is read, the helper also checks blocking notices.
+It may dismiss one exact account/window-bound `请输入交易密码!` validation sheet,
+prove it disappeared, and rebind the same login controls; credential rejection
+and unknown/ambiguous dialogs block the fill. It checks the binding and absence
+of blocking dialogs again after fill/focus. The secure-field
+readback length must also match the supplied secret; a silent AX no-op fails. `client_login_password_filled` means
+the bound login page is ready for CAPTCHA, not that authentication completed;
+`client_login_notice_dismissed` records the bounded validation-notice action.
+
+The in-session empty-confirm validation uses a distinct exact `AXWindow` with `AXDialog` subrole:
+`请输入交易密码解锁!`, alert description, and one `确定` button with identifier
+`action-button--998`. Only the pre-secret unlock path may close this bound
+validation dialog; require disappearance and fresh target binding before the
+one permitted unlock attempt. It is not a credential rejection and does not
+relax the durable prohibition on repeating an attempted/uncertain password.
+First-client-login recovery does not gain this dialog authority.
+
 Provisioning remains human-only:
 
 ```bash
@@ -383,6 +416,25 @@ production selection remains at most three seats. Current account/form identity,
 KOL restrictions, market guards and capital authorization still apply per order.
 No full-grid query belongs between successful counter acknowledgements.
 
+Historical scope is observed from the two actual date controls and a unique
+visible total count in the same native capture. Positive results qualify only
+when every parsed row belongs to the exact observed day and the complete row
+rectangles fit both the table and window. An empty result has no native response
+completion witness and remains incomplete. An exact requested date sets both
+account/window-bound AX date controls and commits each by clicking its unique
+AX-bound increment/decrement arrows, with bounded readback before querying.
+The helper first selects the day segment; a retained year/month selection can
+clamp at the APP's maximum date. Each click requires fresh arrow geometry,
+the same account/window and an active, unlocked Founder surface.
+The day step moves backwards first, then restores, so today's maximum date
+never requires an out-of-range future step.
+This APP advertises AX step/press actions but returns attributeUnsupported;
+the helper uses the arrows' actual geometry. AX assignment alone updates the
+display but leaves this APP's query model stale. Both endpoints must return to
+the exact target; missing/ineffective actions or changed identity block the
+query. Historical orders and trades retain independent date ranges. Preserve
+UNKNOWN until the exact order has explicit terminal evidence.
+
 An exact native confirmed action plus the account-bound prepared tuple and unique
 `委托已提交` success-notice contract number outside the baseline/earlier batch IDs
 may prove ACK. Persist action/result and the claim binding. This is counter
@@ -409,3 +461,22 @@ their total separately, plus terminal cleanup. After the September 16 change,
 offline behavior is verified; the new APP speed requires fresh 2/3/5-order
 acceptance. Earlier 70.366/105.654-second runs used the old orchestration and are
 not performance evidence for this path.
+
+### 用户授权的纯登录测试
+
+用户在 2026-10-13 明确要求登录优化与测试立即进行。对此设置
+`XIAOCAO_APP_AUTHENTICATION_TEST=1`，只允许登录、解锁、已绑定会话恢复和
+只读导航/查询；Python 客户端与原生入口均拒绝订单准备、提交、确认、撤单。
+此例外保留共享 APP 会话锁，只适用于 `app_authentication` 测试，不改变
+其他 `app_simulation` 测试时段或交易、会计入口的授权。
+
+会话重建前，helper 17 可识别主交易锁屏之外的同账户登录错误 sheet，
+重新绑定 PID、窗口、sheet、按钮后仅确认一次已知错误提示。退出前要求
+完整递归窗口树无残留或新 modal，并重新核验账户、PID、尝试预算。
+退出回执分别记录准备、提示处理、退出请求、请求接受和进程终止证据；
+没有原始终止回执的旧恢复 claim 不可据此补造或重复退出。
+
+会话退出图校验同时识别 macOS 的独立 `WindowSharingSessionButton` 外框：
+只接受同一主窗口左上角固定几何关系、一个精确系统控件名称、匹配的
+控件外框和完整无 sheet 子树。它虽报告 AXDialog，仍是系统共享指示外框。
+标题读取失败、错误类型、未知标签、额外控件或几何不符仍阻断退出。

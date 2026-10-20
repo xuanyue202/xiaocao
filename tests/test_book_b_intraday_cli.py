@@ -131,3 +131,59 @@ def test_unproved_calendar_blocks_before_secrets_or_app(entry, monkeypatch, caps
     assert payload["reason"] == "LIVE_BOOK_B_CALENDAR_UNPROVEN"
     assert json.loads(Path(payload["run_receipt_path"]).read_text()) == payload
     assert calls == []
+
+
+@pytest.mark.app_simulation
+def test_eod_login_failure_notifies_from_the_durable_original_receipt(entry, monkeypatch, capsys):
+    cli, calls, root = entry
+    notices = []
+
+    def failed_snapshot(**kwargs):
+        raise RuntimeError("NATIVE_AX_ACCOUNT_SURFACE_NOT_READY:client_login_required")
+
+    def notify(path, **kwargs):
+        payload = json.loads(path.read_text())
+        assert payload["status"] == "blocked"
+        assert payload["automation_identity"]["thread_id"] == "intraday-fixture"
+        notices.append(path)
+
+    monkeypatch.setattr(cli, "run_book_b_live_intraday", failed_snapshot)
+    monkeypatch.setattr(cli, "notify_eod_blocker", notify, raising=False)
+    assert cli.main(["--phase", "eod", "--state-dir", str(root)]) == 2
+    payload = json.loads(capsys.readouterr().err)
+    assert notices == [Path(payload["run_receipt_path"])]
+    assert calls == []
+
+
+@pytest.mark.app_simulation
+def test_eod_archive_keeps_exact_snapshot_without_printing_broker_tables(entry, monkeypatch, capsys):
+    cli, calls, root = entry
+    snapshot = {"snapshot_sha256": "a" * 64,
+        "tables": {kind: {"rows": [{"evidence": kind}]}
+                   for kind in ("positions", "today-orders", "today-trades")},
+        "funds_summary": {"available_cash": 12345.67}}
+    monkeypatch.setattr(cli, "run_book_b_live_intraday", lambda **kwargs:
+        SimpleNamespace(as_dict=lambda: {"status": "settled", "broker_snapshot": snapshot}))
+    assert cli.main(["--phase", "eod", "--state-dir", str(root)]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    archived = json.loads(Path(payload["run_receipt_path"]).read_text())
+    assert archived["broker_snapshot"] == snapshot
+    assert "broker_snapshot" not in payload
+    assert payload["broker_snapshot_evidence"] == {
+        "receipt_path": payload["run_receipt_path"], "snapshot_sha256": "a" * 64}
+
+
+@pytest.mark.app_simulation
+def test_sell_result_notification_follows_original_archive_and_cannot_change_result(entry, monkeypatch, capsys):
+    cli, calls, root = entry
+    monkeypatch.setattr(cli, "run_book_b_live_intraday", lambda **kwargs:
+        SimpleNamespace(as_dict=lambda: {"status": "executed"}))
+    def failed_notice(payload, **kwargs):
+        archived = json.loads(Path(payload["run_receipt_path"]).read_text())
+        assert archived == payload and archived["status"] == "executed"
+        raise OSError("notice claim unavailable")
+    monkeypatch.setattr(cli, "notify_app_sells", failed_notice)
+    assert cli.main(["--phase", "closing", "--state-dir", str(root)]) == 0
+    output = capsys.readouterr()
+    assert json.loads(output.out)["status"] == "executed"
+    assert "notice unavailable" in output.err and calls == []

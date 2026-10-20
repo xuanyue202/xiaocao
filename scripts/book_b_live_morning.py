@@ -44,10 +44,31 @@ from wait_for_morning_freeze import wait_for_morning_freeze  # noqa: E402
 
 from xiaocao.live.morning_observability import review_brief, review_notice, terminal_notice, dependency_user_action
 from xiaocao.automation_run import automation_run, current_automation_id, runner_identity, validate_automation_identity
-from xiaocao.live.morning_notifications import AUTOMATION_ID, MorningNotifications
-from xiaocao.runner_recovery import DependencyRecovery
+from xiaocao.live.morning_notifications import AUTOMATION_ID, MorningNotifications, result_fingerprint
+from xiaocao.runner_recovery import DependencyRecovery, _hash
+from xiaocao.live.morning_checklist import MorningChecklist
+from xiaocao.live.morning_kol_inputs import prepare_inputs
+from xiaocao.live.morning_order_wait import await_orders
+from xiaocao.live.trading_execution import ExecutionStore
 
 _OUTPUT_LOCK = threading.Lock()
+
+
+def _automatic_dependency_retry(failure: dict) -> bool:
+    evidence = failure.get("evidence") or {}
+    if (evidence.get("state") != "not_attempted"
+            or (evidence.get("user_action") or {}).get("required")
+            or (evidence.get("user_action") or {}).get("recovery_kind") == "app_session_reset"
+            or evidence.get("password_action_attempted") is not False
+            or evidence.get("confirmation_pressed") is not False):
+        return False
+    if failure.get("code") == "NATIVE_AX_UNLOCK_NOT_ATTEMPTED":
+        return True
+    return (failure.get("code") == "NATIVE_AX_KEYCHAIN_READ_TIMEOUT"
+            and evidence.get("helper_status") == "not_invoked"
+            and evidence.get("failure_category") == "keychain_pre_action"
+            and evidence.get("password_action_attempted") is False
+            and evidence.get("confirmation_pressed") is False)
 
 
 def _emit_json(payload: dict) -> None:
@@ -194,7 +215,9 @@ def _validate_preflight_continuation(path: Path, state_dir: Path, trade_date: st
             or not prior.get("state_path")
             or Path(prior["state_path"]).resolve() != state_dir.resolve()
             or prior.get("trade_date") != trade_date
-            or prior.get("status") != "blocked" or prior.get("failed_stage") != "preflight"
+            or prior.get("status") != "blocked"
+            or prior.get("failed_stage") not in {"preflight", "review_account"}
+            or prior.get("recovery_of") is not None
             or prior.get("plan_count") != 0
             or prior.get("persisted_plan_ids") != [] or prior.get("execution_receipts") != []
             or prior.get("preparation_receipts") != []
@@ -418,6 +441,7 @@ def main(argv: list[str] | None = None) -> int:
                 calendar = {"status": "unproven", "trade_date": trade_date,
                             "failure_category": getattr(exc, "failure_category", None)
                             or type(exc).__name__}
+            args.calendar_proof = calendar
             if calendar["status"] != "trading_day":
                 blocked = calendar["status"] == "unproven"
                 result = {"status": "blocked" if blocked else "no_action",
@@ -429,6 +453,10 @@ def main(argv: list[str] | None = None) -> int:
                 _write_review_immutable(path, result)
                 _emit_json({**result, "receipt_path": str(path.resolve())})
                 return 2 if blocked else 0
+        if not args.resume_plan_id and not args.resume_preflight_receipt:
+            from xiaocao.utils.business_clock import wait_for_business_time
+            from datetime import time as wall_time
+            wait_for_business_time(trade_date, wall_time(9, 0))
         args.preflight_continuation = None
         if args.resume_preflight_receipt:
             try:
@@ -488,9 +516,36 @@ def _run(args, notices):
         receipt = run_book_b_live_recovery(config, plan_id=args.resume_plan_id, action="close")
         _emit_json(receipt.as_dict())
         return 0
+    checklist_binding = {**runner_identity(args.automation_id, "scripts/book_b_live_morning.py"),
+        "trade_date": trade_date, "preparation_deadline": absolute_preparation_deadline.isoformat()}
+    checklist_root = Path(args.state_dir) / "runs" / "checklists"
+    audit_degraded = False
+    def audit_failure():
+        nonlocal audit_degraded
+        if not audit_degraded:
+            _emit_json({"event": "book_b_checklist_degraded", "reason": "CHECKLIST_AUDIT_UNPROVEN"})
+            audit_degraded = True
+    try:
+        checklist = MorningChecklist.create(checklist_root, checklist_binding)
+    except (OSError, ValueError, TypeError, KeyError):
+        checklist = MorningChecklist(checklist_root / (_hash(checklist_binding) + ".json"), checklist_binding)
+        audit_failure()
+    def record_checklist(*args, **kwargs):
+        try:
+            checklist.record(*args, **kwargs)
+        except (OSError, ValueError, TypeError, KeyError):
+            # Audit storage cannot stop a valid reserved trade. The normal
+            # intent, claim and execution stores remain fail-closed.
+            audit_failure()
+    record_checklist("identity_calendar", "passed", evidence={"dated_lock": "held", "calendar": getattr(args, "calendar_proof", None),
+        "mode": "exact_plan_recovery" if args.resume_plan_id else "original_morning"})
+    _emit_json({"event": "book_b_morning_checklist", "checklist_path": str(checklist.path),
+                "audit_health": "degraded" if audit_degraded else "ready"})
+    kol_inputs = None
     capital_runtime = KeychainCapitalRuntime()
     capital_receipt = capital_runtime.preflight()
     if capital_receipt["status"] != "ready":
+        record_checklist("capital_credentials", "blocked", evidence=capital_receipt, reason="LIVE_CAPITAL_RUNTIME_NOT_READY")
         blocked = {
             "runner_identity": runner_identity(args.automation_id, "scripts/book_b_live_morning.py"),
             "trade_date": trade_date,
@@ -515,6 +570,8 @@ def _run(args, notices):
     trade_account_fingerprint = keychain.trade_account_fingerprint()
     if not trade_account_fingerprint:
         raise RuntimeError("FOUNDER_TRADE_ACCOUNT_FINGERPRINT_MISSING")
+    record_checklist("capital_credentials", "passed", evidence={"capital_runtime": capital_receipt,
+        "keychain_fields": {key: keychain_receipt[key] for key in required_keychain_fields}})
     def build_native():
         return build_foundersc_native_execution(args.state_dir,
             scoped_buy_preflight=not bool(args.resume_plan_id),
@@ -602,16 +659,16 @@ def _run(args, notices):
         refresh = getattr(getattr(broker, "native", None), "refresh_helper", None)
         if refresh:
             refresh()
-        broker.ensure_login()
-        native_receipt = broker.ensure_native_ready(
-            require_order_capability=True,
-            unlock_once=True,
-        )
         environment_receipt = broker.ensure_environment(
             target="live",
             expected_current="any",
             logical_account_id="primary",
+            require_order_capability=True,
         )
+        native_receipt = environment_receipt["native_readiness"]
+        record_checklist("app_ready", "recovered" if recovery.snapshot().get("check_count", 0) else "passed",
+                         evidence=environment_receipt,
+                         valid_until=datetime.now(timezone.utc) + timedelta(seconds=60))
         return {
             **environment_receipt,
             "website_authentication": {
@@ -649,11 +706,14 @@ def _run(args, notices):
     def recovery_event(event):
         failures = event.get("failures") or []
         _emit_json({k: event.get(k) for k in ("event", "status", "request_path", "request_sha256", "sequence")}
-            | {"reason": failures[-1]["code"] if failures else None})
+            | {"reason": failures[-1]["code"] if failures else None,
+               "recovery_kind": ((failures[-1].get("evidence") or {}).get("user_action") or {}).get("recovery_kind")
+               if failures else None})
 
     recovery = DependencyRecovery(
         root=Path(args.state_dir) / "runs" / "dependencies",
-        identity={**runner_identity(args.automation_id, "scripts/book_b_live_morning.py"), "trade_date": trade_date},
+        identity={**runner_identity(args.automation_id, "scripts/book_b_live_morning.py"), "trade_date": trade_date,
+                  "preparation_deadline": absolute_preparation_deadline.isoformat()},
         deadline=preparation_deadline,
         boundary=datetime.fromisoformat(trade_date + "T09:24:00+08:00"),
         # These callbacks only read readiness / perform one fenced unlock.
@@ -668,9 +728,14 @@ def _run(args, notices):
         evidence=lambda: getattr(broker, "credential_health", {}),
         failure_evidence=lambda exc: {**getattr(broker, "credential_health", {}),
             "user_action": dependency_user_action(str(exc), getattr(broker, "credential_health", {}))},
+        automatic_retry=_automatic_dependency_retry,
     )
     def live_heartbeat():
-        return read_live_heartbeat() if args.resume_plan_id else recovery.run(read_live_heartbeat)
+        evidence = read_live_heartbeat() if args.resume_plan_id else recovery.run(read_live_heartbeat)
+        clock = datetime.now(ZoneInfo("Asia/Shanghai"))
+        record_checklist("app_boundary", "passed", evidence=evidence, observed_at=clock,
+                         valid_until=clock + timedelta(seconds=60))
+        return evidence
 
     config = BookBLiveMorningConfig(
         trade_date=trade_date,
@@ -684,9 +749,92 @@ def _run(args, notices):
     runner = run_book_b_live_recovery if args.resume_plan_id else run_book_b_live_morning
     recovery_args = {"plan_id": args.resume_plan_id, "action": args.recovery_action} if args.resume_plan_id else {}
     def progress(stage, observed_at):
+        nonlocal kol_inputs
         _emit_stage(stage, observed_at)
         if stage == "freeze_wait":
             notices.publish("ready")
+            if not args.resume_plan_id:
+                try:
+                    kol_inputs = prepare_inputs(checklist, repo_root=ROOT)
+                    _emit_json({"event": "book_b_kol_inputs_prepared", "checklist_path": str(checklist.path), **kol_inputs})
+                except (OSError, ValueError, RuntimeError, KeyError, TypeError) as exc:
+                    record_checklist("kol_projection", "degraded", reason=type(exc).__name__)
+                    _emit_json({"event": "book_b_kol_inputs_degraded", "reason": type(exc).__name__})
+
+    def reviewed(request):
+        nonlocal kol_inputs
+        record_checklist("original_bundle", "passed", evidence={k: request[k] for k in
+            ("freeze_path", "freeze_sha256", "strategy_sha")})
+        record_checklist("account_risk", "blocked" if request["account_risk"]["deploy_factor"] <= 0 else "passed", evidence={"allocation_facts_path": request["allocation_facts_path"],
+            "allocation_capsule_sha256": request["allocation_capsule_sha256"], "account_risk": request["account_risk"]})
+        try:
+            fresh = prepare_inputs(checklist, repo_root=ROOT)
+            loaded = checklist.read()["items"]["kol_inputs_loaded"]
+            changed = kol_inputs is None or fresh["source_fingerprint"] != kol_inputs["source_fingerprint"]
+            loaded_evidence = loaded.get("evidence") or {}
+            prepared = loaded["status"] == "passed" and bool(loaded_evidence.get("worker_id"))
+            warm = (prepared and not changed and loaded_evidence.get("source_fingerprint") == fresh["source_fingerprint"]
+                and loaded_evidence.get("viewpoint_ids_sha256") == fresh["viewpoint_ids_sha256"]
+                and loaded_evidence.get("rules_sha256") == fresh["rules_sha256"])
+            if not warm:
+                record_checklist("kol_inputs_loaded", "degraded", reason="SOURCE_FINGERPRINT_CHANGED" if changed else "INPUT_COVERAGE_NOT_CURRENT")
+            kol_inputs = fresh
+            record_checklist("kol_fingerprint", "passed", evidence={**fresh, "source_changed": changed})
+            request = {**request, "kol_inputs": {**fresh, "source_changed": changed,
+                "warm_worker": loaded_evidence.get("worker_id") if prepared else None, "input_loading_current": warm}}
+        except (OSError, ValueError, RuntimeError, KeyError, TypeError) as exc:
+            record_checklist("kol_fingerprint", "degraded", reason=type(exc).__name__)
+            record_checklist("kol_decision", "degraded", reason="KOL_INPUT_REFRESH_FAILED")
+            return {"status": "deferred", "reason": "KOL_INPUT_REFRESH_FAILED", "supporting_health": "degraded"}
+        if fresh["quality"] != "ready":
+            record_checklist("kol_decision", "degraded", evidence=fresh, reason="SOURCE_COVERAGE_DEGRADED")
+            return {"status": "deferred", "reason": "SOURCE_COVERAGE_DEGRADED", "supporting_health": "degraded"}
+        if not prepared:
+            record_checklist("kol_decision", "degraded", evidence=fresh, reason="KOL_INPUT_PREPARATION_MISSING_OR_LATE")
+            return {"status": "deferred", "reason": "KOL_INPUT_PREPARATION_MISSING_OR_LATE", "supporting_health": "degraded"}
+        clock = datetime.now(ZoneInfo("Asia/Shanghai"))
+        cutoff = datetime.fromisoformat(request["review_wait_until"])
+        if clock >= cutoff:
+            record_checklist("kol_decision", "degraded", evidence=fresh, reason="LIVE_REVIEW_TIMEOUT_NEUTRAL_FALLBACK")
+            return {"status": "timed_out", "reason": "LIVE_REVIEW_TIMEOUT_NEUTRAL_FALLBACK", "supporting_health": "degraded"}
+        request = {**request, "dispatch_budget": {"observed_at": clock.isoformat(),
+            "total_remaining_seconds": max(0.0, (cutoff-clock).total_seconds()),
+            "includes": ["model", "source_verification", "independent_review", "publication"],
+            "cutoff": cutoff.isoformat(), "dispatch": "immediate_to_warm_worker"}}
+        result = _review_rendezvous(request, poll_seconds=args.poll_seconds)
+        record_checklist("kol_decision", "passed" if result["status"] == "validated" else "degraded",
+            evidence={"receipt_path": result["receipt_path"], "request_sha256": result["request_sha256"]},
+            reason=result["reason"])
+        return result
+
+    def reconcile_claimed(plan):
+        previous = ExecutionStore(Path(args.state_dir) / "events.jsonl").current(plan.plan_id)
+        if (previous is None or previous.plan_hash != plan.plan_hash or not previous.submit_claim_id):
+            raise ValueError("MORNING_AWAIT_DURABLE_SUBMIT_CLAIM_REQUIRED")
+        return execution.reconcile_existing(plan, broker)
+
+    last_order_progress = None
+    def order_progress(rows):
+        nonlocal last_order_progress
+        facts = {"trade_date": trade_date, "status": "unresolved", "reason": "AWAITING_BROKER_TERMINAL",
+                 "execution_receipts": [row.as_dict() for row in rows], "state_path": str(args.state_dir)}
+        try:
+            notice = terminal_notice(facts, Path(args.state_dir) / "runs" / "history" / "pending.json")
+        except (OSError, ValueError, TypeError, KeyError):
+            audit_failure()
+            notice = terminal_notice({**facts, "pending_evidence_unproven": True},
+                Path(args.state_dir) / "runs" / "history" / "pending.json",
+                include_durable_pending=False, include_incidents=False)
+        notices.update_progress(notice)
+        fingerprint = result_fingerprint(notice)
+        if fingerprint != last_order_progress:
+            record_checklist("orders", "pending", evidence=notice, reason="AWAITING_BROKER_TERMINAL")
+            _emit_json({"event": "book_b_order_progress", "orders": notice["orders"]})
+            last_order_progress = fingerprint
+
+    def await_results(plans, receipts):
+        await_orders(plans, receipts, reconcile=reconcile_claimed, deadline=absolute_preparation_deadline,
+            now=lambda: datetime.now(timezone.utc), sleep=time.sleep, on_progress=order_progress)
 
     receipt = runner(
         config,
@@ -715,6 +863,7 @@ def _run(args, notices):
             heartbeat=live_heartbeat,
         ),
         wait_for_reconcile=lambda: time.sleep(1.0),
+        await_order_results=await_results,
         execute=lambda plan: execution.execute(plan, broker),
         submission_scope=lambda plans: broker.submission_batch(plans),
         trading_dates_provider=trading_calendar,
@@ -723,8 +872,10 @@ def _run(args, notices):
             trade_date=trade_date, logical_account_id="primary",
             expected_fund_account_fingerprint=trade_account_fingerprint,
         ),
-        review_rendezvous=lambda request: _review_rendezvous(request, poll_seconds=args.poll_seconds),
+        review_rendezvous=reviewed,
         on_progress=progress,
+        on_check=lambda item, status, evidence: record_checklist(item, status, evidence=evidence),
+        on_order_progress=order_progress,
     )
     receipt = replace(
         receipt,
@@ -736,10 +887,18 @@ def _run(args, notices):
         open_plan_reconciliations=receipt.open_plan_reconciliations,
         prior_reconciliations=prior_reconciliations,
         dependency_recovery=recovery.snapshot(),
+        checklist_path=str(checklist.path),
     )
     write_book_b_live_morning_receipt(config, receipt)
     payload = receipt.as_dict()
     notice = terminal_notice(payload, config.state_dir / "runs" / "history" / f"{receipt.run_id}.json")
+    record_checklist("orders", "passed" if receipt.status in {"completed", "no_action", "skipped"} else
+        "degraded" if receipt.status == "unresolved" else "blocked", evidence={"receipt_path": notice.get("receipt_path"),
+        "orders": notice.get("orders")}, reason=receipt.reason)
+    if receipt.failed_stage == "preflight":
+        record_checklist("app_ready", "blocked", evidence={"receipt_path": notice.get("receipt_path")}, reason=receipt.reason)
+    if (receipt.review_rendezvous or {}).get("reason") == "ACCOUNT_RISK_BLOCKS_NEW_BUY":
+        record_checklist("kol_decision", "not_applicable", reason="ACCOUNT_RISK_BLOCKS_NEW_BUY")
     notices.publish("result", notice)
     _emit_json(notice)
     return 0 if receipt.status in {"completed", "no_action", "skipped"} else 2

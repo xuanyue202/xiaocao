@@ -108,6 +108,44 @@ def test_missing_fixed_inputs_are_missing_not_zero_or_success(tmp_path):
     assert "关键证据缺失，未完成分析" in render(review)
 
 
+@pytest.mark.parametrize("terminal", [False, True])
+def test_paper_consumption_without_policy_clock_retains_dated_evidence(tmp_path, terminal):
+    claim = bound({
+        "schema_version": "paper-policy-consumption.v1", "book": "B", "runtime": "paper",
+        "date": AS_OF.isoformat(), "status": "no_buy", "slots": [],
+        "kol_decision": {"status": "expired", "decision_id": "old-decision"},
+    })
+    path = write(tmp_path, "consumption/entry.json", claim)
+    row = claim
+    if terminal:
+        row = bound({"schema_version": "paper-policy-result.v1", "book": "B", "runtime": "paper",
+                     "date": AS_OF.isoformat(), "status": "no_buy", "buy_count": 0,
+                     "consumption_sha256": claim["receipt_sha256"]})
+        path = write(tmp_path, "consumption/entry.result.json", row)
+
+    item = wdr._kol_item("paper_consumption", row, {"path": path.name, "absolute_path": str(path)})
+
+    assert item["observed_date"] == AS_OF.isoformat()
+    assert "observed_at" not in item
+    assert item["timestamp_basis"] == "claim_trade_date_not_consumption_clock"
+    assert item["terminal"] is terminal
+    assert item["decision_id"] == "old-decision"
+
+
+@pytest.mark.parametrize("field,value", [("date", "invalid"), ("evaluated_at", "invalid"),
+                                        ("evaluated_at", None)])
+def test_paper_consumption_does_not_replace_malformed_clock_with_trade_date(tmp_path, field, value):
+    claim = {"schema_version": "paper-policy-consumption.v1", "book": "B", "runtime": "paper",
+             "date": AS_OF.isoformat(), "status": "no_buy", "slots": [],
+             "kol_decision": {"status": "expired", "decision_id": "old-decision"}}
+    if field == "date":
+        claim[field] = value
+    else:
+        claim["kol_decision"][field] = value
+    with pytest.raises(ValueError):
+        wdr._kol_item("paper_consumption", bound(claim), {"path": "entry.json"})
+
+
 def test_inventory_calls_actual_feedback_uses_dedicated_paths_and_is_fixed(tmp_path, monkeypatch):
     consumption(tmp_path)
     # An obsolete sibling is not silently accepted as the new decision store.
@@ -300,7 +338,7 @@ def test_missing_native_consumption_clock_is_not_invented_from_run_date(tmp_path
     review = wdr.build_kol_system_review(tmp_path, as_of=AS_OF)
     assert review["inventory"]["audit_feedback"]["consumption"]["live"]["missing_consumption_clock_count"] == 1
     link = review["windows"]["1w"]["decision_execution_chain"]["links"][0]
-    assert "精确消费时钟；run.trade_date 仅供日期分组" in link["missing"]
+    assert link["missing_consumption_clock"] is True
 
 
 def test_legacy_native_run_does_not_prove_zero_consumption(tmp_path):

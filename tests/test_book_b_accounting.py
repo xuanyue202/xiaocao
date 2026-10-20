@@ -39,7 +39,7 @@ def test_owned_partial_sales_allocate_fee_cost_and_residual_cents(tmp_path):
     _record_fill(tmp_path, _plan(side="SELL", lot_id=buy.plan_id), price=11, event_id="sell1")
     first = ledger.sync_journal(tmp_path)
     assert first["ledger_cash"] == "28099.59"
-    assert first["realized_pnl"] == "99.79"
+    assert first["provisional_realized_pnl"] == "99.79" and first["realized_pnl"] is None
     book = ledger.replay_owned(tmp_path)
     assert book.lots[buy.plan_id]["cost_cents"] == 200020
     detail = ledger.details(tmp_path)[1]
@@ -50,7 +50,7 @@ def test_owned_partial_sales_allocate_fee_cost_and_residual_cents(tmp_path):
     last = replace(_plan(side="SELL", lot_id=buy.plan_id), shares=200, plan_id="book-b:2026-09-01:000001.XSHE:SELL:last")
     _record_fill(tmp_path, last, price=11, event_id="sell2")
     final = ledger.sync_journal(tmp_path)
-    assert final["ledger_cash"] == "30299.37" and final["realized_pnl"] == "299.37"
+    assert final["ledger_cash"] == "30299.37" and final["provisional_realized_pnl"] == "299.37" and final["realized_pnl"] is None
     assert ledger.replay_owned(tmp_path).lots[buy.plan_id]["cost_cents"] == 0
     assert sum(int(round(float(r["realized_pnl"])*100)) for r in ledger.details(tmp_path)) == 29937
 
@@ -62,8 +62,9 @@ def test_open_buy_cost_is_not_realized_loss_and_nav_excludes_future_exit_fee(tmp
     account = observed(tmp_path, with_cash(_snapshot(shares=6000, price=11,
         broker_fills=(("order-large", buy.code, "BUY", 6000, 10),)), 39994))
     report = account.accounting
-    assert report["realized_pnl"] == "0.00"
-    assert report["unrealized_pnl"] == report["cumulative_pnl"] == "5994.00"
+    assert report["provisional_realized_pnl"] == "0.00" and report["realized_pnl"] is None
+    assert report["provisional_unrealized_pnl"] == "5994.00"
+    assert report["unrealized_pnl"] is report["cumulative_pnl"] is None
     assert report["marked_nav"] == "105994.00"
     assert report["estimated_exit_fee"] == "6.60"
     assert report["liquidation_nav"] == "105987.40"
@@ -122,7 +123,7 @@ def test_income_requires_owned_entitlement_or_owned_interest_period(tmp_path, mo
     proof["statement"].pop("receipt_sha256")
     proof["statement"]["receipt_sha256"] = digest(proof["statement"])
     ledger.record_cash_event(tmp_path, proof, now=NOW+timedelta(seconds=1))
-    assert observed(tmp_path, paid).accounting["realized_pnl"] == "5.00"
+    assert observed(tmp_path, paid).accounting["provisional_realized_pnl"] == "5.00"
     changed = dict(proof, entitlement_snapshot=with_cash(_snapshot(shares=200, price=10), 98000))
     with pytest.raises(ValueError, match="DIVIDEND_OWNERSHIP_UNPROVEN"):
         ledger.record_cash_event(tmp_path, changed, now=NOW+timedelta(seconds=1))
@@ -143,7 +144,7 @@ def test_income_requires_owned_entitlement_or_owned_interest_period(tmp_path, mo
     interest["statement"].pop("receipt_sha256")
     interest["statement"]["receipt_sha256"] = digest(interest["statement"])
     ledger.record_cash_event(tmp_path, interest, now=NOW+timedelta(seconds=2))
-    assert observed(tmp_path, interest["broker_snapshot"]).accounting["realized_pnl"] == "6.00"
+    assert observed(tmp_path, interest["broker_snapshot"]).accounting["provisional_realized_pnl"] == "6.00"
 
 
 def test_current_observation_rejects_later_cash_event_but_historical_proof_survives(tmp_path):
@@ -171,7 +172,8 @@ def test_statement_export_shares_journal_and_does_not_mix_stale_mark(tmp_path):
     assert stale["report_path"] != first["report_path"]
     assert Path(first["report_path"]).read_bytes() == original
     saved = json.loads(Path(stale["report_path"]).read_text())
-    assert saved["valuation"] == account.accounting
+    assert saved["source_observation"] == account.accounting
+    assert saved["valuation"]["source_observation_sha256"] == account.accounting["receipt_sha256"]
     observed(tmp_path, proof["broker_snapshot"])
     current = export_statement(tmp_path, tmp_path/"reports")
     assert current["realized_pnl"] == current["cumulative_pnl"] == "-5.00"

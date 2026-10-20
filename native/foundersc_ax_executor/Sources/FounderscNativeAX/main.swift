@@ -4,7 +4,7 @@ import Foundation
 import Vision
 
 private let schemaVersion = 2
-private let helperVersion = 14
+private let helperVersion = 17
 private let bundleIdentifier = "com.fzzq.Mac2020"
 private let maximumDepth = 12
 private let maximumNodes = 1_000
@@ -114,6 +114,18 @@ private struct QueryReadback: Codable {
     let observedAt: String
     var criticalCellConfidences: [[String: Float]]? = nil
     var structuralParsingProven: Bool? = nil
+    var historyScope: HistoryScope? = nil
+}
+
+private struct HistoryScope: Codable {
+    let schemaVersion: String = "native-history-scope.v1"
+    let kind: String
+    let startDate: String
+    let endDate: String
+    let dateControlsProven: Bool
+    let allPagesCaptured: Bool
+    let totalRowCount: Int
+    let observedAt: String
 }
 
 private struct CancelReadback: Codable {
@@ -204,8 +216,22 @@ private struct Receipt: Codable {
     var resultReadback: BrokerResultReadback?
     var timingMs: Double
     var loginNoticeDismissed: Bool? = nil
+    var clientLoginNoticeDismissed: Bool? = nil
+    var staleAuthErrorDismissed: Bool? = nil
     var unlockSurface: UnlockSnapshot? = nil
     var unlockEvidence: UnlockEvidence? = nil
+    var secondaryClientLoginDiagnostic: [String]? = nil
+    var sessionResetEvidence: SessionResetEvidence? = nil
+}
+
+private struct SessionResetEvidence: Codable {
+    let processID: Int32
+    var preconditionProven = false
+    var alertAcknowledgmentRequested = false
+    var alertAcknowledged = false
+    var terminationRequested = false
+    var terminationAccepted: Bool? = nil
+    var processExitProven = false
 }
 
 private struct OrderFields {
@@ -891,10 +917,17 @@ private func queryNavigationTokens(
     }
 }
 
+private struct HistoryDateRange: Equatable {
+    let start: String
+    let end: String
+}
+
 private func capturedQueryReadback(
     kind: String,
     observation: Observation
 ) -> QueryReadback? {
+    let isHistory = ["history-orders", "history-trades"].contains(kind)
+    let historyDatesBefore = isHistory ? observedHistoryDates(observation) : nil
     guard let running = observation.runningApplication,
           let windowBounds = observation.receipt.windowBounds,
           let capture = captureFounderWindow(
@@ -908,13 +941,227 @@ private func capturedQueryReadback(
         screenBounds: capture.1,
         shapes: observation.receipt.tableShapes
     )
-    return structuredQueryReadback(
+    var readback = structuredQueryReadback(
         kind: kind,
         tokens: tokens,
         tableShapes: observation.receipt.tableShapes,
         navigationLabelCount: 1,
         navigationClickMode: "ocr_guarded_coordinate"
     )
+    if isHistory,
+       let dates = historyDatesBefore,
+       let after = observedHistoryDates(observation),
+       dates == after {
+        let counts = tokens.compactMap { token -> Int? in
+            let x = (token.bounds.x + token.bounds.width / 2 - windowBounds.x) / windowBounds.width
+            let y = (token.bounds.y + token.bounds.height / 2 - windowBounds.y) / windowBounds.height
+            let text = token.text.components(separatedBy: .whitespacesAndNewlines).joined()
+            guard token.confidence >= minimumCriticalOCRConfidence,
+                  (0.32...0.55).contains(x), (0.075...0.13).contains(y),
+                  text.range(of: #"^共[0-9]{1,6}条$"#, options: .regularExpression) != nil else { return nil }
+            return Int(text.dropFirst().dropLast())
+        }
+        if counts.count == 1, let total = counts.first {
+            let table = observation.receipt.tableShapes.first
+            let visibleRows = table?.rowBounds ?? []
+            func contains(_ outer: Bounds, _ inner: Bounds) -> Bool {
+                inner.x >= outer.x && inner.y >= outer.y
+                    && inner.x + inner.width <= outer.x + outer.width
+                    && inner.y + inner.height <= outer.y + outer.height
+            }
+            let rowsVisible = table?.bounds.map { viewport in
+                visibleRows.allSatisfy { contains(viewport, $0) && contains(windowBounds, $0) }
+            } ?? false
+            let dateColumn = kind == "history-orders" ? "委托日期" : "成交日期"
+            let rowDatesBound = dates.start == dates.end && readback.rows.allSatisfy {
+                $0[dateColumn]?.trimmingCharacters(in: .whitespacesAndNewlines)
+                    == dates.start.replacingOccurrences(of: "-", with: "")
+            }
+            // An unchanged empty table has no response-binding witness. It
+            // cannot prove that an asynchronous refresh completed for this range.
+            readback.historyScope = HistoryScope(kind: kind, startDate: dates.start, endDate: dates.end,
+                dateControlsProven: true,
+                allPagesCaptured: total > 0 && rowDatesBound
+                    && readback.structuralParsingProven == true && rowsVisible
+                    && total == readback.rows.count && total == visibleRows.count,
+                totalRowCount: total, observedAt: readback.observedAt)
+        }
+    }
+    return readback
+}
+
+private func observedHistoryDates(_ observation: Observation) -> HistoryDateRange? {
+    guard let window = observation.primaryWindow, let windowBounds = observation.receipt.windowBounds else { return nil }
+    var controls: [(Bounds, String)] = []
+    var visited = 0
+    var complete = true
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = TimeZone(identifier: "Asia/Shanghai")
+    formatter.dateFormat = "yyyy-MM-dd"
+    func walk(_ element: AXUIElement, depth: Int) {
+        guard depth <= maximumDepth, visited < maximumNodes else { complete = false; return }
+        visited += 1
+        if stringAttribute(element, kAXRoleAttribute) == "AXDateTimeArea",
+           let box = bounds(of: element) {
+            let y = (box.y + box.height / 2 - windowBounds.y) / windowBounds.height
+            let x = (box.x + box.width / 2 - windowBounds.x) / windowBounds.width
+            if (0.075...0.13).contains(y), (0.08...0.32).contains(x),
+               let value = attribute(element, kAXValueAttribute) {
+                if let date = value as? Date {
+                    controls.append((box, formatter.string(from: date)))
+                } else if let text = value as? String,
+                          text.range(of: #"^[0-9]{4}/[0-9]{1,2}/[0-9]{1,2}$"#, options: .regularExpression) != nil {
+                    let input = DateFormatter()
+                    input.locale = formatter.locale
+                    input.timeZone = formatter.timeZone
+                    input.dateFormat = "yyyy/M/d"
+                    input.isLenient = false
+                    if let date = input.date(from: text) { controls.append((box, formatter.string(from: date))) }
+                }
+            }
+        }
+        for child in (attribute(element, kAXChildrenAttribute) as? [AXUIElement] ?? []) { walk(child, depth: depth + 1) }
+    }
+    walk(window, depth: 0)
+    controls.sort { $0.0.x < $1.0.x }
+    guard complete, controls.count == 2,
+          controls[0].0.x + controls[0].0.width < controls[1].0.x,
+          abs(controls[0].0.y - controls[1].0.y) < 3 else { return nil }
+    return HistoryDateRange(start: controls[0].1, end: controls[1].1)
+}
+
+private func sameWindowBounds(_ left: Bounds?, _ right: Bounds?) -> Bool {
+    guard let left, let right else { return false }
+    return left.x == right.x && left.y == right.y && left.width == right.width && left.height == right.height
+}
+
+private func historyDateArrowPoints(_ element: AXUIElement, window: Bounds) -> (day: CGPoint, up: CGPoint, down: CGPoint)? {
+    let steppers = (attribute(element, kAXChildrenAttribute) as? [AXUIElement] ?? [])
+        .filter { stringAttribute($0, kAXRoleAttribute) == "AXIncrementor" }
+    guard steppers.count == 1, let control = bounds(of: element),
+          let stepper = bounds(of: steppers[0]) else { return nil }
+    let arrows = (attribute(steppers[0], kAXChildrenAttribute) as? [AXUIElement] ?? [])
+        .filter { stringAttribute($0, kAXRoleAttribute) == "AXButton" }
+    let increment = arrows.filter { stringAttribute($0, kAXSubroleAttribute) == "AXIncrementArrow" }
+    let decrement = arrows.filter { stringAttribute($0, kAXSubroleAttribute) == "AXDecrementArrow" }
+    func contains(_ outer: Bounds, _ inner: Bounds) -> Bool {
+        return inner.width > 0 && inner.height > 0 && inner.x >= outer.x && inner.y >= outer.y
+            && inner.x + inner.width <= outer.x + outer.width
+            && inner.y + inner.height <= outer.y + outer.height
+    }
+    guard increment.count == 1, decrement.count == 1,
+          let up = bounds(of: increment[0]), let down = bounds(of: decrement[0]),
+          // NSDatePicker's AX text bounds omit the stepper's outer bezel.
+          contains(window, control), contains(window, stepper),
+          contains(Bounds(x: control.x - 8, y: control.y - 8,
+                          width: control.width + 16, height: control.height + 16), stepper),
+          stepper.x >= control.x + control.width * 0.7,
+          contains(stepper, up), contains(stepper, down),
+          up.y + up.height <= down.y else { return nil }
+    // In this APP's yyyy/M/d picker the day is immediately left of the
+    // stepper. Select it explicitly; a retained year/month selection can
+    // clamp at the maximum date and cannot be reversed to the target.
+    let day = CGPoint(x: stepper.x - min(16, control.height * 0.8),
+                      y: control.y + control.height / 2)
+    guard day.x > control.x, day.x < stepper.x,
+          day.y >= control.y, day.y <= control.y + control.height else { return nil }
+    return (day, CGPoint(x: up.x + up.width / 2, y: up.y + up.height / 2),
+            CGPoint(x: down.x + down.width / 2, y: down.y + down.height / 2))
+}
+
+private func setHistoryDates(_ observation: Observation, target: String, fingerprint: String) -> Bool {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = TimeZone(identifier: "Asia/Shanghai")
+    formatter.dateFormat = "yyyy-MM-dd"
+    formatter.isLenient = false
+    guard let date = formatter.date(from: target), formatter.string(from: date) == target,
+          let window = observation.primaryWindow,
+          let windowBounds = observation.receipt.windowBounds,
+          let pid = observation.runningApplication?.processIdentifier,
+          observation.receipt.tradeAccountFingerprint == fingerprint,
+          observation.receipt.tradeAccountFingerprintCount == 1,
+          observedHistoryDates(observation) != nil else { return false }
+    var controls: [(AXUIElement, Bounds)] = []
+    var visited = 0
+    var complete = true
+    func walk(_ element: AXUIElement, depth: Int) {
+        guard depth <= maximumDepth, visited < maximumNodes else { complete = false; return }
+        visited += 1
+        if stringAttribute(element, kAXRoleAttribute) == "AXDateTimeArea", let box = bounds(of: element) {
+            let x = (box.x + box.width / 2 - windowBounds.x) / windowBounds.width
+            let y = (box.y + box.height / 2 - windowBounds.y) / windowBounds.height
+            if (0.075...0.13).contains(y), (0.08...0.32).contains(x) { controls.append((element, box)) }
+        }
+        for child in (attribute(element, kAXChildrenAttribute) as? [AXUIElement] ?? []) { walk(child, depth: depth + 1) }
+    }
+    walk(window, depth: 0)
+    controls.sort { $0.1.x < $1.1.x }
+    guard complete, controls.count == 2,
+          controls[0].1.x + controls[0].1.width < controls[1].1.x,
+          abs(controls[0].1.y - controls[1].1.y) < 3,
+          controls.allSatisfy({ isSettable($0.0, kAXValueAttribute) }) else { return false }
+    func stillBound() -> Bool {
+        let current = observe(command: "read-query")
+        return current.runningApplication?.processIdentifier == pid
+            && current.receipt.appActive && current.receipt.screenLocked == false
+            && current.receipt.tradeAccountFingerprintCount == 1
+            && current.receipt.tradeAccountFingerprint == fingerprint
+            && current.primaryWindow.map { CFEqual($0, window) } == true
+            && sameWindowBounds(current.receipt.windowBounds, windowBounds)
+            && observedHistoryDates(current) != nil
+    }
+    func clickBoundDatePoint(
+        _ element: AXUIElement, expected: (day: CGPoint, up: CGPoint, down: CGPoint), target: CGPoint
+    ) -> Bool {
+        guard stillBound(), let fresh = historyDateArrowPoints(element, window: windowBounds),
+              fresh.day == expected.day, fresh.up == expected.up, fresh.down == expected.down else { return false }
+        return postSingleLeftClick(at: target)
+    }
+    func waitForValue(_ element: AXUIElement, matching: (CFTypeRef) -> Bool) -> Bool {
+        // The native click returns before NSDatePicker processes its action.
+        // Poll only the readback; never repeat a control action or query.
+        for _ in 0..<20 {
+            guard stillBound() else { return false }
+            if let value = attribute(element, kAXValueAttribute), matching(value) { return true }
+            usleep(25_000)
+        }
+        return false
+    }
+    for (element, _) in controls {
+        guard stillBound() else { return false }
+        guard let arrows = historyDateArrowPoints(element, window: windowBounds) else { return false }
+        let oldValue = attribute(element, kAXValueAttribute)
+        let value: CFTypeRef
+        if oldValue is Date { value = date as NSDate }
+        else if oldValue is String {
+            let wire = DateFormatter()
+            wire.locale = formatter.locale; wire.timeZone = formatter.timeZone
+            wire.dateFormat = "yyyy/M/d"
+            value = wire.string(from: date) as CFString
+        } else { return false }
+        guard AXUIElementSetAttributeValue(element, kAXValueAttribute as CFString, value) == .success else { return false }
+        // NSDatePicker's AX setter updates its display but bypasses the APP's
+        // query-model action. A reversible native step commits that model.
+        // No query occurs at the intermediate date; both endpoints must be
+        // restored and read back before the caller can press query.
+        // This APP advertises AXIncrement/AXPress but returns
+        // attributeUnsupported. Click only the uniquely AX-bound arrows.
+        guard let assigned = attribute(element, kAXValueAttribute),
+              clickBoundDatePoint(element, expected: arrows, target: arrows.day),
+              // Step backwards first so today's maximum date also works.
+              clickBoundDatePoint(element, expected: arrows, target: arrows.down),
+              waitForValue(element, matching: { !CFEqual(assigned, $0) }),
+              clickBoundDatePoint(element, expected: arrows, target: arrows.up),
+              waitForValue(element, matching: { CFEqual(assigned, $0) }) else { return false }
+    }
+    let after = observe(command: "read-query")
+    return after.runningApplication?.processIdentifier == pid
+        && after.receipt.tradeAccountFingerprintCount == 1
+        && after.receipt.tradeAccountFingerprint == fingerprint
+        && after.primaryWindow.map { CFEqual($0, window) } == true
+        && observedHistoryDates(after) == HistoryDateRange(start: target, end: target)
 }
 
 private func emptyCapabilities() -> Capabilities {
@@ -1543,6 +1790,143 @@ private func unlockFailureDiagnostic(_ text: String) -> (String?, Int?) {
     return (category, remaining)
 }
 
+// A stale first-client-login sheet can belong to a separate window while
+// ordinary trade is locked. Only the same account identifier
+// may contribute a diagnostic; never mix another window's password controls.
+private struct SecondaryClientLoginNotice {
+    let window: AXUIElement
+    let sheet: AXUIElement?
+    let button: AXUIElement?
+}
+
+private func secondaryClientLoginNotices(_ windows: [AXUIElement], primary: AXUIElement,
+                                       expected: String, allowClearedLogin: Bool = false) -> ([SecondaryClientLoginNotice], [String]) {
+    guard validFingerprint(expected) else { return ([], []) }
+    var matches: [SecondaryClientLoginNotice] = []
+    var diagnostics: [String] = []
+    for window in windows where !CFEqual(window, primary) {
+        var texts = Set<String>()
+        var accounts = Set<String>()
+        var secureCount = 0
+        var knownErrorSheet = false
+        var matchedNotice: (AXUIElement, AXUIElement)? = nil
+        var sheetCount = 0
+        var scanned = 0
+        var visited: [AXUIElement] = []
+        var scanComplete = true
+        func childElements(_ node: AXUIElement, _ name: String) -> [AXUIElement] {
+            var value: CFTypeRef?
+            let error = AXUIElementCopyAttributeValue(node, name as CFString, &value)
+            if error == .attributeUnsupported || error == .noValue { return [] }
+            guard error == .success, let children = value as? [AXUIElement] else {
+                scanComplete = false
+                return []
+            }
+            return children
+        }
+        func diagnosticText(_ node: AXUIElement, _ name: String, allowNumericControlValue: Bool = false) -> String? {
+            var value: CFTypeRef?
+            let error = AXUIElementCopyAttributeValue(node, name as CFString, &value)
+            if error == .attributeUnsupported || error == .noValue { return nil }
+            if error == .success, allowNumericControlValue, value is NSNumber { return nil }
+            guard error == .success, let text = value as? String else {
+                scanComplete = false
+                return nil
+            }
+            return text.replacingOccurrences(of: #"\s+"#, with: "", options: .regularExpression)
+        }
+        func walk(_ node: AXUIElement, _ depth: Int) {
+            if visited.contains(where: { CFEqual($0, node) }) { return }
+            guard depth <= maximumDepth, scanned < maximumNodes else {
+                scanComplete = false
+                return
+            }
+            visited.append(node)
+            scanned += 1
+            guard let role = attribute(node, kAXRoleAttribute) as? String, !role.isEmpty else {
+                scanComplete = false
+                return
+            }
+            var rawSubrole: CFTypeRef?
+            let subroleError = AXUIElementCopyAttributeValue(node, kAXSubroleAttribute as CFString, &rawSubrole)
+            let absentSubrole = subroleError == .attributeUnsupported || subroleError == .noValue
+            if !absentSubrole && (subroleError != .success || !(rawSubrole is String)) {
+                scanComplete = false
+                return
+            }
+            let secure = rawSubrole as? String == "AXSecureTextField"
+            if secure { secureCount += 1 }
+            if !secure && ["AXStaticText", "AXButton", "AXComboBox"].contains(role) {
+                for key in [kAXTitleAttribute, kAXValueAttribute, kAXDescriptionAttribute] {
+                    if let text = diagnosticText(node, key,
+                        allowNumericControlValue: role == "AXButton" && key == kAXValueAttribute) {
+                        texts.insert(text)
+                    }
+                }
+            }
+            if !secure && ["AXComboBox", "AXTextField"].contains(role) {
+                let value = diagnosticText(node, kAXValueAttribute) ?? ""
+                if value.range(of: #"^\d{8,20}$"#, options: .regularExpression) != nil {
+                    accounts.insert(maskedFingerprint(in: value))
+                }
+            }
+            if role == "AXSheet" {
+                sheetCount += 1
+                let children = childElements(node, kAXChildrenAttribute)
+                let bodies = children.filter { stringAttribute($0, kAXRoleAttribute) == "AXStaticText" }
+                let buttons = children.filter { stringAttribute($0, kAXRoleAttribute) == "AXButton" }
+                let textsByBody = bodies.map { body in
+                    [kAXTitleAttribute, kAXValueAttribute, kAXDescriptionAttribute].compactMap {
+                        diagnosticText(body, $0)
+                    }.filter { !$0.isEmpty }
+                }
+                let bodyTexts = textsByBody.flatMap { $0 }
+                diagnostics.append("sheet_bodies=\(bodies.count):sheet_buttons=\(buttons.count):known_error_text=\(bodyTexts.contains(where: { $0.hasSuffix("用户名或密码错误") })):known_body_only=\(bodyTexts.allSatisfy { ["用户名或密码错误", "方正证券网上交易用户名或密码错误", "方正证券网上交易"].contains($0) }):button_id_match=\(buttons.count == 1 && stringAttribute(buttons[0], kAXIdentifierAttribute) == "action-button-1"):button_title_match=\(buttons.count == 1 && stringAttribute(buttons[0], kAXTitleAttribute) == "确定")")
+                let knownSheet = (stringAttribute(node, kAXDescriptionAttribute) == "alert"
+                    && (1...2).contains(bodies.count) && buttons.count == 1
+                    && textsByBody.allSatisfy { !$0.isEmpty }
+                    && bodyTexts.contains(where: { $0.hasSuffix("用户名或密码错误") })
+                    && bodyTexts.allSatisfy { ["用户名或密码错误", "方正证券网上交易用户名或密码错误", "方正证券网上交易"].contains($0) }
+                    && stringAttribute(buttons[0], kAXIdentifierAttribute) == "action-button-1"
+                    && stringAttribute(buttons[0], kAXTitleAttribute) == "确定")
+                if knownSheet { knownErrorSheet = true; matchedNotice = (node, buttons[0]) }
+            }
+            var children = childElements(node, kAXChildrenAttribute)
+            for sheet in childElements(node, "AXSheets")
+            where !children.contains(where: { CFEqual($0, sheet) }) {
+                children.append(sheet)
+            }
+            for child in children {
+                walk(child, depth + 1)
+            }
+        }
+        walk(window, 0)
+        for sheet in windows where stringAttribute(sheet, kAXRoleAttribute) == "AXSheet"
+            && elementAttribute(sheet, kAXParentAttribute).map({ CFEqual($0, window) }) == true {
+            walk(sheet, 0)
+        }
+        if secureCount > 0 {
+            diagnostics.append("scan_complete=\(scanComplete):account_match=\(accounts == Set([expected])):account_count=\(accounts.count):secure=\(secureCount):sheets=\(sheetCount):known_error_sheet=\(knownErrorSheet):trade_account_mode=\(texts.contains("交易账户")):login_method=\(texts.contains("登录方式")):password_label=\(texts.contains("交易密码")):captcha_label=\(texts.contains("验证码")):login_button=\(texts.contains("登录"))")
+        }
+        guard scanComplete, secureCount == 1, accounts == Set([expected]),
+              (sheetCount == 1 && knownErrorSheet) || (allowClearedLogin && sheetCount == 0),
+              texts.contains("登录方式"),
+              texts.contains("交易密码"), texts.contains("验证码"), texts.contains("登录") else { continue }
+        if let matchedNotice {
+            matches.append(SecondaryClientLoginNotice(window: window, sheet: matchedNotice.0, button: matchedNotice.1))
+        } else if allowClearedLogin && sheetCount == 0 {
+            matches.append(SecondaryClientLoginNotice(window: window, sheet: nil, button: nil))
+        }
+    }
+    return (matches, diagnostics)
+}
+
+private func secondaryClientLoginError(_ windows: [AXUIElement], primary: AXUIElement,
+                                       expected: String) -> (String?, [String]) {
+    let result = secondaryClientLoginNotices(windows, primary: primary, expected: expected)
+    return (result.0.count == 1 ? "trade_password_incorrect" : nil, result.1)
+}
+
 private func observe(command: String, auditTables: Bool = false) -> Observation {
     let started = DispatchTime.now()
     let trusted = AXIsProcessTrusted()
@@ -1871,6 +2255,14 @@ private func observe(command: String, auditTables: Bool = false) -> Observation 
         let primaryArea = primaryWindow.flatMap { bounds(of: $0) }
             .map { $0.width * $0.height } ?? 0
         for window in windows {
+            guard let primaryWindow else { continue }
+            // A separate login window can contain another account's error.
+            // Only the target itself or an AX-attached sheet belongs to it.
+            let parent = attribute(window, kAXParentAttribute)
+            let sheets = attribute(primaryWindow, "AXSheets") as? [AXUIElement] ?? []
+            guard CFEqual(window, primaryWindow)
+                || parent.map({ CFEqual($0, primaryWindow) }) == true
+                || sheets.contains(where: { CFEqual($0, window) }) else { continue }
             let box = bounds(of: window)
             let area = box.map { $0.width * $0.height } ?? 0
             let role = stringAttribute(window, kAXRoleAttribute)
@@ -1956,9 +2348,17 @@ private func observe(command: String, auditTables: Bool = false) -> Observation 
     let readablePositionValues = tableShapes.contains { table in
         table.auditComplete && (table.readableValueCount ?? 0) > 0
     }
-    let unlockDiagnostic = unlockFailureDiagnostic(
+    var unlockDiagnostic = unlockFailureDiagnostic(
         unlockDiagnosticText.joined(separator: " ")
     )
+    var secondaryLoginDiagnostic: [String] = []
+    if secureFields.count == 1, tradeFingerprints.count == 1, let primaryWindow {
+        let secondary = secondaryClientLoginError(windows, primary: primaryWindow, expected: fingerprint)
+        secondaryLoginDiagnostic = secondary.1
+        if unlockDiagnostic.0 == nil, let category = secondary.0 {
+            unlockDiagnostic = (category, unlockDiagnostic.1)
+        }
+    }
     let orderCapability = surfaceState == "trade_ready"
         && orderFields != nil
         && submitControls.count == 1
@@ -2035,6 +2435,7 @@ private func observe(command: String, auditTables: Bool = false) -> Observation 
         submitControls: submitControls
     )
     observation.receipt.unlockSurface = unlockSnapshot(observation, phase: "probe", started: started)
+    observation.receipt.secondaryClientLoginDiagnostic = secondaryLoginDiagnostic.isEmpty ? nil : secondaryLoginDiagnostic
     return observation
 }
 
@@ -3323,6 +3724,290 @@ private func performCancel(arguments: [String], selectionProbeOnly: Bool) -> Rec
     return receipt
 }
 
+private func refreshHistoryQuery(
+    original: Observation, current: Observation, fingerprint: String, requestedDate: String
+) -> Observation? {
+    guard let originalWindow = original.primaryWindow,
+          let originalPID = original.runningApplication?.processIdentifier,
+          let originalBounds = original.receipt.windowBounds else { return nil }
+    func matches(_ observation: Observation) -> Bool {
+        return ["trade_ready", "query_only"].contains(observation.receipt.surfaceState)
+            && observation.receipt.appActive && observation.receipt.screenLocked == false
+            && observation.receipt.tradeAccountFingerprintCount == 1
+            && observation.receipt.tradeAccountFingerprint == fingerprint
+            && observation.runningApplication?.processIdentifier == originalPID
+            && observation.primaryWindow.map { CFEqual($0, originalWindow) } == true
+            && sameWindowBounds(observation.receipt.windowBounds, originalBounds)
+            && (requestedDate.isEmpty || observedHistoryDates(observation)
+                == HistoryDateRange(start: requestedDate, end: requestedDate))
+    }
+    guard matches(current),
+          let dates = observedHistoryDates(current),
+          let capture = captureFounderWindow(pid: originalPID, windowBounds: originalBounds) else { return nil }
+    let refresh = guardedHistoryRefreshPoint(
+        tokens: recognizeText(image: capture.0, screenBounds: capture.1), window: originalBounds
+    )
+    // OCR can outlive the identity/date observation that preceded it.
+    let beforeClick = observe(command: "read-query")
+    guard matches(beforeClick), observedHistoryDates(beforeClick) == dates,
+          refresh.count == 1, let point = refresh.point,
+          postSingleLeftClick(at: point) else { return nil }
+    usleep(500_000)
+    let after = observe(command: "read-query", auditTables: true)
+    return matches(after) && observedHistoryDates(after) == dates ? after : nil
+}
+
+// AppKit exposes traffic-light/sharing-indicator chrome as a separate AXDialog window.
+// This is the same anonymous chrome recognized by the notice validator, with
+// direct button topology and exact geometry bound to the primary login window.
+private func resetFrameChromeWindows(_ windows: [AXUIElement], primary: AXUIElement) -> [AXUIElement] {
+    guard let parent = bounds(of: primary) else { return [] }
+    func children(_ element: AXUIElement, _ key: String) -> [AXUIElement]? {
+        var value: CFTypeRef?
+        let error = AXUIElementCopyAttributeValue(element, key as CFString, &value)
+        if error == .attributeUnsupported || error == .noValue { return [] }
+        guard error == .success, let result = value as? [AXUIElement] else { return nil }
+        return result
+    }
+    func buttonTitle(_ element: AXUIElement) -> String? {
+        var value: CFTypeRef?
+        let error = AXUIElementCopyAttributeValue(element, kAXTitleAttribute as CFString, &value)
+        if error == .attributeUnsupported || error == .noValue { return "" }
+        guard error == .success else { return nil }
+        return value as? String
+    }
+    return windows.filter { window in
+        guard !CFEqual(window, primary), stringAttribute(window, kAXRoleAttribute) == "AXWindow",
+              stringAttribute(window, kAXTitleAttribute) == "Window",
+              let area = bounds(of: window), let buttons = children(window, kAXChildrenAttribute),
+              let sheets = children(window, "AXSheets"), sheets.isEmpty,
+              [1, 3].contains(buttons.count),
+              buttons.allSatisfy({ stringAttribute($0, kAXRoleAttribute) == "AXButton"
+                  && (children($0, kAXChildrenAttribute)?.isEmpty == true)
+                  && (children($0, "AXSheets")?.isEmpty == true) }),
+              abs(area.x - parent.x - 10) <= 1,
+              [4.0, 7.0].contains(where: { abs(area.y - parent.y - $0) <= 1 }),
+              abs(area.width - 66) <= 1, abs(area.height - 20) <= 1,
+              area.x + area.width <= parent.x + 100, area.y + area.height <= parent.y + 40
+        else { return false }
+        let titles = buttons.map { buttonTitle($0) }
+        guard titles.allSatisfy({ $0 != nil }) else { return false }
+        let subroles = buttons.map { stringAttribute($0, kAXSubroleAttribute) }
+        let sharingIndicator = buttons.count == 1 && subroles == [""]
+            && titles == ["WindowSharingSessionButton"]
+            && bounds(of: buttons[0]).map { abs($0.x - area.x + 1) <= 1
+                && abs($0.y - area.y + 1) <= 1
+                && abs($0.width - area.width - 2) <= 1
+                && abs($0.height - area.height - 2) <= 1 } == true
+        return sharingIndicator || (buttons.count == 3 && titles.allSatisfy({ $0 == "" })
+            && Set(subroles) == Set(["AXCloseButton", "AXMinimizeButton", "AXZoomButton"]))
+    }
+}
+
+// Fail closed on partial graphs, residual sheets, or a replacement modal.
+private func resetGraphIsModalFree(_ roots: [AXUIElement], allowedLoginWindows: [AXUIElement] = [], rejected: (String) -> Void = { _ in }) -> Bool {
+    var visited: [AXUIElement] = []
+    func walk(_ node: AXUIElement, _ depth: Int) -> Bool {
+        if visited.contains(where: { CFEqual($0, node) }) { return true }
+        guard depth <= maximumDepth, visited.count < maximumNodes else { rejected("graph_limit"); return false }
+        visited.append(node)
+        func text(_ key: String, required: Bool = false) -> String? {
+            var value: CFTypeRef?
+            let error = AXUIElementCopyAttributeValue(node, key as CFString, &value)
+            if !required && (error == .attributeUnsupported || error == .noValue) { return "" }
+            guard error == .success, let result = value as? String else { rejected("unreadable_" + key); return nil }
+            return result
+        }
+        guard let role = text(kAXRoleAttribute, required: true), !role.isEmpty,
+              let subrole = text(kAXSubroleAttribute), let description = text(kAXDescriptionAttribute)
+        else { return false }
+        let allowedLoginRoot = depth == 0 && role == "AXWindow"
+            && allowedLoginWindows.contains(where: { CFEqual($0, node) })
+        guard role != "AXSheet", role != "AXDialog",
+              (subrole != "AXDialog" || allowedLoginRoot), description.lowercased() != "alert" else {
+            rejected("modal_role=" + role + ":subrole=" + subrole + ":alert="
+                + String(description.lowercased() == "alert") + ":depth=" + String(depth)
+                + ":allowed_login_root=" + String(allowedLoginRoot)
+                + ":title_is_Window=" + String(stringAttribute(node, kAXTitleAttribute) == "Window")
+                + ":bounds=" + (bounds(of: node).map { "\($0.x),\($0.y),\($0.width),\($0.height)" } ?? "unproven")
+                + ":direct_child_roles=" + ((attribute(node, kAXChildrenAttribute) as? [AXUIElement])?.map {
+                    stringAttribute($0, kAXRoleAttribute) + "/" + stringAttribute($0, kAXSubroleAttribute)
+                }.joined(separator: ",") ?? "unproven"))
+            return false
+        }
+        for key in [kAXChildrenAttribute, "AXSheets"] {
+            var value: CFTypeRef?
+            let error = AXUIElementCopyAttributeValue(node, key as CFString, &value)
+            if error == .attributeUnsupported || error == .noValue { continue }
+            guard error == .success, let children = value as? [AXUIElement] else { rejected("unreadable_" + key); return false }
+            for child in children where !walk(child, depth + 1) { return false }
+        }
+        return true
+    }
+    return roots.allSatisfy { walk($0, 0) }
+}
+
+private var resetPreparationDiagnostic = ""
+private var resetAlertAcknowledged = false
+private var resetClearedLoginWindow: AXUIElement? = nil
+
+private func prepareRejectedSession(_ original: Observation, expected: String) -> (Observation?, Bool) {
+    resetPreparationDiagnostic = ""
+    resetAlertAcknowledged = false
+    resetClearedLoginWindow = nil
+    guard let app = original.applicationElement, let primary = original.primaryWindow,
+          let pid = original.runningApplication?.processIdentifier else { return (nil, false) }
+    func elements(_ node: AXUIElement, _ name: String, optional: Bool = true) -> [AXUIElement]? {
+        var value: CFTypeRef?
+        let result = AXUIElementCopyAttributeValue(node, name as CFString, &value)
+        if optional && (result == .attributeUnsupported || result == .noValue) { return [] }
+        guard result == .success, let rows = value as? [AXUIElement] else { return nil }
+        return rows
+    }
+    guard let windows = elements(app, kAXWindowsAttribute, optional: false) else { return (nil, false) }
+    let notices = secondaryClientLoginNotices(windows, primary: primary, expected: expected).0
+    if notices.isEmpty {
+        return resetGraphIsModalFree(windows,
+            allowedLoginWindows: (original.receipt.surfaceState == "client_login_required" ? [primary] : [])
+                + resetFrameChromeWindows(windows, primary: primary), rejected: { resetPreparationDiagnostic = $0 })
+            && dismissLoginSuccessNotice(original, expected: expected, allowDismiss: false).0
+            ? (original, false) : (nil, false)
+    }
+    guard notices.count == 1 else { return (nil, false) }
+    let current = observe(command: "terminate-rejected-session")
+    guard current.runningApplication?.processIdentifier == pid,
+          current.receipt.screenLocked == false, current.receipt.accessibilityTrusted,
+          current.receipt.tradeAccountFingerprint == expected,
+          current.receipt.tradeAccountFingerprintCount == 1,
+          ["authentication_required", "client_login_required"].contains(current.receipt.surfaceState),
+          !["account_locked", "attempt_budget_exhausted"].contains(current.receipt.unlockFailureCategory ?? ""),
+          current.receipt.unlockRemainingAttempts.map({ $0 > 1 }) ?? true,
+          current.primaryWindow.map({ CFEqual($0, primary) }) == true,
+          let currentApp = current.applicationElement else { return (nil, false) }
+    guard let freshWindows = elements(currentApp, kAXWindowsAttribute, optional: false) else { return (nil, false) }
+    let fresh = secondaryClientLoginNotices(freshWindows, primary: primary, expected: expected).0
+    guard fresh.count == 1, CFEqual(fresh[0].window, notices[0].window),
+          let sheet = fresh[0].sheet, let originalSheet = notices[0].sheet,
+          let button = fresh[0].button, let originalButton = notices[0].button,
+          CFEqual(sheet, originalSheet), CFEqual(button, originalButton)
+    else { return (nil, false) }
+    // A failed AX call can still have acted; preserve its request separately.
+    guard AXUIElementPerformAction(button, kAXPressAction as CFString) == .success
+    else { resetPreparationDiagnostic = "alert_press_result_unproven"; return (nil, true) }
+    resetAlertAcknowledged = true
+    for _ in 0..<8 {
+        RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05))
+        let after = observe(command: "terminate-rejected-session")
+        guard after.runningApplication?.processIdentifier == pid,
+              after.receipt.screenLocked == false,
+              after.receipt.tradeAccountFingerprint == expected,
+              after.receipt.tradeAccountFingerprintCount == 1,
+              after.primaryWindow.map({ CFEqual($0, primary) }) == true,
+              let afterApp = after.applicationElement else { return (nil, true) }
+        guard let afterWindows = elements(afterApp, kAXWindowsAttribute, optional: false) else { return (nil, true) }
+        // Re-classify the same login window with no sheet, and recursively
+        // check all windows/attachments before accepting disappearance.
+        let clear = secondaryClientLoginNotices(afterWindows, primary: primary,
+            expected: expected, allowClearedLogin: true).0
+        if resetGraphIsModalFree(afterWindows,
+            allowedLoginWindows: [notices[0].window] + (after.receipt.surfaceState == "client_login_required" ? [primary] : [])
+                + resetFrameChromeWindows(afterWindows, primary: primary), rejected: { resetPreparationDiagnostic = $0 }), clear.count == 1,
+           clear[0].sheet == nil, CFEqual(clear[0].window, notices[0].window),
+           dismissLoginSuccessNotice(after, expected: expected, allowDismiss: false,
+               clearedResetLoginWindow: clear[0].window).0 {
+            resetClearedLoginWindow = clear[0].window
+            return (after, true)
+        }
+    }
+    return (nil, true)
+}
+
+private func terminateRejectedSession(arguments: [String]) -> Receipt {
+    let original = observe(command: "terminate-rejected-session")
+    var receipt = original.receipt
+    receipt.action = ActionResult(attempted: false, succeeded: false, requiresUserInput: false,
+        confirmPressed: false, confirmationMode: "none", unlockPathProven: false)
+    let expected = option("--expected-fingerprint", in: arguments)
+    let apps = NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier)
+    guard arguments.contains("--allow-session-reset"), validFingerprint(expected),
+          receipt.accessibilityTrusted, receipt.screenLocked == false,
+          receipt.tradeAccountFingerprintCount == 1, receipt.tradeAccountFingerprint == expected,
+          ["authentication_required", "client_login_required"].contains(receipt.surfaceState),
+          !["account_locked", "attempt_budget_exhausted"].contains(receipt.unlockFailureCategory ?? ""),
+          receipt.unlockRemainingAttempts.map({ $0 > 1 }) ?? true,
+          apps.count == 1, let app = apps.first,
+          original.runningApplication?.processIdentifier == app.processIdentifier else {
+        receipt.status = "session_reset_unproven"
+        receipt.reason = "one bound unlocked-machine rejected session was not proven"
+        return receipt
+    }
+    receipt.sessionResetEvidence = SessionResetEvidence(processID: app.processIdentifier)
+    let prepared = prepareRejectedSession(original, expected: expected)
+    receipt.sessionResetEvidence?.alertAcknowledgmentRequested = prepared.1
+    receipt.sessionResetEvidence?.alertAcknowledged = resetAlertAcknowledged
+    receipt.action = ActionResult(attempted: prepared.1, succeeded: false, requiresUserInput: false,
+        confirmPressed: false, confirmationMode: "none", unlockPathProven: false)
+    guard prepared.0 != nil else {
+        receipt.action = ActionResult(attempted: prepared.1, succeeded: false, requiresUserInput: false,
+            confirmPressed: false, confirmationMode: "none", unlockPathProven: false)
+        receipt.status = "session_reset_precondition_blocked"
+        receipt.reason = "reset preparation or exact known-alert disappearance was not proven; termination not requested: " + resetPreparationDiagnostic
+        return receipt
+    }
+    let fresh = observe(command: "terminate-rejected-session")
+    guard fresh.receipt.screenLocked == false,
+          fresh.receipt.accessibilityTrusted,
+          ["authentication_required", "client_login_required"].contains(fresh.receipt.surfaceState),
+          !["account_locked", "attempt_budget_exhausted"].contains(fresh.receipt.unlockFailureCategory ?? ""),
+          fresh.receipt.unlockRemainingAttempts.map({ $0 > 1 }) ?? true,
+          fresh.receipt.tradeAccountFingerprintCount == 1, fresh.receipt.tradeAccountFingerprint == expected,
+          fresh.runningApplication?.processIdentifier == app.processIdentifier,
+          NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier).count == 1,
+          let originalWindow = original.primaryWindow, let freshWindow = fresh.primaryWindow,
+          CFEqual(originalWindow, freshWindow) else {
+        receipt.status = "session_reset_unproven"
+        receipt.reason = "account or process changed before termination"
+        return receipt
+    }
+    var rawWindows: CFTypeRef?
+    guard let freshApplication = fresh.applicationElement,
+          AXUIElementCopyAttributeValue(freshApplication, kAXWindowsAttribute as CFString, &rawWindows) == .success,
+          let freshWindows = rawWindows as? [AXUIElement] else {
+        receipt.status = "session_reset_precondition_blocked"
+        receipt.reason = "fresh window list unproven; termination not requested"
+        return receipt
+    }
+    let cleared = secondaryClientLoginNotices(freshWindows, primary: freshWindow,
+        expected: expected, allowClearedLogin: true).0.filter { $0.sheet == nil }
+    let sameClearedWindow = resetClearedLoginWindow.map { bound in
+        cleared.count == 1 && CFEqual(cleared[0].window, bound)
+    } ?? cleared.isEmpty
+    guard sameClearedWindow,
+          dismissLoginSuccessNotice(fresh, expected: expected, allowDismiss: false,
+              clearedResetLoginWindow: resetClearedLoginWindow).0,
+          resetGraphIsModalFree(freshWindows, allowedLoginWindows:
+              (fresh.receipt.surfaceState == "client_login_required" ? [freshWindow] : [])
+              + cleared.map { $0.window } + resetFrameChromeWindows(freshWindows, primary: freshWindow)) else {
+        receipt.status = "session_reset_precondition_blocked"
+        receipt.reason = "fresh complete modal-free graph not proven; termination not requested"
+        return receipt
+    }
+    receipt.sessionResetEvidence?.preconditionProven = true
+    receipt.sessionResetEvidence?.terminationRequested = true
+    let accepted = app.terminate()
+    receipt.sessionResetEvidence?.terminationAccepted = accepted
+    for _ in 0..<40 {
+        if app.isTerminated { break }
+        RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05))
+    }
+    receipt.sessionResetEvidence?.processExitProven = app.isTerminated
+    receipt.action = ActionResult(attempted: true, succeeded: accepted && app.isTerminated,
+        requiresUserInput: false, confirmPressed: false, confirmationMode: "none", unlockPathProven: false)
+    receipt.status = receipt.action?.succeeded == true ? "session_terminated" : "session_reset_unproven"
+    receipt.reason = "fixed bundle termination only; authentication and orders remain unproved"
+    return receipt
+}
+
 private func readQuery(arguments: [String]) -> Receipt {
     let started = DispatchTime.now()
     let initial = observe(command: "read-query")
@@ -3403,34 +4088,27 @@ private func readQuery(arguments: [String]) -> Receipt {
                 == expectedFingerprint else {
             break
         }
+        let requestedDate = option("--history-trade-date", in: arguments)
+        if !requestedDate.isEmpty {
+            guard ["history-orders", "history-trades"].contains(kind),
+                  setHistoryDates(finalObservation, target: requestedDate, fingerprint: expectedFingerprint) else {
+                receipt.status = "history_date_set_unproven"
+                receipt.reason = "exact account-bound date controls could not be set and read back"
+                receipt.timingMs = milliseconds(since: started)
+                return receipt
+            }
+            finalObservation = observe(command: "read-query", auditTables: true)
+        }
         if arguments.contains("--refresh-history-query"),
            ["history-orders", "history-trades"].contains(kind) {
-            guard let refreshRunning = finalObservation.runningApplication,
-                  let refreshBounds = finalObservation.receipt.windowBounds,
-                  let refreshCapture = captureFounderWindow(
-                    pid: refreshRunning.processIdentifier,
-                    windowBounds: refreshBounds
-                  ) else { break }
-            let refreshTokens = recognizeText(
-                image: refreshCapture.0,
-                screenBounds: refreshCapture.1
-            )
-            let refresh = guardedHistoryRefreshPoint(
-                tokens: refreshTokens,
-                window: refreshBounds
-            )
-            guard refresh.count == 1,
-                  let refreshPoint = refresh.point,
-                  postSingleLeftClick(at: refreshPoint) else { break }
-            usleep(500_000)
-            finalObservation = observe(command: "read-query", auditTables: true)
-            guard ["trade_ready", "query_only"].contains(
-                finalObservation.receipt.surfaceState
-            ),
-                  finalObservation.receipt.tradeAccountFingerprintCount == 1,
-                  finalObservation.receipt.tradeAccountFingerprint
-                    == expectedFingerprint else { break }
+            guard let refreshed = refreshHistoryQuery(
+                original: initial, current: finalObservation,
+                fingerprint: expectedFingerprint, requestedDate: requestedDate
+            ) else { break }
+            finalObservation = refreshed
         }
+        if !requestedDate.isEmpty,
+           observedHistoryDates(finalObservation) != HistoryDateRange(start: requestedDate, end: requestedDate) { break }
         finalReceipt = finalObservation.receipt
         finalReadback = capturedQueryReadback(
             kind: kind,
@@ -3843,15 +4521,52 @@ private func fillClientLoginFromStandardInput(arguments: [String]) -> Receipt {
         receipt.reason = "unique client password and CAPTCHA fields were not proven"
         return receipt
     }
-    guard let secret = readStandardInputSecret() else {
-        receipt.status = "trade_password_input_invalid"
-        receipt.reason = "stdin secret was empty, too long, or not UTF-8"
-        return receipt
-    }
-
     guard activateFounder(initial) else {
         receipt.status = "app_activation_failed"
         receipt.reason = "Founder window could not be proven frontmost"
+        return receipt
+    }
+    func sameLoginTarget(_ candidate: Observation) -> Bool {
+        let state = candidate.receipt
+        guard state.appRunning, !state.screenLocked, state.accessibilityTrusted,
+              state.surfaceState == "client_login_required",
+              state.tradeAccountFingerprint == expectedFingerprint,
+              state.tradeAccountFingerprintCount == 1,
+              candidate.secureFields.count == 1, candidate.clientLoginCaptchaFields.count == 1,
+              let initialPID = initial.runningApplication?.processIdentifier,
+              candidate.runningApplication?.processIdentifier == initialPID,
+              let initialWindow = initial.primaryWindow, let currentWindow = candidate.primaryWindow else { return false }
+        return CFEqual(initialWindow, currentWindow)
+            && CFEqual(initial.secureFields[0], candidate.secureFields[0])
+            && CFEqual(initial.clientLoginCaptchaFields[0], candidate.clientLoginCaptchaFields[0])
+    }
+    var current = observe(command: "fill-client-login-stdin")
+    receipt = current.receipt
+    guard sameLoginTarget(current) else {
+        receipt.status = "client_login_surface_unproven"
+        receipt.reason = "login account, process, window or password/CAPTCHA fields changed during activation"
+        return receipt
+    }
+    let notice = dismissLoginSuccessNotice(current, expected: expectedFingerprint,
+                                           allowClientPasswordRequiredNotice: true, allowLoginSuccessNotice: false)
+    receipt.clientLoginNoticeDismissed = notice.1
+    guard notice.0 else {
+        receipt.status = "client_login_notice_blocked"
+        receipt.reason = notice.2
+        return receipt
+    }
+    if notice.1 {
+        current = observe(command: "fill-client-login-stdin")
+        guard sameLoginTarget(current),
+              dismissLoginSuccessNotice(current, expected: expectedFingerprint, allowDismiss: false, allowLoginSuccessNotice: false).0 else {
+            receipt.status = "client_login_surface_unproven"
+            receipt.reason = "login target changed or remains blocked after validation-notice dismissal"
+            return receipt
+        }
+    }
+    guard let secret = readStandardInputSecret() else {
+        receipt.status = "trade_password_input_invalid"
+        receipt.reason = "stdin secret was empty, too long, or not UTF-8"
         return receipt
     }
     let clearResult = AXUIElementSetAttributeValue(
@@ -3860,9 +4575,7 @@ private func fillClientLoginFromStandardInput(arguments: [String]) -> Receipt {
         "" as CFTypeRef
     )
     let clearProven = clearResult == .success
-        && stringAttribute(
-            initial.secureFields[0], kAXValueAttribute
-        ).isEmpty
+        && (attribute(initial.secureFields[0], kAXValueAttribute) as? String) == ""
     guard clearProven else {
         receipt.status = "trade_password_clear_failed"
         receipt.reason = "secure field could not be proven empty before password replacement"
@@ -3888,14 +4601,18 @@ private func fillClientLoginFromStandardInput(arguments: [String]) -> Receipt {
         kAXFocusedAttribute as CFString,
         kCFBooleanTrue
     )
+    let afterFill = observe(command: "fill-client-login-stdin")
     let succeeded = setResult == .success && focusResult == .success
+        && (attribute(initial.secureFields[0], kAXValueAttribute) as? String)?.count == secret.count
+        && sameLoginTarget(afterFill)
+        && dismissLoginSuccessNotice(afterFill, expected: expectedFingerprint, allowDismiss: false, allowLoginSuccessNotice: false).0
     receipt.secureFieldClearedBeforeSet = true
     receipt.status = succeeded
         ? "client_login_password_filled"
         : "client_login_password_fill_failed"
     receipt.reason = succeeded
         ? "trade password filled and CAPTCHA focused; login was not pressed"
-        : "password fill or CAPTCHA focus failed; login was not pressed"
+        : "password fill, CAPTCHA focus or final unblocked login binding was not proven; login was not pressed"
     receipt.action = ActionResult(
         attempted: true,
         succeeded: succeeded,
@@ -3910,7 +4627,12 @@ private func fillClientLoginFromStandardInput(arguments: [String]) -> Receipt {
 // A stale login-success message can intercept a targeted Return intended for
 // the unlock form. Only this account-bound informational notice may be closed;
 // unknown dialogs, password errors and transaction confirmations stay blocked.
-private func dismissLoginSuccessNotice(_ observation: Observation, expected: String, allowDismiss: Bool = true) -> (Bool, Bool, String) {
+private func dismissLoginSuccessNotice(_ observation: Observation, expected: String, allowDismiss: Bool = true,
+                                      allowStalePasswordError: Bool = false,
+                                      allowClientPasswordRequiredNotice: Bool = false,
+                                      allowLoginSuccessNotice: Bool = true,
+                                      allowUnlockPasswordRequiredNotice: Bool = false,
+                                      clearedResetLoginWindow: AXUIElement? = nil) -> (Bool, Bool, String) {
     guard let app = observation.applicationElement else { return (false, false, "application_unavailable") }
     let windows = attribute(app, kAXWindowsAttribute) as? [AXUIElement] ?? []
     let visibleRows = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID)
@@ -3927,20 +4649,40 @@ private func dismissLoginSuccessNotice(_ observation: Observation, expected: Str
             && abs($0.width - area.width) <= 1 && abs($0.height - area.height) <= 1 }
     }
     let primaryVisible = observation.primaryWindow.flatMap { bounds(of: $0) }.map(visible) == true
+    func noticeSurfaces(_ roots: [AXUIElement]) -> [AXUIElement] {
+        var surfaces = roots
+        func sheets(_ node: AXUIElement, _ depth: Int) {
+            guard depth < 4, surfaces.count < 50 else { return }
+            for child in attribute(node, kAXChildrenAttribute) as? [AXUIElement] ?? [] {
+                if stringAttribute(child, kAXRoleAttribute) == "AXSheet",
+                   !surfaces.contains(where: { CFEqual($0, child) }) { surfaces.append(child) }
+                sheets(child, depth + 1)
+            }
+        }
+        for root in roots { sheets(root, 0) }
+        return surfaces
+    }
     var notices: [(AXUIElement, AXUIElement)] = []
-    for window in windows {
+    for window in noticeSurfaces(windows) {
+        if let cleared = clearedResetLoginWindow, CFEqual(window, cleared) { continue }
         if let primary = observation.primaryWindow, CFEqual(window, primary) { continue }
         let title = stringAttribute(window, kAXTitleAttribute)
         if title == "通达信键盘精灵" { continue }
         var texts = Set<String>()
         var count = 0
         var buttonSubroles: [String] = []
+        var noticeButtons: [AXUIElement] = []
         var otherControl = false
         func walk(_ element: AXUIElement, _ depth: Int) {
             guard depth <= 12, count < 200 else { return }
             count += 1
             let role = stringAttribute(element, kAXRoleAttribute)
-            if role == "AXButton" { buttonSubroles.append(stringAttribute(element, kAXSubroleAttribute)) }
+            if role == "AXButton" {
+                buttonSubroles.append(stringAttribute(element, kAXSubroleAttribute))
+                if ["确定", "确认", "OK"].contains(stringAttribute(element, kAXTitleAttribute)) {
+                    noticeButtons.append(element)
+                }
+            }
             if ["AXTextField", "AXComboBox", "AXCheckBox", "AXRadioButton", "AXWebArea"].contains(role) { otherControl = true }
             if ["AXStaticText", "AXText", "AXHeading"].contains(stringAttribute(element, kAXRoleAttribute)) {
                 for key in [kAXTitleAttribute, kAXValueAttribute, kAXDescriptionAttribute] {
@@ -3992,20 +4734,54 @@ private func dismissLoginSuccessNotice(_ observation: Observation, expected: Str
             }
         }
         let messageCenter = title == "消息中心" || texts.contains("消息中心")
+        let normalizedTexts = texts.map { $0.replacingOccurrences(of: " ", with: "") }
+        let staleError = allowStalePasswordError
+            && normalizedTexts.contains(where: { $0.hasSuffix("用户名或密码错误") })
+            && normalizedTexts.allSatisfy {
+                ["用户名或密码错误", "方正证券网上交易用户名或密码错误", "方正证券网上交易", "确定"].contains($0)
+            }
+        let missingClientInput = allowClientPasswordRequiredNotice
+            && normalizedTexts.contains(where: { $0 == "请输入交易密码!" || $0 == "方正证券网上交易请输入交易密码!" })
+            && normalizedTexts.allSatisfy {
+                ["请输入交易密码!", "方正证券网上交易请输入交易密码!", "方正证券网上交易", "确定"].contains($0)
+            }
+        let missingUnlockInput = allowUnlockPasswordRequiredNotice
+            && normalizedTexts.contains(where: { $0 == "请输入交易密码解锁!" || $0 == "提示请输入交易密码解锁!" })
+            && normalizedTexts.allSatisfy {
+                ["请输入交易密码解锁!", "提示请输入交易密码解锁!", "提示", "确定"].contains($0)
+            }
+        let knownShape = ((staleError || missingClientInput)
+            && stringAttribute(window, kAXRoleAttribute) == "AXSheet")
+            || (missingUnlockInput && stringAttribute(window, kAXRoleAttribute) == "AXWindow"
+                && stringAttribute(window, kAXSubroleAttribute) == "AXDialog")
+        let expectedButton = missingUnlockInput ? "action-button--998" : "action-button-1"
+        if knownShape, !otherControl,
+           noticeButtons.count == 1, buttonSubroles.count == 1,
+           stringAttribute(window, kAXDescriptionAttribute) == "alert",
+           stringAttribute(noticeButtons[0], kAXIdentifierAttribute) == expectedButton,
+           !missingUnlockInput || stringAttribute(noticeButtons[0], kAXTitleAttribute) == "确定",
+           primaryVisible, let area = bounds(of: window),
+           let parent = observation.primaryWindow.flatMap({ bounds(of: $0) }),
+           area.x >= parent.x, area.y >= parent.y,
+           area.x + area.width <= parent.x + parent.width,
+           area.y + area.height <= parent.y + parent.height {
+            notices.append((window, noticeButtons[0]))
+            continue
+        }
         let bodies = texts.filter { $0.range(of: #"^\d{8,20}\s+.{1,40}的交易已重新登录成功[!！]$"#, options: .regularExpression) != nil }
         let allowed = texts.allSatisfy { text in
             text == "消息中心" || bodies.contains(text)
                 || text.range(of: #"^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}$"#, options: .regularExpression) != nil
                 || text.range(of: #"^\d{1,4}/\d{1,4}$"#, options: .regularExpression) != nil
         }
-        guard messageCenter, bodies.count == 1, allowed,
+        guard allowLoginSuccessNotice, messageCenter, bodies.count == 1, allowed,
               maskedFingerprint(in: bodies.first!) == expected,
               let close = elementAttribute(window, kAXCloseButtonAttribute),
               stringAttribute(close, kAXRoleAttribute) == "AXButton" else {
             let titleKind = title.replacingOccurrences(of: #"\d{8,20}"#, with: "masked_account", options: .regularExpression)
             let area = bounds(of: window)
             let visibleGeometry = visibleBounds.map { "\($0.x),\($0.y),\($0.width),\($0.height)" }.joined(separator: ";")
-            return (false, false, "secondary_window_unrecognized:title=\(titleKind):body=\(bodies.count):texts=\(texts.count):nodes=\(count):buttons=\(buttonSubroles):other_control=\(otherControl):bounds=\(area?.x ?? -1),\(area?.y ?? -1),\(area?.width ?? -1),\(area?.height ?? -1):primary_visible=\(primaryVisible):onscreen=\(visibleGeometry)")
+            return (false, false, "secondary_window_unrecognized:role=\(stringAttribute(window, kAXRoleAttribute)):subrole=\(stringAttribute(window, kAXSubroleAttribute)):description_alert=\(stringAttribute(window, kAXDescriptionAttribute) == "alert"):title=\(titleKind):body=\(bodies.count):texts=\(texts.count):nodes=\(count):buttons=\(buttonSubroles):other_control=\(otherControl):bounds=\(area?.x ?? -1),\(area?.y ?? -1),\(area?.width ?? -1),\(area?.height ?? -1):primary_visible=\(primaryVisible):onscreen=\(visibleGeometry)")
         }
         notices.append((window, close))
     }
@@ -4017,7 +4793,7 @@ private func dismissLoginSuccessNotice(_ observation: Observation, expected: Str
     }
     let deadline = Date().addingTimeInterval(1)
     while Date() < deadline {
-        let current = attribute(app, kAXWindowsAttribute) as? [AXUIElement] ?? []
+        let current = noticeSurfaces(attribute(app, kAXWindowsAttribute) as? [AXUIElement] ?? [])
         if !current.contains(where: { CFEqual($0, notices[0].0) }) { return (true, true, "known_notice_dismissed") }
         Thread.sleep(forTimeInterval: 0.05)
     }
@@ -4107,13 +4883,17 @@ private func unlockFromStandardInput(arguments: [String]) -> Receipt {
             receipt.reason = "a unique secure field was not proven"
             return receipt
         }
-        if receipt.unlockFailureCategory != nil {
+        let stalePasswordError = receipt.unlockFailureCategory == "trade_password_incorrect"
+        if receipt.unlockFailureCategory != nil && !stalePasswordError {
             receipt.status = "unlock_error_alert_pending"
             receipt.reason = "a prior broker password error alert must be acknowledged before another attempt"
             return receipt
         }
         evidence.stage = "overlay_check"
-        let notice = dismissLoginSuccessNotice(initial, expected: expectedFingerprint)
+        let beforeNotice = initial
+        let notice = dismissLoginSuccessNotice(initial, expected: expectedFingerprint,
+                                              allowStalePasswordError: stalePasswordError,
+                                              allowUnlockPasswordRequiredNotice: true)
         guard notice.0 else {
             receipt.status = "unlock_overlay_unproven"
             receipt.reason = notice.2
@@ -4126,12 +4906,17 @@ private func unlockFromStandardInput(arguments: [String]) -> Receipt {
             receipt = initial.receipt
             receipt.action = ActionResult(attempted: false, succeeded: false, requiresUserInput: false,
                                          confirmPressed: false, confirmationMode: "none", unlockPathProven: false)
-            receipt.loginNoticeDismissed = true
+            receipt.loginNoticeDismissed = !stalePasswordError
+            receipt.staleAuthErrorDismissed = stalePasswordError
+            evidence.snapshots.append(unlockSnapshot(initial,
+                phase: stalePasswordError ? "stale_password_alert_cleared" : "login_notice_cleared", started: started,
+                expected: expectedFingerprint))
             guard receipt.tradeAccountFingerprint == expectedFingerprint,
                   receipt.tradeAccountFingerprintCount == 1,
                   receipt.surfaceState == "authentication_required",
                   initial.secureFields.count == 1,
-                  receipt.unlockFailureCategory == nil else {
+                  receipt.unlockFailureCategory == nil,
+                  sameUnlockTarget(beforeNotice, initial, expected: expectedFingerprint) else {
                 receipt.status = "unlock_surface_unproven"
                 receipt.reason = "fresh account-bound unlock surface after notice dismissal was not proven"
                 return receipt
@@ -4321,7 +5106,8 @@ private func unlockFromStandardInput(arguments: [String]) -> Receipt {
         evidence.snapshots.append(unlockSnapshot(final, phase: "readiness", started: started,
                                                expected: expectedFingerprint))
         var result = final.receipt
-        result.loginNoticeDismissed = notice.1
+        result.loginNoticeDismissed = notice.1 && !stalePasswordError
+        result.staleAuthErrorDismissed = notice.1 && stalePasswordError
         result.secureFieldClearedBeforeSet = true
         let proven = unlockReady(final, expected: expectedFingerprint, pid: initial.runningApplication?.processIdentifier)
         result.status = proven ? "unlocked" : "unlock_unproven"
@@ -4345,7 +5131,18 @@ private func unlockFromStandardInput(arguments: [String]) -> Receipt {
     return result
 }
 
+private func authenticationTestCommandAllowed(_ command: String) -> Bool {
+    return Set(["probe", "version", "check-dialogs", "focus-unlock",
+        "terminate-rejected-session", "unlock-stdin", "fill-client-login-stdin",
+        "read-query", "open-order-surface", "open-query-surface"]).contains(command)
+}
+
 let arguments = Array(CommandLine.arguments.dropFirst())
+if ProcessInfo.processInfo.environment["XIAOCAO_APP_AUTHENTICATION_TEST"] == "1",
+   !authenticationTestCommandAllowed(arguments.first ?? "") {
+    fputs("AUTHENTICATION_TEST_ORDER_ACTION_FORBIDDEN\n", stderr)
+    exit(2)
+}
 if arguments.first == "self-test-price-policy" {
     let cases: [([String?], Int?)] = [
         (["0.5500", "0.，5500"], 0),
@@ -4410,6 +5207,8 @@ case "probe":
     emit(observe(command: command, auditTables: arguments.contains("--table-audit")).receipt)
 case "check-dialogs":
     emit(checkDialogs(arguments: arguments))
+case "terminate-rejected-session":
+    emit(terminateRejectedSession(arguments: arguments))
 case "focus-unlock":
     emit(focusUnlock())
 case "fill-client-login-stdin":

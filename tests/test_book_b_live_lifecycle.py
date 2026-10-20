@@ -234,6 +234,30 @@ def test_prior_day_unknown_sell_read_is_deferred_during_exit_window(tmp_path: Pa
     assert store.current(old.plan_id).state == ExecutionState.UNKNOWN
 
 
+@pytest.mark.app_simulation
+@pytest.mark.parametrize("side,trade_date", [("BUY", "2026-08-31"),
+    ("BUY", "2026-09-01"), ("SELL", "2026-09-01")])
+def test_morning_old_sell_deferral_preserves_other_uncertainty(tmp_path, side, trade_date):
+    from xiaocao.live.book_b_live_lifecycle import deferred_prior_day_sell_ids
+    from xiaocao.live.book_b_live_morning import _uncertain_execution_plan_ids
+    old = _bind_plan_intent(tmp_path, _plan(side="SELL", lot_id="old-lot", trade_date="2026-08-31"))
+    other = _bind_plan_intent(tmp_path, replace(
+        _plan(side=side, lot_id="other-lot", trade_date=trade_date),
+        plan_id="other-uncertain-plan"))
+    store = ExecutionStore(tmp_path / "events.jsonl")
+    for plan in (old, other):
+        store.append(plan=plan, receipt=ExecutionReceipt(
+            plan.plan_id, plan.plan_hash, ExecutionState.UNKNOWN,
+            remaining_shares=plan.shares, next_action="reconcile_only"))
+    assert deferred_prior_day_sell_ids(tmp_path, trade_date="2026-09-01") == (old.plan_id,)
+    assert _uncertain_execution_plan_ids(tmp_path, trade_date="2026-09-01",
+        defer_prior_day_sells=True) == (other.plan_id,)
+    assert set(_uncertain_execution_plan_ids(tmp_path, trade_date="2026-09-01")) == {old.plan_id, other.plan_id}
+    assert old.code in unresolved_prior_sell_codes(tmp_path, trade_date="2026-09-01")
+    assert store.current(old.plan_id).state == ExecutionState.UNKNOWN
+    assert store.current(old.plan_id).next_action == "reconcile_only"
+
+
 def _record_fill(
     state_dir: Path,
     plan: TradePlan,
@@ -251,15 +275,19 @@ def _record_fill(
         broker_order_id=f"order-{event_id}",
         fill_price=price,
         event_id=event_id,
+        observed_at=datetime.fromisoformat(plan.trade_date).replace(
+            hour=NOW.hour, minute=NOW.minute, tzinfo=timezone.utc),
     )
-    persisted = ExecutionStore(state_dir / "events.jsonl").append(
-        plan=plan,
-        receipt=receipt,
-        kind="broker_receipt",
-    )
-    BookBOwnershipEvidence(
-        state_dir / "book_b_ownership_evidence.jsonl"
-    ).record(plan, persisted)
+    from unittest.mock import patch
+    with patch("xiaocao.live.trading_execution._utcnow", lambda: receipt.observed_at):
+        persisted = ExecutionStore(state_dir / "events.jsonl").append(
+            plan=plan,
+            receipt=receipt,
+            kind="broker_receipt",
+        )
+        BookBOwnershipEvidence(
+            state_dir / "book_b_ownership_evidence.jsonl"
+        ).record(plan, persisted)
     return plan
 
 
@@ -809,9 +837,9 @@ def test_old_zero_fill_sell_after_lot_exit_allows_fresh_mark_for_other_codes(
 
     buy = _record_fill(tmp_path, _plan(trade_date="2026-08-31"),
         price=10, event_id="prior-buy")
-    settled = project_book_b_live_account(tmp_path,
-        _snapshot(shares=100, sellable=100, observed_at=EOD_NOW),
-        trade_date="2026-09-01", now=EOD_NOW)
+    from tests.book_b_fee_fixtures import proved_fee_account
+    settled = proved_fee_account(tmp_path,
+        _snapshot(shares=100, sellable=100, observed_at=EOD_NOW))
     write_book_b_live_settlement(tmp_path, settled, now=EOD_NOW)
     old_sell = _bind_plan_intent(tmp_path, _plan(side="SELL", lot_id=buy.plan_id,
         trade_date="2026-09-02"))
@@ -896,9 +924,9 @@ def test_old_zero_fill_sell_after_lot_exit_allows_fresh_mark_for_other_codes(
 @pytest.mark.app_simulation
 def test_prior_zero_fill_sell_scopes_new_risk_without_closing_order(tmp_path: Path) -> None:
     buy = _record_fill(tmp_path, _plan(trade_date="2026-08-31"), price=10, event_id="prior-buy")
-    settled = project_book_b_live_account(tmp_path,
-        _snapshot(shares=100, sellable=100, observed_at=EOD_NOW),
-        trade_date="2026-09-01", now=EOD_NOW)
+    from tests.book_b_fee_fixtures import proved_fee_account
+    settled = proved_fee_account(tmp_path,
+        _snapshot(shares=100, sellable=100, observed_at=EOD_NOW))
     write_book_b_live_settlement(tmp_path, settled, now=EOD_NOW)
     sell = _bind_plan_intent(tmp_path, _plan(side="SELL", lot_id=buy.plan_id,
         trade_date="2026-09-02"))
@@ -1530,6 +1558,7 @@ def test_intraday_eod_only_reconciles_projects_and_settles(tmp_path: Path) -> No
     assert receipt.status == "settled"
     assert receipt.settlement is not None
     assert receipt.settlement["settled_nav"] == 30_000
+    assert receipt.broker_snapshot == _snapshot(observed_at=EOD_NOW)
 
 
 def _prior_zero_fill_sell_after_independent_exit(tmp_path: Path, state=ExecutionState.UNKNOWN):
@@ -1596,6 +1625,7 @@ def test_blocked_eod_retains_fresh_account_and_exact_reconciliation(tmp_path: Pa
     assert receipt.status == "blocked"
     assert receipt.reason == "LIVE_BOOK_B_EOD_OPEN_EXECUTION_RECONCILE_REQUIRED"
     assert receipt.account["broker_snapshot_sha256"] == snapshot["snapshot_sha256"]
+    assert receipt.broker_snapshot == snapshot
     assert receipt.account["cash"] == 30_099.79
     assert receipt.reconciliation_receipts == (unresolved.as_dict(),)
     assert receipt.decisions == receipt.execution_receipts == ()
@@ -1608,6 +1638,8 @@ def test_blocked_eod_retains_fresh_account_and_exact_reconciliation(tmp_path: Pa
 @pytest.mark.app_simulation
 def test_eod_settles_only_after_exact_old_sell_terminal_readback(tmp_path: Path) -> None:
     old_sell, current, store, unresolved, snapshot = _prior_zero_fill_sell_after_independent_exit(tmp_path)
+    from tests.book_b_fee_fixtures import proved_fee_account
+    proved_fee_account(tmp_path, snapshot)
     reconciliations = []
     def reconcile(plan):
         assert plan.plan_id == old_sell.plan_id
@@ -1928,6 +1960,9 @@ def test_full_live_lifecycle_buy_decision_sell_fill_eod_and_next_basis(
     # The transaction implementation owns this transition in production.  The
     # lifecycle consumes only its broker-proved fill receipt.
     _record_fill(tmp_path, handed_off[0], price=11.0, event_id="sell-fill")
+    from tests.book_b_fee_fixtures import proved_fee_account
+    proved_fee_account(tmp_path, _snapshot(observed_at=EOD_NOW, broker_fills=(
+        ("order-sell-fill", "000001.XSHE", "SELL", 100, 11.0),)))
     eod = run_book_b_live_intraday(
         state_dir=tmp_path,
         freeze_dir=tmp_path,

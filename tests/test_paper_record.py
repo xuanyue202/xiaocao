@@ -1110,3 +1110,18 @@ def test_validate_fill_window_rejects_reversed_window() -> None:
         assert "fill-window-end" in str(exc)
     else:
         raise AssertionError("expected reversed fill window to fail")
+
+
+def test_book_t_control_failure_is_not_a_successful_shadow_handoff(monkeypatch):
+    import pytest
+    import kronos_screen.scripts.paper_record as pr
+    args=Namespace(allow_legacy_snapshots=False, fill_window_start='0930', fill_window_end='0931',
+        trend_only=True, no_wait_fill_window=True, date='2026-10-19')
+    calls=[]
+    monkeypatch.setattr(pr,'XiaocaoClient',lambda:object())
+    monkeypatch.setattr(pr,'_record_book_t',lambda *args,**kwargs:calls.append('ledger_completed'))
+    def fail(*args,**kwargs):raise OSError('archive unavailable')
+    monkeypatch.setattr(pr,'_write_book_t_control_receipt',fail)
+    with pytest.raises(RuntimeError,match='CONTROL_RECEIPT_FAILED_AFTER_LEDGER_WRITE'):
+        pr._main_locked(args)
+    assert calls==['ledger_completed']

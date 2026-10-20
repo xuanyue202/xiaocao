@@ -4002,6 +4002,99 @@ def test_decision_input_failure_is_appended_without_bundle_contents(tmp_path):
     assert "missing-household-bundle" not in ledger
 
 
+@pytest.mark.parametrize("failure_kind", ["household", "transport", "structured", "opaque"])
+@pytest.mark.parametrize("opaque_after_failure", [False, True])
+def test_decision_failure_preserves_safe_identity_and_resumes_without_replay(
+    tmp_path, failure_kind, opaque_after_failure,
+):
+    from xiaocao.kol.decisions import DecisionError
+
+    service, _video, prepared = _prepare(tmp_path)
+    transcript = tmp_path / "transcript.txt"
+    transcript.write_text("完整来源证据", encoding="utf-8")
+    service.store.append({
+        **prepared, "status": "verified", "event": "netdisk_content_verified",
+        "transcript_path": str(transcript),
+        "transcript_sha256": hashlib.sha256(transcript.read_bytes()).hexdigest(),
+    })
+    bundle = tmp_path / "bundle.json"
+    bundle.write_text(json.dumps({"items": [{"evidence_path": str(transcript)}]}))
+    secret = "private-provider-token"
+    structured = EnrichmentDiagnosticError(
+        "safe provider failure", category="processor_error",
+        code="provider_unavailable", stage="business_processing",
+    )
+    failure = {
+        "household": DecisionError("household context provider failed"),
+        "transport": DecisionError("亮灰 MCP request failed"),
+        "structured": structured,
+        "opaque": RuntimeError(secret),
+    }[failure_kind]
+    calls = {"process": 0, "sender": 0}
+
+    class Pipeline:
+        recovered = False
+
+        def process(self, _bundle):
+            calls["process"] += 1
+            if not self.recovered:
+                raise failure
+            return {"status": "completed", "items": [{
+                "notification": {"status": "pending", "idempotency_key": "notice"},
+                "book_kol_us": {"status": "no_trade", "book": "KOL-US",
+                                "paper_only": True, "reason": "仅涉及A股。"},
+            }]}
+
+        def deliver_wechat(self, result, *, sender):
+            sender("标题", "正文")
+            result["items"][0]["notification"].update(
+                status="delivered", receipt="wecom-relay://notice",
+            )
+            return {"status": "delivered"}
+
+    def sender(_title, _body):
+        calls["sender"] += 1
+        return {"wecom": "ok"}
+
+    pipeline = Pipeline()
+    arguments = dict(bundle_path=bundle, decision_output_dir=tmp_path / "decisions",
+                     sender=sender, pipeline=pipeline)
+    with pytest.raises(EnrichmentError) as caught:
+        service.decide(prepared["job_id"], **arguments)
+    state = service.status(prepared["job_id"])
+    assert state["status"] == "verified"
+    assert state["failure_stage"] == "process"
+    assert calls == {"process": 1, "sender": 0}
+    if failure_kind != "opaque":
+        expected = {"household": "household_context_provider_failed",
+                    "transport": "lianghui_transport_failed",
+                    "structured": "provider_unavailable"}[failure_kind]
+        assert caught.value.diagnostic_code == state["diagnostic_code"] == expected
+        if failure_kind == "structured":
+            assert caught.value is structured
+            assert caught.value.__cause__ is not structured
+    else:
+        assert "diagnostic_code" not in state
+        assert secret not in str(caught.value)
+    assert secret not in (tmp_path / "out" / "events.jsonl").read_text()
+
+    # A later opaque failure must not inherit an earlier safe diagnostic.
+    if opaque_after_failure:
+        failure = RuntimeError(secret)
+        with pytest.raises(EnrichmentError):
+            service.decide(prepared["job_id"], **arguments)
+        assert "diagnostic_code" not in service.status(prepared["job_id"])
+        assert calls == {"process": 2, "sender": 0}
+    pipeline.recovered = True
+    completed = service.decide(prepared["job_id"], **arguments)
+    replay = service.decide(prepared["job_id"], **arguments)
+    assert completed["status"] == "decided"
+    assert replay["idempotent_replay"] is True
+    for row in (completed, replay, service.status(prepared["job_id"])):
+        assert not {"diagnostic_category", "diagnostic_code", "diagnostic_stage"} & row.keys()
+    assert calls == {"process": 2 + int(opaque_after_failure), "sender": 1}
+
+
 def test_claim_replay_stays_uncertain_until_real_page_evidence_arrives(tmp_path):
     service, video, prepared = _prepare(tmp_path)
     ready = service.record_browser_state(

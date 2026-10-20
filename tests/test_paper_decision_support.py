@@ -158,11 +158,15 @@ def test_corrupt_receipt_never_reinitializes_epoch(tmp_path):
         assert head.read_bytes() == before
 
 
-def test_hash_valid_legacy_head_keeps_peak_and_epoch(tmp_path):
+@pytest.mark.parametrize("missing_fields", [
+    ("risk_nav_basis", "strategy_nav", "capital_flow_head_sha256", "current_nav_lower_bound"),
+    ("current_nav_lower_bound",),
+])
+def test_hash_valid_legacy_head_keeps_peak_and_epoch(tmp_path, missing_fields):
     peak = evaluate(tmp_path, account(120000))
     head = support.risk_directory(tmp_path) / "risk_latest.json"
     legacy = json.loads(head.read_text())
-    for key in ("risk_nav_basis", "strategy_nav", "capital_flow_head_sha256"):
+    for key in missing_fields:
         legacy.pop(key)
     legacy.pop("receipt_sha256")
     legacy["receipt_sha256"] = support._digest(legacy)
@@ -174,6 +178,25 @@ def test_hash_valid_legacy_head_keeps_peak_and_epoch(tmp_path):
     assert current["tracking_epoch_started_at"] == peak["tracking_epoch_started_at"]
     assert current["previous_receipt_sha256"] == legacy["receipt_sha256"]
     assert "PREVIOUS_RECEIPT_INVALID" not in current["reasons"]
+
+
+def test_legacy_head_without_app_lower_bound_keeps_pause(tmp_path):
+    peak = evaluate(tmp_path, account(120000))
+    paused = evaluate(tmp_path, account(96000), now=NOW + timedelta(minutes=1))
+    assert paused["status"] == "PAUSED"
+    head = support.risk_directory(tmp_path) / "risk_latest.json"
+    legacy = json.loads(head.read_text())
+    legacy.pop("current_nav_lower_bound")
+    legacy.pop("receipt_sha256")
+    legacy["receipt_sha256"] = support._digest(legacy)
+    head.write_text(json.dumps(legacy), encoding="utf-8")
+
+    current = evaluate(tmp_path, account(110000), now=NOW + timedelta(minutes=2))
+    assert current["status"] == "PAUSED" and current["pause_latched"]
+    assert current["deploy_factor"] == 0
+    assert current["high_water_mark"] == peak["high_water_mark"] == 120000
+    assert current["tracking_epoch_started_at"] == peak["tracking_epoch_started_at"]
+    assert current["previous_receipt_sha256"] == legacy["receipt_sha256"]
 
 
 def test_hash_valid_head_missing_existing_policy_field_stays_blocked(tmp_path):

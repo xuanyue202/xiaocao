@@ -494,10 +494,10 @@ class TradePlan:
                 },
                 require_authoritative=True,
                 now=now,
-                # APP submission must use the current continuous-auction
-                # observation. A plan can wait behind account/AX preparation;
-                # the research-oriented default (15 minutes) is too old here.
+                # Continuous trading needs a recent quote; the 09:25 auction
+                # result keeps its trade timestamp while BUYs queue before 09:30.
                 max_age_seconds=60 if self.environment == "live" else 900,
+                allow_opening_auction_quote=self.environment == "live",
             )
             if not allowed:
                 return reason or "LIMIT_DOWN_CHECK_UNAVAILABLE"
@@ -1354,6 +1354,8 @@ class TradingExecution:
         self.outbox = outbox or TradingIncidentOutbox(store.path.with_name("trading_incidents.jsonl"))
         self.takeovers = takeovers or TradingTakeoverStore(store.path.with_name("trading_takeovers.jsonl"))
         self.notifier = notifier if notifier is not None else self._default_notifier
+        self.notifier_readiness = (notify_module.wecom_transport_readiness if notifier is None
+                                  else lambda **_kwargs: {"status": "configured"})
         self.now = now or _utcnow
         if safety_env is not None and safety_env_provider is not None:
             raise ValueError("configure safety_env or safety_env_provider, not both")
@@ -1365,7 +1367,7 @@ class TradingExecution:
 
     @staticmethod
     def _default_notifier(title: str, body: str) -> object:
-        return notify_module.notify(title, body, audience="trading")
+        return notify_module.notify_detailed(title, body, audience="trading")
 
     @staticmethod
     def _with_capability_evidence(
@@ -1397,6 +1399,26 @@ class TradingExecution:
             broker.session() if callable(getattr(broker, "session", None)) else nullcontext()
         ):
             return self._execute_locked(plan, broker)
+
+    def reconcile_existing(self, plan: TradePlan, broker: BrokerAdapter | None = None) -> ExecutionReceipt:
+        """Observe an already claimed order; this entry cannot prepare/submit."""
+        broker = broker or self.broker
+        if broker is None:
+            raise ValueError("a broker adapter must be configured before reconcile")
+        with self._account_writer_lock(plan.logical_account_id), (
+            broker.session() if callable(getattr(broker, "session", None)) else nullcontext()
+        ):
+            previous = self.store.current(plan.plan_id)
+            if (previous is None or previous.plan_hash != plan.plan_hash or not previous.submit_claim_id
+                    or previous.state not in TERMINAL_STATES | {
+                        ExecutionState.CLAIMED, ExecutionState.UNKNOWN, ExecutionState.SUBMITTED,
+                        ExecutionState.ACKNOWLEDGED, ExecutionState.PARTIAL, ExecutionState.RECONCILING}):
+                raise ValueError("RECONCILE_EXISTING_SUBMIT_CLAIM_REQUIRED")
+            if previous.cancel_claim_id:
+                return self._reconcile_cancel_claim(plan, broker, previous)
+            if previous.state in TERMINAL_STATES:
+                return self._repair_terminal_ownership(plan, previous)
+            return self._reconcile(plan, broker, previous, observation_only=True)
 
     def cancel(self, plan: TradePlan, broker: BrokerAdapter | None = None) -> ExecutionReceipt:
         """Cancel one known broker order once, then trust only reconciliation."""
@@ -2293,7 +2315,8 @@ class TradingExecution:
             details={"claim_id": claim_id},
         )
 
-    def _reconcile(self, plan: TradePlan, broker: BrokerAdapter, previous: ExecutionReceipt) -> ExecutionReceipt:
+    def _reconcile(self, plan: TradePlan, broker: BrokerAdapter, previous: ExecutionReceipt,
+                   *, observation_only: bool = False) -> ExecutionReceipt:
         if previous.cancel_claim_id:
             return self._reconcile_cancel_claim(plan, broker, previous)
         reconciling = self._record(
@@ -2371,7 +2394,7 @@ class TradingExecution:
             self._receipt_from_broker(plan, reconciling, broker_receipt, state, plan.shares),
             kind="reconcile_receipt",
         )
-        if state != ExecutionState.PARTIAL or reconciled.remaining_shares <= 0:
+        if observation_only or state != ExecutionState.PARTIAL or reconciled.remaining_shares <= 0:
             return reconciled
         if reconciled.submit_chain_uncertain:
             return self._record(
@@ -3140,16 +3163,25 @@ class TradingExecution:
             "未知状态只允许继续对账，不会盲目重发。"
         )
         self.takeovers.write(plan, receipt, incident_id=incident_id)
-        fresh = self.outbox.enqueue(incident_id=incident_id, title="Book B 交易异常", body=body)
-        if not fresh or self.outbox.delivered(incident_id):
-            return
+        from .incident_delivery import deliver_pending, enqueue_notice
+
         try:
-            result = self.notifier("Book B 交易异常", body)
-            ok = result == "ok" or (isinstance(result, dict) and (result.get("wecom") == "ok" or result.get("status") == "ok"))
-            if ok:
-                self.outbox.mark_delivered(incident_id, result)
+            enqueue_notice(self.outbox.path, identifier=incident_id,
+                           title="Book B 交易异常", body=body)
+
+            def send(title: str, message: str, **_kwargs) -> object:
+                result = self.notifier(title, message)
+                if result == "ok" or isinstance(result, dict) and result.get("status") == "ok":
+                    return {"wecom": "ok"}
+                return result
+
+            # The notifier owns transport readiness and returns its per-recipient
+            # pre-send proof. Never retry an interrupted or uncertain send claim.
+            deliver_pending(self.outbox.path, sender=send,
+                            readiness=self.notifier_readiness,
+                            incident_ids={incident_id})
         except Exception:
-            # The outbox row remains pending; the next safe recovery pass may retry.
+            # Pending evidence stays durable; absence of send proof is not retry authority.
             return
 
 

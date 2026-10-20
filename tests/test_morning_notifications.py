@@ -290,3 +290,25 @@ def test_historical_pending_does_not_relabel_current_terminal_result(status):
     })
     assert ('执行受阻' in title) == (status == 'blocked')
     assert '历史委托待核对' in body and '6007019' in body
+
+
+@pytest.mark.app_simulation
+@pytest.mark.parametrize('history', [
+    {'pending_orders': [{'code': '000572.XSHE', 'side': 'SELL',
+                         'broker_order_id': '6007019', 'state': 'unknown'}]},
+    {'pending_evidence_unproven': True},
+])
+def test_completed_buy_keeps_success_reason_with_unresolved_history(history):
+    from xiaocao.live.morning_notifications import _cause
+
+    facts = {'status': 'completed', 'reason': 'BROKER_TERMINAL', 'orders': [
+        {'code': '000573.XSHE', 'side': 'BUY', 'state': 'filled',
+         'broker_order_id': '6000065', 'filled_shares': 8200,
+         'fill_quantity_proven': True}]}
+    title, body = message('result', '2026-10-20', {**facts, **history})
+    assert '执行结果' in title and '6000065' in body and '8200 股' in body
+    assert _cause('BROKER_TERMINAL') not in body
+    if history.get('pending_orders'):
+        assert '6007019' in body and '历史委托待核对' in body
+    else:
+        assert '历史委托证据暂无法读取' in body

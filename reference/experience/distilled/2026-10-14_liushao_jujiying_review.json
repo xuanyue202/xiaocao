@@ -1,0 +1,116 @@
+{
+  "date": "2026-10-14",
+  "kind": "kol_durable_knowledge_draft",
+  "author": "刘少狙击营",
+  "source": "微信公众号文章《3800点，是最后的体面》",
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_wechat_official/evidence/2283364ebe00b8356521f53003d031d7448e0432fe26889f0bbdb41986690970.md",
+      "sha256": "9977ec39e5aecdb758cdbd7adce64d1a1204010b11556d2558454d8887810cac",
+      "size": 4260
+    }
+  ],
+  "authority": 0,
+  "knowledge_status": "reusable_knowledge",
+  "summary": "可复用的内容不是作者对四季度、科技或具体资产的结论，而是两项待检验的方法：当既有框架无法解释价格与广度时，应显式降低判断置信度；判断市场健康度时，应把指数点位、上涨集中度和个股广度分开。作者实际表述是A股未减反加，系统提出的置信度降级只是authority=0研究候选，不是作者行动、已验证规则或强制禁买规则。本文没有反馈任何flagged calibration，也没有实证推翻既有防守择时的错失成本结论。",
+  "posture": {
+    "regime": "作者描述指数与多数个股显著分裂、既有因果框架失配；系统只核实到2026年10月14日上证指数收于3768.061点、跌0.86%。",
+    "dominant_style": "研究层面并列检查指数、广度和解释力；交易层面忠实记录作者未减反加，不从本候选知识推导降仓或禁买。",
+    "risk": [
+      "把指数点位误当作多数个股风险已经下降。",
+      "把作者承认无法解释下跌改写成作者已经降低仓位。",
+      "把未经验证的广度或置信度候选变成强制禁止参与规则。"
+    ],
+    "style_ranking": [
+      "来源行动与系统候选严格分离",
+      "市场广度和上涨集中度",
+      "指数点位",
+      "未经核验的跨市场比较"
+    ]
+  },
+  "regime_call": {
+    "horizon": "方法可长期复核；本文市场样本只绑定2026年10月14日及作者所称节后阶段。",
+    "call": "当指数、广度与既有因果框架冲突时，把状态标成解释不足并重新取证；这不自动产生减仓、暂停参与或禁买动作。",
+    "what_would_falsify": [
+      "历史检验显示指数点位单独就能稳定代表组合风险和随后收益。",
+      "置信度降级方案在相同样本中的风险调整收益显著差于维持原权重，且没有回撤改善。",
+      "日期绑定数据证明作者所称的指数与广度分裂并不存在。"
+    ]
+  },
+  "directions": [],
+  "stocks": [],
+  "method_principles": [
+    {
+      "principle": "模型解释失败时显式标注未知",
+      "explanation": "作者明确承认不知道为何下跌，也不知道何时结束。可复用之处是把无法解释视为置信度信息，而不是补造原因；作者本人仍未减反加。",
+      "testable_use": "记录每次判断的因果假设、支持证据和失效信号，单独研究解释失配时调整信号权重的收益与错失成本。"
+    },
+    {
+      "principle": "指数与市场广度分层观察",
+      "explanation": "指数守在整数位与银行上涨，可能和多数个股下跌同时发生；组合体验更接近自身暴露和市场广度。",
+      "testable_use": "并列跟踪指数收益、上涨家数、等权收益、行业集中度和组合暴露，检验指数稳定是否掩盖广泛回撤。"
+    },
+    {
+      "principle": "跨市场比较先统一口径",
+      "explanation": "年内涨幅、货币政策和产业驱动若没有统一指数、起点、币种和总回报口径，不能直接推导资产配置。",
+      "testable_use": "固定指数、起止日、币种和总回报口径，并把政策相关性与因果性分开检验。"
+    }
+  ],
+  "exit_lessons": [
+    "本文没有给出仓位上限、止损或退出条件，不能从‘坚持框架’提炼出已验证退出规则。",
+    "‘等待’没有复核时间和触发条件时，只能保留为来源姿态。"
+  ],
+  "hypotheses": [
+    {
+      "claim": "指数强而广度弱的分裂度可能对未来数日等权组合回撤有增量解释力，但不能直接推出禁买。",
+      "implied_rule": "把指数与广度背离作为研究特征，与主线强度和持仓结构共同评估，不设强制禁止参与阈值。",
+      "falsifiable_test": "按指数收益、等权收益、上涨家数和主线强度构造样本，比较随后5至20个交易日收益与最大回撤，并分别对照XH-011已拒绝的禁买阈值和XH-026候选边界。",
+      "expected_effect": "若成立，只增加风险解释变量；若不能提供样本外增量，则放弃。",
+      "category": "market_breadth_distinct_from_XH_011_XH_026"
+    },
+    {
+      "claim": "当原有因果框架持续无法解释价格行为时，临时下调该信号权重可能改善风险调整收益，但可能产生防守择时错失成本。",
+      "implied_rule": "把连续解释失配设为候选置信度触发器，同时完整计量错失收益；不改变作者实际加仓事实。",
+      "falsifiable_test": "标注历史策略的解释一致与失配阶段，对比固定权重和临时降权方案的收益、回撤、换手及错失成本。",
+      "expected_effect": "只有回撤改善超过错失成本时才值得后续研究；本文自身不构成验证。",
+      "category": "confidence_calibration_candidate"
+    }
+  ],
+  "timing_notes": [
+    "文章发布于2026年10月14日收盘后，不能外推为下一交易日的自动动作。",
+    "等待三季报是作者的事件线索，但没有具体公司、日期或判定阈值。"
+  ],
+  "decision_trace": [
+    {
+      "observation": "作者先前看好四季度和科技主线，但节后下跌使其无法解释原因。",
+      "inference": "系统研究候选是降低这一解释框架的置信度；作者实际行动仍是A股未减反加。",
+      "action": "研究中记录解释失配并等待新证据，不把候选直接变成交易规则。",
+      "why": "这样同时保留来源行动和系统不确定性。"
+    },
+    {
+      "observation": "作者称银行与指数较强、约四千只个股下跌。",
+      "inference": "单一指数可能不足以描述多数持仓体验。",
+      "action": "研究中并列查看指数与广度。",
+      "why": "四千只下跌尚未取得日期绑定核验，必须先验证。"
+    }
+  ],
+  "judgment_heuristics": [
+    "承认未知是信息，不等于作者减仓或市场必然反转。",
+    "指数、行业集中度和个股广度分别取证。",
+    "作者实际交易只按自述记录，不当作经纪成交证据。"
+  ],
+  "typo_corrections": [],
+  "action_summary": {
+    "posture_update": "not_applied_other_author_authority_0",
+    "playbook_update": "no_change_no_flagged_calibration_and_no_prior_overturn",
+    "hypothesis_update": "two_proposal_only_candidates_distinct_from_XH_011_and_XH_026",
+    "audit_evidence": "bound_to_9977ec39e5aecdb758cdbd7adce64d1a1204010b11556d2558454d8887810cac",
+    "instrumentation_todo": "validate_date_bound_breadth_and_measure_defensive_timing_opportunity_cost",
+    "routing": [
+      "authority_0_research_backlog_only",
+      "no_forced_participation_ban",
+      "no_strategy_parameter_change",
+      "no_book_or_household_action"
+    ]
+  }
+}

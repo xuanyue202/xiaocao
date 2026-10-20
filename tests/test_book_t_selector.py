@@ -182,7 +182,8 @@ def _universe(
 
 def _portfolio(*, positions: list[dict] | None = None, history: object = None) -> dict:
     value = {
-        "account_equity": 100_000,
+        "account_equity": 30_000,
+        "account": {"initial_capital": 30_000, "cash": 30_000},
         "positions": positions or [],
     }
     if history is not None:
@@ -194,7 +195,7 @@ def _selected(plan: BookTSelectionPlan) -> list[dict]:
     return plan.to_dict()["selected_themes"]
 
 
-def test_selects_at_most_three_theme_slots_and_caps_budget_at_thirty_percent():
+def test_selects_at_most_three_theme_slots_using_independent_t_sleeve():
     specs = [
         {"theme_id": "theme-a", "theme_score": 0.95},
         {"theme_id": "theme-b", "theme_score": 0.90},
@@ -217,9 +218,9 @@ def test_selects_at_most_three_theme_slots_and_caps_budget_at_thirty_percent():
     assert payload["plan_status"] == "ready"
     assert len(_selected(plan)) == 3
     assert payload["budget"]["max_theme_slots"] == 3
-    assert payload["budget"]["target_ratio_total"] == pytest.approx(0.30)
-    assert sum(row["target_ratio"] for row in _selected(plan)) == pytest.approx(0.30)
-    assert all(row["target_ratio"] == pytest.approx(0.10) for row in _selected(plan))
+    assert payload["budget"]["target_ratio_total"] == pytest.approx(1.0)
+    assert sum(row["target_ratio"] for row in _selected(plan)) == pytest.approx(1.0)
+    assert all(row["target_ratio"] == pytest.approx(1 / 3) for row in _selected(plan))
     assert payload["budget"]["target_notional_total"] == pytest.approx(30_000)
     assert {row["theme_id"] for row in payload["unselected_candidates"]} == {"theme-d"}
 

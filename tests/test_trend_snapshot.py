@@ -817,3 +817,148 @@ def test_snapshot_replay_is_deterministic_when_generation_time_is_bound():
     assert first == second
     assert hash(first) == hash(second)
     assert first.to_dict() == second.to_dict()
+
+
+def test_report_revision_can_restage_hash_bound_old_viewpoints():
+    """A terminal correction manifest proves both actual record versions."""
+    import copy
+    from xiaocao.strategy.trend_snapshot import _bind_publication
+    from xiaocao.kol.publication import record_content_sha256
+    from datetime import datetime
+    source = _source(source_key='revision', kol_id='kol-lv-xiaotong')
+    revised = copy.deepcopy(source)
+    records = revised['artifact']['records']
+    report = records[0]
+    old_binding = copy.deepcopy(records[1]['source_binding'])
+    report['source_binding'] = copy.deepcopy(report['source_binding'])
+    report['source_binding']['publication_version'] = 'revision-v2'
+    report['source_binding']['evidence_sha256'] = 'b'*64
+    report['content_sha256'] = record_content_sha256(report)
+    request = build_publish_request(records, idempotency_key='report-correction', reason='report revision')
+    revised['artifact']['publish_request'] = request
+    revised['publish_receipt']['manifestSha256'] = request['manifest_sha256']
+    result = _bind_publication(revised, index=0, as_of=datetime.fromisoformat(AS_OF.replace('Z','+00:00')))
+    assert result.viewpoint['source_binding'] == old_binding
+    assert result.source_binding['publication_version'] == old_binding['publication_version']
+    assert result.source_binding['report_source_binding']['publication_version'] == 'revision-v2'
+    # Changing provenance without a new terminal manifest still fails.
+    records[1]['source_binding']['publication_id'] = 'unrelated'
+    with pytest.raises(PublicationBindingError, match='content hash'):
+        _bind_publication(revised,index=0,as_of=datetime.fromisoformat(AS_OF.replace('Z','+00:00')))
+
+
+def test_current_report_head_deduplicates_maintenance_without_refreshing_viewpoints():
+    import copy
+    from datetime import datetime
+    from xiaocao.strategy.trend_snapshot import current_publication_heads
+    original=_source(source_key='head',kol_id='kol-lv-xiaotong')
+    old=copy.deepcopy(original);new=copy.deepcopy(original)
+    old['source_key']='old';new['source_key']='maintenance'
+    old['publish_receipt']['serverTime']='2026-08-16T03:00:00Z'
+    new['publish_receipt']['serverTime']='2026-08-16T04:00:00Z'
+    now=datetime.fromisoformat(AS_OF.replace('Z','+00:00'))
+    heads=current_publication_heads([new,old],as_of=now)
+    assert len(heads)==1 and heads[0]['source_key']=='maintenance'
+    assert heads[0]['artifact']['records']==original['artifact']['records']
+    # As-of selection cannot consume a future maintenance receipt.
+    assert current_publication_heads([old,new],as_of=datetime.fromisoformat('2026-08-16T03:30:00+00:00'))[0]['source_key']=='old'
+
+
+def test_current_report_head_rejects_conflicting_or_incomplete_manifests():
+    import copy
+    from datetime import datetime
+    from xiaocao.strategy.trend_snapshot import current_publication_heads
+    from xiaocao.kol.publication import record_content_sha256
+    old=_source(source_key='head-conflict',kol_id='kol-lv-xiaotong')
+    old['publish_receipt']['serverTime']='2026-08-16T04:00:00Z'
+    new=copy.deepcopy(old);report=new['artifact']['records'][0]
+    report['payload']['title']='revised';report['content_sha256']=record_content_sha256(report)
+    request=build_publish_request(new['artifact']['records'],idempotency_key='conflict',reason='revision')
+    new['artifact']['publish_request']=request;new['publish_receipt']['manifestSha256']=request['manifest_sha256']
+    now=datetime.fromisoformat(AS_OF.replace('Z','+00:00'))
+    with pytest.raises(PublicationBindingError,match='ambiguous simultaneous'):
+        current_publication_heads([old,new],as_of=now)
+    report['payload']['viewpoint_ids'].append('missing-viewpoint')
+    report['content_sha256']=record_content_sha256(report)
+    request=build_publish_request(new['artifact']['records'],idempotency_key='incomplete',reason='revision')
+    new['artifact']['publish_request']=request;new['publish_receipt']['manifestSha256']=request['manifest_sha256']
+    with pytest.raises(PublicationBindingError,match='manifest is incomplete'):
+        current_publication_heads([new],as_of=now)
+
+
+def test_multiview_manifest_attaches_relation_only_to_its_origin():
+    import copy
+    from datetime import datetime
+    from xiaocao.strategy.trend_snapshot import _bind_publication
+    from xiaocao.kol.publication import record_content_sha256
+    first=_source(source_key='multi-one',binding_suffix='shared',kol_id='kol-lv-xiaotong')
+    second=_source(source_key='multi-two',binding_suffix='shared',kol_id='kol-lv-xiaotong')
+    report=copy.deepcopy(first['artifact']['records'][0])
+    one,two=first['artifact']['records'][1],second['artifact']['records'][1]
+    report['payload']['viewpoint_ids']=[one['record_id'],two['record_id']]
+    report['content_sha256']=record_content_sha256(report)
+    payload={'relation_id':'relation-multi','from_viewpoint_id':two['record_id'],
+        'to_viewpoint_id':one['record_id'],'relation_type':'replaces','asserted_at':'2026-08-16T03:00:00Z','reason':'观点被当前更正版本替代'}
+    relation=build_record(kind='viewpoint_relation',record_id_value='relation-multi',
+        idempotency_key='relation-multi',created_at='2026-08-16T03:00:00Z',source_binding=two['source_binding'],payload=payload)
+    records=[report,*first['artifact']['records'][1:],*second['artifact']['records'][1:],relation]
+    request=build_publish_request(records,idempotency_key='publish-multi',reason='revision')
+    raw={**first,'artifact':{'records':records,'publish_request':request},
+        'publish_receipt':{**first['publish_receipt'],'manifestSha256':request['manifest_sha256']}}
+    now=datetime.fromisoformat(AS_OF.replace('Z','+00:00'))
+    bound_one=_bind_publication({**raw,'viewpoint_id':one['record_id']},index=0,as_of=now)
+    bound_two=_bind_publication({**raw,'viewpoint_id':two['record_id']},index=1,as_of=now)
+    assert not bound_one.relations
+    assert [r['from_viewpoint_id'] for r in bound_two.relations]==[two['record_id']]
+
+
+def test_report_history_conflict_is_order_independent_even_with_a_newer_head():
+    import copy
+    from datetime import datetime
+    from xiaocao.strategy.trend_snapshot import current_publication_heads
+    from xiaocao.kol.publication import record_content_sha256
+    old=_source(source_key='head-order',kol_id='kol-lv-xiaotong')
+    old['publish_receipt']['serverTime']='2026-08-16T03:00:00Z'
+    conflict=copy.deepcopy(old)
+    report=conflict['artifact']['records'][0]
+    report['payload']['title']='conflict';report['content_sha256']=record_content_sha256(report)
+    req=build_publish_request(conflict['artifact']['records'],idempotency_key='ambiguous',reason='revision')
+    conflict['artifact']['publish_request']=req;conflict['publish_receipt']['manifestSha256']=req['manifest_sha256']
+    newer=copy.deepcopy(old);newer['publish_receipt']['serverTime']='2026-08-16T04:00:00Z'
+    for order in [[newer,old,conflict],[conflict,old,newer]]:
+        with pytest.raises(PublicationBindingError,match='ambiguous simultaneous'):
+            current_publication_heads(order,as_of=datetime.fromisoformat(AS_OF.replace('Z','+00:00')))
+
+
+def test_report_head_without_viewpoint_evaluation_never_becomes_empty_source():
+    from datetime import datetime
+    from xiaocao.strategy.trend_snapshot import current_publication_heads
+    raw=_source(source_key='missing-eval',kol_id='kol-lv-xiaotong')
+    records=[r for r in raw['artifact']['records'] if r['kind']!='viewpoint_evaluation']
+    request=build_publish_request(records,idempotency_key='missing-eval',reason='fixture')
+    raw['artifact']={'records':records,'publish_request':request};raw['publish_receipt']['manifestSha256']=request['manifest_sha256']
+    with pytest.raises(PublicationBindingError,match='evaluation manifest is incomplete'):
+        current_publication_heads([raw],as_of=datetime.fromisoformat(AS_OF.replace('Z','+00:00')))
+
+
+def test_exact_published_report_readback_rehydrates_without_new_semantics():
+    import copy
+    from datetime import datetime
+    from xiaocao.strategy.trend_snapshot import publication_from_report_readback, current_publication_heads
+    raw=_source(source_key='readback',kol_id='kol-lv-xiaotong')
+    records=copy.deepcopy(raw['artifact']['records']);report=records[0]
+    report.update(state='published',manifest=raw['artifact']['publish_request']['records'],
+        manifest_sha256=raw['artifact']['publish_request']['manifest_sha256'],updated_at='2026-08-16T04:00:00Z')
+    for r in records[1:]:r['state']='immutable'
+    capsule={'source':'lianghui.get_kol_record','observed_at':'2026-08-16T05:00:00Z','report':report,'records':records}
+    now=datetime.fromisoformat(AS_OF.replace('Z','+00:00'))
+    rebuilt=publication_from_report_readback(capsule,as_of=now)
+    assert current_publication_heads([rebuilt],as_of=now)[0]['artifact']['records']==records
+    assert records[1]['payload']==raw['artifact']['records'][1]['payload']
+    assert publication_from_report_readback(capsule,as_of=datetime.fromisoformat('2026-08-16T04:30:00+00:00')) is None
+    report['state']='staged'
+    with pytest.raises(PublicationBindingError,match='incomplete'):
+        publication_from_report_readback(capsule,as_of=now)
+    report['state']='published';records[1]['payload']['stance']='forged'
+    with pytest.raises(PublicationBindingError,match='content hash mismatch'):
+        publication_from_report_readback(capsule,as_of=now)

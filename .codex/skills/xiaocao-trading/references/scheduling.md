@@ -4,9 +4,9 @@ Read this file only when creating, changing or auditing Xiaocao schedules.
 
 ## Intended China-local cadence
 
-- Morning prerecommendation: 09:23 trading weekdays.
-- Book-B Founder live morning: 09:00 trading weekdays; independent of paper execution.
-- Morning execution: 09:25 trading weekdays.
+- Morning prerecommendation: wake 09:18 weekdays; capture gate 09:25:01.
+- Book-B Founder live morning: wake 08:53 weekdays; formal preparation gate 09:00, independently of paper execution.
+- Morning execution: wake 09:18 weekdays; consumption gate 09:25:01.
 - Opening dense: 09:35, 09:45, 09:55.
 - Sparse monitor: 10:25, 10:55, 13:25, 13:55 only. On the `/Users/xuanyue202`
   remote host, the remote writer is the sole KOL write ingress; cross-machine
@@ -14,10 +14,18 @@ Read this file only when creating, changing or auditing Xiaocao schedules.
   next sparse checkpoint consumes completed publication receipts. See
   `kol-trading-judgment.md` for claim, acknowledgement and owner-recovery rules.
   It never acquires 14:45 authority.
-- Risk precheck: 14:25.
-- Closing discipline: 14:45 (automation pre-arms at 14:41).
-- EOD: 15:10.
+- Risk precheck: wake 14:18; business gate 14:25.
+- Closing discipline: wake 14:38; business gate 14:45.
+- EOD: wake 15:03; business gate 15:10.
 - Weekly deep review: Friday 20:30.
+
+The current desktop scheduler offsets single-minute recurring jobs by up to
+five minutes in either direction. These wakes leave two minutes of startup
+margin even at +5 minutes. Enter the original launcher immediately; Python
+owns bounded wall-clock waiting before business effects and budgets. A late
+dispatch is recorded as late; order validity remains independent of data wait.
+Opening and sparse multiple-minute rules remain unchanged. Recheck planned
+next-run times through Automation after updates, including actual local time.
 
 ## Daytime ownership matrix
 

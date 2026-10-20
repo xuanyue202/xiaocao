@@ -17,7 +17,7 @@ from xiaocao.live.book_b_capital import current_flow_state, verify_account, allo
 from xiaocao.live.book_b_live_lifecycle import validate_broker_account_snapshot, _write_json_atomic
 from xiaocao.live.trading_execution import account_writer_lock
 
-STATEMENT_SCHEMA = "book-b-statement.v1"
+STATEMENT_SCHEMA = "book-b-statement.v2"
 
 
 def export_statement(root: Path, directory: Path, *, receipt: dict | None = None) -> dict:
@@ -50,7 +50,21 @@ def export_statement(root: Path, directory: Path, *, receipt: dict | None = None
             "observation_sha256": report["receipt_sha256"] if report else None})
         directory.mkdir(parents=True, exist_ok=True)
         report_path = directory / (identifier + ".json")
-        body = {"schema_version": STATEMENT_SCHEMA, "journal": state, "valuation": report,
+        fees_final = bool(current_mark and report.get("fee_status") == "actual_fees_complete")
+        # Keep the original receipt intact under its own name. In particular,
+        # a legacy estimate must not reappear as final profit in a v2 export.
+        valuation = ({"source_observation_sha256": report["receipt_sha256"],
+            "observed_at": report["observed_at"],
+            "marked_nav": report["marked_nav"] if current_mark else None,
+            "net_contributed_capital": report["net_contributed_capital"],
+            "realized_pnl": report["realized_pnl"] if fees_final else None,
+            "unrealized_pnl": report["unrealized_pnl"] if fees_final else None,
+            "cumulative_pnl": report["cumulative_pnl"] if fees_final else None,
+            "fee_status": state["fee_status"] if current_mark else "unknown",
+            "pending_fee_orders": state["pending_fee_orders"] if current_mark else None}
+            if report else None)
+        body = {"schema_version": STATEMENT_SCHEMA, "journal": state, "valuation": valuation,
+            "source_observation": report,
             "valuation_status": "dated_observation" if current_mark else "stale_or_missing_mark"}
         if report_path.exists() and json.loads(report_path.read_text()) != body:
             raise ValueError("BOOK_B_ACCOUNTING_EXPORT_IMMUTABILITY_VIOLATION")
@@ -65,13 +79,13 @@ def export_statement(root: Path, directory: Path, *, receipt: dict | None = None
         return {**state, "status": report["status"] if current_mark else "stale_or_missing_mark",
             "observed_at": report["observed_at"] if report else None,
             "marked_nav": report["marked_nav"] if current_mark else None,
-            "cumulative_pnl": report["cumulative_pnl"] if current_mark else None,
+            "cumulative_pnl": report["cumulative_pnl"] if fees_final else None,
             "report_path": str(report_path), "details_path": str(detail_path)}
 
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("sync", "statement", "record-cash", "allocate", "backup"))
+    parser.add_argument("action", choices=("sync", "statement", "record-cash", "record-trade-fees", "allocate", "backup"))
     parser.add_argument("--state-dir", type=Path, default=ROOT / "output/live/book_b_live_execution")
     parser.add_argument("--receipt", type=Path)
     parser.add_argument("--output-dir", type=Path)
@@ -88,6 +102,10 @@ def main(argv=None) -> int:
             if receipt is None:
                 parser.error("record-cash requires --receipt with a proved native cash statement")
             result = accounting.record_cash_event(root, receipt)
+        elif args.action == "record-trade-fees":
+            if receipt is None:
+                parser.error("record-trade-fees requires --receipt with actual itemized native fees")
+            result = accounting.record_trade_fees(root, receipt)
         elif args.action == "allocate":
             if receipt is None or not args.approval_reference:
                 parser.error("allocate requires --receipt and --approval-reference")

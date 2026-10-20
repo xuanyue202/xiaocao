@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
+import signal
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -19,6 +22,38 @@ from xiaocao.live.foundersc_native_ax import (
     remote_bootstrap_guidance,
     source_digest,
 )
+
+
+def _run_parser(command, payload, *, timeout=180):
+    """Capture SwiftPM diagnostics without a pipe that can block its writer."""
+    with tempfile.TemporaryFile() as source, tempfile.TemporaryFile() as output, tempfile.TemporaryFile() as error:
+        source.write(json.dumps(payload, ensure_ascii=False).encode())
+        source.seek(0)
+        process = subprocess.Popen(command, stdin=source, stdout=output, stderr=error,
+                                   start_new_session=True)
+        try:
+            process.wait(timeout=timeout)
+        except BaseException:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            process.wait()
+            raise
+        output.seek(0)
+        error.seek(0)
+        result = subprocess.CompletedProcess(command, process.returncode,
+            stdout=output.read().decode(), stderr=error.read().decode())
+        result.check_returncode()
+        return result
+
+
+def test_parser_capture_drains_diagnostics_larger_than_pipe_buffer():
+    payload = {"value": "x" * 131072}
+    result = _run_parser([sys.executable, "-c",
+        "import sys;sys.stderr.write('d'*131072);sys.stdout.write(sys.stdin.read())"], payload,
+        timeout=5)
+    assert json.loads(result.stdout) == payload and len(result.stderr) == 131072
 
 
 def _receipt(**overrides) -> bytes:
@@ -521,7 +556,7 @@ def test_swift_summary_parser_pairs_shuffled_vision_tokens() -> None:
         token("可取", 320),
     ]
 
-    result = subprocess.run(
+    result = _run_parser(
         [
             "swift",
             "run",
@@ -530,11 +565,7 @@ def test_swift_summary_parser_pairs_shuffled_vision_tokens() -> None:
             "foundersc-native-ax",
             "parse-query-summary-stdin",
         ],
-        input=json.dumps(tokens, ensure_ascii=False),
-        text=True,
-        capture_output=True,
-        check=True,
-        timeout=60,
+        tokens,
     )
 
     assert json.loads(result.stdout) == {
@@ -545,7 +576,7 @@ def test_swift_summary_parser_pairs_shuffled_vision_tokens() -> None:
         "资产": "205683.21",
     }
 
-    ambiguous = subprocess.run(
+    ambiguous = _run_parser(
         [
             "swift",
             "run",
@@ -554,17 +585,7 @@ def test_swift_summary_parser_pairs_shuffled_vision_tokens() -> None:
             "foundersc-native-ax",
             "parse-query-summary-stdin",
         ],
-        input=json.dumps(
-            [
-                token("余额 可用", 40, width=90),
-                token("54191.01", 140),
-            ],
-            ensure_ascii=False,
-        ),
-        text=True,
-        capture_output=True,
-        check=True,
-        timeout=60,
+        [token("余额 可用", 40, width=90), token("54191.01", 140)],
     )
     assert json.loads(ambiguous.stdout) == {}
 
@@ -702,6 +723,8 @@ def test_history_date_request_does_not_manufacture_native_scope(tmp_path):
     receipt = client.read_query(kind='history-orders', expected_fingerprint='123******890',
                                 refresh_history=True, history_trade_date='2026-09-30')
     assert receipt.as_dict()['query_readback']['requested_history_date'] == '2026-09-30'
+    assert '--history-trade-date' in runner.calls[0][0]
+    assert '2026-09-30' in runner.calls[0][0]
     assert 'history_scope' not in receipt.as_dict()['query_readback']
     with pytest.raises(ValueError, match='only valid for history'):
         client.read_query(kind='today-orders', expected_fingerprint='123******890',
@@ -720,10 +743,9 @@ def test_position_crop_requires_same_strict_numeric_value():
         ("当前价", "4.0400x", "4.0400", False),
         ("当前价", "", "4.0400", False),
     ]
-    result = subprocess.run(
+    result = _run_parser(
         ["swift", "run", "--package-path", str(Path(__file__).resolve().parents[1] / "native/foundersc_ax_executor"),
          "foundersc-native-ax", "compare-position-cells-stdin"],
-        input=json.dumps([dict(title=t, original=o, recovered=r) for t, o, r, _ in cases]),
-        text=True, capture_output=True, check=True, timeout=60,
+        [dict(title=t, original=o, recovered=r) for t, o, r, _ in cases],
     )
     assert json.loads(result.stdout) == [expected for _, _, _, expected in cases]

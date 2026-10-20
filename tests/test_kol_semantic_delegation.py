@@ -141,6 +141,40 @@ def test_current_spawn_canonical_agent_identity_is_recorded_exactly(inputs):
     assert dispatch["agent_id"] == CANONICAL_AGENT_ID
 
 
+def test_collaboration_spawn_preserves_actual_arguments_through_consumption(inputs):
+    prepared = _prepare(inputs)
+    args = dict(prepared["spawn_arguments"])
+    args.pop("fork_context")
+    args.update(task_name="semantic_87e35", fork_turns="none")
+    path = _write(inputs["request"].parent / "actual_args.json", args)
+    dispatch = delegation.record_dispatch(
+        inputs["request"], packet_path=prepared["packet_path"],
+        agent_id=CANONICAL_AGENT_ID, invocation_args=path,
+    )
+    assert dispatch["invocation_args"] == args
+    _bundle(inputs)
+    assert _verify(inputs, prepared, agent_id=CANONICAL_AGENT_ID)["status"] == "verified"
+
+
+@pytest.mark.parametrize("field,value", [
+    ("fork_turns", "all"), ("fork_turns", "1"), ("task_name", "../other"),
+    ("model", "gpt-5.6-luna"), ("reasoning_effort", "high"),
+    ("message", "summary only"), ("fork_context", False),
+])
+def test_changed_collaboration_dispatch_blocks(inputs, field, value):
+    prepared = _prepare(inputs)
+    args = dict(prepared["spawn_arguments"])
+    args.pop("fork_context")
+    args.update(task_name="semantic_87e35", fork_turns="none")
+    args[field] = value
+    path = _write(inputs["request"].parent / "actual_args.json", args)
+    with pytest.raises(delegation.DelegationError, match="Invocation"):
+        delegation.record_dispatch(
+            inputs["request"], packet_path=prepared["packet_path"],
+            agent_id=CANONICAL_AGENT_ID, invocation_args=path,
+        )
+
+
 def test_semantic_profile_is_source_agnostic_for_official_article_requests(inputs):
     request = _read(inputs["request"])
     request.update(

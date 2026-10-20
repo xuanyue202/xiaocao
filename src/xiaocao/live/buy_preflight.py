@@ -118,7 +118,8 @@ def pretrade_account(state_dir: Path, snapshot: dict, *, trade_date: str, now: d
     state_dir = Path(state_dir)
     cash, owned, head = _replay_owned_book(state_dir)
     from .book_b_live_morning import _uncertain_execution_plan_ids
-    if _uncertain_execution_plan_ids(state_dir, trade_date=trade_date, asof=now):
+    if _uncertain_execution_plan_ids(state_dir, trade_date=trade_date, asof=now,
+            defer_prior_day_sells=True):
         raise ValueError('BUY_PREFLIGHT_OWNED_ORDER_RECONCILE_REQUIRED')
     settlement = load_latest_book_b_live_settlement(state_dir)
     if settlement is None and owned:

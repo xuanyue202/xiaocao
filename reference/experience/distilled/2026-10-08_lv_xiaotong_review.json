@@ -1,0 +1,277 @@
+{
+  "schema_version": 1,
+  "knowledge_status": "reusable_knowledge",
+  "authority": 0,
+  "author": "吕晓彤",
+  "source": "百度网盘订阅视频《10月8日》",
+  "date": "2026-10-08",
+  "date_boundary": "日期来自提供方发布元数据，精度为日；逐字稿没有给出精确录制时刻。",
+  "kind": "review",
+  "summary": "本场形成四组新的待检验方法，并复现一条既有候选：把配售看成新增供给与股东稀释事件；制裁发生时立即重审原持有逻辑；把跨市场镜像关系拆成产业、资本配置和公司治理三个变量；用独立决策记录抵抗直播互动和‘这次不一样’叙事造成的确认偏误。‘按可承受最大损失设定风险预算’与既有XH-124实质相同，复用其原始claim，不新增近重复。所有内容均为吕晓彤的来源归属与系统提炼，authority=0，不构成策略参数或交易规则。",
+  "posture": {
+    "regime": "not_applied_other_author",
+    "dominant_style": "作者认为A股科技仍处于大波段，选择满仓持有并用零散资金小额加仓；同时把全球科技描述为高利率下的困难模式。",
+    "risk": "公司身份、作者私有仓位、日韩科技涨跌、制裁业务比例、跨市场镜像和配售个案均没有完整独立核验。",
+    "style_ranking": [
+      "先保留来源的持仓与市场观点",
+      "再把配售、制裁、高利率和跨市场差异拆成可观测变量",
+      "个人满仓与加仓不复制为家庭模板",
+      "直播互动形成的社会强化单独进入决策过程审计",
+      "所有候选需研究检验和人工门槛后才能晋级"
+    ]
+  },
+  "regime_call": {
+    "horizon": "跨周期研究方法",
+    "claim": "配售供给、制裁依赖、资本配置差异和社会强化可能系统性改变投资结果，但只有在事件样本和独立决策记录中稳定成立时，才可用作风险约束。",
+    "what_would_falsify": "若控制估值、行业、市场状态与公司质量后，这些变量对后续回撤、盈利修正、稀释幅度或决策质量没有稳定解释力，则相应候选失效。"
+  },
+  "directions": [
+    {
+      "name": "配售与股东稀释",
+      "view": "把折价、发行规模、原股东稀释、交割期套保和后续抛售分别量化，不把低估值自动视为安全边际。",
+      "authority": 0
+    },
+    {
+      "name": "最坏结果与仓位预算",
+      "view": "先写清最大可承受损失与退出条件，再决定仓位；心态稳定应来自预算，而不是被套后的口号。",
+      "authority": 0
+    },
+    {
+      "name": "制裁事件下的逻辑重审",
+      "view": "公司收入高度依赖被制裁市场时，应在事件发生时重估收入、替代市场和估值，而不是价格大跌后才追问能否继续持有。",
+      "authority": 0
+    },
+    {
+      "name": "跨市场科技镜像",
+      "view": "产业方向相似不保证股价同步；融资纪律、回购、治理、流动性和商业化路径都可能造成长期分化。",
+      "authority": 0
+    },
+    {
+      "name": "社会强化与确认偏误",
+      "view": "公开表达、群体吹捧和必须维持既有叙事，会提高‘这次不一样’判断的置信度；应使用直播前的独立决策记录和预设退出条件抵消。",
+      "authority": 0
+    }
+  ],
+  "stocks": [
+    {
+      "name": "未具名芯片公司",
+      "role": "反复配售与股东稀释案例",
+      "boundary": "来源只说约800亿和可能跌至600亿后继续配售，未确认公司、币种、估值口径、次数或公告。"
+    },
+    {
+      "name": "英伟达",
+      "role": "回购与资本配置对照案例",
+      "boundary": "系统只确认新增1500亿美元回购授权和剩余2350亿美元授权；授权不等于已执行，也不能单独证明美股由回购托住。"
+    },
+    {
+      "name": "Alphabet",
+      "role": "空仓等待后追入AI行情的历史例子",
+      "boundary": "13F只确认伯克希尔持有Alphabet A/C类股票，不能证明来源所称五六月追入或仓位由两三成升至半仓。"
+    },
+    {
+      "name": "口述‘幼店’‘凯霞’‘村田’",
+      "role": "日本科技走弱的口述例子",
+      "boundary": "原始称呼存在ASR歧义，本轮没有官方证券与同期涨跌核验，不进入执行。"
+    },
+    {
+      "name": "未具名受制裁公司",
+      "role": "收入地域依赖与逻辑失效案例",
+      "boundary": "公司身份及90%或95%的业务比例均未核验。"
+    },
+    {
+      "name": "阿里巴巴",
+      "role": "芒格晚年仍可能相信‘这次不一样’的历史类比",
+      "boundary": "这里只用于说明决策者会受时代背景影响，不构成阿里巴巴当前观点。"
+    }
+  ],
+  "method_principles": [
+    "配售研究同时记录折价、发行比例、原股东稀释、交割期、套保工具与交割后成交量，不用单一跌幅代替机制证据。",
+    "仓位应从可承受的最坏结果反推，而不是先满仓、后用长期乐观解释风险。",
+    "制裁或客户断供属于原逻辑事件，应在事件日重新估算收入暴露、替代市场、现金流和估值。",
+    "跨市场同产业比较必须加入回购与增发、资本成本、流动性、公司治理和商业化进度。",
+    "把当时可得信息、判断、仓位与退出条件写在决策发生前，事后只评估过程和结果，不用‘有其合理性’自动免责。",
+    "公开直播或群体互动前后的置信度变化要单独记录，以识别社会强化是否推高仓位。"
+  ],
+  "exit_lessons": [
+    "市值从高位大跌不代表新增供给风险已经结束；只有公司停止稀释、现金用途改善或股东回报改变，原风险才可能消退。",
+    "长期看多不能替代仓位上限、回撤预算和退出条件。",
+    "受到制裁后继续持有与价格跌深后是否卖出是两个不同问题，不能用后者掩盖前者的逻辑缺口。",
+    "等待可能造成踏空，追入也可能撞上高利率；解决办法是分层仓位和条件触发，而不是满仓或空仓二选一。",
+    "群体吹捧和身份叙事可能让投资者延迟兑现或止损，必须保留不受直播互动影响的决策底稿。"
+  ],
+  "hypotheses": [
+    {
+      "claim": "高频折价配售且缺少回购约束的公司，后续回撤和相对收益可能显著弱于同业。",
+      "implied_rule": "配售公告后提高风险折扣，直到稀释、资金用途和交割后供给均被验证。",
+      "falsifiable_test": "收集港股科技公司配售事件，按一年内配售频率、折价率和新增股份占比分组，比较公告后2日、5日、20日和60日超额收益、成交量及再次配售概率。",
+      "expected_effect": "高频、高折价和高稀释组应有更深回撤、更高成交供给和更高再次配售概率；若控制基本面后无差异则否定。",
+      "category": "placement_dilution"
+    },
+    {
+      "claim": "当单笔或总仓位的最大潜在亏损开始影响生活和心态时，决策质量下降；按可承受最大损失设定风险预算应比按名义仓位设定更能减少被动交易。",
+      "implied_rule": "在建仓前记录可承受最大损失及其对生活现金流的边界，若潜在损失越界则禁止加仓并优先降风险。",
+      "falsifiable_test": "把历史持仓按最大潜在亏损是否超过预先记录的生活影响阈值分组，比较越界组与未越界组的非计划交易、止损纪律、最大回撤和风险调整收益。",
+      "expected_effect": "若未越界组显著减少被动交易并改善最大回撤或风险调整收益，则保留损失优先的风险预算规则；若两组无差异或越界组更优，则拒绝该行为先验。",
+      "category": "risk_budget_behavior",
+      "existing_knowledge_id": "XH-124",
+      "dedup_action": "reuse_exact_claim"
+    },
+    {
+      "claim": "收入高度依赖受制裁市场的公司，在制裁事件后会出现更深的盈利预期下修和更慢的估值修复。",
+      "implied_rule": "制裁事件触发对地域收入、替代市场和现金流的重新估值，而不是等待价格先大跌。",
+      "falsifiable_test": "按受影响地域收入占比分组，比较制裁公告后5日、20日、60日盈利预测修正、超额收益与估值修复速度。",
+      "expected_effect": "高依赖且替代市场弱的公司应有更深下修和更慢修复；若结果不随暴露度变化则否定。",
+      "category": "sanction_revenue_dependency"
+    },
+    {
+      "claim": "同一科技产业在不同市场的股价同步性，会被回购与增发、资本成本和公司治理差异显著削弱。",
+      "implied_rule": "跨市场镜像只作为产业线索，不直接推导价格同步或仓位复制。",
+      "falsifiable_test": "构建中美科技匹配公司面板，加入净回购率、股本变化、资本成本、研发商业化和治理变量，检验其对20日与60日相对收益差的解释力。",
+      "expected_effect": "资本回报更强、稀释更少的公司应取得更高相对收益；若差异只由产业贝塔解释则候选失效。",
+      "category": "cross_market_capital_allocation"
+    },
+    {
+      "claim": "公开直播中的群体吹捧和身份承诺，会提高‘这次不一样’判断的置信度并延迟减仓。",
+      "implied_rule": "重要仓位变化以前置书面判断为准，直播后置信度上升不能单独扩大仓位。",
+      "falsifiable_test": "对可获得的直播前后决策记录，比较互动强度、置信度变化、仓位变化和随后最大回撤；控制同期行情与新事实。",
+      "expected_effect": "高互动且缺少新事实的时段应出现更高置信度和更慢减仓；若没有关系则否定。",
+      "category": "social_reinforcement_bias"
+    }
+  ],
+  "timing_notes": [
+    "来源发布于2026年10月8日，处理与行情核验发生在10月9日开盘前。",
+    "作者所称‘最近’‘今天’‘明天会大跌’和‘连涨六天’均为来源相对时间表达，只有完成同期行情核验后才能执行。",
+    "美国财政部10月8日曲线中3个月为4.23%、1年4.44%、10年5.22%、30年5.60%；五点几只适用于较长期限。",
+    "英伟达9月28日回购授权是公司政策证据，不等于10月8日已经完成回购。"
+  ],
+  "typo_corrections": [
+    {
+      "raw": "幼店",
+      "normalized": null,
+      "reason": "上下文只表明日本科技公司，无法确认正式证券名称。"
+    },
+    {
+      "raw": "凯霞",
+      "normalized": null,
+      "reason": "上下文只表明日本科技或存储公司，无法确认正式证券名称。"
+    },
+    {
+      "raw": "村田",
+      "normalized": null,
+      "reason": "简称或ASR表面词不足以确认正式证券名称。"
+    },
+    {
+      "raw": "is oro pic",
+      "normalized": null,
+      "reason": "可能为AI公司或项目的ASR表面词，不能据此猜测正式名称或估值。"
+    },
+    {
+      "raw": "海那个海",
+      "normalized": null,
+      "reason": "历史卖出段落中的不完整口述，无法确认资产或市场。"
+    },
+    {
+      "raw": "小疼小泡、小毛",
+      "normalized": null,
+      "reason": "历史投资类比中的昵称，无法可靠映射证券。"
+    }
+  ],
+  "decision_trace": [
+    {
+      "observation": "作者描述港股公司在市值持续下跌后仍反复折价配售，并称配售方可在T+2或T+3交割前后做空、套保和卖出。",
+      "inference": "新增供给、折价和套保机制可能把损失转移给原股东，但具体个案尚未核验。",
+      "action": "形成配售稀释候选，要求公告与交割后市场数据验证。",
+      "evidence": {
+        "segment_id": "591c5a965dcb35a388995b6c4acfa277e86f4b73b8cbc8de42e3b1255fa41903",
+        "quote": "现在我今天看到某芯片公司对吧？800亿配售，我真的是都快笑死了，我说它这个跌到600亿，它还会再配售一次"
+      }
+    },
+    {
+      "observation": "作者说投资前应先想清自己能承受的最差结果，并把投资概括为心态与仓位。",
+      "inference": "风险承受力只有转成仓位上限和退出条件，才具有可复用性。",
+      "action": "确认其与既有XH-124是同一测试目标，复用XH-124原始claim，不新增近重复候选，也不把作者满仓作为示范。",
+      "evidence": {
+        "segment_id": "d1ed4190cd7b90739962586e5fd1086f0dfc9215c1b635d1ea0352851f03d865",
+        "quote": "我们做任何的事情的时候不都把这个把这个自己能承担的最差的事已经想清楚了吗"
+      }
+    },
+    {
+      "observation": "作者质疑一个90%或95%业务依赖美国的公司，在制裁发生后为何仍继续持有。",
+      "inference": "制裁发生时的原逻辑重审与价格大跌后的处置问题必须分开。",
+      "action": "形成制裁收入依赖候选，主体和比例保持未核验。",
+      "evidence": {
+        "segment_id": "112f43e56852a23686ee6ddd446da48ba0eef3b0e7faeec9f84b4533e48cb4ea",
+        "quote": "如果一个90%的业务都是被老美制裁的。我不知道你们当时的逻辑是啥"
+      }
+    },
+    {
+      "observation": "作者曾因A股科技与美股科技出现镜像而认为价格也会同步，结果美股科技上涨而A股科技没有跟随。",
+      "inference": "产业镜像不足以推出股价镜像，资本配置与治理差异可能是关键中间变量。",
+      "action": "形成跨市场资本配置候选，不把‘最终会跟’当作已验证结论。",
+      "evidence": {
+        "segment_id": "568d9144a16fef7df438ef0a1a4439458e701db203373952d62141cbfce68e8a",
+        "quote": "美科是确实一直在涨，但是a科它就不跟美了"
+      }
+    },
+    {
+      "observation": "作者反思直播间的吹捧和‘吕总’身份让自己相信这次不一样，并可能延迟清仓。",
+      "inference": "社会强化可能推高置信度并改变仓位，必须用直播前记录隔离。",
+      "action": "形成社会强化偏误候选，不把事后自嘲当作统计证据。",
+      "evidence": {
+        "segment_id": "c87ce2f1026c2df605d6437b28a9cb8f171e5f6176f357b03acda7ffba090529",
+        "quote": "我后来也反思过，我说我要不直播，我肯定就一键给他清了"
+      }
+    }
+  ],
+  "judgment_heuristics": [
+    "配售风险由供给、折价和稀释共同决定。",
+    "仓位先由最坏结果约束，再由方向观点填充。",
+    "制裁发生时立即重审原逻辑。",
+    "产业镜像不等于股价镜像。",
+    "事后合理性不能替代事前决策记录。",
+    "群体吹捧不能单独提高置信度或仓位。"
+  ],
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_subscription_videos/enrichment/da27a98b0446b79114acddf892c226c36734ca51184e25c15180b0a039b01eb3/artifacts/kol-netdisk-cloud-d5887d9533acd621/10月8日.txt",
+      "sha256": "28c9cf669cc0a828e1c889656ddf814e4be360c337e26c288473d1d582a7832f",
+      "size": 38521
+    },
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_subscription_videos/artifacts/da27a98b0446b79114acddf892c226c36734ca51184e25c15180b0a039b01eb3/market_evidence_20261009.json",
+      "sha256": "15c590ccbc7a29f01d0f5a297376c150cca764b45ce7e43403bc7a5cf71f7ec0",
+      "size": 4784
+    }
+  ],
+  "execution_provenance": {
+    "status": "completed_by_parent_once",
+    "performed_at": "2026-10-09T01:04:05.585970+00:00",
+    "command": "PYTHONPATH=src .venv/bin/python scripts/distill_transcript.py --ingest reference/experience/distilled/2026-10-08_lv_xiaotong_review.json",
+    "ingested_draft_sha256": "9ac6552dcbe5a99c90e4cc504475f07bcacb45ef2b2854ff3a22d6b554c774e4",
+    "new_ids": ["XH-212", "XH-213", "XH-214", "XH-215"],
+    "exact_recurrence_id": "XH-124",
+    "recurrence_details": "复用完全相同的claim；source_dates增加2026-10-08，authors增加吕晓彤及对应source_ref，既有规则与测试未改写。",
+    "receipt_output": "ingest: +4 new candidate(s), ~2 recurrence-merge(s); refresh-action-log: wrote118 rows",
+    "no_replay": true,
+    "analyst_writer_effects": "none",
+    "paths": [
+      "reference/experience/xiaocao_hypotheses.jsonl",
+      "reference/experience/distilled/2026-10-08_lv_xiaotong_review.json",
+      "reference/experience/distill_action_log.jsonl"
+    ]
+  },
+  "action_summary": {
+    "posture_update": "not_applied：吕晓彤为其他作者，不修改小草全局姿态或时间线。",
+    "playbook_update": "no_deterministic_change：只形成authority=0候选方法。",
+    "hypothesis_update": "completed_once_by_parent：已新增XH-212、XH-213、XH-214、XH-215，并把本场来源按完全相同claim合并进XH-124；全部仍为authority=0且必须经过research_run与人工门槛，禁止重放摄入。",
+    "audit_evidence": "bound_to_complete_transcript_sha256_28c9cf669cc0a828e1c889656ddf814e4be360c337e26c288473d1d582a7832f_and_market_evidence_sha256_15c590ccbc7a29f01d0f5a297376c150cca764b45ce7e43403bc7a5cf71f7ec0_and_105_stable_segments",
+    "instrumentation_todo": "补齐配售事件面板、制裁收入暴露、跨市场资本配置、决策日志和直播互动强度数据。",
+    "routing": [
+      "authority=0候选知识",
+      "父Agent已单次完成摄入：新增XH-212至XH-215，XH-124按完全相同claim合并来源",
+      "禁止重放该摄入；分析员本轮无writer效果",
+      "不更新小草全局姿态",
+      "不修改确定性策略或参数"
+    ]
+  }
+}

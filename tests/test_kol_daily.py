@@ -4255,6 +4255,102 @@ def test_structured_input_without_consumption_receipt_becomes_agent_repair(
     assert source["failure"]["category"] == "control_plane_handler_error"
 
 
+@pytest.mark.parametrize("summary", [
+    {"claim_count": 0, "receipt_count": 0, "uncertain_effect_count": 0},
+    {"claim_count": 1, "receipt_count": 0, "uncertain_effect_count": 1},
+])
+def test_structured_input_handler_transient_failure_preserves_exact_repair_owner(
+    tmp_path, summary,
+):
+    clock = Clock("2026-08-08T07:30:00+08:00")
+    service = DailyCoordinator(tmp_path / "daily", now=clock)
+    service.run([{
+        "name": "subscription_video",
+        "run": lambda: {
+            "status": "waiting",
+            "claim_receipt_summary": summary,
+            "waiting_items": [{
+                "identity": "video-1",
+                "version_key": "version-1",
+                "stage": "waiting_semantic_input",
+                "evidence_sha256": "b" * 64,
+            }],
+        },
+    }])
+    clock.value = datetime.fromisoformat("2026-08-08T08:30:00+08:00")
+
+    def broken_handler(progress):
+        assert progress.item_identity == "video-1"
+        raise TransientSourceError(
+            "source unavailable", category="source_error",
+            code="source_temporarily_unavailable", stage="source_run",
+        )
+
+    result = service.run([{
+        "name": "subscription_video",
+        "run": lambda: (_ for _ in ()).throw(AssertionError("full sweep replay")),
+        "structured_input": broken_handler,
+    }])
+
+    source = result["source_results"][0]
+    assert source["repair_required"] is True
+    assert source["failure"]["category"] == "control_plane_handler_error"
+    assert source["writer_progress"]["item_identity"] == "video-1"
+    assert source["writer_progress"]["narrow_resume_surface"] == "subscription_video:video-1"
+    assert source["handler_failure"]["code"] == "source_temporarily_unavailable"
+    assert source["writer_progress"]["claim_receipt_summary"] == summary
+
+
+def test_consumed_input_continuation_failure_keeps_latest_progress_counts(tmp_path):
+    clock = Clock("2026-08-08T07:30:00+08:00")
+    service = DailyCoordinator(tmp_path / "daily", now=clock)
+    service.run([{
+        "name": "subscription_video",
+        "run": lambda: {"status": "waiting", "waiting_items": [{
+            "identity": "video-1", "version_key": "version-1",
+            "stage": "waiting_semantic_input", "evidence_sha256": "b" * 64,
+        }]},
+    }])
+    clock.value = datetime.fromisoformat("2026-08-08T08:30:00+08:00")
+    summary = {"claim_count": 1, "receipt_count": 1, "uncertain_effect_count": 0}
+
+    def consumed(progress):
+        following = WriterProgress.continue_(
+            item_identity="video-1", completed_stage="semantic_input_consumed",
+            next_stage="publication_readback", claim_receipt_summary=summary,
+        )
+        return {
+            "outcome": {"status": "waiting", "writer_progress": following.to_dict()},
+            "structured_input_receipt": {
+                "event": "structured_input_consumed",
+                "request_id": progress.details["request_id"],
+                "request_schema_version": 1, "response_field": "bundle_path",
+                "immutable_bindings_sha256": hashlib.sha256(json.dumps(
+                    progress.details["immutable_bindings"], ensure_ascii=False,
+                    sort_keys=True, separators=(",", ":"),
+                ).encode()).hexdigest(),
+                "request_sha256": "d" * 64, "response_sha256": "e" * 64,
+            },
+        }
+
+    def broken_continuation(stage):
+        assert stage == "publication_readback"
+        raise TransientSourceError(
+            "provider unavailable", category="source_error",
+            code="readback_unavailable", stage="publication_readback",
+        )
+
+    result = service.run([{
+        "name": "subscription_video", "run": lambda: None,
+        "structured_input": consumed, "continue": broken_continuation,
+    }])
+    source = result["source_results"][0]
+    assert source["failure"]["category"] == "source_error"
+    assert source["failure"]["stage"] == "publication_readback"
+    assert source["writer_progress"]["item_identity"] == "video-1"
+    assert source["writer_progress"]["claim_receipt_summary"] == summary
+
+
 def test_real_structured_input_receipt_binds_lv_evidence(
     tmp_path,
     monkeypatch,
@@ -8982,3 +9078,105 @@ def test_legacy_explicit_source_handoff_remains_ordered_for_reconciliation(tmp_p
         result = pipeline.process(_publication_bundle())
         pipeline.deliver_wechat(result, sender=lambda *_: {"wecom": "ok"})
     assert order == ["gray", "book", "alert", "prepared"] * 2
+
+
+@pytest.mark.parametrize("retained_count", [1, 2])
+def test_subscription_video_source_resume_reuses_retained_bundle_without_scan(
+    tmp_path, monkeypatch, retained_count,
+):
+    root = tmp_path / "videos"
+    evidence = tmp_path / "transcript.txt"
+    evidence.write_text("complete source", encoding="utf-8")
+    items = []
+    for index in range(retained_count):
+        item = {"identity": str(index + 1) * 64, "version_key": str(index + 3) * 64,
+                "source": "source", "author": "author"}
+        items.append(item)
+        artifact = root / "artifacts" / item["version_key"]
+        artifact.mkdir(parents=True)
+        request = {"event": "subscription_video_analysis_input_required",
+                   "source_identity": item["identity"], "source_version_key": item["version_key"],
+                   "source": item["source"], "author": item["author"],
+                   "evidence_path": str(evidence),
+                   "evidence_sha256": hashlib.sha256(evidence.read_bytes()).hexdigest(),
+                   "artifact_dir": str(artifact)}
+        (artifact / "analysis_request.json").write_text(json.dumps(request), encoding="utf-8")
+        (artifact / "validated_bundle.json").write_text("{}", encoding="utf-8")
+
+    class Service:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def pending_items(self):
+            return items + [{"identity": "historical-uncertain", "version_key": "no-bundle"}]
+
+    monkeypatch.setattr(kol_daily_script, "SubscriptionVideoService", Service)
+    runtime = DailyRuntime.__new__(DailyRuntime)
+    runtime.args = SimpleNamespace(video_output_dir=root, config=tmp_path / "private.yaml")
+    calls = []
+    runtime.videos = lambda **kwargs: calls.append(kwargs) or {"status": "completed"}
+    if retained_count == 2:
+        with pytest.raises(DailyError, match="multiple retained"):
+            runtime.videos_narrow_resume("subscription_video:source")
+        assert calls == []
+    else:
+        assert runtime.videos_narrow_resume("subscription_video:source") == {"status": "completed"}
+        assert calls == [{"only_identity": items[0]["identity"], "refresh_listing": False}]
+
+
+@pytest.mark.parametrize('change', [None, 'hash', 'origin', 'identity', 'missing_failure', 'wrong_version', 'outside_slot', 'triggered'])
+def test_source_repair_observation_binds_exact_origin_and_evidence(tmp_path, change):
+    import hashlib
+
+    service = DailyCoordinator(tmp_path / 'daily', now=Clock('2026-08-31T11:19:00+08:00'))
+    service.run([{'name': 'subscription_video', 'run': lambda: {'status': 'no_update'}}])
+    origin = next(row for row in reversed(service.events()) if row['event'] == 'sweep_completed')
+    before = service.events()
+    prior = WriterProgress.repair_required(
+        item_identity='video-1',
+        fingerprint=FailureFingerprint(
+            adapter='subscription_video', category='provider_contract_error',
+            code='cloud_transfer_pretrigger_failed', stage='cloud_transfer_confirmation',
+            failure_revision='a' * 40, provider_contract_version='subscription_video_source_v1',
+        ),
+        repair_revision=None, affected_set_digest='b' * 64,
+        claim_receipt_summary={'claim_count': 1, 'receipt_count': 0, 'uncertain_effect_count': 0},
+        targeted_test_profile='kol_subscription_video_source_run',
+        narrow_resume_surface='subscription_video:video-1', retryability='retryable',
+    )
+    evidence = {
+        'source': 'subscription_video', 'item_identity': 'video-1',
+        'failure_fingerprint': prior.failure_fingerprint,
+        'origin_sweep_event_id': origin['event_id'], 'version_key': 'v1',
+    }
+    if change == 'identity':
+        evidence['item_identity'] = 'other-video'
+    source_root = tmp_path / 'videos'
+    (source_root / 'claims').mkdir(parents=True)
+    (source_root / 'manifest.json').write_text(json.dumps({'items': {'video-1': {
+        'version_key': 'v2' if change == 'wrong_version' else 'v1',
+    }}}))
+    failure = {'event': 'subscription_video_item_failure_isolated',
+        'identity': 'video-1', 'version_key': 'v1', 'claim_status': 'failed_pretrigger',
+        'recorded_at': '2026-08-30T11:19:00+08:00' if change == 'outside_slot' else origin['occurred_at']}
+    (source_root / 'events.jsonl').write_text('' if change == 'missing_failure' else json.dumps(failure) + '\n')
+    claim = {'source_identity': 'video-1', 'source_version_key': 'v1', 'status': 'failed_pretrigger'}
+    if change == 'triggered':
+        claim['triggered_at'] = origin['occurred_at']
+    (source_root / 'claims/lv_transfer_v1.json').write_text(json.dumps(claim))
+    path = tmp_path / 'observation.json'
+    path.write_text(json.dumps(evidence))
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    if change:
+        with pytest.raises(DailyError):
+            service.observe_source_repair('subscription_video', progress=prior,
+                origin_sweep_event_id='0' * 64 if change == 'origin' else origin['event_id'],
+                evidence_path=path, evidence_sha256='0' * 64 if change == 'hash' else digest, source_output_dir=source_root)
+        assert service.events() == before
+        return
+    service.observe_source_repair('subscription_video', progress=prior,
+        origin_sweep_event_id=origin['event_id'], evidence_path=path, evidence_sha256=digest, source_output_dir=source_root)
+    assert service.events()[:len(before)] == before
+    projected = service._repair_originating_sweep(service.events(), source='subscription_video', progress=prior)
+    assert projected['event_id'] == origin['event_id']
+    assert projected['source_states'][0]['writer_progress']['item_identity'] == 'video-1'

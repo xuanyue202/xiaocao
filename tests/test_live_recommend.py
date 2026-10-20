@@ -34,6 +34,34 @@ def _dt(hour: int, minute: int, second: int = 0) -> datetime:
     return datetime(2026, 4, 30, hour, minute, second, tzinfo=A_SHARE_TZ)
 
 
+@pytest.mark.parametrize("conflicting_bytes", [b"", b"different original\n"])
+def test_committed_bundle_survives_compatibility_freeze_conflict(tmp_path, monkeypatch, capsys, conflicting_bytes):
+    from xiaocao.live.morning_bundle import acquire_bundle, read_consumed_rows
+
+    day = "2026-10-09"
+    mirror = tmp_path / f"book_b_live_freeze_{day}.jsonl"
+    mirror.write_bytes(conflicting_bytes)
+    monkeypatch.setenv("CODEX_AUTOMATION_ID", "xiaocao-daily-morning")
+    monkeypatch.setenv("CODEX_THREAD_ID", "exact-producer")
+    monkeypatch.setattr(live_recommend, "OUT_DIR", tmp_path)
+    monkeypatch.setattr(live_recommend, "_load_stock_sentiment_map", lambda _: {})
+    monkeypatch.setattr(live_recommend.subprocess, "run", lambda *a, **k: SimpleNamespace(stdout="a" * 40))
+    row = {"date": day, "book": "B", "code": "000020.XSHE", "mode": "test",
+        "is_live": True, "mode_exec_star": True, "mode_trade_eligible": True,
+        "open": 13.71, "basket_price": 13.98}
+    snapshot = (json.dumps(row) + "\n").encode()
+
+    from tests.test_morning_capture_contract import readiness
+    live_recommend._publish_original_batch(day, readiness(codes=["000020.XSHE"]), f"{day}T09:23:00+08:00", snapshot)
+
+    assert mirror.read_bytes() == conflicting_bytes
+    receipt = acquire_bundle(tmp_path, day)
+    assert receipt["status"] == "ready"
+    assert read_consumed_rows(receipt, day, live_dir=tmp_path) == [row]
+    event = json.loads(capsys.readouterr().err.splitlines()[-1])
+    assert event["compatibility_freeze"]["status"] == "conflict_preserved"
+
+
 class _FakeClient:
     def second_line_detail_info(self, codes: str):
         return {
@@ -66,7 +94,7 @@ def test_waits_until_auction_close_for_today_between_920_and_925() -> None:
 
 
 def test_does_not_wait_outside_today_auction_window() -> None:
-    assert _seconds_until_recommendation_start("2026-04-30", _dt(9, 19, 59)) == 0.0
+    assert _seconds_until_recommendation_start("2026-04-30", _dt(9, 19, 59)) == 302.0
     assert _seconds_until_recommendation_start("2026-04-30", _dt(9, 25, 1)) == 0.0
     assert _seconds_until_recommendation_start("2026-04-29", _dt(9, 20)) == 0.0
 
@@ -440,7 +468,7 @@ def test_kronos_model_failure_does_not_block_mode_exec_snapshot_or_report(
     monkeypatch.setattr(live_recommend, "_resolve_date", lambda _date: "2026-08-05")
     monkeypatch.setattr(live_recommend, "_wait_for_recommendation_start", lambda _date: None)
     monkeypatch.setattr(live_recommend, "_client", lambda: _Client())
-    monkeypatch.setattr(live_recommend, "ApiDataSource", lambda *_args, **_kwargs: SimpleNamespace(readiness={}))
+    monkeypatch.setattr(live_recommend, "ApiDataSource", lambda *_args, **_kwargs: SimpleNamespace(readiness=__import__("tests.test_morning_capture_contract", fromlist=["readiness"]).readiness(codes=["600815.XSHG"])))
     monkeypatch.setattr(
         live_recommend,
         "_run_strategy_when_ready",

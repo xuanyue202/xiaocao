@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Daily xiaocao paper-trade + data-accumulation automation (the compounding flywheel).
-#   auto_daily.sh morning-prerecommend # ~09:23: recommend + freeze review queue, then exit for prompt delivery
+#   auto_daily.sh morning-prerecommend # ~09:18 prewake / 09:25:01 business: recommend + freeze review queue, then exit for prompt delivery
 #   auto_daily.sh morning-execute      # ~09:25: consume frozen artifacts + review rendezvous + paper-record
 #   auto_daily.sh morning              # manual compatibility: run both stages in one shell
-#   auto_daily.sh eod        # ~15:05 (after close): tick capture + forward A/B/F + monitor + settle + digest->WeCom + pipeline health
+#   auto_daily.sh eod        # 15:03 prewake / 15:10 business (after close): tick capture + forward A/B/F + monitor + settle + digest->WeCom + pipeline health
 #   auto_daily.sh optimize   # ~weekly (trading Fri): capability flywheel — judge short-line + trend pipelines and record to the ledger
 #   auto_daily.sh weekly     # Friday evening: deep flywheel review plan (Codex applies/finalizes evidence-backed changes)
 # Capital flywheel: morning entries -> intraday staged exits -> eod settle/digest.
@@ -18,6 +18,9 @@ export PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 if [ "${XIAOCAO_DAILY_SNAPSHOT:-}" != "${BASH_SOURCE[0]}" ]; then
   exec "$PY" -m xiaocao.live.runtime_evidence launch --script "${BASH_SOURCE[0]}" --root "$ROOT" -- "$@"
 fi
+# Keep a dedicated operator stream outside command substitution and log redirects.
+exec 3>&1
+export XIAOCAO_DAILY_EVENT_FD=3
 cd "$ROOT" || exit 1
 export PYTHONPATH="$XIAOCAO_DAILY_HELPER:$ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 run_python() {
@@ -45,7 +48,7 @@ run_book_b_morning() {
   local FREEZE_STATUS FREEZE_EXIT REVIEW_RENDEZVOUS FREEZE_RECEIPT
   FREEZE_RECEIPT="output/live/morning_consumers/paper-${TODAY}.json"
   log "morning execute: wait for dated frozen recommendation + review queue (never rerun live_recommend)"
-  FREEZE_STATUS="$(run_python scripts/wait_for_morning_freeze.py --date "$TODAY" --snapshot-path "output/live/book_b_live_freeze_${TODAY}.jsonl" --receipt-path "$FREEZE_RECEIPT" --timeout-sec "${XIAOCAO_MORNING_FREEZE_TIMEOUT_SEC:-240}" 2>&1)"
+  FREEZE_STATUS="$(run_python scripts/wait_for_morning_freeze.py --date "$TODAY" --snapshot-path "output/live/book_b_live_freeze_${TODAY}.jsonl" --receipt-path "$FREEZE_RECEIPT" --timeout-sec "${XIAOCAO_MORNING_FREEZE_TIMEOUT_SEC:--1}" --poll-sec 2 2>&1)"
   FREEZE_EXIT=$?
   log "morning freeze result: $FREEZE_STATUS"
   if [ "$FREEZE_EXIT" -ne 0 ]; then
@@ -53,7 +56,7 @@ run_book_b_morning() {
     return "$FREEZE_EXIT"
   fi
   log "bounded agent-review rendezvous (structured review only; timeout falls back to base picks)"
-  REVIEW_RENDEZVOUS="$(run_python scripts/wait_for_agent_reviews.py --date "$TODAY" --timeout-sec "${XIAOCAO_AGENT_REVIEW_TIMEOUT_SEC:-180}" 2>&1)" || true
+  REVIEW_RENDEZVOUS="$(run_python scripts/wait_for_agent_reviews.py --date "$TODAY" --morning-freeze-receipt "$FREEZE_RECEIPT" --timeout-sec "${XIAOCAO_AGENT_REVIEW_TIMEOUT_SEC:-180}" 2>&1)" || true
   log "agent-review rendezvous result: $REVIEW_RENDEZVOUS"
   log "paper-record ★E mode-qualified picks"
   if ! run_python kronos_screen/scripts/paper_record.py --date "$TODAY" --pick mode_exec_star --morning-freeze-receipt "$FREEZE_RECEIPT" --initial-capital 100000 --fee-rate 0.0001 --deploy-ratio 0.5 --max-total-exposure-ratio 1.0 --quality-governor shadow --intelligence-trade shadow >>"$LOG" 2>&1; then
@@ -83,6 +86,32 @@ run_book_t_shadow_if_frozen() {
     --run-id "${TODAY}-book-t-v2-shadow" >>"$LOG" 2>&1; then
     log "Book T v2 shadow DEGRADED: frozen research input was not consumed; keep successful v1 control result"
     return 0
+  fi
+}
+run_book_t_morning() {
+  log "paper-record Book T trend basket (paper-only, independent account)"
+  if ! run_python kronos_screen/scripts/paper_record.py --date "$TODAY" --initial-capital 100000 --fee-rate 0.0001 --trend-only >>"$LOG" 2>&1; then
+    log "morning execute FAILED: Book T paper-record failed"
+    return 1
+  fi
+  run_book_t_shadow_if_frozen
+}
+run_morning_books() {
+  # Only preparation/waits overlap; paper_record owns the shared ledger lock.
+  # Wait for BOTH children on every outcome; never orphan a ledger writer.
+  local book_t_pid book_b_exit book_t_exit
+  run_book_t_morning &
+  book_t_pid=$!
+  trap 'kill -TERM "$book_t_pid" 2>/dev/null || true; wait "$book_t_pid"; exit 143' TERM INT
+  run_book_b_morning
+  book_b_exit=$?
+  wait "$book_t_pid"
+  book_t_exit=$?
+  trap - TERM INT
+  if [ "$book_t_exit" -ne 0 ]; then return "$book_t_exit"; fi
+  if [ "$book_b_exit" -ne 0 ]; then
+    log "morning execution FAILED: Book B failed; Book T completed independently"
+    return "$book_b_exit"
   fi
 }
 run_book_t_v2_daily_mark_if_frozen() {
@@ -151,14 +180,8 @@ case "$STEP" in
     log "morning prerecommend ready -> output/live/recommend_${TODAY}.md"
     ;;
   morning-execute)
-    run_book_b_morning
+    run_morning_books
     BOOK_B_EXIT=$?
-    log "paper-record Book T trend basket (paper-only, independent account)"
-    if ! run_python kronos_screen/scripts/paper_record.py --date "$TODAY" --initial-capital 100000 --fee-rate 0.0001 --trend-only >>"$LOG" 2>&1; then
-      log "morning execute FAILED: Book T paper-record failed"
-      exit 1
-    fi
-    run_book_t_shadow_if_frozen
     log "surface 小草 posture prior (judgment lens only; NOT a filter on the deterministic picks)"
     run_python scripts/xiaocao_knowledge.py --posture >>"$LOG" 2>&1 || true
     log "record standing posture call (judgment-calibration loop; scored fwd at eod)"
@@ -174,14 +197,8 @@ case "$STEP" in
     run_python scripts/live_recommend.py --no-stdout >>"$LOG" 2>&1
     log "build AI intelligence review queue (zero-fetch; no score write)"
     run_python scripts/build_intelligence_review_queue.py --date "$TODAY" --limit "${XIAOCAO_AGENT_REVIEW_QUEUE_LIMIT:-8}" >>"$LOG" 2>&1 || true
-    run_book_b_morning
+    run_morning_books
     BOOK_B_EXIT=$?
-    log "paper-record Book T trend basket (paper-only, independent account)"
-    if ! run_python kronos_screen/scripts/paper_record.py --date "$TODAY" --initial-capital 100000 --fee-rate 0.0001 --trend-only >>"$LOG" 2>&1; then
-      log "morning FAILED: Book T paper-record failed"
-      exit 1
-    fi
-    run_book_t_shadow_if_frozen
     log "surface 小草 posture prior (judgment lens only; NOT a filter on the deterministic picks)"
     run_python scripts/xiaocao_knowledge.py --posture >>"$LOG" 2>&1 || true
     log "record standing posture call (judgment-calibration loop; scored fwd at eod)"

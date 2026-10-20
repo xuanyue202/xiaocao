@@ -155,12 +155,16 @@ def test_foundersc_runtime_accepts_process_local_capital_environment_provider(
 def test_live_foundersc_runtime_defaults_to_app_only_native_route(
     tmp_path: Path,
 ) -> None:
+    from xiaocao.live.foundersc_native_ax import FounderscNativeAXClient
+    native = FounderscNativeAXClient(helper_path=tmp_path / "unused-helper")
     _execution, adapter = build_foundersc_native_execution(
         tmp_path,
         expected_fund_account_fingerprint="987******210",
+        native_client=native,
     )
 
     assert adapter.route == "native-app"
+    assert adapter.native is native
     assert adapter.expected_fund_account_fingerprint == "987******210"
     assert not hasattr(adapter, "readback")
 

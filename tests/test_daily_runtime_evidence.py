@@ -10,6 +10,32 @@ import pytest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
+
+
+def test_source_gap_reaches_operator_without_forwarding_business_payload(tmp_path):
+    from xiaocao.live.runtime_evidence import stream_process
+
+    read_fd, write_fd = os.pipe()
+    event = {"event": "market_dependency_recovery_wait", "trade_date": "2026-10-19",
+        "failure_category": "MORNING_SOURCE_INCOMPLETE", "source_gaps": [
+            {"source": "stock_index", "status": "partial", "missing_codes": ["301139.XSHE"],
+             "account_table": {"private": "never forward"}}],
+        "candidate_table": {"private": "never forward"}}
+    try:
+        result = stream_process([str(PYTHON), "-c",
+            "import sys;sys.stderr.write("+repr(json.dumps(event)+"\n")+")"],
+            cwd=tmp_path, env=dict(os.environ), output_path=tmp_path/"child.log", operator_fd=write_fd)
+        os.close(write_fd)
+        write_fd = None
+        with os.fdopen(read_fd) as stream:
+            forwarded = json.loads(stream.readline())
+        assert result == 0
+        assert forwarded["source_gaps"] == [{"source": "stock_index", "status": "partial",
+            "missing_code_count": 1, "missing_codes": ["301139.XSHE"]}]
+        assert "candidate_table" not in forwarded
+    finally:
+        if write_fd is not None:
+            os.close(write_fd)
 PYTHON = Path(sys.executable)
 
 
@@ -17,6 +43,9 @@ PYTHON = Path(sys.executable)
 def eod_identity(monkeypatch):
     monkeypatch.setenv("CODEX_AUTOMATION_ID", "xiaocao-daily-eod")
     monkeypatch.setenv("CODEX_THREAD_ID", "runtime-fixture")
+    # Isolated historical paper shell fixtures must not wait for today's EOD.
+    monkeypatch.setenv("XIAOCAO_BOOK_T_V2_RUN_MODE", "rehearsal")
+    monkeypatch.setenv("XIAOCAO_BOOK_T_V2_REHEARSAL_DATE", "2026-09-30")
 
 
 def isolated_daily(tmp_path: Path, *, mutate: bool = False, tail: str = '', context_exit: int = 0, fail_program: str = ''):
@@ -32,7 +61,7 @@ if [ "$1" = "-m" ] && [ "$2" = "xiaocao.live.runtime_evidence" ]; then
 fi
 if [ "$1" = "-m" ] && [ "$2" = "xiaocao" ]; then
   if [ "${{MUTATE_SOURCE:-0}}" = 1 ]; then printf '\\nif true; then\\n' >> "$XIAOCAO_ROOT/scripts/auto_daily.sh"; fi
-  date +%F
+  if [ -n "${{XIAOCAO_BOOK_T_V2_REHEARSAL_DATE:-}}" ]; then echo "$XIAOCAO_BOOK_T_V2_REHEARSAL_DATE"; else date +%F; fi
   exit 0
 fi
 if [ "$1" = "{fail_program}" ]; then

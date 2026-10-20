@@ -25,12 +25,13 @@ from .book_b_allocation import BookBAllocationFacts, allocate_frozen_rows, valid
 from .account_risk import AccountRiskReceipt
 from . import kol_policy
 from .live_decision_support import (
-    bind_plan_audit, buy_cap, evaluate_live_risk, read_plan_audit, read_policy,
+    bind_plan_audit, buy_cap, digest, evaluate_live_risk, read_plan_audit, read_policy,
 )
 from xiaocao.strategy.mode_switch import plan_board_lot_orders
 from .book_b_live_lifecycle import (
     BookBLiveAccountState,
     blocking_open_execution_plan_ids,
+    deferred_prior_day_sell_ids,
     load_latest_book_b_live_settlement,
     open_execution_plan_ids,
     ownership_head_sha256,
@@ -120,6 +121,8 @@ class BookBLiveMorningReceipt:
     dependency_recovery: dict | None = None
     preparation_budget_seconds: float | None = None
     preparation_deadline: str | None = None
+    deferred_prior_day_sell_plan_ids: tuple[str, ...] = ()
+    checklist_path: str | None = None
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -1172,13 +1175,16 @@ def _plan_requires_prepare(config: BookBLiveMorningConfig, plan: TradePlan) -> b
 
 
 def _uncertain_execution_plan_ids(state_dir: Path, *, trade_date: str | None = None,
-                                  asof: datetime | None = None) -> tuple[str, ...]:
+                                  asof: datetime | None = None,
+                                  defer_prior_day_sells: bool = False) -> tuple[str, ...]:
     """Prepared/unclaimed intents reserve plans but are not UNKNOWN effects."""
     store = ExecutionStore(Path(state_dir) / "events.jsonl")
-    proven = set(proven_prior_day_zero_fill_sell_ids(state_dir, trade_date=trade_date,
+    excluded = set(proven_prior_day_zero_fill_sell_ids(state_dir, trade_date=trade_date,
         asof=asof)) if trade_date else set()
+    if defer_prior_day_sells and trade_date:
+        excluded.update(deferred_prior_day_sell_ids(state_dir, trade_date=trade_date))
     return tuple(plan_id for plan_id in open_execution_plan_ids(state_dir)
-                 if plan_id not in proven
+                 if plan_id not in excluded
                  if (receipt := store.current(plan_id)) is not None
                  and receipt.state in {ExecutionState.CLAIMED, ExecutionState.UNKNOWN,
                      ExecutionState.SUBMITTED, ExecutionState.ACKNOWLEDGED,
@@ -1409,8 +1415,10 @@ def _load_allocation(
                 or capital_basis_receipt != basis.receipt_sha256
                 or payload.get("settled_nav") != basis.settled_nav
                 or payload.get("current_open_exposure") != basis.current_open_exposure
-                or (_uncertain_execution_plan_ids(config.state_dir, trade_date=config.trade_date, asof=observed) if restoring_only
-                    else blocking_open_execution_plan_ids(config.state_dir, trade_date=config.trade_date, asof=observed))):
+                or (_uncertain_execution_plan_ids(config.state_dir, trade_date=config.trade_date, asof=observed,
+                        defer_prior_day_sells=capital_basis_source == "broker_reconciled_book_b_dynamic_nav") if restoring_only
+                    else blocking_open_execution_plan_ids(config.state_dir, trade_date=config.trade_date, asof=observed,
+                        defer_prior_day_sells=capital_basis_source == "broker_reconciled_book_b_dynamic_nav"))):
             raise ValueError("LIVE_ALLOCATION_CAPITAL_BASIS_RECEIPT_MISMATCH")
     if capital_basis_source == "initial_book_b_capital" and capital_basis_receipt:
         raise ValueError("LIVE_ALLOCATION_CAPITAL_BASIS_RECEIPT_UNEXPECTED")
@@ -1768,12 +1776,15 @@ def run_book_b_live_morning(
     prepare_only: Callable[[TradePlan], BrokerReceipt] | None = None,
     wait_for_submit_window: Callable[[datetime], None] | None = None,
     wait_for_reconcile: Callable[[], None] | None = None,
+    await_order_results: Callable[[list[TradePlan], list[ExecutionReceipt]], None] | None = None,
     now: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     risk_provider: Callable[[datetime], AccountRiskReceipt] | None = None,
     account_snapshot_provider: Callable[[], dict] | None = None,
     trading_dates_provider: Callable[[datetime], list[str]] | None = None,
     review_rendezvous: Callable[[dict], dict] | None = None,
     on_progress: Callable[[str, datetime], None] | None = None,
+    on_check: Callable[[str, str, dict], None] | None = None,
+    on_order_progress: Callable[[list[ExecutionReceipt]], None] | None = None,
 ) -> BookBLiveMorningReceipt:
     """Consume one dated freeze and advance immutable live plans exactly once.
 
@@ -1789,6 +1800,7 @@ def run_book_b_live_morning(
     environment_receipt: dict | None = None
     environment_restoration: dict | None = None
     preparation_receipts: list[dict] = []
+    deferred_sells: tuple[str, ...] = ()
     plans: list[TradePlan] = []
     execution_receipts: list[ExecutionReceipt] = []
     receipt: BookBLiveMorningReceipt
@@ -1842,6 +1854,8 @@ def run_book_b_live_morning(
             snapshot_cache = None
 
     def observe_submission(plan: TradePlan, observed: ExecutionReceipt) -> None:
+        if on_order_progress:
+            on_order_progress(execution_receipts)
         if plan.plan_id in submission_observations or not _mapped_batch_order(plan, observed):
             return
         clock = now().astimezone(ZoneInfo("Asia/Shanghai"))
@@ -1925,11 +1939,14 @@ def run_book_b_live_morning(
                 if str(environment_receipt.get("environment") or "").lower() != "live":
                     raise ValueError("LIVE_ENVIRONMENT_NOT_PROVEN")
             if config.policy_root is not None:
+                deferred_sells = deferred_prior_day_sell_ids(config.state_dir, trade_date=config.trade_date)
                 if not config.resume_plan_id:
                     open_reconciliations = reconcile_open_book_b_plans(
                         config.state_dir, trade_date=config.trade_date, execute=execute_plan, now=now(),
+                        defer_prior_day_sells=True,
                     )
-                if _uncertain_execution_plan_ids(config.state_dir, trade_date=config.trade_date, asof=now()):
+                if _uncertain_execution_plan_ids(config.state_dir, trade_date=config.trade_date, asof=now(),
+                        defer_prior_day_sells=True):
                     raise ValueError("LIVE_BOOK_B_OPEN_EXECUTION_RECONCILE_REQUIRED")
             allocation: BookBAllocationFacts | None = None
             enter("freeze_wait")
@@ -1940,6 +1957,8 @@ def run_book_b_live_morning(
             )
             dated_freeze_receipt = _assert_dated_freeze(config, dated_freeze_receipt)
             frozen_rows = _read_completed_freeze(config, dated_freeze_receipt)
+            if on_check:
+                on_check("original_bundle", "passed", {**dated_freeze_receipt, "validated_row_count": len(frozen_rows)})
             if config.resume_plan_id:
                 frozen_rows = [row for row in frozen_rows
                                if f"book-b:{config.trade_date}:{row.get('code')}:BUY" == config.resume_plan_id]
@@ -1957,7 +1976,8 @@ def run_book_b_live_morning(
                 batch_fence.enter_context(account_writer_lock(
                     config.state_dir / "account_writer_locks", config.logical_account_id,
                 ))
-                if config.policy_root is not None and _uncertain_execution_plan_ids(config.state_dir, trade_date=config.trade_date, asof=now()):
+                if config.policy_root is not None and _uncertain_execution_plan_ids(config.state_dir, trade_date=config.trade_date, asof=now(),
+                        defer_prior_day_sells=True):
                     raise ValueError("LIVE_BOOK_B_OPEN_EXECUTION_RECONCILE_REQUIRED")
                 review_candidates = [
                     row for row in frozen_rows
@@ -1980,6 +2000,9 @@ def run_book_b_live_morning(
                         allocation = _load_allocation(config, allocation_payload)
                         _write_json_atomic(config.allocation_facts_path, allocation_payload)
                         review_risk = support()[1]
+                        if on_check:
+                            on_check("account_risk", "blocked" if review_risk.deploy_factor <= 0 else "passed", {"allocation_capsule_sha256": allocation_payload["allocation_capsule_sha256"],
+                                "account_risk": asdict(review_risk)})
                         current = now().astimezone(ZoneInfo("Asia/Shanghai"))
                         review_requested_at = current
                         if (current.hour, current.minute) < (11, 30):
@@ -2015,7 +2038,14 @@ def run_book_b_live_morning(
                                 if current.date().isoformat() == config.trade_date else 0.0,
                         }
                         enter("review")
-                        review_receipt = review_rendezvous(request)
+                        # KOL cannot increase a hard account-risk cap. Finish
+                        # the deterministic no-buy without spending its window
+                        # on a supporting model wait.
+                        review_receipt = (review_rendezvous(request) if review_risk.deploy_factor > 0
+                            else {"status": "deferred", "reason": "ACCOUNT_RISK_BLOCKS_NEW_BUY",
+                                  "request_sha256": digest(request), "supporting_health": "degraded"})
+                        if on_check and review_risk.deploy_factor <= 0:
+                            on_check("kol_decision", "not_applicable", {"reason": "ACCOUNT_RISK_BLOCKS_NEW_BUY"})
                         if not isinstance(review_receipt, dict):
                             raise ValueError("LIVE_REVIEW_RENDEZVOUS_RECEIPT_INVALID")
                         if now() >= deadline:
@@ -2118,7 +2148,14 @@ def run_book_b_live_morning(
                         receipts=execution_receipts, wait=wait_for_reconcile,
                         on_observation=observe_submission,
                         submission_scope=reserved_submission_scope if submission_scope else None,
+                        post_submit_reconcile_rounds=0 if await_order_results else 3,
                     )
+                    if await_order_results and execution_receipts:
+                        # Reservations/claims remain durable; no APP or account
+                        # batch lease is held while resting orders wait.
+                        batch_fence.close()
+                        enter("awaiting_fill")
+                        await_order_results(execution_plans, execution_receipts)
                     stage_times["batch_observed"] = now().isoformat()
                     status, reason = _rollup(execution_receipts)
                     if not execution_receipts:
@@ -2178,6 +2215,7 @@ def run_book_b_live_morning(
             environment_restoration=environment_restoration,
         )
     receipt = replace(receipt, policy_consumptions=tuple(policy_consumptions),
+                      deferred_prior_day_sell_plan_ids=deferred_sells,
                       open_plan_reconciliations=open_reconciliations or receipt.open_plan_reconciliations,
                       review_rendezvous=review_receipt,
                       market_guard_refreshes=tuple(market_guard_refreshes),

@@ -11,6 +11,7 @@ docs/OPERATING_CONTRACT.md §3-4.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -19,9 +20,23 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from xiaocao.live import status as status_mod  # noqa: E402
-from xiaocao.live.notify import notify  # noqa: E402
+from xiaocao.live.incident_delivery import enqueue_notice, deliver_pending  # noqa: E402
 
 LIVE_DIR = ROOT / "output" / "live"
+
+
+def push_digest(digest: dict) -> dict:
+    """Deliver identical dated text once through the shared durable send claim."""
+    title = f"小草盘后 {digest['market_date']}"
+    body = status_mod.format_digest_body(digest)
+    identifier = hashlib.sha256(
+        f"paper-eod-status\0{digest['market_date']}\0{title}\0{body}".encode("utf-8")
+    ).hexdigest()
+    outbox = LIVE_DIR / "paper_eod_status_notices.jsonl"
+    enqueue_notice(outbox, identifier=identifier, title=title, body=body)
+    results = deliver_pending(outbox, incident_ids={identifier})
+    return next((row for row in results if row["incident_id"] == identifier),
+                {"incident_id": identifier, "delivery": "already_delivered"})
 
 
 def main() -> None:
@@ -39,16 +54,15 @@ def main() -> None:
         print(status_mod.format_digest(digest))
 
     if a.push_wecom or a.push_feishu:
-        text = status_mod.format_digest_body(digest)
-        results = notify(f"小草盘后 {digest['market_date']}", text)
-        if results:
-            print(f"[push] {results}", file=sys.stderr)
-        else:
-            print(
-                "[push] no channel configured "
-                "(set XIAOCAO_WECOM_RELAY_URL/TOKEN/USER_ID)",
-                file=sys.stderr,
-            )
+        try:
+            results = push_digest(digest)
+        except (OSError, ValueError) as exc:
+            # A failed claim must never fall back to an unclaimed transport call.
+            results = {"delivery": "blocked", "reason": type(exc).__name__}
+        degraded = results["delivery"] not in {"delivered", "already_delivered"}
+        prefix = "supporting-layer degraded: " if degraded else ""
+        print(f"[push] {prefix}{results}", file=sys.stderr)
+
 
 
 if __name__ == "__main__":

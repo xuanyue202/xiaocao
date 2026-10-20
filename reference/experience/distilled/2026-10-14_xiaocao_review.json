@@ -1,0 +1,572 @@
+{
+  "schema_version": 1,
+  "authority": 0,
+  "knowledge_status": "reusable_knowledge",
+  "date": "2026-10-14",
+  "kind": "盘后复盘与次日盘中方法说明",
+  "author": "小草",
+  "source": "小草直播",
+  "summary": "在弱势、空仓环境里，小草把盘中下跌超跌低吸放在高波动紫薇模式之前：低吸早盘达到100分已可观察，盘中起爆则更偏好1000分；入场应跟随高分实际出现的时刻，而不是机械固定在9:31。10月14日的临时紫薇测试实际使用小涨幅5%以下、1000分以上和9:42后数据，实际未设趋势抱团，作者只是建议最好加入趋势抱团。10月14日监控断档与10月13日“十几个票只有一个亏损”的口述是两件事，后者没有10月13日完整模式池验证。另有一条独立的可转债风险原则：T+0反复止损会放大情绪化亏损，应以生存和稳定节奏优先。",
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_netdisk_enrichment/artifacts/kol-netdisk-dceac1070af02379/20261014 大师班专场(晚17：30开播)-compressed.txt",
+      "sha256": "51fc4684b61a7001da2e308162d0545f989406e51d9df794c3d137f3353f25e4",
+      "size": 26059
+    }
+  ],
+  "posture": {
+    "regime": "来源明确把当日定义为空仓环境，倾向不参与；若仍参与，则要求更谨慎。",
+    "dominant_style": "若仍参与，作者优先早盘下跌超跌低吸；紫薇被定义为好行情的爆发模式，盘中起爆则是作者本人不偏好的另一模式。",
+    "risk": "高波动模式、越晚出现的信号、10月14日监控断档、10月13日口述胜率缺少完整样本，以及可转债T+0反复交易。",
+    "style_ranking": [
+      "下跌超跌盘中低吸",
+      "倒接力，来源未指定仓位",
+      "盘中起爆：作者本人不偏好；若研究，来源称最好1000分，弱市仍展示过个别案例",
+      "紫薇模式：来源称这是行情好时的爆发性模式，空仓环境下建议回避"
+    ]
+  },
+  "regime_call": {
+    "call": "空仓环境先收缩风险；若仍参与则优先早盘超跌低吸。紫薇的好行情条件与盘中起爆的1000分偏好分别判断。",
+    "horizon": "短线交易日内及相邻交易日",
+    "what_would_falsify": [
+      "市场广度、指数和强势股承接持续修复，使高波动模式在完整样本中同时改善胜率与回撤",
+      "完整、无缺失的同类弱市样本显示紫薇或起爆的风险调整后收益稳定优于超跌低吸"
+    ]
+  },
+  "directions": [
+    {
+      "name": "下跌超跌盘中低吸",
+      "stance": "空仓环境中若仍参与，作者优先研究；早盘100分可作为候选触发。",
+      "conditions": [
+        "市场仍弱且参与意愿未完全归零",
+        "信号在早盘实际达到阈值",
+        "以完整候选池和可执行成交重新验证"
+      ]
+    },
+    {
+      "name": "紫薇模式",
+      "stance": "作者称这是行情好时的爆发性模式；空仓环境下波动太大，建议回避。",
+      "conditions": [
+        "市场环境从空仓状态改善",
+        "能承受高波动",
+        "完整样本验证左尾风险"
+      ]
+    },
+    {
+      "name": "盘中起爆",
+      "stance": "作者本人不偏好，但称起爆最好达到1000分；同场弱市仍展示过个别起爆盈利案例，不能把紫薇的好行情条件直接套用。",
+      "conditions": [
+        "模式分接近1000分",
+        "信号出现较早",
+        "用完整原始模式分、候选池和可成交记录验证"
+      ]
+    },
+    {
+      "name": "紫薇临时测试配置",
+      "stance": "10月14日临时测试实际筛选为小涨幅5%以下、1000分以上，且只看得到9:42后数据；当时没有设置趋势抱团，作者另行建议最好设置趋势抱团。",
+      "conditions": [
+        "仅作为不完整内测记录",
+        "实际配置与建议配置分开",
+        "取得全时段候选池、原始模式分与可成交记录后再验证"
+      ]
+    }
+  ],
+  "stocks": [
+    {
+      "name": "凡拓数创",
+      "code": "301313.XSHE",
+      "role": "下跌超跌低吸的当日案例",
+      "boundary": "分钟线支持早盘由跌转涨，但不验证模式分、老师买点或实得七个多点。"
+    },
+    {
+      "name": "满坤科技",
+      "code": "301132.XSHE",
+      "role": "紫薇高分案例",
+      "boundary": "当日走强不能推翻弱市回避高波动模式的总建议。"
+    },
+    {
+      "name": "引力传媒",
+      "code": "603598.XSHG",
+      "role": "9:42后高分案例",
+      "boundary": "属于不完整监控窗口中的选择性案例，不能推导总体胜率。"
+    },
+    {
+      "name": "安泰集团",
+      "code": "600408.XSHG",
+      "role": "9:42后高分案例",
+      "boundary": "属于不完整监控窗口中的选择性案例，不能推导总体胜率。"
+    },
+    {
+      "name": "果麦文化",
+      "code": "301052.XSHE",
+      "role": "9:42后高分案例",
+      "boundary": "属于不完整监控窗口中的选择性案例，不能推导总体胜率。"
+    },
+    {
+      "name": "海星股份、金种子酒、澳弘电子",
+      "role": "亏损、炸板或模式差异的风险案例",
+      "boundary": "用于复盘风险，不构成新的买入样本。"
+    }
+  ],
+  "method_principles": [
+    "先判断市场状态，再分别选模式：空仓环境若仍参与优先超跌低吸；紫薇受好行情条件约束，盘中起爆另看作者偏好与更高分数门槛。",
+    "用信号实际达到阈值的时刻决策，不把9:31等固定钟点当作因果条件。",
+    "阈值应按模式区分：低吸达到100分已具研究意义，起爆更偏好1000分。",
+    "同等分数下越早通常越有交易价值；越靠后，兑现空间和承接不确定性越大。",
+    "数据缺口必须进入结论：缺少9:42前或午后样本时，不能用可见赢家估算全日胜率。",
+    "记录临时测试时，必须分开实际启用条件与作者建议：本场实际为5%以下、1000分以上且未设趋势抱团，建议加入趋势抱团不能倒写成当时已启用。"
+  ],
+  "exit_lessons": [
+    "弱市参与后应缩短持有和容错时间；来源明确提出行情不好时早点卖。",
+    "澳弘电子的炸板案例说明，个股相对强势若没有板块和市场环境配合，卖出并无问题。",
+    "可转债T+0环境容易诱发连续止损和追单，风险控制要先于追求单日高收益。"
+  ],
+  "decision_trace": [
+    {
+      "observation": "来源明确称当日为空仓环境，且紫薇模式波动大。",
+      "inference": "空仓环境中即使有个别高分赢家，紫薇的波动和回撤仍可能不可承受；盘中起爆须按其独立分数门槛判断。",
+      "action": "若仍参与，优先早盘下跌超跌低吸；紫薇和盘中起爆不作同一条件处理。"
+    },
+    {
+      "observation": "来源称凡拓数创约9:32:30至9:32:45达到100分并快速修复。",
+      "inference": "有效信息来自分数何时出现，而不是预先固定的9:31。",
+      "action": "等待模式分实际越过阈值，再评估入场；分钟价格不能替代模式分证据。"
+    },
+    {
+      "observation": "10月14日监控多次死机，9:42前和午后数据不完整；“十几个票只有一个亏损”明确是10月13日口述。",
+      "inference": "10月14日断档限制当日案例覆盖，10月13日胜率口述则缺少该日完整模式池；不能合并，也不能用10月14日行情验证10月13日胜率。",
+      "action": "按日期分别记录缺口，把个股结果降为案例证据，10月13日胜率留待同日完整候选池检验。"
+    },
+    {
+      "observation": "10月14日临时测试实际采用5%以下、1000分以上和9:42后数据，没有设置趋势抱团；作者建议最好加入趋势抱团。",
+      "inference": "临时、缺时段的配置只能形成研究线索，建议条件不能冒充已执行条件。",
+      "action": "冻结实际配置与建议配置两个字段，用完整时段和含成本样本分别验证。"
+    }
+  ],
+  "judgment_heuristics": [
+    "市场状态优先于单个漂亮案例。",
+    "模式、阈值、时间窗口必须一起定义，不能只看分数。",
+    "缺失样本先限制结论，再谈收益。",
+    "高波动工具先问能否活下来，再问能赚多少。",
+    "临时测试的实际配置与建议配置必须分栏记录，不能把“最好设置”写成“已经设置”。"
+  ],
+  "hypotheses": [
+    {
+      "candidate_local_key": "mode-specific-score-thresholds",
+      "prior_relationship": "refines:XH-223_by_mode_specific_thresholds",
+      "claim": "下跌超跌低吸达到100分已具候选价值，而盘中起爆需要更接近1000分才有足够的风险补偿。",
+      "implied_rule": "不同模式使用不同分数门槛，不共享一个统一阈值。",
+      "falsifiable_test": "分别冻结低吸与起爆的完整原始模式分时标、分数首次到达秒点、当时全候选池、筛选配置和可成交价；比较100、500、1000分分层的含成本收益、成交率与回撤。分钟价格线不能替代模式分或候选池。",
+      "expected_effect": "提高阈值解释力并减少高波动模式的低质量信号。",
+      "category": "signal_threshold"
+    },
+    {
+      "candidate_local_key": "missing-data-winner-bias",
+      "claim": "监控缺失会使复盘更容易只看到幸存赢家，从而高估模式胜率；不同日期的口述与断档必须分别验证。",
+      "implied_rule": "没有同一日期的完整候选池、原始模式分时标和缺失区间标记时，不发布该日模式胜率。",
+      "falsifiable_test": "分别恢复10月13日完整候选池以核验“十几个票只有一个亏损”，并恢复10月14日断档区间以评估当日选择性偏差；两日分别计算含成本胜率、回撤和成交率。",
+      "expected_effect": "减少由选择性样本造成的错误推广。",
+      "category": "data_quality"
+    },
+    {
+      "candidate_local_key": "t0-loss-chasing-risk",
+      "claim": "可转债T+0会放大连续止损和追单行为，使单日尾部亏损显著增大。",
+      "implied_rule": "未建立严格次数、损失和停手机制前，不把T+0高周转作为家庭交易工具。",
+      "falsifiable_test": "按日内交易次数分组可转债账户或仿真记录，检验高周转组的尾部亏损和亏损后加速交易概率。",
+      "expected_effect": "压低情绪化重复交易造成的极端损失。",
+      "category": "behavioral_risk"
+    }
+  ],
+  "prior_assessments": [
+    {
+      "prior_hypothesis_id": "XH-134",
+      "assessment": "partial_support",
+      "prior_claim": "保留趋势抱团与小涨幅限制时，早盘9时40分前更高的紫薇评分可能有增量解释力，但600分和100分样本的口算收益尚未证明可成交优势。",
+      "supported_part": "本场再次强调高分实际出现时点比固定9:31更重要，也明确个例收益不能替代完整样本。",
+      "unsupported_parts": [
+        "趋势抱团与小涨幅限制",
+        "600分与100分的紫薇分档",
+        "可成交优势"
+      ],
+      "current_source_role": "部分支持评分和时点研究，不是原claim整句复现。",
+      "ingest_status": "existing_prior_unchanged",
+      "no_reingest": true
+    },
+    {
+      "prior_hypothesis_id": "XH-138",
+      "assessment": "not_addressed",
+      "prior_claim": "涨幅区间筛选会使边界附近股票频繁进出排名，秒级名单变化本身不代表评分或选股质量发生了同等变化。",
+      "unsupported_parts": [
+        "本场没有解释名单变化来自涨幅边界穿越还是分数变化"
+      ],
+      "current_source_role": "本场只谈首次到分时点，不能补成排名边界机制证据。",
+      "ingest_status": "existing_prior_unchanged",
+      "no_reingest": true
+    },
+    {
+      "prior_hypothesis_id": "XH-154",
+      "assessment": "partial_support",
+      "prior_claim": "非退潮期使用高弹性盘中起爆、弱市使用下跌或超跌低吸，比固定使用单一模式有更好的风险调整后收益。",
+      "supported_part": "本场明确弱市优先下跌超跌低吸并回避高波动紫薇模式。",
+      "unsupported_parts": [
+        "非退潮期使用高弹性起爆",
+        "状态切换带来更好风险调整后收益"
+      ],
+      "current_source_role": "只支持弱市分支，不是整句复现。",
+      "ingest_status": "existing_prior_unchanged",
+      "no_reingest": true
+    },
+    {
+      "prior_hypothesis_id": "XH-181",
+      "assessment": "partial_support",
+      "prior_claim": "本场盘中候选在9:30:20、9:30:45、9:31和9:33等观测点快速变化，回看结果还可能不同；精确有效时点尚未确定。",
+      "supported_part": "当前来源同样反对固定9:31，并把首次到分秒点作为应记录的连续变量。",
+      "unsupported_parts": [
+        "9:30:20、9:30:45等旧场次具体观察点",
+        "精确有效时点已获得统计确认"
+      ],
+      "current_source_role": "方法方向相同，但本场9:32:30至9:32:45只是一例，仍缺原始模式分时标和完整候选池。",
+      "ingest_status": "existing_prior_unchanged",
+      "no_reingest": true
+    },
+    {
+      "prior_hypothesis_id": "XH-206",
+      "assessment": "not_addressed",
+      "prior_claim": "盘中下跌超跌起爆候选在涨幅约6%以下，可能比已经涨到6%至7%的候选有更低的追高风险。",
+      "unsupported_parts": [
+        "本场没有给出约6%的起爆涨幅边界"
+      ],
+      "current_source_role": "本场1000分起爆阈值不能替代涨幅边界研究。",
+      "ingest_status": "existing_prior_unchanged",
+      "no_reingest": true
+    },
+    {
+      "prior_hypothesis_id": "XH-207",
+      "assessment": "not_addressed",
+      "prior_claim": "盘中下跌超跌低吸候选在排名出现后仍下跌时，等待价格拐头再买，可能比立即接入有更低的入场价格和不利波动。",
+      "unsupported_parts": [
+        "本场没有提出等待价格拐头的可复现定义"
+      ],
+      "current_source_role": "100分触发与等待拐头是不同条件，不强行合并。",
+      "ingest_status": "existing_prior_unchanged",
+      "no_reingest": true
+    },
+    {
+      "prior_hypothesis_id": "XH-221",
+      "assessment": "partial_support",
+      "prior_claim": "紫薇高位趋势模式按作者规则本应躲开退潮；但作者自述七至九月曾由少数爆发收益对冲过程退潮，同时承认退潮中继续运作仍会亏，爆发能否稳定覆盖左尾需要验证。",
+      "supported_part": "本场在弱势空仓环境中再次建议回避紫薇，并强调其波动很大。",
+      "unsupported_parts": [
+        "少数爆发收益能否覆盖左尾",
+        "七至九月历史贡献"
+      ],
+      "current_source_role": "支持退潮回避与左尾担忧，不是历史收益claim复现。",
+      "ingest_status": "existing_prior_unchanged",
+      "no_reingest": true
+    },
+    {
+      "prior_hypothesis_id": "XH-223",
+      "assessment": "partial_support",
+      "prior_claim": "在短线评分稳定且大于零的候选中，高分、较早出现或越晚时点采用更高评分要求，可能带来可重复的样本外增量。",
+      "supported_part": "本场同时谈到高分、越早越好和低吸100分／起爆1000分的模式差异。",
+      "unsupported_parts": [
+        "评分稳定且大于零的广义资格",
+        "样本外增量"
+      ],
+      "current_source_role": "为模式特定阈值提供细化线索，不是原claim完整复现。",
+      "ingest_status": "existing_prior_unchanged",
+      "no_reingest": true
+    },
+    {
+      "prior_hypothesis_id": "XH-235",
+      "assessment": "partial_support",
+      "prior_claim": "盘中高分信号越早出现，短线可用性越高；9:35后的同类信号价值下降。",
+      "supported_part": "本场称越往后信号越不好，并把下跌超跌低吸的观察窗口收在9:35前。",
+      "unsupported_parts": [
+        "所有同类高分模式统一使用9:35分界",
+        "短线可用性已被样本外证实"
+      ],
+      "current_source_role": "对低吸分支形成部分支持，不能把模式特定窗口冒充整句复现。",
+      "ingest_status": "existing_prior_unchanged",
+      "no_reingest": true
+    }
+  ],
+  "timing_notes": [
+    "来源对次日的精确带盘窗口截至9:35；该时点性安排在本次评估时已过期，只保留为方法样本。",
+    "盘中低吸的一般研究窗口被描述为9:35前；更宽泛的监控提法曾提到9:45前，最终次日计划仍以9:35为准。",
+    "绑定行情对10月15日仅截至11:30；交付时已过15:00，不把上午行情伪装为当日收盘事实。",
+    "尾段“明天修复”是对10月15日的无条件方向预测，语音简短且无触发条件；现已过期，不提升为知识规则或当前信号。"
+  ],
+  "typo_corrections": [
+    {
+      "surface": "团购速算、房拓初创、反作图上等",
+      "normalized": "凡拓数创",
+      "confidence": "high",
+      "basis": "证券目录与连续语境共同支持。"
+    },
+    {
+      "surface": "奥红、二红、包红、澳红",
+      "normalized": "澳弘电子",
+      "confidence": "medium",
+      "basis": "证券目录与炸板语境支持，但语音形态多次变化。"
+    },
+    {
+      "surface": "华驰股份",
+      "normalized": "华瓷股份",
+      "confidence": "medium",
+      "basis": "证券目录中存在华瓷股份且当日收盘涨停；仍不能只凭目录消除全部语音歧义。"
+    },
+    {
+      "surface": "阴历、宾利特",
+      "normalized": "英力特",
+      "confidence": "medium",
+      "basis": "证券目录和同一段行情描述支持。"
+    },
+    {
+      "surface": "瓶子信息、频质信息",
+      "normalized": "品茗科技",
+      "confidence": "low",
+      "basis": "目录候选和后文起爆案例可对应，但语音不足以唯一确认。"
+    }
+  ],
+  "strategy_hit_audit": {
+    "status": "no_verified_teacher_local_overlap",
+    "as_of": "2026-10-15T05:00:03Z",
+    "method": "逐一分开老师点名资产、老师所述角色、证券名称映射、09:26本地冻结信号快照与本地推荐表。not_emitted只表示未出现在已绑定的09:26本地快照，不代表老师完整候选池、全日所有本地信号或券商成交。",
+    "teacher_named_assets": [
+      {
+        "surface_form": "吸引人、信誉人",
+        "possible_identity": "未唯一确定的科创板首个低吸候选",
+        "teacher_role": "来源称第一名失败且多数人不能买。",
+        "classification": "no_evidence",
+        "reason": "没有代码、唯一名称或画面，不能映射到本地快照。"
+      },
+      {
+        "surface_form": "凡拓数创及多种近音",
+        "possible_identity": "凡拓数创（301313.XSHE），高置信映射",
+        "teacher_role": "第二个下跌超跌低吸案例，来源称约9:32:30至9:32:45达到100分并有七个多点空间。",
+        "classification": "not_emitted",
+        "reason": "301313不在已绑定的09:26本地17行冻结信号快照和当日冻结推荐执行候选中；这不判断老师池、午后本地信号或真实成交。"
+      },
+      {
+        "surface_form": "海星股份",
+        "possible_identity": "海星股份（603115.XSHG）",
+        "teacher_role": "倒接力第一名，来源仅笼统评价后续小亏小赚。",
+        "classification": "not_emitted",
+        "reason": "603115不在已绑定的09:26本地冻结信号快照；来源没有可对应的本地模式回执。"
+      },
+      {
+        "surface_form": "金种子酒",
+        "possible_identity": "金种子酒（600199.XSHG）",
+        "teacher_role": "竞价第二名或热点的小亏案例。",
+        "classification": "not_emitted",
+        "reason": "600199不在已绑定的09:26本地冻结信号快照；老师所述买点与实际收益未核验。"
+      },
+      {
+        "surface_form": "奥红、二红、包红、澳红",
+        "possible_identity": "澳弘电子（605058.XSHG），中等置信映射",
+        "teacher_role": "炸板后可卖出的风险案例。",
+        "classification": "not_emitted",
+        "reason": "605058不在已绑定的09:26本地冻结信号快照；名称仍保留语音歧义。"
+      },
+      {
+        "surface_form": "银之杰",
+        "possible_identity": "银之杰（300085.XSHE）",
+        "teacher_role": "用于对比澳弘电子所处环境的历史类比。",
+        "classification": "not_emitted",
+        "reason": "300085不在已绑定的09:26本地冻结信号快照；它不是本场新买入建议。"
+      },
+      {
+        "surface_form": "醋化还是什么",
+        "possible_identity": "醋化股份（603968.XSHG），中等置信映射",
+        "teacher_role": "三连板的紫薇持仓回忆，带明显名称犹疑。",
+        "classification": "not_emitted",
+        "reason": "603968不在已绑定的09:26本地冻结信号快照；来源角色为回忆，不是本场策略命中。"
+      },
+      {
+        "surface_form": "满坤科技、蛮困、万坤",
+        "possible_identity": "满坤科技（301132.XSHE），高置信映射",
+        "teacher_role": "紫薇高分并走强的案例。",
+        "classification": "not_emitted",
+        "reason": "301132不在已绑定的09:26本地冻结信号快照；分钟线不验证老师分数或可成交收益。"
+      },
+      {
+        "surface_form": "英力特、阴历、宾利特",
+        "possible_identity": "英力特（000635.XSHE），中等置信映射",
+        "teacher_role": "约170分但一度小亏、没有明显上涨的对照案例。",
+        "classification": "not_emitted",
+        "reason": "000635不在已绑定的09:26本地冻结信号快照；模式分未核验。"
+      },
+      {
+        "surface_form": "华驰股份",
+        "possible_identity": "华瓷股份（001216.XSHE），中等置信映射",
+        "teacher_role": "第二名涨停的高分案例。",
+        "classification": "not_emitted",
+        "reason": "001216不在已绑定的09:26本地冻结信号快照；分钟线支持收盘涨停，不验证点时排名。"
+      },
+      {
+        "surface_form": "引力传媒",
+        "possible_identity": "引力传媒（603598.XSHG）",
+        "teacher_role": "9:42后1000分并涨停的案例。",
+        "classification": "not_emitted",
+        "reason": "603598不在已绑定的09:26本地冻结信号快照；9:42后的老师监控与09:26本地快照时间不同，不能互相替代。"
+      },
+      {
+        "surface_form": "安泰集团",
+        "possible_identity": "安泰集团（600408.XSHG）",
+        "teacher_role": "9:42后高分并涨停的案例。",
+        "classification": "not_emitted",
+        "reason": "600408不在已绑定的09:26本地冻结信号快照；来源点时分数与成交未核验。"
+      },
+      {
+        "surface_form": "果麦文化",
+        "possible_identity": "果麦文化（301052.XSHE）",
+        "teacher_role": "10:42附近高分后大涨的案例。",
+        "classification": "not_emitted",
+        "reason": "301052不在已绑定的09:26本地冻结信号快照；分钟线支持价格上涨，不验证模式命中。"
+      },
+      {
+        "surface_form": "瓶子信息、频质信息",
+        "possible_identity": "可能为品茗科技（688109.XSHG），低置信映射",
+        "teacher_role": "下跌超跌盘中起爆的小盈利案例。",
+        "classification": "no_evidence",
+        "reason": "语音不足以唯一确定证券；即使采用目录候选，688109也不在09:26冻结快照，仍不能证明策略命中。"
+      },
+      {
+        "surface_form": "凌伟科技、宁伟科技",
+        "possible_identity": "凌玮科技（301373.XSHE），中等置信映射",
+        "teacher_role": "盘中起爆接近或达到100分的案例。",
+        "classification": "not_emitted",
+        "reason": "301373不在已绑定的09:26本地冻结信号快照；老师分数未由原始模式表验证。"
+      }
+    ],
+    "teacher_named_winners": [
+      {
+        "name": "凡拓数创",
+        "classification": "not_emitted",
+        "boundary": "价格反转获分钟线支持；分数、买点、七个多点收益和本地全日发射均未证明。"
+      },
+      {
+        "name": "满坤科技",
+        "classification": "not_emitted",
+        "boundary": "当日上涨获分钟线支持；点时模式分未证明。"
+      },
+      {
+        "name": "华瓷股份",
+        "classification": "not_emitted",
+        "boundary": "收盘涨停获分钟线支持；老师排名与映射仍有语音边界。"
+      },
+      {
+        "name": "引力传媒",
+        "classification": "not_emitted",
+        "boundary": "收盘涨停获分钟线支持；9:42后老师信号不能用09:26本地快照验证。"
+      },
+      {
+        "name": "安泰集团",
+        "classification": "not_emitted",
+        "boundary": "收盘涨停获分钟线支持；点时分数与成交未证明。"
+      },
+      {
+        "name": "果麦文化",
+        "classification": "not_emitted",
+        "boundary": "当日大涨获分钟线支持；选择性案例不能证明模式胜率。"
+      },
+      {
+        "name": "凌玮科技",
+        "classification": "not_emitted",
+        "boundary": "当日上涨获分钟线支持；名称和模式分只达中等置信。"
+      }
+    ],
+    "local_strategy_benchmark_hits": {
+      "matched_teacher_assets": [],
+      "teacher_asset_status": "no_verified_overlap",
+      "snapshot_scope": "2026-10-14 09:26:08，Book B冻结信号快照17行。",
+      "reason": "17行中没有上述已映射老师点名证券。唯一mode_exec_star=true且ACTIVE的是天顺风能N字低吸；其余16行为COLD。这个结论只覆盖该绑定快照。",
+      "local_only_reference": {
+        "code": "002531.XSHE",
+        "name": "天顺风能",
+        "mode": "N字低吸",
+        "mode_exec_star": true,
+        "mode_state": "ACTIVE",
+        "classification": "cohort_benchmark"
+      }
+    },
+    "direction_core_observations": [
+      {
+        "subject": "弱市中的低吸相对优先",
+        "classification": "no_evidence",
+        "status": "system_supported_context_only",
+        "observation": "老师的防守和低吸优先判断与10月15日上午指数继续走弱方向一致；一致性不构成具体证券或模式命中。"
+      },
+      {
+        "subject": "早盘高分的时间价值",
+        "classification": "no_evidence",
+        "status": "no_evidence",
+        "observation": "9:35前和100分是老师给出的观察框架；缺少原始逐秒模式分、首次到分记录、完整候选池和可成交回执。"
+      }
+    ],
+    "evidence": [
+      {
+        "role": "teacher_source",
+        "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_netdisk_enrichment/artifacts/kol-netdisk-dceac1070af02379/20261014 大师班专场(晚17：30开播)-compressed.txt",
+        "sha256": "51fc4684b61a7001da2e308162d0545f989406e51d9df794c3d137f3353f25e4",
+        "size": 26059
+      },
+      {
+        "role": "local_09_26_frozen_signal_snapshot",
+        "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_51fc4684/frozen_signals_20261014.json",
+        "sha256": "36390dcd72e43fe2eaa5684b082c3178ca6f85cec8d945914b41811840fd95d5",
+        "size": 4997
+      },
+      {
+        "role": "local_frozen_recommendation",
+        "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/recommend_2026-10-14.md",
+        "sha256": "dbc140224fc7e4eee62317436aa873c97755b6c5a390e7f98dc2e221ec99d70a",
+        "size": 9902
+      },
+      {
+        "role": "security_catalog",
+        "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_51fc4684/catalog_verified.json",
+        "sha256": "688becdd21cccb9eda3c79285349a780a6e00c7deccf598f4662fcbb00161fc0",
+        "size": 2359
+      }
+    ]
+  },
+  "action_summary": {
+    "posture_update": "candidate_only：可供小草姿态合成参考，但本草稿不改写全局姿态。",
+    "playbook_update": "candidate_only：保留空仓环境下低吸优先、紫薇的好行情条件、盘中起爆的独立高分门槛、动态到分时点、临时测试实际/建议配置分离与样本完整性线索。",
+    "hypothesis_update": "XH-134、XH-154、XH-181、XH-221、XH-223、XH-235仅获部分支持；XH-138、XH-206、XH-207本场未涉及关键机制。提出模式特定阈值、缺失数据赢家偏差与T+0行为风险三条authority=0候选，均已按单文件流程入库为XH-246、XH-247、XH-248，保持零权威，不得重复摄取。",
+    "audit_evidence": "完整绑定68个稳定segment，逐一核对15个具名或疑似证券对象、17行09:26冻结信号快照、当日推荐表和证券目录；未发现老师点名证券与该本地冻结快照重合。",
+    "instrumentation_todo": "为模式监控补齐按交易日分开的完整原始模式分时标、阈值首次到达秒点、实际筛选配置、建议配置、全候选池、缺失区间和可成交回执；分钟行情不得替代模式分。no_issue_created。",
+    "routing": [
+      "authority_0_only",
+      "prior_dedup_completed",
+      "research_backlog_candidate",
+      "ingested_once_do_not_reingest",
+      "no_parameter_change",
+      "no_book_write",
+      "no_global_posture_mutation"
+    ]
+  },
+  "ingest_outcome": {
+    "status": "ingested",
+    "hypothesis_ids": [
+      "XH-246",
+      "XH-247",
+      "XH-248"
+    ],
+    "ingest_count": 1,
+    "authority": 0,
+    "do_not_reingest": true,
+    "reason": "执行端依据单文件入库回执和当前候选账本记录的确定性结果；语义草稿保留原始字节。"
+  },
+  "processing_receipt": {
+    "accepted_knowledge_draft": {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_xiaocao_live/semantic_requests/kol-d0536424e769/.semantic_delegation/f96d6fc545376e0356a9525ac758ca67c00ae0baa67e339e311101eac5d0e935/context-b0f708d6c06a8d800bc4c1ec0f8ee97a91f3b91c9649cd4fc364390322dd59bc/knowledge_draft.json",
+      "sha256": "c80d498ee7181187b5960043225ae539e3de0e42473966ddd4c2e803ae110219"
+    },
+    "ingest_receipt": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261015_01a13ee3/knowledge_51fc4684_receipt.json",
+    "operational_finalization_only": true,
+    "investment_semantics_changed": false
+  }
+}
