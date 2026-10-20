@@ -945,15 +945,16 @@ class XiaocaoLiveCaptureDriver:
         capture_job_id: str,
     ) -> dict[str, Any] | None:
         service = self._service(identity)
-        return next(
-            (
-                event
-                for event in reversed(service.events())
-                if event.get("event") == "cloud_handoff_published"
-                and event.get("capture_job_id") == capture_job_id
-            ),
-            None,
-        )
+        capture = service.capture_store.latest(capture_job_id) or {}
+        media_sha = None
+        if capture.get("media_repair"):
+            if capture.get("status") != "downloaded":
+                return None
+            media_sha = service.validate_media(capture_job_id)["media_sha256"]
+        return next((event for event in reversed(service.events())
+            if event.get("event") == "cloud_handoff_published"
+            and event.get("capture_job_id") == capture_job_id
+            and (media_sha is None or event.get("media_sha256") == media_sha)), None)
 
     def validate_handoff_media(self, identity: str, capture_job_id: str, capsule: dict[str, Any]) -> None:
         """Revalidate local bytes before the first external mailbox effect."""
@@ -1529,6 +1530,31 @@ class XiaocaoWechatLiveSubscription:
             )
             return self._dispatch_handoff(manifest, item)
         return {"status": "no_update"}
+
+    def bind_media_revision(self, identity: str, capture_job_id: str, *,
+                            mailbox_ledger: Any) -> dict[str, Any]:
+        """Reopen only an explicitly prepared, unpublished same-item repair."""
+        manifest = self._load()
+        item = manifest["items"].get(identity)
+        if not isinstance(item, dict) or item.get("capture_job_id") != capture_job_id:
+            raise EnrichmentError("media revision subscription binding changed")
+        service = self.capture_driver._service(identity)
+        capture = service.capture_store.latest(capture_job_id) or {}
+        repair = capture.get("media_repair") or {}
+        state = mailbox_ledger.handoff_state(str(repair.get("previous_handoff_id") or "")) or {}
+        if (not repair.get("backend_receipt") or state.get("event") != "mailbox_send_rejected"
+            or item.get("status") == "completed"):
+            raise EnrichmentError("media revision subscription lacks unpublished repair proof")
+        if item.get("media_repair_revision") == repair.get("revision"):
+            return item
+        if item.get("status") != "handoff_ready":
+            raise EnrichmentError("media revision requires the original ready handoff")
+        old = self._load_handoff(item)
+        if old.get("handoff_id") != repair.get("previous_handoff_id") or old.get("media_sha256") != repair.get("previous_media_sha256"):
+            raise EnrichmentError("media revision changed the original handoff")
+        return self._transition(manifest, item, "playback_activated",
+            media_repair_revision=repair["revision"], previous_handoff_path=item["handoff_path"],
+            handoff_path=None)
 
     def continue_cloud_handoff(
         self,

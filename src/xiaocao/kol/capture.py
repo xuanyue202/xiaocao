@@ -241,6 +241,15 @@ def _safe_download_task(row: dict[str, Any]) -> dict[str, Any]:
             "compress_inline",
             "compressed_estimated_size",
             "hls_duration_sec",
+            "hls_finite",
+            "stream_diagnostic_code",
+            "checkpoint_basis",
+            "checkpoint_segments",
+            "checkpoint_integrity_verified",
+            "media_repair_revision",
+            "media_repair_previous_sha256",
+            "media_repair_previous_name",
+            "media_repair_task_id",
             "live_id",
             "media_type",
             "source",
@@ -530,6 +539,14 @@ class SnifferClient:
         if data.get("id") != task_id:
             raise SnifferError("sniffer task resume changed the original identity")
         return {"id": task_id}
+
+    def prepare_stream_revision(self, task_id: str, *, candidate_id: str, live_id: str,
+                                original_sha256: str) -> dict[str, Any]:
+        return dict(self._json(
+            "/api/task/repair-incomplete-stream", method="POST", timeout=35,
+            payload={"id": task_id, "candidate_id": candidate_id, "live_id": live_id,
+                     "original_sha256": original_sha256},
+        ).get("data") or {})
 
     def pause_task(self, task_id: str) -> dict[str, Any]:
         data = self._json("/api/task/pause", method="POST", payload={"id": task_id}).get("data") or {}

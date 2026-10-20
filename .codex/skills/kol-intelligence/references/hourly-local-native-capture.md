@@ -533,3 +533,48 @@ A visible current broadcast with only bound liveplay candidates returns
 不得下载。只有直播结束且完整回放生成后才执行下载。
 
 Verified first-party `/p/course/ecourse/preview/course_*` pages are non-live course previews. Return the observed URL with `page_state=unknown`; the driver retains them as `unsupported_resource` without arming, launching, or retrying. Do not invent a live ID.
+
+## Explicit unpublished media repair version and HLS checkpoint
+
+When a finite replay was falsely accepted but its first mailbox send was never
+performed, do not overwrite its file or cloud receipt. A new hash-bound upload
+requires direct user authorization for a same-item repair version. Preserve the
+subscription/capture/candidate/live and original download task, every old file,
+capsule and receipt. This does not authorize another native activation.
+
+The repository carries the additive backend sources and exact checked integration
+patches under `scripts/kol_backend_patches/`. Build a separate candidate with
+`scripts/kol_prepare_checkpoint_backend.py --backend-root <existing backend>
+--output <same-directory separate candidate>`. It refuses unknown source drift,
+tests the integration and never installs/starts. Use the existing fresh exact
+`install_sniffer_repair_after_cleanup` gate for deployment; no active download
+may be replaced.
+
+After fresh exact LiangHui `get_mailbox_message` returns `NOT_FOUND` for the old
+handoff, `media_revision.prepare_media_revision(..., repair_authorized=True,
+mailbox_ledger=..., not_found_readback=...)` quarantines the unreceipted attempt,
+claims one revision before its backend call, and reconciles the original task's
+paused new output. It preserves the old incomplete bytes and does not start a
+transfer. `subscription.bind_media_revision` binds that same subscription to the
+prepared revision; `resume_media_revision` starts only the original task once.
+An uncertain response must be reconciled from exact task labels, never repeated
+blindly. User pause still requires separate explicit resume authorization.
+
+The downloader commits complete source segments with hash/size proofs under a
+private bound cache. First repair of a legacy download must fetch segments that
+were never checkpointed; subsequent process restarts reuse verified segments.
+This resumes network transfer by segment, while compressed encoding restarts.
+Manifest/resource 401/403 is terminal for the whole checkpoint; changed binding,
+corrupt proofs and missing segments fail closed. Do not reissue auth/native entry
+or create a replacement task. For a stopped checkpoint task, use
+`resume_checkpoint_download` only after exact task/failure readback; its durable
+per-failure claim prohibits uncertain duplicate resumes. An auth-terminal cache
+requires same-item diagnosis, not repeated resume calls.
+
+Require full finite segment coverage and a fresh MP4 duration within two seconds
+before cache deletion. Continue in the retained PTY through revision-specific
+cleanup, new-hash Netdisk receipt, new immutable capsule and exact mailbox
+creation/readback. Old capsules/cleanup files remain readable; old hashes cannot
+be recovered into the repaired item's handoff. Before explicit cleanup verify
+current same-task binding and absence of other active downloads. No native input
+or original cloud upload/mailbox send is repeated to repair cleanup.
