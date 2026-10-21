@@ -197,6 +197,68 @@ def test_unrelated_application_binding_is_not_wechat_evidence():
     assert result["calls"] == []
 
 
+def atomic_row(kind, **fields):
+    return "KOL_ATOMIC_EVENT " + json.dumps({"schema_version": 1, "event": kind,
+        "stage": "B1", "at": "2026-10-14T15:27:40Z", **BINDING, **fields})
+
+
+def atomic_prefix():
+    return [atomic_row("observation_requested", stage="B0"),
+        atomic_row("observation_received", stage="B0", ax_sha256="a"*64, image_sha256="b"*64)]
+
+
+def atomic_success():
+    rows = atomic_prefix() * 2
+    for stage, kinds in [("B1", ["dispatch_requested", "dispatch_returned", "observation_requested", "observation_received"]),
+                         ("PAC", ["checkpoint_requested", "checkpoint_verified"]),
+                         ("B2", ["observation_requested", "observation_received", "dispatch_requested", "dispatch_returned", "observation_requested", "observation_received"])]:
+        for kind in kinds:
+            hashes = {"observation_received": {"ax_sha256": "a"*64, "image_sha256": "b"*64},
+                "dispatch_requested": {"target_sha256": "c"*64}, "checkpoint_verified": {"proof_sha256": "d"*64}}.get(kind, {})
+            rows.append(atomic_row(kind, stage=stage, **hashes))
+    return rows + [atomic_row("completed", stage="B2", status="brand_ready")]
+
+
+def test_atomic_subevents_keep_the_real_enclosing_call_and_hashes():
+    result = inspect(journal(
+        call("atomic", "// KOL_ACTION:OPEN_ALLOW_ATOMIC\nawait module.runAtomicCourseAllow({app:wechat});"),
+        output("atomic", "\n".join(atomic_success())),
+    ))
+    assert result["calls"][0]["kind"] == "native_atomic"
+    assert len(result["calls"][0]["atomic_events"]) == 17
+    assert result["calls"][0]["call_id"] == "atomic"
+    assert result["coverage"]["status"] == "selected_calls_recorded"
+
+
+def test_partial_atomic_tail_remains_incomplete_even_if_outer_tool_returned():
+    result = inspect(journal(
+        call("atomic", "// KOL_ACTION:OPEN_ALLOW_ATOMIC\nawait module.runAtomicCourseAllow({app:wechat});"),
+        output("atomic", atomic_row("dispatch_requested", target_sha256="a"*64)),
+    ))
+    assert result["coverage"]["status"] == "evidence_incomplete"
+    assert "incomplete_atomic_evidence" in result["coverage"]["limitations"]
+
+
+def test_atomic_security_readback_does_not_invent_a_trigger():
+    result = inspect(journal(
+        call("atomic", "// KOL_ACTION:OPEN_ALLOW_ATOMIC\nawait module.runAtomicCourseAllow({app:wechat});"),
+        output("atomic", "\n".join(atomic_prefix() + [atomic_row("state_rejected", stage="B0", reason="security_relogin"),
+            atomic_row("stopped", stage="B0", status="stopped", reason="security_relogin")])),
+    ))
+    assert result["findings"]["first_security_text_call_id"] == "atomic"
+    assert result["findings"]["root_trigger_proven"] is False
+
+
+@pytest.mark.parametrize("fields", [{"identity": "different"}, {"raw_text": "private"}])
+def test_rejects_rebound_or_unredacted_atomic_evidence(fields):
+    result = inspect(journal(
+        call("atomic", "// KOL_ACTION:OPEN_ALLOW_ATOMIC\nawait module.runAtomicCourseAllow({app:wechat});"),
+        output("atomic", atomic_row("completed", status="brand_ready", **fields)),
+    ))
+    assert result["calls"][0]["atomic_events"] == []
+    assert result["coverage"]["status"] == "evidence_incomplete"
+
+
 def test_hashes_images_and_sensitive_payloads_without_exporting_them():
     frame = b"private screen bytes"
     result_event = output("input", 'Window: "草料二维码"; personal chat text')
@@ -263,3 +325,66 @@ def test_export_preserves_snapshot_and_rejects_rebound_capture(tmp_path):
     assert third["pending_call_ids"] == []
     with pytest.raises(ValueError, match="binding"):
         export(capture="replacement")
+
+
+def test_atomic_empty_window_remains_first_abnormal_before_later_security():
+    result = inspect(journal(
+        call("atomic", "// KOL_ACTION:OPEN_ALLOW_ATOMIC\nawait module.runAtomicCourseAllow({app:wechat});"),
+        output("atomic", "\n".join(atomic_prefix() + [atomic_row("state_rejected", stage="B0", reason="empty_window_disabled_chat"),
+            atomic_row("stopped", stage="B0", status="stopped", reason="empty_window_disabled_chat")])),
+        call("security", "await wechat.getAXState();", at="2026-10-14T15:27:42Z"),
+        output("security", "为了你的账号安全，请重新登录", at="2026-10-14T15:27:43Z"),
+    ))
+    assert result["findings"]["first_abnormal_call_id"] == "atomic"
+    assert result["findings"]["first_security_text_call_id"] == "security"
+    assert result["findings"]["root_trigger_proven"] is False
+
+
+@pytest.mark.parametrize("pending_event", ["observation_requested", "dispatch_requested", "checkpoint_requested"])
+def test_atomic_terminal_record_does_not_hide_unreturned_step(pending_event):
+    result = inspect(journal(
+        call("atomic", "// KOL_ACTION:OPEN_ALLOW_ATOMIC\nawait module.runAtomicCourseAllow({app:wechat});"),
+        output("atomic", "\n".join([atomic_row(pending_event), atomic_row("stopped", status="stopped")])),
+    ))
+    assert result["coverage"]["status"] == "evidence_incomplete"
+
+
+@pytest.mark.parametrize("offset", [1, 2, 6, 14])
+def test_atomic_missing_prefix_is_not_complete(offset):
+    result = inspect(journal(
+        call("atomic", "// KOL_ACTION:OPEN_ALLOW_ATOMIC\nawait module.runAtomicCourseAllow({app:wechat});"),
+        output("atomic", "\n".join(atomic_success()[offset:])),
+    ))
+    assert result["coverage"]["status"] == "evidence_incomplete"
+
+
+def test_atomic_render_wait_and_concatenated_repl_blocks_keep_coverage():
+    rows = atomic_success()
+    rows[8:8] = [atomic_row("observation_requested", stage="B1"),
+        atomic_row("observation_received", stage="B1", ax_sha256="a"*64, image_sha256="b"*64)]
+    rows[-1:-1] = [atomic_row("observation_requested", stage="B2"),
+        atomic_row("observation_received", stage="B2", ax_sha256="a"*64, image_sha256="b"*64)]
+    result = inspect(journal(call("atomic", "// KOL_ACTION:OPEN_ALLOW_ATOMIC\nawait module.runAtomicCourseAllow({app:wechat});"),
+        output("atomic", "".join(rows))))
+    assert result["coverage"]["status"] == "selected_calls_recorded"
+    assert len(result["calls"][0]["atomic_events"]) == len(rows)
+
+
+@pytest.mark.parametrize("event_name", ["dispatch_returned", "dispatch_unknown"])
+def test_atomic_stopped_does_not_hide_input_without_readback(event_name):
+    rows = atomic_success()[:6]
+    if event_name == "dispatch_unknown":
+        rows[-1] = atomic_row(event_name, reported_error_code="timeoutReached")
+    result = inspect(journal(call("atomic", "// KOL_ACTION:OPEN_ALLOW_ATOMIC\nawait module.runAtomicCourseAllow({app:wechat});"),
+        output("atomic", "\n".join(rows + [atomic_row("stopped", status="stopped")]))))
+    assert result["coverage"]["status"] == "evidence_incomplete"
+
+
+def test_atomic_failed_post_allow_observation_and_recovery_are_recorded():
+    rows = atomic_success()
+    rows[15:15] = [atomic_row("observation_failed", stage="B2", reported_error_code="observation_error"),
+        atomic_row("observation_requested", stage="B2")]
+    result = inspect(journal(call("atomic", "// KOL_ACTION:OPEN_ALLOW_ATOMIC\nawait module.runAtomicCourseAllow({app:wechat});"),
+        output("atomic", "\n".join(rows))))
+    assert result["coverage"]["status"] == "selected_calls_recorded"
+    assert result["findings"]["first_tool_error_call_id"] == "atomic"

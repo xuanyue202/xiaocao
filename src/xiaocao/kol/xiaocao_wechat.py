@@ -1835,6 +1835,25 @@ class XiaocaoWechatLiveSubscription:
                     "on_explicit_policy_denial": "stop_denied_action_no_tool_bypass",
                 }
                 if reason != "captured_window_cleanup":
+                    request["native_atomic_policy"] = {
+                        "action": "open_course_then_allow",
+                        "preparer": "scripts/kol_prepare_native_atomic.py",
+                        "runtime": "scripts/kol_native_course_runtime.mjs",
+                        "surface": "single_cua_repl_call",
+                        "marker": "OPEN_ALLOW_ATOMIC",
+                        "max_b1_inputs": 1, "max_b2_inputs": 1,
+                        "claim_scope": "original_capture_and_provider_entry",
+                        "audit": "durable_hash_only_subevents_before_next_input",
+                        "media_acceptance": False,
+                    }
+                    request["action_trace_policy"]["atomic_exception"] = "reviewed_B1_B2_subevents_in_one_source_call"
+                    request["instructions"] += (
+                        "打开→允许使用native_atomic_policy的受审查脚本，在一个cua_repl调用内"
+                        "完成新鲜截图识别、B1、精确品牌读回、同capture PAC检查、B2和品牌读回。"
+                        "这两步改用单次真实源调用绑定的逐子步骤持久化哈希日志，不在中间返回模型"
+                        "准备命令或导出；宏返回后导出源调用。其他口令/同意/关闭步骤仍按原表。"
+                        "宏不签发入口、不创建任务、不接受媒体；未知或拒绝停止，不重复派发。"
+                    )
                     request["window_input_recovery_policy"] = {
                         "subscription_id": item["identity"],
                         "capture_job_id": item["capture_job_id"],

@@ -42,13 +42,121 @@ def _local_time(value: str) -> str:
     return _time(value).astimezone(_SHANGHAI).isoformat()
 
 
-def _output_signals(output: object, *, native_observation: bool) -> dict:
+def _atomic_events(text: str, *, binding: dict, requested_at: str, completed_at: str) -> tuple[list[dict], bool]:
+    """Attach real subevents to their enclosing tool call, never invented calls."""
+    rows = []
+    allowed = {"schema_version", "event", "stage", "at", "identity", "capture_job_id",
+               "ax_sha256", "image_sha256", "target_sha256", "proof_sha256", "reason",
+               "status", "elapsed_ms", "media_accepted", "reported_error_code"}
+    kinds = {"observation_requested", "observation_received", "observation_failed", "dispatch_requested",
+             "dispatch_returned", "dispatch_unknown", "checkpoint_requested",
+             "checkpoint_verified", "state_rejected", "completed", "stopped"}
+    reasons = {"security_relogin", "authentication_required", "consent_required", "empty_window_disabled_chat",
+               "wrong_native_app", "invalid_ocr_frame", "target_not_unique",
+               "target_recognition_uncertain", "invalid_target_geometry",
+               "bridge_not_current", "unexpected_existing_confirmation",
+               "confirmation_geometry_mismatch", "missing_current_frame",
+               "invalid_frame", "native_input_uncertain", "pac_checkpoint_failed",
+               "brand_opened_without_allow", "brand_not_observed", "execution_error", "target_not_ready",
+               "wrong_confirmation_brand", "render_not_ready", "native_bridge_policy_denied", "native_readback_unavailable"}
+    try:
+        # nodeRepl.write can concatenate blocks without line breaks.
+        for marker in re.finditer(r"KOL_ATOMIC_EVENT ", text):
+            row, _ = json.JSONDecoder().raw_decode(text[marker.end():].lstrip())
+            if (not isinstance(row, dict) or set(row) - allowed
+                or row.get("schema_version") != 1 or row.get("event") not in kinds
+                or row.get("stage") not in {"B0", "B1", "PAC", "B2"}
+                or any(row.get(k) != binding.get(k) for k in ("identity", "capture_job_id"))
+                or not _time(requested_at) <= _time(row["at"]) <= _time(completed_at)
+                or (rows and _time(row["at"]) < _time(rows[-1]["at"]))):
+                return [], False
+            for key, value in row.items():
+                if key.endswith("_sha256") and not re.fullmatch(r"[a-f0-9]{64}", str(value)):
+                    return [], False
+                if key in {"reason", "reported_error_code", "status"} and not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,63}", str(value)):
+                    return [], False
+            if (row.get("reason", "execution_error") not in reasons
+                or row.get("status", "stopped") not in {"stopped", "brand_ready"}
+                or row.get("reported_error_code", "unclassified_input_error") not in {
+                    "timeoutReached", "noWindowsAvailable", "windowNotFoundAtPosition", "unclassified_input_error",
+                    "policy_denied", "app_target_changed", "observation_error"}
+                or ("elapsed_ms" in row and (type(row["elapsed_ms"]) is not int or row["elapsed_ms"] < 0))
+                or row.get("media_accepted", False) is not False):
+                return [], False
+            rows.append(row)
+    except (ValueError, TypeError, KeyError):
+        return [], False
+    sequence = [("B0", "observation_requested"), ("B0", "observation_received"),
+                ("B0", "observation_requested"), ("B0", "observation_received"),
+                ("B1", "dispatch_requested"), ("B1", "dispatch_returned"),
+                ("B1", "observation_requested"), ("B1", "observation_received"),
+                ("PAC", "checkpoint_requested"), ("PAC", "checkpoint_verified"),
+                ("B2", "observation_requested"), ("B2", "observation_received"),
+                ("B2", "dispatch_requested"), ("B2", "dispatch_returned"),
+                ("B2", "observation_requested"), ("B2", "observation_received")]
+    position = 0
+    rejected = False
+    uncertain = False
+    pending = False
+    for index, row in enumerate(rows):
+        event = row["event"]
+        if event in {"completed", "stopped"}:
+            terminal = (index == len(rows) - 1 and position > 0 and not pending
+                and rows[index-1]["event"] not in {"dispatch_returned", "dispatch_unknown"})
+            complete = terminal and (event == "stopped" or
+                (position == len(sequence) and not rejected and not uncertain and row.get("status") == "brand_ready"))
+            return rows, complete
+        if rejected:
+            return rows, False
+        if event == "state_rejected":
+            if index == 0 or rows[index-1]["event"] != "observation_received" or row["stage"] != rows[index-1]["stage"]:
+                return rows, False
+            rejected = True
+            continue
+        if (event == "observation_requested" and index > 0 and rows[index-1]["event"] == "observation_received"
+            and rows[index-1]["stage"] == row["stage"] and not uncertain
+            and ((row["stage"] == "B1" and position < len(sequence) and sequence[position] == ("PAC", "checkpoint_requested"))
+                 or (row["stage"] == "B2" and position == len(sequence)))):
+            sequence[position:position] = [(row["stage"], "observation_requested"), (row["stage"], "observation_received")]
+        if position >= len(sequence):
+            return rows, False
+        expected_stage, expected_event = sequence[position]
+        if event == "observation_failed" and expected_event == "observation_received" and row["stage"] == expected_stage:
+            if not row.get("reported_error_code"):
+                return rows, False
+            sequence[position] = (expected_stage, "observation_failed")
+            if expected_stage == "B2" and row["reported_error_code"] != "policy_denied" and any(r["stage"] == "B2" and r["event"] == "dispatch_returned" for r in rows[:index]):
+                sequence[position+1:position+1] = [(expected_stage, "observation_requested"), (expected_stage, "observation_received")]
+            expected_event = "observation_failed"
+        if event == "dispatch_unknown" and expected_event == "dispatch_returned" and row["stage"] == expected_stage:
+            uncertain = True
+            # An uncertain input gets one passive readback, then must stop.
+            sequence = sequence[:position] + [(expected_stage, "dispatch_unknown"),
+                (expected_stage, "observation_requested"), (expected_stage, "observation_received")]
+            expected_event = "dispatch_unknown"
+        if (row["stage"], event) != (expected_stage, expected_event):
+            return rows, False
+        if event == "observation_received" and not all(row.get(k) for k in ("ax_sha256", "image_sha256")):
+            return rows, False
+        if event == "dispatch_requested" and not row.get("target_sha256"):
+            return rows, False
+        if event == "checkpoint_verified" and not row.get("proof_sha256"):
+            return rows, False
+        pending = event.endswith("_requested")
+        position += 1
+    complete = False
+    return rows, complete
+
+
+def _output_signals(output: object, *, native_observation: bool,
+                    atomic_context: dict | None = None) -> dict:
     blocks = output if isinstance(output, list) else []
     texts = [b.get("text", "") for b in blocks
              if isinstance(b, dict) and b.get("type") in {"input_text", "text"}]
     if isinstance(output, str):
         texts.append(output)
     text = "\n".join(texts)
+    atomic, atomic_complete = _atomic_events(text, **atomic_context) if atomic_context else ([], True)
     images = []
     for block in blocks:
         if not isinstance(block, dict) or block.get("type") != "input_image":
@@ -58,9 +166,11 @@ def _output_signals(output: object, *, native_observation: bool) -> dict:
             images.append(_sha(base64.b64decode(url.split(";base64,", 1)[1], validate=True)))
     # Readiness/checkpoint payloads include instructions and error-code schemas.
     # Retain their hashes, but they are not observations of the WeChat window.
-    security = native_observation and "为了你的账号安全，请重新登录" in text
-    abnormal = bool(native_observation and re.search(r'Window:\s*""', text) and
-                    re.search(r"\(disabled\).*聊天", text))
+    security = native_observation and ("为了你的账号安全，请重新登录" in text or
+        any(r.get("event") == "state_rejected" and r.get("reason") == "security_relogin" for r in atomic))
+    abnormal = bool(native_observation and ((re.search(r'Window:\s*""', text) and
+                    re.search(r"\(disabled\).*聊天", text)) or any(
+                    r.get("event") == "state_rejected" and r.get("reason") == "empty_window_disabled_chat" for r in atomic)))
     if security:
         state = "security_relogin"
     elif abnormal:
@@ -84,11 +194,14 @@ def _output_signals(output: object, *, native_observation: bool) -> dict:
             error_code = "cua_execution_timeout_kernel_reset"
         elif re.search(r"Computer Use server error[^\n]*:\s*timeoutReached\b", text):
             error_code = "timeoutReached"
+    if error_code is None:
+        error_code = next((r["reported_error_code"] for r in atomic if r.get("reported_error_code")), None)
     return {"state": state, "text_sha256": _sha(text.encode()),
             "reported_error_code": error_code,
             "image_sha256": images,
             "output_sha256": _sha(json.dumps(output, ensure_ascii=False,
-                                              sort_keys=True).encode())}
+                                              sort_keys=True).encode()),
+            **({"atomic_events": atomic, "atomic_evidence_complete": atomic_complete} if atomic_context else {})}
 
 
 def inspect_trace(
@@ -135,9 +248,11 @@ def inspect_trace(
             if not isinstance(code, str):
                 continue
             marker = _STEP.search(code)
+            atomic_call = bool(marker and marker.group(1) == "OPEN_ALLOW_ATOMIC" and
+                               re.search(r"\brunAtomicCourseAllow\s*\(", code))
             binding_call = bool(_WECHAT_BINDING.search(code))
             native = payload.get("namespace") == "mcp__cua_repl" and (
-                bool(_NATIVE.search(code)) or binding_call
+                bool(_NATIVE.search(code)) or binding_call or atomic_call
             )
             if not native and not marker:
                 continue
@@ -145,7 +260,8 @@ def inspect_trace(
                 raise ValueError("duplicate or missing selected call ID")
             calls[call_id] = {
                 "call_id": call_id, "step": marker.group(1) if marker else "LEGACY_NATIVE",
-                "kind": "native_input" if native and _INPUT.search(code)
+                "kind": "native_atomic" if native and atomic_call
+                        else "native_input" if native and _INPUT.search(code)
                         else "native_binding" if native and binding_call
                         else "native_observation" if native else "checkpoint",
                 "requested_at": _local_time(timestamp),
@@ -160,7 +276,11 @@ def inspect_trace(
             call.update({"completion": "output_recorded",
                          "completed_at": _local_time(timestamp),
                          **_output_signals(payload.get("output"),
-                                           native_observation=call["kind"] != "checkpoint")})
+                                           native_observation=call["kind"] != "checkpoint",
+                                           atomic_context={"binding": binding,
+                                               "requested_at": call["requested_at"],
+                                               "completed_at": _local_time(timestamp)}
+                                           if call["kind"] == "native_atomic" else None)})
     ordered = list(calls.values())
     observations = sorted((c for c in ordered if c.get("completed_at")),
                           key=lambda c: _time(c["completed_at"]))
@@ -181,6 +301,8 @@ def inspect_trace(
         limitations.append("incomplete_final_line")
     if pending:
         limitations.append("pending_tool_outputs")
+    if any(c.get("atomic_evidence_complete") is False for c in ordered):
+        limitations.append("incomplete_atomic_evidence")
     coverage = {
         "status": "evidence_incomplete" if limitations else "selected_calls_recorded",
         "source_last_event_at": last_event.astimezone(_SHANGHAI).isoformat() if last_event else None,
