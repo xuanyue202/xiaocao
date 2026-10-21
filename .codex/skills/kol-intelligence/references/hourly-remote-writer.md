@@ -226,6 +226,10 @@ retain the exact video/transcript hashes and fill its three `checks` with
 after checking the persisted transcript. Return `{"audit_path":"<absolute-json-path>"}`
 to the same stdin. The template starts with empty excerpts and false checks;
 it is not proof until reviewed. Do not use an `excerpts`/`quote` envelope.
+The audit request declares `response_field=audit_path`. A malformed or missing
+path is re-requested on the same stdin, up to three replies in total (including blank lines);
+EOF still ends the input wait. Correct the path without starting another runner.
+This path check never replaces the transcript/hash/excerpt validation.
 
 Keep stdin open. EOF persists `waiting_semantic_input`, preserving the original
 request, evidence SHA, and item claim. The next sweep reuses that exact
