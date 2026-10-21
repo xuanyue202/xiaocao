@@ -38,7 +38,7 @@ def _local_time(value: str) -> str:
     return _time(value).astimezone(_SHANGHAI).isoformat()
 
 
-def _output_signals(output: object) -> dict:
+def _output_signals(output: object, *, native_observation: bool) -> dict:
     blocks = output if isinstance(output, list) else []
     texts = [b.get("text", "") for b in blocks
              if isinstance(b, dict) and b.get("type") in {"input_text", "text"}]
@@ -52,22 +52,24 @@ def _output_signals(output: object) -> dict:
         url = block.get("image_url", "")
         if isinstance(url, str) and url.startswith("data:image/") and ";base64," in url:
             images.append(_sha(base64.b64decode(url.split(";base64,", 1)[1], validate=True)))
-    security = "为了你的账号安全，请重新登录" in text
-    abnormal = bool(re.search(r'Window:\s*""', text) and
+    # Readiness/checkpoint payloads include instructions and error-code schemas.
+    # Retain their hashes, but they are not observations of the WeChat window.
+    security = native_observation and "为了你的账号安全，请重新登录" in text
+    abnormal = bool(native_observation and re.search(r'Window:\s*""', text) and
                     re.search(r"\(disabled\).*聊天", text))
     if security:
         state = "security_relogin"
     elif abnormal:
         state = "empty_window_disabled_chat"
-    elif re.search(r'Window:\s*"草料二维码"', text):
+    elif native_observation and re.search(r'Window:\s*"草料二维码"', text):
         state = "bridge_observed"
-    elif re.search(r'Window:\s*"见势擒龙团"', text):
+    elif native_observation and re.search(r'Window:\s*"见势擒龙团"', text):
         state = "brand_window_observed"
     else:
         state = "unclassified"
     error_code = next((code for code in (
         "noWindowsAvailable", "windowNotFoundAtPosition", "AXError.notImplemented",
-    ) if code in text), None)
+    ) if native_observation and code in text), None)
     return {"state": state, "text_sha256": _sha(text.encode()),
             "reported_error_code": error_code,
             "image_sha256": images,
@@ -139,7 +141,8 @@ def inspect_trace(
                 raise ValueError("tool output predates dispatch request")
             call.update({"completion": "output_recorded",
                          "completed_at": _local_time(timestamp),
-                         **_output_signals(payload.get("output"))})
+                         **_output_signals(payload.get("output"),
+                                           native_observation=call["kind"] != "checkpoint")})
     ordered = list(calls.values())
     observations = sorted((c for c in ordered if c.get("completed_at")),
                           key=lambda c: _time(c["completed_at"]))
