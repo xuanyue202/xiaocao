@@ -9180,3 +9180,55 @@ def test_source_repair_observation_binds_exact_origin_and_evidence(tmp_path, cha
     projected = service._repair_originating_sweep(service.events(), source='subscription_video', progress=prior)
     assert projected['event_id'] == origin['event_id']
     assert projected['source_states'][0]['writer_progress']['item_identity'] == 'video-1'
+
+
+@pytest.mark.parametrize("bad_reply", [
+    '{"checks": [], "transcript_sha256": "untrusted"}',
+    '{"audit_path": "/missing/audit.json"}',
+    '{"audit_path":',
+    '~xiaocao_nonexistent_audit_user_20261021/audit.json',
+])
+def test_xiaocao_audit_reply_can_correct_path_without_restarting(
+    tmp_path, monkeypatch, capsys, bad_reply,
+):
+    audit = tmp_path / "audit.json"
+    audit.write_text('{"checks": []}', encoding="utf-8")
+    request = {
+        "event": "daily_xiaocao_audit_input_required",
+        "capture_job_id": "exact-capture",
+        "transcript_sha256": "e" * 64,
+    }
+    consumed = []
+    monkeypatch.setattr(sys, "stdin", io.StringIO(
+        bad_reply + "\n" + json.dumps({"audit_path": str(audit)}) + "\n"
+    ))
+    monkeypatch.setattr(kol_daily_script, "_record_structured_input_consumption",
+                        lambda req, **kw: consumed.append((req, kw)))
+
+    assert kol_daily_script._read_agent_path(request, "audit_path") == audit
+    prompts = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert len(prompts) == 2
+    assert all(p["response_field"] == "audit_path" for p in prompts)
+    assert all(p["capture_job_id"] == request["capture_job_id"] for p in prompts)
+    assert all(p["transcript_sha256"] == request["transcript_sha256"] for p in prompts)
+    assert prompts[-1]["input_error"] == "expected_existing_audit_path"
+    assert consumed == [(request, {"field": "audit_path", "path": audit})]
+
+
+@pytest.mark.parametrize("replies, expected_requests", [
+    ("", 1),
+    ('{"checks": []}\n' * 3, 3),
+    ("\n" * 3, 3),
+])
+def test_xiaocao_audit_path_eof_and_exhaustion_fail_closed(
+    monkeypatch, capsys, replies, expected_requests,
+):
+    request = {"event": "daily_xiaocao_audit_input_required"}
+    consumed = []
+    monkeypatch.setattr(sys, "stdin", io.StringIO(replies))
+    monkeypatch.setattr(kol_daily_script, "_record_structured_input_consumption",
+                        lambda *args, **kwargs: consumed.append(True))
+    with pytest.raises(SemanticInputUnavailable):
+        kol_daily_script._read_agent_path(request, "audit_path")
+    assert len(capsys.readouterr().out.splitlines()) == expected_requests
+    assert consumed == []

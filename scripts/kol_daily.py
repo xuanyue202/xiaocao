@@ -751,27 +751,46 @@ def _record_structured_input_consumption(
 
 
 def _read_agent_path(request: dict[str, Any], field: str) -> Path:
-    response = _read_agent_line(request)
-    if not response:
-        if request.get("analysis_request_path") or request.get("image_request_path"):
-            raise SemanticInputUnavailable(request, field)
-        raise SemanticInputUnavailable(
-            f"daily runner requires {field} on stdin"
-        )
-    raw = response.strip()
-    if raw.startswith("{"):
+    audit_reply = (
+        request.get("event") == "daily_xiaocao_audit_input_required"
+        and field == "audit_path"
+    )
+    attempts = 3 if audit_reply else 1
+    for attempt in range(attempts):
+        prompt = request
+        if audit_reply:
+            prompt = {**request, "response_field": field}
+            if attempt:
+                prompt["input_error"] = "expected_existing_audit_path"
+        response = _read_agent_line(prompt)
+        if not response:
+            if request.get("analysis_request_path") or request.get("image_request_path"):
+                raise SemanticInputUnavailable(request, field)
+            raise SemanticInputUnavailable(
+                f"daily runner requires {field} on stdin"
+            )
+        raw = response.strip()
+        if raw.startswith("{"):
+            try:
+                value = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+            raw = str(value.get(field) or "").strip()
+        if not raw:
+            continue
         try:
-            value = json.loads(raw)
-        except json.JSONDecodeError as exc:
-            raise SemanticInputUnavailable(request, field) from exc
-        raw = str(value.get(field) or "").strip()
-    if not raw:
-        raise SemanticInputUnavailable(request, field)
-    path = Path(raw).expanduser().resolve()
-    if not path.is_file():
-        raise SemanticInputUnavailable(request, field)
-    _record_structured_input_consumption(request, field=field, path=path)
-    return path
+            path = Path(raw).expanduser().resolve()
+            if not path.is_file():
+                continue
+        except (OSError, ValueError):
+            continue
+        except RuntimeError:
+            if audit_reply:
+                continue
+            raise
+        _record_structured_input_consumption(request, field=field, path=path)
+        return path
+    raise SemanticInputUnavailable(request, field)
 
 
 def _persisted_validated_bundle(request: dict[str, Any]) -> Path | None:
