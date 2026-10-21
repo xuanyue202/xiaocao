@@ -114,7 +114,7 @@ function normalizeInput(kwargs) {
   return { file, directory, targetName, claimId };
 }
 
-async function inspectTarget(page, input, { retainPage = false, restoreReadback = false } = {}) {
+async function inspectTarget(page, input, { retainPage = false, restoreReadback = false, expectedPage = '' } = {}) {
   const folderUrl = 'https://pan.baidu.com/disk/main#/index?category=all&path='
     + encodeURIComponent(input.directory);
   if (!page.tabs || !page.selectTab) {
@@ -135,6 +135,9 @@ async function inspectTarget(page, input, { retainPage = false, restoreReadback 
     throw new CommandExecutionError('Multiple exact adapter uploader pages; selection is ambiguous');
   }
   if (targets.length === 1 && targets[0].page) {
+    if (expectedPage && targets[0].page !== expectedPage) {
+      throw new CommandExecutionError('Recovery uploader page changed; do not attach');
+    }
     await uploadStage(input, 'select', () => page.selectTab(targets[0].page));
   } else {
     if (retainPage) {
@@ -266,8 +269,9 @@ async function inspectTarget(page, input, { retainPage = false, restoreReadback 
         transferQueue: (() => {
           const panels = [...document.querySelectorAll('.uploader-list')];
           const panel = panels.length === 1 ? panels[0] : null;
-          const rows = panel ? [...panel.querySelectorAll('.file-list')] : [];
+          const rows = panels.flatMap(node => [...node.querySelectorAll('.file-list')]);
           return {
+            panelCount: panels.length,
             panelAncestors: (() => {
               const ancestors = [];
               let node = panel;
@@ -319,7 +323,45 @@ async function inspectTarget(page, input, { retainPage = false, restoreReadback 
   if (inspection.exactCount > 1) {
     throw new CommandExecutionError('Baidu Netdisk target basename is ambiguous');
   }
-  return inspection;
+  return {...inspection, adapterPageId: targets.length === 1 ? targets[0].page : page.getActivePage?.()};
+}
+
+function requireEmptyRecoverySurface(surface) {
+  const queue = surface?.transferQueue;
+  if (!queue || !Number.isInteger(queue.panelCount) || queue.panelCount < 0 || queue.panelCount > 1
+      || queue.rowCount !== 0 || queue.targetCount !== 0
+      || surface.targetInTransferUi !== false || surface.receiptMatchesTarget !== false
+      || !Array.isArray(surface.targetUiRows) || surface.targetUiRows.length !== 0
+      || !Array.isArray(surface.inputs) || surface.inputs.length === 0
+      || !surface.inputs.every(node => node.targetAttached === false)) {
+    throw new CommandExecutionError('Recovery uploader queue is no longer empty; do not attach');
+  }
+}
+
+async function recheckRecoverySurface(page, input, expectedPage) {
+  if (!page.getActivePage || page.getActivePage() !== expectedPage) {
+    throw new CommandExecutionError('Recovery active page changed; do not attach');
+  }
+  const surface = await page.evaluate(`(() => {
+    const dir = ${JSON.stringify(input.directory)};
+    const target = ${JSON.stringify(input.targetName)};
+    const current = new URL(location.href);
+    const query = current.hash.slice(current.hash.indexOf('?') + 1);
+    if (current.origin !== 'https://pan.baidu.com' || current.pathname !== '/disk/main'
+        || new URLSearchParams(query).get('path') !== dir) return null;
+    const panels = [...document.querySelectorAll('.uploader-list')];
+    const rows = panels.flatMap(node => [...node.querySelectorAll('.file-list')]);
+    return {
+      transferQueue: {panelCount:panels.length,rowCount:rows.length,
+        targetCount:rows.filter(node => (node.textContent || '').includes(target)).length},
+      targetInTransferUi: panels.some(node => (node.textContent || '').includes(target)),
+      targetUiRows: rows.filter(node => (node.textContent || '').includes(target)).map(() => true),
+      receiptMatchesTarget: (window.__opencliBaiduUploadReceipt?.fileNames || []).includes(target),
+      inputs:[...document.querySelectorAll('input[type="file"]')].map(node => ({
+        targetAttached:[...(node.files || [])].some(file => file.name === target)})),
+    };
+  })()`);
+  requireEmptyRecoverySurface(surface);
 }
 
 async function markUploadInput(page, input) {
@@ -512,6 +554,8 @@ cli({
     { name: 'claim-id', required: true, help: 'Durable upload claim identifier from the caller ledger' },
     { name: 'inspect-only', type: 'boolean', default: false, help: 'Stop after exact folder/name inspection without attaching a file' },
     { name: 'restore-readback-only', type: 'boolean', default: false, help: 'Restore only the missing site page for cloud readback; never attach a file or recover its queue' },
+    { name: 'recover-lost-context', type: 'boolean', default: false, help: 'Caller-claimed same-job recovery on the exact empty bound page' },
+    { name: 'expected-page', default: '', help: 'Exact adapter page id required for lost-context recovery' },
     { name: 'repair-stalled', type: 'boolean', default: false, help: 'One caller-claimed pause/readback/continue of the retained stalled transfer; never attach a file' },
     { name: 'continue-stalled', type: 'boolean', default: false, help: 'Finish one caller-claimed recovery from the exact paused transfer; never pause or attach' },
     { name: 'activate-only', type: 'boolean', default: false, help: 'Check native page activation without attaching a file' },
@@ -531,6 +575,12 @@ cli({
     const input = normalizeInput(kwargs);
     const recovery = kwargs['repair-stalled'] === true || kwargs['continue-stalled'] === true;
     const restoreReadback = kwargs['restore-readback-only'] === true;
+    const recoverContext = kwargs['recover-lost-context'] === true;
+    const expectedPage = String(kwargs['expected-page'] || '');
+    if (recoverContext && (!/^[A-Za-z0-9_.:-]{1,128}$/.test(expectedPage)
+        || recovery || restoreReadback || kwargs['inspect-only'] === true || kwargs['activate-only'] === true)) {
+      throw new ArgumentError('Context recovery requires an exact page and no combined action');
+    }
     if (restoreReadback && (recovery || kwargs['inspect-only'] === true || kwargs['activate-only'] === true)) {
       throw new ArgumentError('Readback restoration cannot be combined with another operation');
     }
@@ -539,8 +589,9 @@ cli({
       throw new ArgumentError('Same-queue repair cannot be combined with inspection or activation');
     }
     const inspection = await inspectTarget(page, input, {
-      retainPage: kwargs['inspect-only'] === true || recovery,
+      retainPage: kwargs['inspect-only'] === true || recovery || recoverContext,
       restoreReadback,
+      expectedPage: recoverContext ? expectedPage : '',
     });
     if (recovery) {
       if (inspection.exactCount !== 0) {
@@ -559,6 +610,7 @@ cli({
         claimId: input.claimId,
         url: inspection.url,
         surfaceState: inspection.surfaceState,
+        adapterPageId: inspection.adapterPageId,
       }];
     }
     if (kwargs['inspect-only'] === true || restoreReadback) {
@@ -572,16 +624,19 @@ cli({
         claimId: input.claimId,
         url: inspection.url,
         surfaceState: inspection.surfaceState,
+        adapterPageId: inspection.adapterPageId,
       }];
     }
     if (!page.uploadFiles) {
       throw new CommandExecutionError('OpenCLI Browser Bridge uploadFiles support is required');
     }
+    if (recoverContext) requireEmptyRecoverySurface(inspection.surfaceState);
     const selector = await uploadStage(input, 'mark_input', () => markUploadInput(page, input));
     const activation = await uploadStage(input, 'activate', () => activateUploadPage(page));
     if (kwargs['activate-only'] === true) {
       return [{status: 'activation_verified', claimId: input.claimId, uploaded: false, activation}];
     }
+    if (recoverContext) await uploadStage(input, 'repair_context_readback', () => recheckRecoverySurface(page, input, expectedPage));
     const upload = await uploadStage(input, 'attach', () => page.uploadFiles(selector, [input.file], {nth: 0}));
     if (!upload || upload.uploaded !== true || upload.files !== 1) {
       throw new CommandExecutionError('Baidu Netdisk did not confirm exactly one uploaded file');

@@ -27,7 +27,12 @@ receipts; compare the same claim/target across observations before calling it st
 Its bounded `rowControls` reports visible control labels/classes in that exact
 row for diagnosis only; it never clicks them or authorizes a retry or resubmission.
 
-For an explicitly authorized repair of a retained, running upload that stays
+The current task's authorization to repair and finish the same transfer applies
+to the recovery APIs below. Read their flags as evidence/dispatch guards, not
+requests for a fresh human answer. Reconcile uncertain effects first; ask only
+when available evidence and existing authorization leave a real user decision.
+
+For an authorized repair of a retained, running upload that stays
 at zero progress, use `observe_stalled_upload` to persist its actual adapter
 readback, then `repair_stalled_upload(..., repair_authorized=True)`. The service
 requires another same-target zero-progress readback at least five minutes later,
@@ -70,7 +75,8 @@ Baidu may clear `input.files` synchronously in its upload handler. The adapter
 therefore captures the attached basename during the input/change capture phase
 before the page consumes it; do not require a later non-empty `input.files`.
 If a command fails after a durable claim, assume the side effect is uncertain:
-reconcile the exact target and transfer UI, never attach the file again. A later
+reconcile the exact target and transfer UI; ordinary polling never reattaches.
+Only a reviewed recovery below may continue the same claim. A later
 exact match completes the original claim without resubmission.
 
 The adapter selects its exact site page, then performs one native click on the
@@ -148,6 +154,19 @@ session to the exact folder for credentialed cloud reconciliation; it stops
 before activation, input marking or file attachment and rejects combined action
 flags/ambiguous pages. A restored portal is not the old uploader queue, and an
 empty fresh queue cannot authorize resubmission of an uncertain original claim.
+
+When the current human task already authorizes completing same-file/same-job
+repair, reuse that authorization; do not ask again merely because an uploader
+was lost. `resume_lost_context_upload(..., repair_authorized=True, ...)` is the
+explicit recovery outside ordinary sweeps: bound post-upload missing-page proof,
+unchanged file/hash, fresh exact same-adapter cloud scan and empty new queue,
+with no target input/row/receipt. It records authorization evidence, original
+upload time and one durable recovery claim before dispatching the same file/job.
+Already-present cloud reconciles without attachment; ambiguity, another active
+queue, auth/policy denial or a consumed claim stops dispatch and keeps diagnosis
+on this item. A lost response never authorizes another dispatch. This may
+retransmit bytes; it does not recreate capture/download or prove upload byte
+resume. Preserve old claims/receipts; only exact cloud and mailbox close Handoff.
 
 For the exact `file_chooser_not_opened` / `upload_before_attachment` failure,
 OpenCLI's chooser timeout occurs before file assignment. After a verified repair,

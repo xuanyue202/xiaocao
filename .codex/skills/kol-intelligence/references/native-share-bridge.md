@@ -201,6 +201,9 @@ do not select windows or dismiss prompts. If it already shows security/login,
 stop before PAC/entry and return truthful authentication state to any retained
 PTY. This baseline is evidence collection, not authority to log in or repeat an
 unchanged route. The user must authorize the concrete changed diagnostic plan.
+Reuse authorization already given for that changed route and its original items;
+do not ask again before each course or normal same-task repair. Per-launch/action
+bounds below prevent blind repeated input; they are not human approval quotas.
 Captured-course cleanup and known download/upload stages skip this preflight.
 
 On any anomaly preserve first abnormal AX separately from first explicit
