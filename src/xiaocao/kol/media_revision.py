@@ -170,3 +170,44 @@ def resume_checkpoint_download(service: Any, capture_job_id: str, *,
         raise EnrichmentError('checkpoint resume lacks exact running task readback')
     return service.capture_store.transition(current, 'checkpoint_download_resumed',
         status='downloading', checkpoint_resume_receipt=receipt)
+
+
+def install_stopped_checkpoint_repair(service: Any, capture_job_id: str, *, replacement_binary: Path) -> dict[str, Any]:
+    """Replace only a stopped bound checkpoint backend, preserving native arm."""
+    current = service.capture_store.latest(capture_job_id)
+    if not current or current.get('status') not in {'downloading', 'download_failed'} or current.get('user_resume_required'):
+        raise EnrichmentError('checkpoint backend repair requires an Agent-owned interrupted download')
+    task = _task(service, str(current.get('download_task_id') or ''))
+    labels = _labels(task)
+    candidate = current.get('candidate') or {}
+    if (task.get('status') not in {'pause', 'error'} or task.get('protocol') != 'stream'
+        or labels.get('checkpoint_basis') != 'verified_hls_segments'
+        or labels.get('capture_id') != candidate.get('id') or labels.get('live_id') != candidate.get('live_id')
+        or labels.get('compress_inline') != 'true' or labels.get('type') != 'live_capture'
+        or any(t.get('status') in {'running', 'ready', 'wait'} for t in service.sniffer.tasks())):
+        raise EnrichmentError('checkpoint backend repair lacks exact stopped singleton task binding')
+    opts = (task.get('meta') or {}).get('opts') or {}
+    media = Path(str(opts.get('path') or '')) / str(opts.get('name') or '')
+    repair = current.get('media_repair') or {}
+    if (not compressed_media_name(media.name) or media.name != repair.get('media_basename')
+        or labels.get('media_repair_revision') != repair.get('revision')
+        or media.parent.resolve() != Path(str(repair.get('previous_media_path') or '')).parent.resolve()):
+        raise EnrichmentError('checkpoint backend repair output revision changed')
+    cache = Path(str(media) + '.hls-cache')
+    binding = cache / 'binding.json'
+    if not binding.is_file() or (cache / 'terminal.json').exists():
+        raise EnrichmentError('checkpoint backend repair requires a non-terminal bound cache')
+    claim = {'task_id':task['id'], 'candidate_id':candidate['id'],
+             'binding_sha256':hashlib.sha256(binding.read_bytes()).hexdigest(),
+             'replacement_sha256':hashlib.sha256(replacement_binary.read_bytes()).hexdigest()}
+    if current.get('checkpoint_backend_repair_claim') == claim:
+        raise EnrichmentError('checkpoint backend replacement already claimed; reconcile before replay')
+    current = service.capture_store.transition(current,'checkpoint_backend_repair_claimed',
+        checkpoint_backend_repair_claim=claim)
+    result = service._replace_sniffer_for_repair(current,replacement_binary=replacement_binary,preserve_native_arm=True)
+    if hashlib.sha256(binding.read_bytes()).hexdigest() != claim['binding_sha256']:
+        raise EnrichmentError('checkpoint binding changed across backend repair')
+    restored = _task(service, task['id'])
+    if restored.get('status') not in {'pause', 'error'} or _labels(restored).get('media_repair_revision') != repair['revision']:
+        raise EnrichmentError('checkpoint task changed across backend repair')
+    return result

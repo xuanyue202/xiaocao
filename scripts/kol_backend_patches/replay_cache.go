@@ -25,6 +25,15 @@ import (
 	"time"
 )
 
+const replayRequestTimeout = 25 * time.Second
+const replayResourceAttempts = 3
+
+func replayFFmpegNetworkOptions() []string {
+	// The local HTTP reader must outlive every bounded whole-segment retry.
+	budget := replayRequestTimeout*time.Duration(replayResourceAttempts) + 15*time.Second
+	return []string{"-rw_timeout", fmt.Sprint(budget.Microseconds()), "-reconnect", "1", "-reconnect_on_network_error", "1", "-reconnect_streamed", "1", "-reconnect_max_retries", "3", "-reconnect_delay_max", "5", "-reconnect_delay_total_max", "60"}
+}
+
 type replayResource struct {
 	upstream string
 	segment  bool
@@ -88,7 +97,7 @@ func newReplayCache(rawURL string, headers map[string]string, root, binding stri
 		return nil, fmt.Errorf("invalid replay origin")
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	c := &replayCache{root: root, headers: headers, resources: map[string]*replayResource{}, verified: map[string]bool{}, client: &http.Client{Timeout: 25 * time.Second}, context: ctx, cancel: cancel}
+	c := &replayCache{root: root, headers: headers, resources: map[string]*replayResource{}, verified: map[string]bool{}, client: &http.Client{Timeout: replayRequestTimeout}, context: ctx, cancel: cancel}
 	originalOrigin := base.Scheme + "://" + base.Host
 	initialIP := net.ParseIP(base.Hostname())
 	allowLocal := initialIP != nil && initialIP.IsLoopback()
@@ -327,7 +336,7 @@ func (c *replayCache) blob(key string, resource *replayResource) (string, error)
 	}
 	partial := target + ".partial"
 	var last error
-	for attempt := 0; attempt < 3; attempt++ {
+	for attempt := 0; attempt < replayResourceAttempts; attempt++ {
 		if err := c.context.Err(); err != nil {
 			return "", err
 		}

@@ -49,6 +49,9 @@ func TestFiniteReplayFFmpegRestartReusesSegmentsAndRejectsSkip(t *testing.T) {
 			fmt.Fprint(w, "cut")
 			return
 		}
+		if name == "seg01.ts" && !broken.Load() {
+			time.Sleep(21 * time.Second)
+		}
 		http.ServeFile(w, r, filepath.Join(source, name))
 	}))
 	defer origin.Close()

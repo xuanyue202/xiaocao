@@ -23,3 +23,22 @@ not byte-offset or compressed CPU-work resume. First legacy repair has no old
 segment checkpoints. Backend tests/build do not establish production artifact,
 cloud receipt, mailbox creation or remote ACK. Same original item/task retains
 ownership through actual acceptance.
+
+## Production slow-segment timeout follow-up
+
+Baseline84185efd2c99d0c66c8091ad31d9a3e2f896bf0d. Source cache25s×3
+could exceed local FFmpeg20s, causing premature local network_timeout. Local
+checkpoint reader now waits90s from shared retry constants; direct20s unchanged.
+Real FFmpeg21s-segment test and Go stream/download/api/interceptor passed;
+132 affected Python tests passed. Candidate3714088035ef78bc062fad1e5b8bb41cbc8ad0bde9f2da723b6f89fdd8ca9477.
+Independent Standards/Spec affected reviews zero actionable/blocking findings;
+Standards independently21 focused tests. An initial stale terminal-filename
+finding was withdrawn after reading current root-terminal implementation.
+
+New canonical stopped-checkpoint backend install gate preserves task/revision/
+cache/native arm; rejects user pause, auth-terminal cache, wrong output and other
+active downloads; durable claim before swap, no implicit resume. Production
+was only paused at original task after monitor stopped during download;259
+segment proofs retained. No installation during review. Source diff whitespace
+check passed excluding the nested unified patch document's valid space-tab
+context; patch application and exact before/after hashes checked by build.

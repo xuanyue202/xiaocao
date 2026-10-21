@@ -223,3 +223,42 @@ def test_revision_subscription_rebind_preserves_original_and_is_idempotent(tmp_p
     assert result['previous_handoff_path']==path and result['handoff_path'] is None
     assert result['status']=='playback_activated'
     assert sub.bind_media_revision(item['identity'],capture,mailbox_ledger=mailbox)==result
+
+
+def test_stopped_checkpoint_backend_repair_preserves_binding_and_task(tmp_path):
+    from xiaocao.kol.media_revision import install_stopped_checkpoint_repair
+    service,capture,media,mailbox,absence,calls,provider=fixture(tmp_path)
+    prepared=prepare_media_revision(service,capture,repair_authorized=True,mailbox_ledger=mailbox,not_found_readback=absence)
+    provider['protocol']='stream'
+    provider['meta']['labels']['checkpoint_basis']='verified_hls_segments'
+    output=media.with_name(provider['meta']['opts']['name']);cache=Path(str(output)+'.hls-cache');cache.mkdir()
+    (cache/'binding.json').write_text('{"bound":"original"}')
+    binary=tmp_path/'tested-candidate';binary.write_bytes(b'tested')
+    def replace(current,**kwargs):
+        assert kwargs['preserve_native_arm'] is True
+        calls.append(('replace',current['download_task_id']));return {'capture_job_id':capture}
+    service._replace_sniffer_for_repair=replace
+    receipt=install_stopped_checkpoint_repair(service,capture,replacement_binary=binary)
+    assert receipt['capture_job_id']==capture and calls[-1]==('replace',provider['id'])
+    assert (cache/'binding.json').read_text()=='{"bound":"original"}'
+    with pytest.raises(EnrichmentError,match='already claimed'):
+        install_stopped_checkpoint_repair(service,capture,replacement_binary=binary)
+    assert len(calls)==2
+
+
+@pytest.mark.parametrize('blocked',['running','other_active','user_pause','terminal','wrong_revision'])
+def test_checkpoint_backend_install_rejects_unverified_state(tmp_path,blocked):
+    from xiaocao.kol.media_revision import install_stopped_checkpoint_repair
+    service,capture,media,mailbox,absence,calls,provider=fixture(tmp_path)
+    prepared=prepare_media_revision(service,capture,repair_authorized=True,mailbox_ledger=mailbox,not_found_readback=absence)
+    provider['protocol']='stream'
+    provider['meta']['labels']['checkpoint_basis']='verified_hls_segments'
+    cache=Path(str(media.with_name(provider['meta']['opts']['name']))+'.hls-cache');cache.mkdir();(cache/'binding.json').write_text('{}')
+    binary=tmp_path/'candidate';binary.write_bytes(b'tested')
+    service._replace_sniffer_for_repair=lambda *a,**k:pytest.fail('must not stop backend')
+    if blocked=='running':provider['status']='running'
+    if blocked=='other_active':service.sniffer.tasks=lambda:[deepcopy(provider),{'id':'other','status':'running'}]
+    if blocked=='user_pause':service.capture_store.transition(prepared,'user_pause',user_resume_required=True)
+    if blocked=='terminal':(cache/'terminal.json').write_text('{"status":403}')
+    if blocked=='wrong_revision':provider['meta']['labels']['media_repair_revision']='other'
+    with pytest.raises(EnrichmentError):install_stopped_checkpoint_repair(service,capture,replacement_binary=binary)

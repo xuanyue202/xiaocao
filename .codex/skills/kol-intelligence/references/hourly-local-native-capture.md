@@ -578,3 +578,18 @@ creation/readback. Old capsules/cleanup files remain readable; old hashes cannot
 be recovered into the repaired item's handoff. Before explicit cleanup verify
 current same-task binding and absence of other active downloads. No native input
 or original cloud upload/mailbox send is repeated to repair cleanup.
+
+A slow upstream segment can outlive the ordinary FFmpeg HTTP read timeout.
+Checkpoint-backed FFmpeg reads therefore use a local timeout derived from the
+full bounded whole-segment retry budget; ordinary direct reads keep their own
+short budget. Never diagnose successful `running` progress as complete media.
+For a tested backend fix during an incomplete repair revision, first stop the
+Agent's retained monitor at a download-only boundary, durably claim a same-task
+repair pause, and read back that exact task stopped. With no other active tasks,
+`media_revision.install_stopped_checkpoint_repair` verifies the revision output
+and non-terminal checkpoint binding before using the existing guarded singleton
+replacement, preserves the native arm/cache, and resumes no task. Reconcile the
+same stopped task, then `resume_checkpoint_download` and continue the original
+item PTY through validation and handoff. Never use this path for a user-paused
+capture, auth-terminal cache, unknown binding, active download or new native
+launch. A backend swap alone is not segment-resume or Handoff acceptance.

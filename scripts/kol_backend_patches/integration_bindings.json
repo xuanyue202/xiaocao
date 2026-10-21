@@ -2,7 +2,7 @@
   {
     "path": "pkg/gopeed/internal/protocol/stream/fetcher.go",
     "before_sha256": "13aae0ec98447c5cd3d9ff9666bf850b07e4feb4de7201f43dd71dd34544e24f",
-    "after_sha256": "5e30ca4ff93fab54d06c9620eed6411acac4af339428547b437337a77eaea5b9"
+    "after_sha256": "218feaac4837ae237e79942a96b7951be368e652b108ebae4dee460791ec1f0e"
   },
   {
     "path": "internal/api/routes.go",

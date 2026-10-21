@@ -56,3 +56,14 @@ Independent review found and drove fixes for origin confinement, paused-output
 reservation, early checkpoint persistence, corrupt proof rejection, whole-cache
 and manifest authentication terminal state, user-pause gating, and raw provider
 label shape in versioned cleanup. Final affected reviews pending.
+
+Production follow-up at baseline84185efd2c99d0c66c8091ad31d9a3e2f896bf0d:
+slow-source network_timeout exposed local FFmpeg20s versus cache25s×3 budget
+mismatch. Checkpoint local reader must outlive its bounded retry budget; use90s
+(25×3+15), retain direct20s behavior. Real FFmpeg fixture delays a missing segment
+21s, then must complete with full coverage/duration and no cached redownload.
+An incomplete same-item repair may replace a tested backend only after durable
+Agent pause and exact stopped task readback, original capture/candidate/live/
+revision/output and non-terminal cache proof, no other active task and no user
+pause. Preserve native arm/cache and start no task from the swap. Same-task resume
+then continues through actual media/cloud/mailbox acceptance.

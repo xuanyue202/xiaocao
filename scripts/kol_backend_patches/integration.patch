@@ -1,6 +1,6 @@
 --- a/pkg/gopeed/internal/protocol/stream/fetcher.go
 +++ b/pkg/gopeed/internal/protocol/stream/fetcher.go
-@@ -348,6 +348,36 @@
+@@ -348,14 +348,48 @@
  		cmdPath = f.config.FfmpegPath
  	}
  
@@ -37,16 +37,21 @@
  	args := []string{
  		"-y",      // Overwrite output file
  		"-xerror", // Do not publish a successfully exited transcode with decode errors.
-@@ -355,7 +385,7 @@
+ 		"-nostats",
  		"-progress", "pipe:2",
  	}
- 	args = append(args, streamNetworkOptions(f.meta.Req.URL)...)
+-	args = append(args, streamNetworkOptions(f.meta.Req.URL)...)
 -	args = append(args, "-i", f.meta.Req.URL)
++	if checkpoint != nil {
++		args = append(args, replayFFmpegNetworkOptions()...)
++	} else {
++		args = append(args, streamNetworkOptions(f.meta.Req.URL)...)
++	}
 +	args = append(args, "-i", inputURL)
  	optsExtra, _ := f.meta.Opts.Extra.(*fstream.OptsExtra)
  	if streamCompressEnabled(f.meta.Req.Extra, f.meta.Opts.Extra) {
  		crf := 28
-@@ -429,10 +459,12 @@
+@@ -429,10 +463,12 @@
  	// Capture stderr for progress
  	stderr, err := f.cmd.StderrPipe()
  	if err != nil {
@@ -59,7 +64,7 @@
  		return err
  	}
  
-@@ -507,6 +539,24 @@
+@@ -507,6 +543,24 @@
  			err = finiteStreamCompletionError(err, f.durationSec, f.outTimeSec)
  		}
  		f.lock.Unlock()
@@ -84,7 +89,7 @@
  		f.doneCh <- err
  	}()
  
-@@ -530,7 +580,7 @@
+@@ -530,7 +584,7 @@
  	if err != nil || expected <= 0 {
  		return err
  	}
