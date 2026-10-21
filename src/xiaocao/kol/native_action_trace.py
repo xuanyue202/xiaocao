@@ -76,6 +76,8 @@ def _output_signals(output: object, *, native_observation: bool) -> dict:
         elif ("The user changed '" in text and
               "Re-query the latest state" in text):
             error_code = "app_target_changed"
+        elif re.search(r"js execution timed out; kernel reset, rerun your request", text):
+            error_code = "cua_execution_timeout_kernel_reset"
     return {"state": state, "text_sha256": _sha(text.encode()),
             "reported_error_code": error_code,
             "image_sha256": images,
