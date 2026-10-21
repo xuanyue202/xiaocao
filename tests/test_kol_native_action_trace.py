@@ -161,6 +161,42 @@ def test_timeout_in_checkpoint_instructions_is_not_a_native_tool_failure():
     assert result["findings"]["first_tool_error_call_id"] is None
 
 
+@pytest.mark.parametrize("target", [
+    "com.tencent.xinWeChat",
+    "com.tencent.flue.WeChatAppEx",
+    "/Applications/WeChat.app/Contents/MacOS/WeChatAppEx.app",
+])
+def test_wechat_binding_is_a_possible_effect_and_retains_actual_timeout(target):
+    result = inspect(journal(
+        call("bind", f"var miniHost = await cua.getApp('{target}');"),
+        output("bind", "Computer Use server error -10005: timeoutReached"),
+    ))
+    assert result["calls"][0]["kind"] == "native_binding"
+    assert result["calls"][0]["reported_error_code"] == "timeoutReached"
+    assert result["findings"]["first_tool_error_call_id"] == "bind"
+    assert result["findings"]["preceding_effect_call_ids"] == ["bind"]
+    assert result["findings"]["root_trigger_proven"] is False
+
+
+def test_binding_target_or_timeout_in_a_checkpoint_is_not_native_evidence():
+    result = inspect(journal(
+        event("custom_tool_call", name="exec", call_id="checkpoint", input=
+              "// KOL_ACTION:READINESS\ntext(\"cua.getApp('com.tencent.flue.WeChatAppEx')\");"),
+        event("custom_tool_call_output", call_id="checkpoint", output=
+              "Computer Use server error -10005: timeoutReached"),
+    ))
+    assert result["calls"][0]["kind"] == "checkpoint"
+    assert result["findings"]["first_tool_error_call_id"] is None
+
+
+def test_unrelated_application_binding_is_not_wechat_evidence():
+    result = inspect(journal(
+        call("other", "await cua.getApp('Microsoft Edge');"),
+        output("other", "Computer Use server error -10005: timeoutReached"),
+    ))
+    assert result["calls"] == []
+
+
 def test_hashes_images_and_sensitive_payloads_without_exporting_them():
     frame = b"private screen bytes"
     result_event = output("input", 'Window: "草料二维码"; personal chat text')

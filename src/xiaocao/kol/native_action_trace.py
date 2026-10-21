@@ -19,7 +19,11 @@ from zoneinfo import ZoneInfo
 
 _STEP = re.compile(r"(?m)^\s*//\s*KOL_ACTION:([A-Z][A-Z0-9_]{0,63})\s*$")
 _INPUT = re.compile(r"\bwechat\.(click|typeText|performSecondaryAction)\s*\(")
-_NATIVE = re.compile(r"\bwechat\.|cua\.getApp\(['\"]com\.tencent\.xinWeChat['\"]\)")
+_NATIVE = re.compile(r"\bwechat\.")
+_WECHAT_BINDING = re.compile(
+    r"cua\.getApp\(\s*(['\"])(?:com\.tencent\.(?:xinWeChat|flue\.WeChatAppEx)"
+    r"|/Applications/WeChat\.app(?:/Contents/MacOS/WeChatAppEx\.app)?)\1\s*\)"
+)
 _SHANGHAI = ZoneInfo("Asia/Shanghai")
 
 
@@ -78,6 +82,8 @@ def _output_signals(output: object, *, native_observation: bool) -> dict:
             error_code = "app_target_changed"
         elif re.search(r"js execution timed out; kernel reset, rerun your request", text):
             error_code = "cua_execution_timeout_kernel_reset"
+        elif re.search(r"Computer Use server error[^\n]*:\s*timeoutReached\b", text):
+            error_code = "timeoutReached"
     return {"state": state, "text_sha256": _sha(text.encode()),
             "reported_error_code": error_code,
             "image_sha256": images,
@@ -129,7 +135,10 @@ def inspect_trace(
             if not isinstance(code, str):
                 continue
             marker = _STEP.search(code)
-            native = payload.get("namespace") == "mcp__cua_repl" and bool(_NATIVE.search(code))
+            binding_call = bool(_WECHAT_BINDING.search(code))
+            native = payload.get("namespace") == "mcp__cua_repl" and (
+                bool(_NATIVE.search(code)) or binding_call
+            )
             if not native and not marker:
                 continue
             if not call_id or call_id in calls:
@@ -137,6 +146,7 @@ def inspect_trace(
             calls[call_id] = {
                 "call_id": call_id, "step": marker.group(1) if marker else "LEGACY_NATIVE",
                 "kind": "native_input" if native and _INPUT.search(code)
+                        else "native_binding" if native and binding_call
                         else "native_observation" if native else "checkpoint",
                 "requested_at": _local_time(timestamp),
                 "arguments_sha256": _sha(raw.encode()), "completion": "pending",
