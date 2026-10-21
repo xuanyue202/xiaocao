@@ -35,19 +35,27 @@ def main() -> int:
         'replay_cache.go':'pkg/gopeed/internal/protocol/stream/replay_cache.go',
         'replay_cache_test.go':'pkg/gopeed/internal/protocol/stream/replay_cache_test.go',
         'replay_ffmpeg_test.go':'pkg/gopeed/internal/protocol/stream/replay_ffmpeg_test.go',
+        'replay_discontinuity_test.go':'pkg/gopeed/internal/protocol/stream/replay_discontinuity_test.go',
         'repair_stream.go':'pkg/gopeed/pkg/download/repair_stream.go',
         'repair_stream_test.go':'pkg/gopeed/pkg/download/repair_stream_test.go',
         'repair_stream_handler.go':'internal/api/repair_stream_handler.go',
         'capture_diagnostics.go':'internal/interceptor/capture_diagnostics.go',
         'capture_diagnostics_test.go':'internal/interceptor/capture_diagnostics_test.go',
     }
+    previous=json.loads((resources/'additive_previous_sha256.json').read_text())
     for source,relative in copies.items():
         target=backend/relative
-        if target.exists() and sha(target)!=sha(resources/source):
+        if target.exists() and sha(target)!=sha(resources/source) and sha(target) not in previous.get(source,[]):
             raise RuntimeError('additive backend source drift: '+relative)
     for source,relative in copies.items():
         target=backend/relative
-        if not target.exists():target.write_bytes((resources/source).read_bytes())
+        if target.exists() and sha(target)!=sha(resources/source):
+            backup=target.with_name(target.name+'.kol-backup.'+sha(target))
+            if backup.exists() and sha(backup)!=sha(target):
+                raise RuntimeError('backend source backup changed: '+relative)
+            if not backup.exists():backup.write_bytes(target.read_bytes())
+        if not target.exists() or sha(target)!=sha(resources/source):
+            target.write_bytes((resources/source).read_bytes())
     if not all(states):
         subprocess.run(['git','-C',str(backend),'apply','--check',str(resources/'integration.patch')],check=True)
         subprocess.run(['git','-C',str(backend),'apply',str(resources/'integration.patch')],check=True)

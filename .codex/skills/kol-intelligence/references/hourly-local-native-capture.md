@@ -518,6 +518,17 @@ same-directory downloader replacement may be installed through
 `install_sniffer_repair_after_cleanup`. It requires the same downloaded capture,
 unchanged cleanup proof, no running singleton and fresh cleanup checks; retains
 a backup and starts nothing. Never replace a backend during an active download.
+
+A finite HLS playlist may explicitly declare `EXT-X-DISCONTINUITY`. The
+checkpoint backend uses a separate HLS demuxer per declared period and a
+generated loopback concat descriptor, preserving all original segments,
+sequence/encryption/init state and durations. Do not remove strict decode,
+discard packets or invent a boundary to pass a failed download. Diagnose from
+the original manifest and exact cached bytes before resuming the same task.
+`install_stopped_checkpoint_repair` also accepts an unpublished original
+download with an unchanged retained task/output binding, no active tasks and
+a non-terminal bound cache; it rechecks the same task after replacement.
+Keep the same capture, native arm, segment proofs and downstream acceptance.
 The installed networking repair bounds HTTP(S) reads/reconnects and retains only
 safe failure codes, not signed URLs or raw stderr. Installation/tests do not
 prove a later live download or Handoff.
