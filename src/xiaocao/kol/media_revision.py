@@ -189,9 +189,19 @@ def install_stopped_checkpoint_repair(service: Any, capture_job_id: str, *, repl
     opts = (task.get('meta') or {}).get('opts') or {}
     media = Path(str(opts.get('path') or '')) / str(opts.get('name') or '')
     repair = current.get('media_repair') or {}
-    if (not compressed_media_name(media.name) or media.name != repair.get('media_basename')
-        or labels.get('media_repair_revision') != repair.get('revision')
-        or media.parent.resolve() != Path(str(repair.get('previous_media_path') or '')).parent.resolve()):
+    if repair:
+        output_bound = (media.name == repair.get('media_basename')
+            and labels.get('media_repair_revision') == repair.get('revision')
+            and media.parent.resolve() == Path(str(repair.get('previous_media_path') or '')).parent.resolve())
+    else:
+        saved = (current.get('download_task') or {}).get('meta') or {}
+        saved_opts = saved.get('opts') or {}
+        output_bound = (bool(saved_opts.get('path')) and bool(saved_opts.get('name'))
+            and media == Path(saved_opts['path']) / saved_opts['name']
+            and not labels.get('media_repair_revision')
+            and not current.get('media_sha256') and not current.get('netdisk_job_id')
+            and not service._event('cloud_handoff_published', capture_job_id=capture_job_id))
+    if not compressed_media_name(media.name) or not output_bound:
         raise EnrichmentError('checkpoint backend repair output revision changed')
     cache = Path(str(media) + '.hls-cache')
     binding = cache / 'binding.json'
@@ -208,6 +218,13 @@ def install_stopped_checkpoint_repair(service: Any, capture_job_id: str, *, repl
     if hashlib.sha256(binding.read_bytes()).hexdigest() != claim['binding_sha256']:
         raise EnrichmentError('checkpoint binding changed across backend repair')
     restored = _task(service, task['id'])
-    if restored.get('status') not in {'pause', 'error'} or _labels(restored).get('media_repair_revision') != repair['revision']:
+    restored_labels = _labels(restored)
+    restored_opts = (restored.get('meta') or {}).get('opts') or {}
+    if (restored.get('status') not in {'pause', 'error'}
+        or restored_labels.get('media_repair_revision') != repair.get('revision')
+        or restored_labels.get('capture_id') != candidate['id']
+        or restored_labels.get('live_id') != candidate['live_id']
+        or restored_opts.get('name') != opts.get('name')
+        or restored_opts.get('path') != opts.get('path')):
         raise EnrichmentError('checkpoint task changed across backend repair')
     return result

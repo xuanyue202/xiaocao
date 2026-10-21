@@ -31,7 +31,7 @@ const replayResourceAttempts = 3
 func replayFFmpegNetworkOptions() []string {
 	// The local HTTP reader must outlive every bounded whole-segment retry.
 	budget := replayRequestTimeout*time.Duration(replayResourceAttempts) + 15*time.Second
-	return []string{"-rw_timeout", fmt.Sprint(budget.Microseconds()), "-reconnect", "1", "-reconnect_on_network_error", "1", "-reconnect_streamed", "1", "-reconnect_max_retries", "3", "-reconnect_delay_max", "5", "-reconnect_delay_total_max", "60"}
+	return []string{"-safe", "0", "-protocol_whitelist", "file,http,tcp,crypto,data", "-rw_timeout", fmt.Sprint(budget.Microseconds()), "-reconnect", "1", "-reconnect_on_network_error", "1", "-reconnect_streamed", "1", "-reconnect_max_retries", "3", "-reconnect_delay_max", "5", "-reconnect_delay_total_max", "60"}
 }
 
 type replayResource struct {
@@ -40,19 +40,21 @@ type replayResource struct {
 	mu       sync.Mutex
 }
 type replayCache struct {
-	root, token string
-	resources   map[string]*replayResource
-	playlist    []byte
-	headers     map[string]string
-	client      *http.Client
-	server      *http.Server
-	listener    net.Listener
-	context     context.Context
-	cancel      context.CancelFunc
-	mu          sync.Mutex
-	verified    map[string]bool
-	duration    float64
-	total       int
+	root, token     string
+	resources       map[string]*replayResource
+	playlist        []byte
+	periods         [][]byte
+	periodDurations []float64
+	headers         map[string]string
+	client          *http.Client
+	server          *http.Server
+	listener        net.Listener
+	context         context.Context
+	cancel          context.CancelFunc
+	mu              sync.Mutex
+	verified        map[string]bool
+	duration        float64
+	total           int
 }
 type replayBlobProof struct {
 	SHA256 string `json:"sha256"`
@@ -271,6 +273,11 @@ func newReplayCache(rawURL string, headers map[string]string, root, binding stri
 		}
 	}
 	c.playlist = []byte(strings.Join(output, "\n"))
+	c.periods, c.periodDurations, err = replayPeriods(output)
+	if err != nil {
+		cancel()
+		return nil, err
+	}
 	c.listener, err = net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		cancel()
@@ -281,7 +288,96 @@ func newReplayCache(rawURL string, headers map[string]string, root, binding stri
 	return c, nil
 }
 func (c *replayCache) URL() string {
-	return "http://" + c.listener.Addr().String() + "/" + c.token + "/playlist.m3u8"
+	return "http://" + c.listener.Addr().String() + "/" + c.token + "/input.ffconcat"
+}
+
+// Each declared discontinuity gets its own HLS demuxer. Concatenating TS bytes
+// across that boundary can mark an otherwise complete PES corrupt in FFmpeg.
+// Keep every source segment and strict decode/duration checks; do not discard
+// corrupt packets or infer new discontinuities from a decode error.
+func replayPeriods(lines []string) ([][]byte, []float64, error) {
+	var headers, body []string
+	var periods [][]byte
+	var durations []float64
+	var sequence uint64
+	var count uint64
+	var duration float64
+	var activeKey, activeMap, mapKey string
+	var pending float64
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "#EXT-X-MEDIA-SEQUENCE:") {
+			var err error
+			sequence, err = strconv.ParseUint(strings.TrimPrefix(line, "#EXT-X-MEDIA-SEQUENCE:"), 10, 64)
+			if err != nil {
+				return nil, nil, fmt.Errorf("invalid replay media sequence")
+			}
+		} else if line == "#EXTM3U" || strings.HasPrefix(line, "#EXT-X-VERSION:") || strings.HasPrefix(line, "#EXT-X-TARGETDURATION:") || strings.HasPrefix(line, "#EXT-X-PLAYLIST-TYPE:") || line == "#EXT-X-INDEPENDENT-SEGMENTS" {
+			headers = append(headers, line)
+		}
+	}
+	start := func() {
+		body = append([]string{}, headers...)
+		body = append(body, "#EXT-X-MEDIA-SEQUENCE:"+strconv.FormatUint(sequence+count, 10))
+		if activeMap != "" {
+			if mapKey != "" {
+				body = append(body, mapKey)
+			}
+			body = append(body, activeMap)
+		}
+		if activeKey != "" && (activeMap == "" || activeKey != mapKey) {
+			body = append(body, activeKey)
+		}
+	}
+	finish := func() {
+		if duration > 0 {
+			periods = append(periods, []byte(strings.Join(append(body, "#EXT-X-ENDLIST"), "\n")+"\n"))
+			durations = append(durations, duration)
+		}
+		duration = 0
+	}
+	start()
+	for _, raw := range lines {
+		line := strings.TrimSpace(raw)
+		if line == "#EXT-X-DISCONTINUITY" {
+			if pending != 0 {
+				return nil, nil, fmt.Errorf("discontinuity splits replay segment")
+			}
+			finish()
+			start()
+			continue
+		}
+		if line == "#EXTM3U" || line == "#EXT-X-ENDLIST" || strings.HasPrefix(line, "#EXT-X-VERSION:") || strings.HasPrefix(line, "#EXT-X-TARGETDURATION:") || strings.HasPrefix(line, "#EXT-X-PLAYLIST-TYPE:") || strings.HasPrefix(line, "#EXT-X-MEDIA-SEQUENCE:") || strings.HasPrefix(line, "#EXT-X-DISCONTINUITY-SEQUENCE:") || line == "#EXT-X-INDEPENDENT-SEGMENTS" {
+			continue
+		}
+		if strings.HasPrefix(line, "#EXT-X-KEY:") {
+			activeKey = line
+		}
+		if strings.HasPrefix(line, "#EXT-X-MAP:") {
+			activeMap = line
+			mapKey = activeKey
+		}
+		if strings.HasPrefix(line, "#EXTINF:") {
+			var err error
+			pending, err = strconv.ParseFloat(strings.SplitN(strings.TrimPrefix(line, "#EXTINF:"), ",", 2)[0], 64)
+			if err != nil || pending <= 0 || math.IsNaN(pending) || math.IsInf(pending, 0) {
+				return nil, nil, fmt.Errorf("invalid replay period duration")
+			}
+		} else if line != "" && !strings.HasPrefix(line, "#") {
+			if pending <= 0 {
+				return nil, nil, fmt.Errorf("replay segment lacks duration")
+			}
+			duration += pending
+			pending = 0
+			count++
+		}
+		body = append(body, line)
+	}
+	if pending != 0 {
+		return nil, nil, fmt.Errorf("replay period has incomplete segment")
+	}
+	finish()
+	return periods, durations, nil
 }
 func (c *replayCache) Close() {
 	c.cancel()
@@ -409,6 +505,32 @@ func (c *replayCache) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	key := strings.TrimPrefix(r.URL.Path, prefix)
+	if key == "input.ffconcat" {
+		var text strings.Builder
+		text.WriteString("ffconcat version 1.0\n")
+		for index, duration := range c.periodDurations {
+			fmt.Fprintf(&text, "file 'http://%s/%s/period-%d.m3u8'\nduration %.9f\noption rw_timeout %d\n", c.listener.Addr().String(), c.token, index, duration, (replayRequestTimeout*time.Duration(replayResourceAttempts) + 15*time.Second).Microseconds())
+		}
+		w.Header().Set("Content-Type", "text/plain")
+		w.Header().Set("Content-Length", strconv.Itoa(text.Len()))
+		if r.Method != "HEAD" {
+			_, _ = io.WriteString(w, text.String())
+		}
+		return
+	}
+	if strings.HasPrefix(key, "period-") && strings.HasSuffix(key, ".m3u8") {
+		index, err := strconv.Atoi(strings.TrimSuffix(strings.TrimPrefix(key, "period-"), ".m3u8"))
+		if err != nil || index < 0 || index >= len(c.periods) {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+		w.Header().Set("Content-Length", strconv.Itoa(len(c.periods[index])))
+		if r.Method != "HEAD" {
+			_, _ = w.Write(c.periods[index])
+		}
+		return
+	}
 	if key == "playlist.m3u8" {
 		w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
 		w.Header().Set("Content-Length", strconv.Itoa(len(c.playlist)))

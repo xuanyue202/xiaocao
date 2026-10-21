@@ -262,3 +262,34 @@ def test_checkpoint_backend_install_rejects_unverified_state(tmp_path,blocked):
     if blocked=='terminal':(cache/'terminal.json').write_text('{"status":403}')
     if blocked=='wrong_revision':provider['meta']['labels']['media_repair_revision']='other'
     with pytest.raises(EnrichmentError):install_stopped_checkpoint_repair(service,capture,replacement_binary=binary)
+
+
+@pytest.mark.parametrize('blocked',[None,'different_output','published','active_other','changed_after_restore'])
+def test_original_checkpoint_backend_repair_is_exact_and_unpublished(tmp_path,blocked):
+    from xiaocao.kol.media_revision import install_stopped_checkpoint_repair
+    ledger,capture,media,_=_capture_fixture(tmp_path)
+    store=CaptureJobStore(ledger);current=store.latest(capture)
+    provider=deepcopy(current['download_task']);provider['status']='error';provider['protocol']='stream'
+    provider['meta']['labels']['checkpoint_basis']='verified_hls_segments'
+    current=store.transition(current,'interrupted',status='download_failed',download_task=deepcopy(provider))
+    calls=[]
+    sniffer=SimpleNamespace(tasks=lambda:[deepcopy(provider)])
+    service=XiaocaoLiveService(tmp_path/'live',capture_ledger=ledger,sniffer_client=sniffer)
+    cache=Path(str(media)+'.hls-cache');cache.mkdir();(cache/'binding.json').write_text('{"original":true}')
+    binary=tmp_path/'candidate';binary.write_bytes(b'tested')
+    def replace(row,**kwargs):
+        calls.append(row['download_task_id'])
+        assert kwargs['preserve_native_arm'] is True
+        if blocked=='changed_after_restore':provider['meta']['opts']['name']='other-compressed.mp4'
+        return {'capture_job_id':capture}
+    service._replace_sniffer_for_repair=replace
+    if blocked=='different_output':provider['meta']['opts']['name']='other-compressed.mp4'
+    if blocked=='published':service._append('cloud_handoff_published',capture_job_id=capture)
+    if blocked=='active_other':sniffer.tasks=lambda:[deepcopy(provider),{'id':'other','status':'running'}]
+    if blocked:
+        with pytest.raises(EnrichmentError):install_stopped_checkpoint_repair(service,capture,replacement_binary=binary)
+        assert len(calls)==(1 if blocked=='changed_after_restore' else 0)
+    else:
+        assert install_stopped_checkpoint_repair(service,capture,replacement_binary=binary)['capture_job_id']==capture
+        assert calls==[provider['id']]
+        assert (cache/'binding.json').read_text()=='{"original":true}'
