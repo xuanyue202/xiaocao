@@ -39,6 +39,10 @@ or bypass a human gate.
 
 ## Load only the required contract
 
+- For the local Liuguan/养生自行车 metadata companion, read
+  [liuguan-local-discovery.md](references/liuguan-local-discovery.md). This is
+  cache discovery only; native/media capture remains a separate unaccepted gate.
+
 - For an unambiguous Xiaocao replay capture, read
   [xiaocao-capture-start.md](references/xiaocao-capture-start.md) completely
   and start within 10 seconds. Do not read `full-contract.md` before Ready.
