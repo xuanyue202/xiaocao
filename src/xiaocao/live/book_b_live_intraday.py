@@ -332,6 +332,7 @@ class BookBLiveIntradayReceipt:
     risk_receipt: dict[str, Any] | None = None
     deferred_buy_plan_ids: tuple[str, ...] = ()
     broker_snapshot: dict[str, Any] | None = None
+    eod_review: dict[str, Any] | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -510,6 +511,9 @@ def _run_book_b_live_intraday_locked(
     if current.tzinfo is None:
         raise ValueError("LIVE_BOOK_B_NOW_NOT_TZ_AWARE")
     state_root = Path(state_dir)
+    if normalized_phase == "eod" and not _eod_settlement_window(current, trade_date):
+        raise ValueError("LIVE_BOOK_B_EOD_SETTLEMENT_WINDOW_NOT_OPEN")
+    initial_snapshot = account_snapshot_provider() if normalized_phase == "eod" else None
     reconciled = reconcile_open_book_b_plans(
         state_root,
         trade_date=trade_date,
@@ -517,8 +521,9 @@ def _run_book_b_live_intraday_locked(
         now=current,
         defer_prior_day_sells=normalized_phase != "eod",
         reconcile_proven_prior_day_sells=normalized_phase == "eod",
+        economic_closure_snapshot=initial_snapshot,
     )
-    deferred_buys = check_monitor_pending_plans(
+    deferred_buys = () if normalized_phase == "eod" else check_monitor_pending_plans(
         state_root, trade_date=trade_date, asof=current,
         # Pending SELLs must not suppress a read-only post-close observation.
         # The settlement writer below independently requires every plan terminal.
@@ -535,8 +540,8 @@ def _run_book_b_live_intraday_locked(
         phase_now, trade_date
     ):
         raise ValueError("LIVE_BOOK_B_EOD_SETTLEMENT_WINDOW_NOT_OPEN")
-    snapshot = account_snapshot_provider()
-    deferred_buys = check_monitor_pending_plans(
+    snapshot = initial_snapshot if initial_snapshot is not None and not reconciled else account_snapshot_provider()
+    deferred_buys = () if normalized_phase == "eod" else check_monitor_pending_plans(
         state_root, trade_date=trade_date, asof=now(),
         allow_open_sells=True,
     )
@@ -589,24 +594,30 @@ def _run_book_b_live_intraday_locked(
         ):
             raise ValueError("LIVE_BOOK_B_EOD_BROKER_SNAPSHOT_PRE_CLOSE")
         try:
-            settlement = write_book_b_live_settlement(state_root, account, now=current)
+            settlement = write_book_b_live_settlement(state_root, account, now=current,
+                broker_snapshot=snapshot)
         except ValueError as exc:
             if str(exc) not in {"LIVE_BOOK_B_EOD_OPEN_EXECUTION_RECONCILE_REQUIRED",
-                                "LIVE_BOOK_B_SETTLEMENT_ACTUAL_FEES_REQUIRED"}:
+                                "LIVE_BOOK_B_SETTLEMENT_ACTUAL_FEES_REQUIRED",
+                                "LIVE_BOOK_B_SETTLEMENT_CASH_RECONCILE_REQUIRED"}:
                 raise
+            from .eod_reconciliation import EodSettlementPending
+            review = exc.review if isinstance(exc, EodSettlementPending) else None
+            accounting_only = bool(review and not review["active_plan_ids"])
             # The strict writer still refuses settlement. Preserve the fresh
             # projection and exact reconciliation already proved by this run.
             return BookBLiveIntradayReceipt(
                 trade_date=trade_date,
                 phase=normalized_phase,
-                status="blocked",
-                reason=str(exc),
+                status="observed" if accounting_only else "blocked",
+                reason="EOD_RECONCILED_ACCOUNTING_PENDING" if accounting_only else str(exc),
                 account=account.as_dict(),
                 broker_snapshot=snapshot,
                 decisions=(),
                 execution_receipts=(),
                 reconciliation_receipts=tuple(reconciled),
                 deferred_buy_plan_ids=deferred_buys,
+                eod_review=review,
             )
         risk_receipt = record_risk()
         return BookBLiveIntradayReceipt(
@@ -622,6 +633,7 @@ def _run_book_b_live_intraday_locked(
             settlement=settlement,
             risk_receipt=risk_receipt,
             deferred_buy_plan_ids=deferred_buys,
+            eod_review=settlement.get("eod_review"),
         )
     if not account.lots:
         risk_receipt = record_risk()

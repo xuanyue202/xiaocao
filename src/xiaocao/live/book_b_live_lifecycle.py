@@ -534,9 +534,10 @@ def _load_intent_index(state_dir: Path) -> dict[str, dict[str, Any]]:
 def _validate_execution_fill_coverage(
     state_dir: Path,
     ownership_rows: list[dict[str, Any]],
+    *, execution_events: list[dict] | None = None,
 ) -> None:
     """Prove every broker fill in execution state reached ownership evidence."""
-    events = _read_jsonl_strict(Path(state_dir) / "events.jsonl")
+    events = execution_events if execution_events is not None else _read_jsonl_strict(Path(state_dir) / "events.jsonl")
     ownership_cumulative: dict[tuple[str, str], int] = {}
     ownership_source_ids: set[str] = set()
     for row in ownership_rows:
@@ -997,6 +998,7 @@ def write_book_b_live_settlement(
     account: BookBLiveAccountState,
     *,
     now: datetime | None = None,
+    broker_snapshot: dict | None = None,
 ) -> dict[str, Any]:
     """Write one immutable EOD settlement after all live plans are terminal."""
     root = Path(state_dir)
@@ -1004,33 +1006,30 @@ def write_book_b_live_settlement(
         observed = now or datetime.now(timezone.utc)
         if account.accounting and account.accounting.get("status") == "unavailable":
             raise ValueError("LIVE_BOOK_B_SETTLEMENT_ACCOUNTING_UNAVAILABLE")
-        # A current-mark exception can support independent transactions, but
-        # cannot attest that an unresolved historical order is terminal.
-        open_plans = open_execution_plan_ids(root)
-        if open_plans:
-            raise ValueError("LIVE_BOOK_B_EOD_OPEN_EXECUTION_RECONCILE_REQUIRED")
         current_ownership_head = ownership_head_sha256(root)
         from .book_b_capital import current_flow_state
         if current_flow_state(root)["capital_flow_head_sha256"] != account.capital_flow_head_sha256:
             raise ValueError("LIVE_BOOK_B_SETTLEMENT_CAPITAL_CHANGED")
         if current_ownership_head != account.ownership_head_sha256:
             raise ValueError("LIVE_BOOK_B_SETTLEMENT_OWNERSHIP_CHANGED")
-        if current_ownership_head is not None and account.accounting is None:
-            raise ValueError("LIVE_BOOK_B_SETTLEMENT_ACTUAL_FEES_REQUIRED")
         if account.accounting is not None:
             from .book_b_accounting import verify_observation
             from .book_b_capital import verify_account
             verify_account(root, account.as_dict())
             report = verify_observation(root, account.accounting, current=True)
-            if report["status"] not in {"reconciled", "cash_discrepancy_tolerated"}:
-                raise ValueError("LIVE_BOOK_B_SETTLEMENT_CASH_RECONCILE_REQUIRED")
-            if report.get("fee_status") != "actual_fees_complete":
-                raise ValueError("LIVE_BOOK_B_SETTLEMENT_ACTUAL_FEES_REQUIRED")
             if report["status"] == "cash_discrepancy_tolerated":
                 stamp = datetime.fromisoformat(report["observed_at"])
                 if (observed.tzinfo is None
                         or not -30 <= (observed - stamp).total_seconds() <= 300):
                     raise ValueError("LIVE_BOOK_B_SETTLEMENT_CASH_OBSERVATION_STALE")
+        from .eod_reconciliation import assess_eod, EodSettlementPending
+        if broker_snapshot is not None and (
+                broker_snapshot.get("snapshot_sha256") != account.broker_snapshot_sha256
+                or broker_snapshot.get("observed_at") != account.broker_snapshot_observed_at):
+            raise ValueError("EOD_REVIEW_ACCOUNT_SNAPSHOT_MISMATCH")
+        review = assess_eod(root, account.as_dict(), broker_snapshot, now=observed, persist=True)
+        if review["blockers"]:
+            raise EodSettlementPending(review)
         path = settlement_path(root, account.trade_date)
         if path.exists():
             existing = load_latest_book_b_live_settlement(root)
@@ -1063,6 +1062,7 @@ def write_book_b_live_settlement(
             "logical_account_id": account.logical_account_id,
             "account_binding": "proven",
             "settled_at": observed.isoformat(),
+            "eod_review": review,
             **account.as_dict(),
         }
         body["settlement_sha256"] = _sha256(body)
@@ -1077,6 +1077,8 @@ def settlement_nonterminal_plan_ids(state_dir: Path, settlement: dict) -> tuple[
     make the original settlement's nonterminal reconciliation acceptable.
     """
     unresolved = set()
+    from .eod_reconciliation import settlement_resolved_plan_ids
+    resolved = settlement_resolved_plan_ids(Path(state_dir), settlement)
     day = str(settlement.get("trade_date") or "")
     claimed = settlement.get("settlement_sha256")
     for path in (Path(state_dir) / "runs/intraday/archive").glob(f"{day}-eod-*.json"):
@@ -1097,7 +1099,8 @@ def settlement_nonterminal_plan_ids(state_dir: Path, settlement: dict) -> tuple[
                 plan_id = receipt.get("plan_id")
                 if not isinstance(plan_id, str) or not plan_id:
                     raise ValueError("LIVE_BOOK_B_SETTLEMENT_ARCHIVE_PLAN_MISSING")
-                unresolved.add(plan_id)
+                if plan_id not in resolved:
+                    unresolved.add(plan_id)
     return tuple(sorted(unresolved))
 
 
