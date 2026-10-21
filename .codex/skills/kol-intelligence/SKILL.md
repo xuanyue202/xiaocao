@@ -62,6 +62,10 @@ rules in the prompt and current run evidence in memory/ledgers.
 
 ## Load only the required contract
 
+- For an independent missing-video/Handoff health check, read
+  [video-gap-watchdog.md](references/video-gap-watchdog.md). This read-only
+  diagnostic does not run the hourly capture gate or acquire a source slot.
+
 - For the local Liuguan/养生自行车 metadata companion, read
   [liuguan-local-discovery.md](references/liuguan-local-discovery.md). This is
   cache discovery only; native/media capture remains a separate unaccepted gate.
