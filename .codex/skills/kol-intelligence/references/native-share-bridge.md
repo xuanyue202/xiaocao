@@ -166,6 +166,28 @@ do not compensate by splicing a ticket. The 2026-09-28 sources were
 
 ## Visible native jump: B0–B4
 
+### PAC timing for a course that automatically plays
+
+Apply the current task's authorized capture route. In the changed route that
+keeps PAC off during provider entry, do not assume every course has a password
+gate. The Oct19 morning original automatically played before a post-brand PAC
+switch; two such activations produced no post-arm candidate. A later same-item
+repair kept entry and B1 direct, verified the visible exact-brand Allow prompt,
+then enabled the healthy same-capture PAC before B2. This produced the exact
+merchant response and ended finite replay without extra native controls. Its
+download/Handoff still require their normal receipts; this is not a proven
+WeChat protection cause or a guarantee against protection.
+
+For this applicable changed route, use the B1 confirmation as the deterministic
+PAC boundary when a password gate is absent or unknown. Verify singleton health,
+current network service and exact PAC URL/enabled readback before B2. Never race
+autoplay by switching PAC after a screenshot of an already playing course.
+Reuse existing authorization; this timing rule grants no new native retry or
+permission after security/denial. If the route fails, retain its evidence and
+diagnose the same item rather than repeating launches. An already captured
+candidate and verified course closure survive an stdin timeout: reconcile and
+continue the same capture using those proofs, without another native launch.
+
 ### Action evidence and an explicitly authorized diagnostic rerun
 
 Use `scripts/kol_native_action_trace.py` to export the exact current task's
