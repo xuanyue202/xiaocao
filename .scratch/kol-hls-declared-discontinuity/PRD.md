@@ -1,6 +1,6 @@
 # Preserve finite replay across a declared HLS discontinuity
 
-Status: Implemented; same-item production continuation pending
+Status: Complete
 
 The original Oct20 morning capture stops at 57.6%, near 1068 seconds. The
 manifest explicitly declares a discontinuity before segment 217. Exact cache
@@ -37,3 +37,10 @@ Independent Standards/Spec review against
 association omission; preserving the MAP's original KEY plus a rotation
 regression closes it. Both affected-diff re-reviews report zero remaining
 findings. Offline checks are not media/cloud/Handoff completion.
+
+Same original Oct20 morning production task subsequently completed all377
+segments,1854.268041s against1854.212s HLS,83363102bytes, whole-file strict
+decode with no stderr. Original capture/task/cache lineage preserved; fresh
+cleanup, exact cloud video_ready, mailbox created and same-ID/content/media
+hash readback passed, as did all15 capture acceptance checks. Mailbox remained
+pending, so only local Handoff is complete.
