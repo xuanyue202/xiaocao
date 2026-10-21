@@ -266,6 +266,7 @@ class MailboxLedger:
                 "mailbox_send_attempted",
                 "mailbox_send_receipted",
                 "mailbox_send_reconciled",
+                "mailbox_send_rejected",
             }:
                 prior = sent.get(handoff_id)
                 if prior is not None and (
@@ -286,7 +287,33 @@ class MailboxLedger:
 
     def outstanding_handoffs(self) -> list[dict[str, Any]]:
         sent, acked = self._handoff_states()
-        return [sent[key] for key in sorted(sent) if key not in acked]
+        return [sent[key] for key in sorted(sent) if key not in acked
+                and sent[key].get("event") != "mailbox_send_rejected"]
+
+    def reject_unpublished_handoff(self, handoff_id: str, *, not_found_readback: dict[str, Any]) -> dict[str, Any]:
+        """Retire an unreceipted rejected artifact after exact authoritative absence.
+
+        This is neither a send receipt nor an ACK. The original attempt stays
+        in history and the same content can never be published again.
+        """
+        prior = self.handoff_state(handoff_id)
+        _sent, acknowledged = self._handoff_states()
+        if handoff_id in acknowledged:
+            raise MailboxError("acknowledged mailbox handoff cannot be rejected")
+        if prior is None or prior.get("event") not in {"mailbox_send_attempted", "mailbox_send_rejected"}:
+            raise MailboxError("only an unreceipted mailbox attempt may be rejected")
+        if (not_found_readback.get("operation") != "get_mailbox_message"
+            or not_found_readback.get("arguments") != {"mailbox_id": MAILBOX_ID, "message_id": handoff_id}
+            or not_found_readback.get("error_code") != "NOT_FOUND"):
+            raise MailboxError("mailbox rejection requires exact authoritative NOT_FOUND")
+        if prior.get("event") == "mailbox_send_rejected":
+            return prior
+        return self.append(
+            "mailbox_send_rejected", **{key: prior[key] for key in (
+                "handoff_id", "object_kind", "title", "mailbox_id", "message_id", "content_sha256")},
+            reason="media_integrity_rejected_before_send", accepted=False,
+            absence_readback=not_found_readback, absence_sha256=_sha256(not_found_readback),
+        )
 
     def _repair_state(
         self,
@@ -536,6 +563,8 @@ class LiangHuiMailboxClient:
             raise MailboxError("mailbox object label is invalid")
         prior = self.ledger.handoff_state(handoff_id)
         if prior is not None:
+            if prior.get("event") == "mailbox_send_rejected":
+                raise MailboxError("rejected media handoff cannot be sent")
             if (
                 prior.get("mailbox_id") != MAILBOX_ID
                 or prior.get("message_id") != handoff_id

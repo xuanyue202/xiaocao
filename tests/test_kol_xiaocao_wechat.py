@@ -188,6 +188,9 @@ def test_unsupported_merchant_entry_is_retained_without_arming_or_retry(tmp_path
 
 
 class _CaptureDriver:
+    def validate_handoff_media(self, identity, capture_job_id, capsule):
+        pass
+
     def __init__(self):
         self.arms: list[tuple[str, str | None]] = []
         self.advances = 0
@@ -2378,7 +2381,8 @@ def test_live_driver_preserves_original_message_date_before_advance(tmp_path):
     assert len(observed) == 1
 
 
-def test_published_handoff_recovery_is_read_only_until_remote_dispatch(tmp_path):
+@pytest.mark.parametrize("integrity_rejected", [False, True])
+def test_published_handoff_recovery_is_read_only_until_remote_dispatch(tmp_path, integrity_rejected):
     payload = _history(
         "[2026-08-06 16:48] 福利官小花四: 今晚见："
         "https://yv9lc.xetslk.com/sl/3qV2x"
@@ -2419,6 +2423,12 @@ def test_published_handoff_recovery_is_read_only_until_remote_dispatch(tmp_path)
     )
 
     class RecoveryCapture(_CaptureDriver):
+        def validate_handoff_media(self, identity, capture_job_id, capsule_value):
+            assert (identity, capture_job_id, capsule_value) == (
+                parsed["identity"], "kol-capture-current", capsule)
+            if integrity_rejected:
+                raise EnrichmentError("compressed capture duration is implausible")
+
         def published_handoff(self, identity, capture_job_id):
             assert identity == parsed["identity"]
             assert capture_job_id == "kol-capture-current"
@@ -2433,6 +2443,7 @@ def test_published_handoff_recovery_is_read_only_until_remote_dispatch(tmp_path)
             raise AssertionError("recovery must not advance or replay capture")
 
     def exchange(capsule_value, *, object_kind, title):
+        assert not integrity_rejected, "rejected media cannot reach a mailbox side effect"
         assert capsule_value == capsule
         assert object_kind == "video"
         assert title == "target-compressed"
@@ -2455,6 +2466,13 @@ def test_published_handoff_recovery_is_read_only_until_remote_dispatch(tmp_path)
         clock=lambda: datetime.fromisoformat("2026-08-06T23:00:00+08:00"),
     )
 
+    if integrity_rejected:
+        with pytest.raises(EnrichmentError, match="duration"):
+            subscription.dispatch_published_handoff()
+        retained = subscription._load()["items"][parsed["identity"]]
+        assert retained["status"] == "handoff_ready"
+        assert retained["capture_job_id"] == "kol-capture-current"
+        return
     result = subscription.dispatch_published_handoff()
 
     assert result == {
@@ -2557,3 +2575,35 @@ def test_exact_item_resume_accepts_a_unique_source_identity(tmp_path):
         "unsupported_resource": False,
         "unsupported_application": False,
     }
+
+
+def test_native_input_timeout_expired_user_skip_keeps_history_and_never_reactivates(tmp_path):
+    payload=_history('[2026-09-23 08:44] 小花: #小程序://见势擒龙团/7qBV0CwjiqCrkHB')
+    original=parse_xiaocao_live_messages(payload)[0]
+    driver=_CaptureDriver();driver.can_expire_wait=lambda identity,job:job=='original-capture'
+    sub=XiaocaoWechatLiveSubscription(tmp_path,history_reader=lambda:pytest.fail('excluded original must not fetch history'),
+        browser_exchange=lambda _:pytest.fail('no native/browser input'),capture_driver=driver,
+        clock=lambda:datetime.fromisoformat('2026-09-28T10:15:00+08:00'))
+    manifest=sub._load();manifest['items'][original['identity']]={**original,'status':'expired','capture_job_id':'original-capture','observed_page_state':'native_window_input_unavailable'};sub._save(manifest)
+    excluded=sub.exclude_expired_backfill(original['identity'],user_skip_authorized=True)
+    assert excluded['capture_job_id']=='original-capture' and excluded['observed_page_state']=='native_window_input_unavailable'
+    assert sub.exclude_expired_backfill(original['identity'],user_skip_authorized=True)==excluded
+    terminal=sub.run_once(opencli_session='test',only_identity=original['identity'])
+    assert terminal['expired'] and terminal['manual_backfill_excluded'] and terminal['already_completed'] is False
+    progress=normalize_source_result('xiaocao_wechat_live',terminal,failure_revision='a'*40,provider_contract_version='xiaocao_writer_v1')
+    assert progress.status=='terminal' and progress.details['new_external_effect_count']==0
+    with pytest.raises(EnrichmentError,match='explicitly excluded'):
+        sub.run_once(opencli_session='test',only_identity=original['identity'],backfill_since='2026-09-23')
+    assert driver.arms==[] and driver.advances==0
+
+
+@pytest.mark.parametrize('invalid',['no_authorization','not_expired','bound_item','bound_capture'])
+def test_native_input_timeout_user_skip_rejects_unreconciled_work(tmp_path,invalid):
+    driver=_CaptureDriver();driver.can_expire_wait=lambda *a:invalid!='bound_capture'
+    sub=XiaocaoWechatLiveSubscription(tmp_path,history_reader=lambda:{},browser_exchange=lambda _:pytest.fail('no input'),capture_driver=driver)
+    manifest=sub._load();item={'identity':'same-original','status':'expired','capture_job_id':'same-capture'}
+    if invalid=='not_expired':item['status']='playback_activated'
+    if invalid=='bound_item':item['candidate_id']='same-candidate'
+    manifest['items'][item['identity']]=item;sub._save(manifest)
+    with pytest.raises(EnrichmentError):sub.exclude_expired_backfill(item['identity'],user_skip_authorized=invalid!='no_authorization')
+    assert not sub._load()['items'][item['identity']].get('manual_backfill_excluded')

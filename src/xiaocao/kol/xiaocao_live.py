@@ -45,6 +45,7 @@ from .claim_coverage import (
 from .author_profiles import semantic_author_profile
 from .enrichment_types import EnrichmentDiagnosticError, EnrichmentError
 from .netdisk_enrichment import NetdiskEnrichmentService
+from .media_integrity import finite_duration_matches
 from .semantic_bundle import read_validated_bundle, validate_receipt_bindings
 
 
@@ -822,12 +823,16 @@ class XiaocaoLiveService:
         name: str,
         *,
         capture_job_id: str | None = None,
+        media_sha256: str | None = None,
+        media_repair_revision: str | None = None,
     ) -> dict[str, Any] | None:
         return next(
             (
                 row
                 for row in reversed(self.events())
                 if row.get("event") == name
+                and (media_sha256 is None or row.get("media_sha256") == media_sha256)
+                and (media_repair_revision is None or row.get("media_repair_revision") == media_repair_revision)
                 and (
                     capture_job_id is None
                     or row.get("capture_job_id") == capture_job_id
@@ -1390,6 +1395,13 @@ class XiaocaoLiveService:
             fresh = self.capture_store.latest(capture_job_id)
             if fresh and fresh.get("user_resume_required") is True:
                 return fresh
+            labels = ((current.get("download_task") or {}).get("meta") or {}).get("labels") or {}
+            if current.get("media_repair") or labels.get("checkpoint_basis") == "verified_hls_segments" or labels.get("hls_finite") == "true":
+                raise EnrichmentDiagnosticError(
+                    "checkpoint download interrupted; preserve and resume the original task",
+                    category="transport_error", code="checkpoint_download_interrupted",
+                    stage="compressed_capture",
+                )
             if current.get("source_job_id"):
                 return self.capture_store.transition(
                     current,
@@ -1509,6 +1521,7 @@ class XiaocaoLiveService:
         if current is None:
             raise EnrichmentError("capture job does not exist")
         if current.get("status") == "downloaded":
+            self.validate_media(capture_job_id)
             return {**current, "idempotent_replay": True}
         if current.get("status") != "downloading":
             raise EnrichmentError("capture is not awaiting download reconciliation")
@@ -1589,8 +1602,7 @@ class XiaocaoLiveService:
             size = int(probe["size"])
         except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
             raise EnrichmentError("paused compressed capture could not be probed") from exc
-        tolerance = max(15.0, expected_duration * 0.01)
-        if duration < 60 or abs(duration - expected_duration) > tolerance:
+        if not finite_duration_matches(duration, expected_duration):
             raise EnrichmentError("paused compressed capture duration does not match HLS")
 
         return self.capture_store.transition(
@@ -1726,10 +1738,27 @@ class XiaocaoLiveService:
         labels = ((capture.get("download_task") or {}).get("meta") or {}).get(
             "labels"
         ) or {}
-        expected_duration = float(labels.get("hls_duration_sec") or duration)
-        tolerance = max(15.0, expected_duration * 0.01)
-        if duration < 60 or abs(duration - expected_duration) > tolerance:
-            raise EnrichmentError("compressed capture duration is implausible")
+        expected_duration = labels.get("hls_duration_sec")
+        if not expected_duration and (capture.get("candidate") or {}).get("media_type") == "mp4":
+            expected_duration = duration
+        if not finite_duration_matches(duration, expected_duration):
+            media_sha = _sha256_file(media)
+            rejected = self._event("media_integrity_rejected", capture_job_id=capture_job_id)
+            if rejected is None or rejected.get("media_sha256") != media_sha:
+                self._append(
+                    "media_integrity_rejected", status="repair_required",
+                    capture_job_id=capture_job_id,
+                    download_task_id=capture.get("download_task_id"),
+                    media_sha256=media_sha,
+                    media_size_bytes=media.stat().st_size,
+                    failure_code="compressed_media_duration_mismatch",
+                    accepted=False,
+                )
+            raise EnrichmentDiagnosticError(
+                "compressed capture duration is implausible",
+                category="contract_error", code="compressed_media_duration_mismatch",
+                stage="compressed_capture",
+            )
         media_sha = _sha256_file(media)
         existing = self._event("media_validated")
         if (
@@ -2027,13 +2056,25 @@ class XiaocaoLiveService:
         return {**existing, "idempotent_replay": True, "cleanup_readback": readback}
 
     def cleanup_sniffer(self, *, capture_job_id: str) -> dict[str, Any]:
+        capture = self.capture_store.latest(capture_job_id) or {}
+        revision = (capture.get("media_repair") or {}).get("revision")
         existing = self._event(
-            "capture_cleanup_completed",
-            capture_job_id=capture_job_id,
+            "capture_cleanup_completed", capture_job_id=capture_job_id,
+            media_repair_revision=revision,
         )
         replay = self._verified_cleanup_replay(existing)
         if replay is not None:
             return replay
+        if revision:
+            tasks = self.sniffer.tasks()
+            own = [row for row in tasks if row.get("id") == capture.get("download_task_id")]
+            meta = (own[0].get("meta") or {}) if len(own) == 1 else {}
+            labels = meta.get("labels") or (meta.get("req") or {}).get("labels") or {}
+            if (len(own) != 1 or own[0].get("status") != "done"
+                or labels.get("media_repair_revision") != revision
+                or labels.get("capture_id") != (capture.get("candidate") or {}).get("id")
+                or any(row.get("status") in {"running", "ready", "wait"} for row in tasks)):
+                raise EnrichmentError("repair cleanup lacks exact idle task binding")
         self._append(
             "capture_cleanup_claimed",
             status="cleanup_claimed",
@@ -2052,7 +2093,9 @@ class XiaocaoLiveService:
         proof = self.cleanup_snapshot()
         proof["capture_job_id"] = capture_job_id
         validate_cleanup_evidence(proof)
-        proof_path = self.output_dir / "receipts" / "capture_cleanup.json"
+        if revision:
+            proof["media_repair_revision"] = revision
+        proof_path = self.output_dir / "receipts" / (f"capture_cleanup-{revision}.json" if revision else "capture_cleanup.json")
         _atomic_json(proof_path, proof)
         return self._append(
             "capture_cleanup_completed",
@@ -2124,7 +2167,7 @@ class XiaocaoLiveService:
     ) -> dict[str, Any]:
         existing = self._event(
             "cloud_handoff_published",
-            capture_job_id=capture_job_id,
+            capture_job_id=capture_job_id, media_sha256=media["media_sha256"],
         )
         if existing is not None:
             return {**existing, "idempotent_replay": True}
@@ -2191,7 +2234,8 @@ class XiaocaoLiveService:
             handoff["source_time_basis"] = "original_wechat_message"
             source_publication_time(handoff)
         handoff["handoff_sha256"] = _sha256_text(_canonical(handoff))
-        path = self.output_dir / "handoffs" / f"{capture_job_id}.json"
+        revision = (capture.get("media_repair") or {}).get("revision")
+        path = self.output_dir / "handoffs" / (f"{capture_job_id}-{revision}.json" if revision else f"{capture_job_id}.json")
         _atomic_json(path, handoff)
         return self._append(
             "cloud_handoff_published",
@@ -2423,11 +2467,12 @@ class XiaocaoLiveService:
         media = self.validate_media(capture_job_id)
         handoff = self._event(
             "cloud_handoff_published",
-            capture_job_id=capture_job_id,
+            capture_job_id=capture_job_id, media_sha256=media["media_sha256"],
         )
         cleanup = self._event(
             "capture_cleanup_completed",
             capture_job_id=capture_job_id,
+            media_repair_revision=(capture.get("media_repair") or {}).get("revision"),
         )
         if cleanup is None:
             cleanup = self.cleanup_sniffer(capture_job_id=capture_job_id)

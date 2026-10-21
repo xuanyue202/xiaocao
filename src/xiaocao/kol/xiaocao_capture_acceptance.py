@@ -13,6 +13,7 @@ from urllib.request import urlopen
 
 from .netdisk_enrichment import EnrichmentError
 from .xiaocao_live import XiaocaoLiveService
+from .media_integrity import finite_duration_matches
 
 
 JsonFetcher = Callable[[str], dict[str, Any]]
@@ -86,6 +87,24 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _finite_artifact_duration(media: Path, capture: dict[str, Any], labels: dict[str, Any]) -> bool:
+    expected = labels.get("hls_duration_sec")
+    is_mp4 = (capture.get("candidate") or {}).get("media_type") == "mp4"
+    if not expected and is_mp4:
+        return True  # Non-HLS artifacts retain their existing media probe.
+    if not media.is_file():
+        return False
+    try:
+        result = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "json", str(media)],
+            check=False, capture_output=True, text=True, timeout=30,
+        )
+        actual = json.loads(result.stdout)["format"]["duration"]
+        return result.returncode == 0 and finite_duration_matches(actual, expected)
+    except (OSError, ValueError, TypeError, KeyError, subprocess.TimeoutExpired):
+        return False
+
+
 def _reconciled_full_artifact(capture: dict[str, Any], labels: dict[str, Any]) -> bool:
     """Independently recheck a full artifact, without rewriting provider pause."""
     if (
@@ -123,10 +142,8 @@ def _reconciled_full_artifact(capture: dict[str, Any], labels: dict[str, Any]) -
         actual = float(json.loads(result.stdout)["format"]["duration"])
     except (OSError, ValueError, TypeError, KeyError, subprocess.TimeoutExpired):
         return False
-    tolerance = max(15.0, expected * 0.01)
     return (
-        math.isfinite(actual) and actual >= 60
-        and abs(actual - expected) <= tolerance
+        finite_duration_matches(actual, expected)
         and abs(recorded_duration - actual) <= 1.0
     )
 
@@ -316,6 +333,7 @@ def inspect_identity(
         "media_file_exists": media_exists,
         "media_sha256_matches": hash_matches,
         "media_probe_valid": media_is_valid,
+        "finite_duration_verified": _finite_artifact_duration(media_path, capture, task_labels),
         "cloud_handoff_published": bool(handoff),
         "manifest_closed": item.get("status") in {"handoff_ready", "completed"},
         "accepted_after_boundary": _at_or_after(

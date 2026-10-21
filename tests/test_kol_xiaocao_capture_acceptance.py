@@ -53,6 +53,7 @@ def _fixture(tmp_path: Path, *, complete: bool) -> tuple[Path, str]:
         [
             {
                 "event": "armed",
+                "candidate": {"media_type": "mp4"},
                 "job_id": "kol-capture-test",
                 "source_job_id": "elive-job-test",
             }
@@ -112,6 +113,24 @@ def test_acceptance_requires_complete_native_capture_chain(tmp_path: Path) -> No
     assert all(result["items"][0]["checks"].values())
 
 
+def test_acceptance_reprobes_shortened_artifact_despite_done_and_validated_receipt(tmp_path, monkeypatch):
+    root, identity = _fixture(tmp_path, complete=True)
+    def fetch(url):
+        value = _fetch(url)
+        if "/api/task/list" in url:
+            value['data']['list'][0]['meta'] = {'req': {'labels': {'hls_duration_sec': '6228.206'}}}
+        return value
+    monkeypatch.setattr('xiaocao.kol.xiaocao_capture_acceptance.subprocess.run',
+        lambda *args, **kwargs: SimpleNamespace(returncode=0,
+            stdout=json.dumps({'format': {'duration': '6190.762887'}})))
+    result = inspect_acceptance(root, [identity], required_count=1, fetch_json=fetch,
+                                probe_media=lambda _: True)
+    assert result['status'] == 'failed'
+    assert result['items'][0]['checks']['download_completion_verified'] is True
+    assert result['items'][0]['checks']['media_validated'] is True
+    assert result['items'][0]['checks']['finite_duration_verified'] is False
+
+
 def test_acceptance_rejects_existing_bytes_without_ui_and_handoff(
     tmp_path: Path,
 ) -> None:
@@ -148,7 +167,7 @@ def test_native_entry_acceptance_requires_the_same_candidate_in_task_labels(tmp_
         "job_id": "kol-capture-test",
         "event": "download_complete",
         "expected_source": {"source_identity": "xiaoetong:appdemo:l_test"},
-        "candidate": {"id": "candidate-test", "live_id": "l_test"},
+        "candidate": {"id": "candidate-test", "live_id": "l_test", "media_type": "mp4"},
         "download_task_id": "task-test",
     }])
     labels = {
@@ -175,7 +194,7 @@ def test_completed_capture_acceptance_uses_durable_task_after_sniffer_cleanup(tm
                "source_job_id": "elive-job-test", "source_job_status": "task_created",
                "source_task_id": "task-test", "download_task_id": "task-test",
                "expected_source": {"source_identity": "xiaoetong:appdemo:l_test"},
-               "candidate": {"id": "candidate-test", "live_id": "l_test"},
+               "candidate": {"id": "candidate-test", "live_id": "l_test", "media_type": "mp4"},
                "candidate_key": "live:l_test", "baseline_candidate_keys": [],
                "download_task": {"id": "task-test", "status": "done", "meta": {"labels": {
                    "capture_id": "candidate-test", "live_id": "l_test", "type": "live_capture",
@@ -205,7 +224,7 @@ def test_reconciled_complete_paused_artifact_is_verified_without_claiming_task_d
     capture = {"job_id": "kol-capture-test", "event": "download_completed_reconciled",
                "status": "downloaded", "download_task_id": "task-test",
                "expected_source": {"source_identity": "xiaoetong:appdemo:l_test"},
-               "candidate": {"id": "candidate-test", "live_id": "l_test"},
+               "candidate": {"id": "candidate-test", "live_id": "l_test", "media_type": "mp4"},
                "candidate_key": "live:l_test", "baseline_candidate_keys": [],
                "provider_status_observed": "pause", "media_path": str(media),
                "media_size_bytes": media.stat().st_size, "media_duration_seconds": 1000.0,
@@ -252,7 +271,7 @@ def test_durable_native_replay_of_seen_live_requires_fresh_bound_evidence(tmp_pa
         "candidate_key": "live:l_test", "baseline_candidate_keys": ["live:l_test"],
         "expected_source": {"source_identity": "xiaoetong:appdemo:l_test",
                             "source_app_id": "appdemo", "source_resource_id": "l_test"},
-        "candidate": {"id": "fresh", "live_id": "l_test", "captured": "2026-09-05 14:01:00"},
+        "candidate": {"id": "fresh", "live_id": "l_test", "media_type": "mp4", "captured": "2026-09-05 14:01:00"},
         "download_task_id": "task-test",
         "download_task": {"id": "task-test", "status": "done", "meta": {"labels": {
             "capture_id": "fresh", "live_id": "l_test", "type": "live_capture",

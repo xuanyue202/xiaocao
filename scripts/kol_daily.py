@@ -116,6 +116,7 @@ class SourceAdapter:
     narrow_resume: Any
     reconcile: Any
     structured_input: Any | None = None
+    discover: Any | None = None
 
     def coordinator_entry(self) -> dict[str, Any]:
         entry = {
@@ -127,6 +128,8 @@ class SourceAdapter:
         }
         if self.structured_input is not None:
             entry["structured_input"] = self.structured_input
+        if self.discover is not None:
+            entry["discover"] = self.discover
         return entry
 
 
@@ -4322,6 +4325,7 @@ class DailyRuntime:
         self,
         *,
         only_identity: str | None = None,
+        discovery_only: bool = False,
     ) -> dict[str, Any]:
         history = WechatCliHistoryReader(
             self.args.xiaocao_wechat_contact,
@@ -4342,6 +4346,8 @@ class DailyRuntime:
             password=self.args.xiaocao_live_password,
             playback_route=XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM,
         )
+        if discovery_only:
+            return subscription.discover()
         run_kwargs: dict[str, Any] = {
             "opencli_session": getattr(
                 self.args,
@@ -5386,6 +5392,10 @@ def main() -> int:
                 "priority": 10,
                 "run": _classified_source(
                     "xiaocao_wechat_live", runtime.xiaocao_wechat
+                ),
+                "discover": _classified_source(
+                    "xiaocao_wechat_live",
+                    lambda: runtime.xiaocao_wechat(discovery_only=True),
                 ),
                 "narrow_resume": _classified_narrow_source(
                     "xiaocao_wechat_live",

@@ -467,6 +467,8 @@ def parse_xiaocao_live_messages(payload: dict[str, Any]) -> list[dict[str, Any]]
 
 
 class CaptureDriver(Protocol):
+    def validate_handoff_media(self, identity: str, capture_job_id: str, capsule: dict[str, Any]) -> None: ...
+
     def can_expire_wait(self, identity: str, capture_job_id: str) -> bool: ...
 
     def prepare_playback(self, identity: str, capture_job_id: str) -> dict[str, Any]: ...
@@ -603,7 +605,8 @@ class XiaocaoLiveCaptureDriver:
             and capture.get("status") == "awaiting_capture"
             and not any(capture.get(key) for key in (
                 "candidate_id", "task_id", "source_job_id", "expected_source",
-                "native_unbound_media",
+                "native_unbound_media", "candidate", "download_task_id",
+                "download_idempotency_key", "media_path",
             ))
         )
 
@@ -943,15 +946,23 @@ class XiaocaoLiveCaptureDriver:
         capture_job_id: str,
     ) -> dict[str, Any] | None:
         service = self._service(identity)
-        return next(
-            (
-                event
-                for event in reversed(service.events())
-                if event.get("event") == "cloud_handoff_published"
-                and event.get("capture_job_id") == capture_job_id
-            ),
-            None,
-        )
+        capture = service.capture_store.latest(capture_job_id) or {}
+        media_sha = None
+        if capture.get("media_repair"):
+            if capture.get("status") != "downloaded":
+                return None
+            media_sha = service.validate_media(capture_job_id)["media_sha256"]
+        return next((event for event in reversed(service.events())
+            if event.get("event") == "cloud_handoff_published"
+            and event.get("capture_job_id") == capture_job_id
+            and (media_sha is None or event.get("media_sha256") == media_sha)), None)
+
+    def validate_handoff_media(self, identity: str, capture_job_id: str, capsule: dict[str, Any]) -> None:
+        """Revalidate local bytes before the first external mailbox effect."""
+        media = self._service(identity).validate_media(capture_job_id)
+        for field in ("capture_job_id", "media_sha256", "media_size_bytes", "media_duration_seconds"):
+            if media.get(field) != capsule.get(field):
+                raise EnrichmentError("Xiaocao handoff media no longer matches its capsule")
 
 class XiaocaoWechatLiveSubscription:
     """Exactly-once WeChat discovery and capture state machine.
@@ -1090,6 +1101,34 @@ class XiaocaoWechatLiveSubscription:
             }
         self._save(manifest)
 
+    def discover(self) -> dict[str, Any]:
+        """Persist original-message inventory without activating any capture."""
+        manifest = self._load()
+        previous = set(manifest["items"])
+        self._poll(manifest)
+        expired = self.expire_stale_waits(manifest)
+        pending = sorted(
+            (item for item in manifest["items"].values()
+             if item.get("status") not in _TERMINAL),
+            key=lambda item: (item["published_at"], item["identity"]),
+            reverse=True,
+        )
+        result = {
+            "status": "scanned",
+            "scanned_at": self._now(),
+            "discovered_count": len(set(manifest["items"]) - previous),
+            "expired_count": len(expired),
+            "pending_items": [
+                {key: item[key] for key in (
+                    "identity", "published_at", "status", "capture_job_id",
+                ) if key in item}
+                for item in pending
+            ],
+        }
+        manifest["last_discovery"] = result
+        self._save(manifest)
+        return result
+
     def _supersede_older_unarmed_previews(
         self,
         manifest: dict[str, Any],
@@ -1146,6 +1185,28 @@ class XiaocaoWechatLiveSubscription:
             expired.append(item["identity"])
         return expired
 
+    def exclude_expired_backfill(self, identity: str, *, user_skip_authorized: bool) -> dict[str, Any]:
+        """Preserve an expired unbound original while recording a human skip."""
+        if not user_skip_authorized:
+            raise EnrichmentError("backfill exclusion requires a direct user instruction")
+        manifest = self._load()
+        item = manifest["items"].get(identity)
+        if not isinstance(item, dict) or item.get("status") != "expired":
+            raise EnrichmentError("only an expired original can be excluded here")
+        if any(item.get(key) for key in (
+            "candidate_id", "task_id", "media_request_observed", "handoff_id", "source_identity",
+        )):
+            raise EnrichmentError("backfill exclusion must reconcile existing bound claims")
+        job = item.get("capture_job_id")
+        if job:
+            check = getattr(self.capture_driver, "can_expire_wait", None)
+            if not callable(check) or check(identity, job) is not True:
+                raise EnrichmentError("backfill exclusion lacks an exact unbound capture")
+        if item.get("manual_backfill_excluded") is True:
+            return item
+        return self._transition(manifest, item, "expired", manual_backfill_excluded=True,
+            manual_backfill_excluded_at=self._now(), manual_backfill_exclusion_reason="direct_user_skip")
+
     def _prepare_manual_backfill(
         self, manifest: dict[str, Any], identity: str | None, since: str,
     ) -> None:
@@ -1160,6 +1221,8 @@ class XiaocaoWechatLiveSubscription:
         if cutoff > now:
             raise EnrichmentError("manual backfill date is in the future")
         item = manifest["items"].get(identity)
+        if item and item.get("manual_backfill_excluded") is True:
+            raise EnrichmentError("original entry is explicitly excluded from backfill")
         if (
             item and item.get("manual_backfill_since") == since
             and item.get("status") not in {"expired", "superseded", "historical_baseline"}
@@ -1403,6 +1466,7 @@ class XiaocaoWechatLiveSubscription:
         item: dict[str, Any],
     ) -> dict[str, Any]:
         capsule = self._load_handoff(item)
+        self.capture_driver.validate_handoff_media(item["identity"], item["capture_job_id"], capsule)
         media_basename = str(capsule.get("media_basename") or "").strip()
         if (
             not media_basename
@@ -1491,6 +1555,31 @@ class XiaocaoWechatLiveSubscription:
             )
             return self._dispatch_handoff(manifest, item)
         return {"status": "no_update"}
+
+    def bind_media_revision(self, identity: str, capture_job_id: str, *,
+                            mailbox_ledger: Any) -> dict[str, Any]:
+        """Reopen only an explicitly prepared, unpublished same-item repair."""
+        manifest = self._load()
+        item = manifest["items"].get(identity)
+        if not isinstance(item, dict) or item.get("capture_job_id") != capture_job_id:
+            raise EnrichmentError("media revision subscription binding changed")
+        service = self.capture_driver._service(identity)
+        capture = service.capture_store.latest(capture_job_id) or {}
+        repair = capture.get("media_repair") or {}
+        state = mailbox_ledger.handoff_state(str(repair.get("previous_handoff_id") or "")) or {}
+        if (not repair.get("backend_receipt") or state.get("event") != "mailbox_send_rejected"
+            or item.get("status") == "completed"):
+            raise EnrichmentError("media revision subscription lacks unpublished repair proof")
+        if item.get("media_repair_revision") == repair.get("revision"):
+            return item
+        if item.get("status") != "handoff_ready":
+            raise EnrichmentError("media revision requires the original ready handoff")
+        old = self._load_handoff(item)
+        if old.get("handoff_id") != repair.get("previous_handoff_id") or old.get("media_sha256") != repair.get("previous_media_sha256"):
+            raise EnrichmentError("media revision changed the original handoff")
+        return self._transition(manifest, item, "playback_activated",
+            media_repair_revision=repair["revision"], previous_handoff_path=item["handoff_path"],
+            handoff_path=None)
 
     def continue_cloud_handoff(
         self,
@@ -2132,6 +2221,8 @@ class XiaocaoWechatLiveSubscription:
                     "already_completed": item.get("status") not in {"unsupported_application", "unsupported_resource", "expired"},
                     "unsupported_resource": item.get("status") == "unsupported_resource",
                     "unsupported_application": item.get("status") == "unsupported_application",
+                    **({"expired": True, "manual_backfill_excluded": item.get("manual_backfill_excluded") is True}
+                       if item.get("status") == "expired" else {}),
                 }
         if item is None:
             return {"status": "no_update"}
