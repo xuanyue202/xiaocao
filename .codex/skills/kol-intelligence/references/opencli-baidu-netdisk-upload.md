@@ -140,6 +140,15 @@ error text can remain while its current class/progress shows uploading. Missing,
 incomplete or conflicting queue evidence is `unknown`, never a retry permit.
 These observations do not alter the claim, attach files or prove cloud success.
 
+If the exact adapter uploader binding is missing, its bounded Netdisk-only page
+metadata distinguishes absence of a matching folder from absence of every
+Netdisk page in that context. Do not infer destruction from a missing match.
+An Agent-owned `restore-readback-only` operation may restore the existing site
+session to the exact folder for credentialed cloud reconciliation; it stops
+before activation, input marking or file attachment and rejects combined action
+flags/ambiguous pages. A restored portal is not the old uploader queue, and an
+empty fresh queue cannot authorize resubmission of an uncertain original claim.
+
 For the exact `file_chooser_not_opened` / `upload_before_attachment` failure,
 OpenCLI's chooser timeout occurs before file assignment. After a verified repair,
 `NetdiskEnrichmentService.resume_pre_attachment_upload` reconciles the same target

@@ -114,7 +114,7 @@ function normalizeInput(kwargs) {
   return { file, directory, targetName, claimId };
 }
 
-async function inspectTarget(page, input, { retainPage = false } = {}) {
+async function inspectTarget(page, input, { retainPage = false, restoreReadback = false } = {}) {
   const folderUrl = 'https://pan.baidu.com/disk/main#/index?category=all&path='
     + encodeURIComponent(input.directory);
   if (!page.tabs || !page.selectTab) {
@@ -138,14 +138,36 @@ async function inspectTarget(page, input, { retainPage = false } = {}) {
     await uploadStage(input, 'select', () => page.selectTab(targets[0].page));
   } else {
     if (retainPage) {
+      const netdiskPages = tabs.flatMap(tab => {
+        try {
+          const url = new URL(tab.url);
+          if (url.origin !== 'https://pan.baidu.com') return [];
+          const query = url.hash.slice(url.hash.indexOf('?') + 1);
+          return [{page: String(tab.page || '').slice(0, 128),
+            pathname: url.pathname === '/disk/main' ? '/disk/main' : 'other',
+            folderMatches: new URLSearchParams(query).get('path') === input.directory}];
+        } catch { return []; }
+      });
+      process.stderr.write(JSON.stringify({kind: 'xiaocao_uploader_binding_missing',
+        claimId: input.claimId, observedTabCount: tabs.length, netdiskPageCount: netdiskPages.length,
+        pages: netdiskPages.slice(0, 10)}) + '\n');
       throw new CommandExecutionError('Retained adapter uploader page is missing; inspection must not navigate');
+    }
+    if (restoreReadback && tabs.some(tab => {
+      try { return new URL(tab.url).origin === 'https://pan.baidu.com'; }
+      catch { return false; }
+    })) {
+      throw new CommandExecutionError('Another Netdisk page may retain the uploader; preserve it without navigation');
+    }
+    if (restoreReadback && tabs.some(tab => tab.url !== 'about:blank')) {
+      throw new CommandExecutionError('Nonblank adapter pages must be preserved without navigation');
     }
     await uploadStage(input, 'navigate', () => page.goto(folderUrl, { waitUntil: 'load', settleMs: 1500 }));
     const activePage = page.getActivePage?.();
     if (!activePage) throw new CommandExecutionError('Exact adapter page identity is missing');
     await uploadStage(input, 'select', () => page.selectTab(activePage));
   }
-  await restoreUploaderWindow(page, input);
+  if (!restoreReadback) await restoreUploaderWindow(page, input);
   const inspection = await uploadStage(input, 'folder_scan', () => page.evaluate(`(async () => {
     const dir = ${JSON.stringify(input.directory)};
     const target = ${JSON.stringify(input.targetName)};
@@ -489,6 +511,7 @@ cli({
     { name: 'target-name', required: true, help: 'Exact destination basename; must equal the local basename' },
     { name: 'claim-id', required: true, help: 'Durable upload claim identifier from the caller ledger' },
     { name: 'inspect-only', type: 'boolean', default: false, help: 'Stop after exact folder/name inspection without attaching a file' },
+    { name: 'restore-readback-only', type: 'boolean', default: false, help: 'Restore only the missing site page for cloud readback; never attach a file or recover its queue' },
     { name: 'repair-stalled', type: 'boolean', default: false, help: 'One caller-claimed pause/readback/continue of the retained stalled transfer; never attach a file' },
     { name: 'continue-stalled', type: 'boolean', default: false, help: 'Finish one caller-claimed recovery from the exact paused transfer; never pause or attach' },
     { name: 'activate-only', type: 'boolean', default: false, help: 'Check native page activation without attaching a file' },
@@ -507,12 +530,17 @@ cli({
   func: async (page, kwargs) => {
     const input = normalizeInput(kwargs);
     const recovery = kwargs['repair-stalled'] === true || kwargs['continue-stalled'] === true;
+    const restoreReadback = kwargs['restore-readback-only'] === true;
+    if (restoreReadback && (recovery || kwargs['inspect-only'] === true || kwargs['activate-only'] === true)) {
+      throw new ArgumentError('Readback restoration cannot be combined with another operation');
+    }
     if (recovery && (kwargs['inspect-only'] === true || kwargs['activate-only'] === true
         || (kwargs['repair-stalled'] === true && kwargs['continue-stalled'] === true))) {
       throw new ArgumentError('Same-queue repair cannot be combined with inspection or activation');
     }
     const inspection = await inspectTarget(page, input, {
       retainPage: kwargs['inspect-only'] === true || recovery,
+      restoreReadback,
     });
     if (recovery) {
       if (inspection.exactCount !== 0) {
@@ -533,7 +561,7 @@ cli({
         surfaceState: inspection.surfaceState,
       }];
     }
-    if (kwargs['inspect-only'] === true) {
+    if (kwargs['inspect-only'] === true || restoreReadback) {
       return [{
         status: 'ready_to_upload',
         directory: input.directory,

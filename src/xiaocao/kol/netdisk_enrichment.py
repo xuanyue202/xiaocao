@@ -756,13 +756,14 @@ class NetdiskEnrichmentService:
         inspect_only: bool = False,
         repair_stalled: bool = False,
         continue_stalled: bool = False,
+        restore_readback_only: bool = False,
     ) -> Any:
         if session != _OPENCLI_UPLOAD_TEMPLATE_SESSION:
             raise EnrichmentError(
                 "Baidu Netdisk upload template requires OpenCLI session "
                 f"{_OPENCLI_UPLOAD_TEMPLATE_SESSION}"
             )
-        if sum(bool(value) for value in (repair_stalled, continue_stalled, inspect_only)) > 1:
+        if sum(bool(value) for value in (repair_stalled, continue_stalled, inspect_only, restore_readback_only)) > 1:
             raise EnrichmentError("upload recovery and inspection are separate operations")
         command = [
             *self.opencli_command,
@@ -786,6 +787,7 @@ class NetdiskEnrichmentService:
             "--format",
             "json",
             *(["--inspect-only", "true"] if inspect_only else []),
+            *(["--restore-readback-only", "true"] if restore_readback_only else []),
             *(["--repair-stalled", "true"] if repair_stalled else []),
             *(["--continue-stalled", "true"] if continue_stalled else []),
         ]
@@ -815,7 +817,7 @@ class NetdiskEnrichmentService:
                     subprocess.CompletedProcess(command, 75, stdout="", stderr=stderr),
                     target_name=target_name, directory=self.netdisk_directory, claim_id=claim_id,
                 )
-            if inspect_only:
+            if inspect_only or restore_readback_only:
                 raise EnrichmentDiagnosticError(
                     "OpenCLI upload readback timed out; preserve the existing claim",
                     category="timeout", code="upload_readback_timeout", stage="upload_readback",
