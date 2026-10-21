@@ -58,6 +58,32 @@ _AI_NOTE_POSTCLICK_ZERO_MIN_AGE = timedelta(minutes=5)
 _NETDISK_DIRECTORY = "/课程/自己的课/小草"
 
 
+def _upload_queue_observation(proof: dict[str, Any], observed_at: datetime) -> dict[str, Any]:
+    """Describe current UI health without accepting media or retrying effects."""
+    surface = proof.get("surfaceState") or {}
+    queue = surface.get("transferQueue") or {}
+    rows = surface.get("targetUiRows") or []
+    state, progress = "unknown", []
+    if (queue.get("complete") is True and queue.get("targetCount") == 1
+        and isinstance(rows, list) and len(rows) == 1 and isinstance(rows[0], dict)):
+        row = rows[0]
+        classes = set(str(row.get("rowClassName") or "").split())
+        states = {name for name, tokens in (
+            ("uploading", {"status-uploading"}),
+            ("paused", {"status-pause", "status-paused"}),
+            ("failed", {"status-error", "status-failed"}),
+        ) if classes & tokens}
+        if len(states) == 1 and "status-success" not in classes:
+            state = states.pop()
+        widths = row.get("progressWidths")
+        if isinstance(widths, list):
+            progress = [value for value in widths[:10] if isinstance(value, str)
+                and re.fullmatch(r"\d{1,3}(?:\.\d{1,6})?%", value)
+                and float(value[:-1]) <= 100]
+    return {"state": state, "progress_widths": progress,
+            "observed_at": observed_at.isoformat()}
+
+
 def _decision_process_diagnostic(exc: BaseException) -> EnrichmentDiagnosticError | None:
     """Keep safe failure identities through the video decision adapter."""
     if isinstance(exc, EnrichmentDiagnosticError):
@@ -2621,6 +2647,7 @@ class NetdiskEnrichmentService:
         if status not in {"prepared", "upload_claimed"}:
             raise EnrichmentError(f"OpenCLI advance does not support state {status} yet")
         target_name = str(current["video_basename"])
+        upload_observation = None
         if status == "upload_claimed" and self.use_opencli_upload_template:
             # Poll the page that owns the upload, not the independently leased
             # browser surface. Inspection never navigates or attaches a file.
@@ -2671,6 +2698,7 @@ class NetdiskEnrichmentService:
             if not valid:
                 raise EnrichmentError("claimed upload adapter readback is not exact")
             inspection = {"exact_count": count, "observed_at": self._time()}
+            upload_observation = _upload_queue_observation(proof, inspection["observed_at"])
         else:
             inspection = self._inspect_opencli_target(
                 session=session,
@@ -2725,6 +2753,8 @@ class NetdiskEnrichmentService:
                 ),
                 source_mode="uploaded",
             )
+        if upload_observation is not None:
+            current = {**current, "upload_observation": upload_observation}
         if current.get("upload_started_at"):
             return {**current, "pending": True, "idempotent_replay": True}
         return {

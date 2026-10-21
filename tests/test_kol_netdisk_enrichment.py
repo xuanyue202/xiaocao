@@ -221,6 +221,49 @@ def test_claimed_template_poll_retains_uploader_and_never_reattaches(tmp_path, p
     assert not any(r["event"] == "netdisk_upload_failed" for r in service.store.read())
 
 
+@pytest.mark.parametrize("row_class,complete,duplicate,expected", [
+    ("file-list status-error", True, False, "failed"),
+    ("file-list status-pause", True, False, "paused"),
+    ("file-list status-uploading", True, False, "uploading"),
+    ("file-list status-error status-uploading", True, False, "unknown"),
+    ("file-list status-error", False, False, "unknown"),
+    ("file-list status-error", True, True, "unknown"),
+])
+def test_claimed_upload_reports_current_queue_health_without_retry(
+    tmp_path, monkeypatch, row_class, complete, duplicate, expected,
+):
+    video = tmp_path / "video-compressed.mp4"
+    video.write_bytes(b"real-video")
+    service = NetdiskEnrichmentService(tmp_path / "out", runner=_runner,
+        now=lambda: NOW, use_opencli_upload_template=True)
+    job = service.prepare(video)
+    original = {**job, "event": "netdisk_upload_started", "status": "upload_claimed",
+        "claimed_at": NOW.isoformat(), "upload_started_at": NOW.isoformat()}
+    service.store.append(original)
+    row = {"rowClassName": row_class, "rowText": "链接超时 signed-secret",
+        "progressWidths": ["1.48%", "101%", "NaN%", "secret"]}
+    proof = {"status": "ready_to_upload", "directory": service.netdisk_directory,
+        "targetName": video.name, "claimId": job["job_id"], "uploaded": False,
+        "uploadTarget": "", "exactCountBefore": 0, "url": "https://pan.baidu.com/disk/main",
+        "surfaceState": {"transferQueue": {"complete": complete, "targetCount": 1},
+                         "targetUiRows": [row, row] if duplicate else [row]}}
+    calls = []
+    def inspect(**kwargs):
+        assert kwargs["inspect_only"] is True
+        calls.append(kwargs["claim_id"])
+        return SimpleNamespace(returncode=0, stdout=json.dumps([proof]))
+    monkeypatch.setattr(service, "_opencli_upload_template_process", inspect)
+    result = service.advance_opencli(job["job_id"], session="site:baidu-netdisk")
+    assert result["status"] == "upload_claimed" and result["pending"] is True
+    assert result["upload_started_at"] == original["upload_started_at"]
+    assert result["upload_observation"]["state"] == expected
+    assert result["upload_observation"]["progress_widths"] == (
+        [] if not complete or duplicate else ["1.48%"])
+    assert "secret" not in json.dumps(result["upload_observation"])
+    assert calls == [job["job_id"]]
+    assert service.store.latest(job["job_id"]) == original
+
+
 @pytest.mark.parametrize("change", [
     {"claimId": "wrong-job"}, {"directory": "/wrong"},
     {"targetName": "wrong.mp4"}, {"url": "https://other.test/disk/main"},

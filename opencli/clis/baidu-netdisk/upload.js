@@ -246,12 +246,30 @@ async function inspectTarget(page, input, { retainPage = false } = {}) {
           const panel = panels.length === 1 ? panels[0] : null;
           const rows = panel ? [...panel.querySelectorAll('.file-list')] : [];
           return {
+            panelAncestors: (() => {
+              const ancestors = [];
+              let node = panel;
+              while (node && node !== document.body && ancestors.length < 6) {
+                ancestors.push({tag: node.tagName, className: String(node.className || '').slice(0, 150)});
+                node = node.parentElement;
+              }
+              return ancestors;
+            })(),
             complete: !!panel && panel.clientHeight > 0
               && panel.scrollHeight <= panel.clientHeight + 2
               && (panel.innerText || '').includes('仅展示本次上传任务'),
             rowCount: rows.length,
             successfulCount: rows.filter(node => node.classList.contains('status-success')).length,
             targetCount: rows.filter(node => (node.textContent || '').includes(target)).length,
+            controls: panel ? [...(panel.parentElement?.parentElement || panel)
+              .querySelectorAll('[title], [aria-label], button, a')]
+              .filter(node => visible(node) && !node.closest('.file-list'))
+              .map(node => ({
+                title: (node.getAttribute('title') || '').slice(0, 100),
+                label: (node.getAttribute('aria-label') || '').slice(0, 100),
+                text: (node.innerText || '').slice(0, 100),
+                className: String(node.className || '').slice(0, 100),
+              })).slice(0, 20) : [],
           };
         })(),
       },

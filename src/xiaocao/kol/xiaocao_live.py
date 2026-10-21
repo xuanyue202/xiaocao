@@ -2502,6 +2502,8 @@ class XiaocaoLiveService:
                     "capture_job_id": capture_job_id,
                     "netdisk_job_id": netdisk["job_id"],
                     "next": "rerun_broadband",
+                    **({"upload_observation": netdisk["upload_observation"]}
+                       if netdisk.get("upload_observation") else {}),
                 }
             handoff = self._publish_handoff(
                 capture_job_id=capture_job_id,

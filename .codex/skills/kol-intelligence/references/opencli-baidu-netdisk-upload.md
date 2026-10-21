@@ -132,6 +132,14 @@ reconciliation claim, and cannot become a periodic retry loop. Explicit
 authentication or security-policy errors are not transport errors and never
 qualify; recover normal authentication under the Edge reference instead.
 
+Claimed-upload polling exposes a fresh `upload_observation` with safe queue
+state/progress/time in the retained wait. A failed/paused exact row is
+Agent-owned transport diagnosis, not ordinary healthy progress. Keep reading
+the same uploader; provider state can change without an Agent action, and stale
+error text can remain while its current class/progress shows uploading. Missing,
+incomplete or conflicting queue evidence is `unknown`, never a retry permit.
+These observations do not alter the claim, attach files or prove cloud success.
+
 For the exact `file_chooser_not_opened` / `upload_before_attachment` failure,
 OpenCLI's chooser timeout occurs before file assignment. After a verified repair,
 `NetdiskEnrichmentService.resume_pre_attachment_upload` reconciles the same target
