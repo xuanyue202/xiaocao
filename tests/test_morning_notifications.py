@@ -289,7 +289,7 @@ def test_historical_pending_does_not_relabel_current_terminal_result(status):
                             'broker_order_id': '6007019', 'state': 'unknown'}],
     })
     assert ('执行受阻' in title) == (status == 'blocked')
-    assert '历史委托待核对' in body and '6007019' in body
+    assert '6007019' not in body and '000572.XSHE' not in body
 
 
 @pytest.mark.app_simulation
@@ -308,7 +308,116 @@ def test_completed_buy_keeps_success_reason_with_unresolved_history(history):
     title, body = message('result', '2026-10-20', {**facts, **history})
     assert '执行结果' in title and '6000065' in body and '8200 股' in body
     assert _cause('BROKER_TERMINAL') not in body
-    if history.get('pending_orders'):
-        assert '6007019' in body and '历史委托待核对' in body
-    else:
-        assert '历史委托证据暂无法读取' in body
+    assert body == message('result', '2026-10-20', facts)[1]
+
+
+@pytest.mark.app_simulation
+@pytest.mark.parametrize('kind', ['result', 'golden-window'])
+@pytest.mark.parametrize('user_action_required', [False, True])
+def test_internal_history_stays_out_of_notice_without_hiding_current_order_or_user_action(kind, user_action_required):
+    facts = {'status': 'unresolved', 'orders': [
+        {'plan_id': 'book-b:2026-10-21:301052.XSHE:BUY', 'state': 'acknowledged',
+         'broker_order_id': '6000066', 'filled_shares': 0,
+         'submit_chain_uncertain': False, 'cancel_chain_uncertain': False}],
+        'pending_orders': [{'code': '000572.XSHE', 'side': 'SELL',
+                            'broker_order_id': '6007019', 'state': 'unknown'}],
+        'pending_evidence_unproven': True,
+        'user_action_required': user_action_required,
+        'user_action': {'request': '请解锁 macOS 后继续本次交易核验。'}}
+    original = json.loads(json.dumps(facts))
+    _, body = message(kind, '2026-10-21', facts)
+    assert '6000066' in body and '6007019' not in body
+    assert ('请解锁 macOS' in body) is user_action_required
+    assert facts == original
+
+
+@pytest.mark.app_simulation
+@pytest.mark.parametrize('prior_state', ['delivered', 'uncertain', 'sending'])
+def test_history_only_refresh_reuses_upgraded_recipient_claim(tmp_path, prior_state):
+    import hashlib
+    from xiaocao.live.morning_notifications import result_fingerprint
+
+    facts = {'status': 'completed', 'reason': 'BROKER_TERMINAL', 'orders': [
+        {'plan_id': 'book-b:2026-10-21:301052.XSHE:BUY', 'state': 'filled',
+         'broker_order_id': '6000066', 'filled_shares': 500, 'fill_price': 32.98}],
+        'pending_orders': [{'plan_id': 'old', 'state': 'unknown', 'broker_order_id': '6007019'}]}
+    fingerprint = result_fingerprint(facts)
+    key = hashlib.sha256(f'xiaocao-book-b-live-morning|2026-10-21|result|{fingerprint}'.encode()).hexdigest()
+    recipient = hashlib.sha256(b'user').hexdigest()
+    original = {'notification_id': key, 'automation_id': 'xiaocao-book-b-live-morning',
+        'trade_date': '2026-10-21', 'kind': 'result', 'result_fingerprint': fingerprint,
+        'title': 'original title', 'body': 'original body', 'status': 'pending',
+        'recipients': {recipient: {'status': prior_state, 'attempted_at': 'original'}}}
+    path = tmp_path / f'{key}.json'
+    path.write_text(json.dumps(original))
+    sent = []
+    notices = MorningNotifications('2026-10-21', root=tmp_path,
+        sender=lambda *args: sent.append(args) or {'status': 'ok'}, recipients=lambda: ('user',))
+    assert notices.publish('result', facts) == key
+    refreshed = {**facts, 'pending_orders': [], 'pending_evidence_unproven': True}
+    assert notices.publish('result', refreshed) == key
+    notices.close()
+    persisted = json.loads(path.read_text())
+    assert not sent and persisted['body'] == original['body']
+    assert persisted['recipients'] == original['recipients']
+    assert list(tmp_path.glob('*.json')) == [path]
+
+
+@pytest.mark.app_simulation
+def test_current_order_change_still_notifies_after_history_only_refresh(tmp_path):
+    sent = []
+    notices = MorningNotifications('2026-10-21', root=tmp_path,
+        sender=lambda *args: sent.append(args) or {'status': 'ok'}, recipients=lambda: ('user',))
+    facts = {'status': 'unresolved', 'orders': [
+        {'plan_id': 'current', 'state': 'acknowledged', 'broker_order_id': '6000066'}]}
+    first = notices.publish('result', facts)
+    assert notices.publish('result', {**facts, 'pending_evidence_unproven': True}) == first
+    final = {**facts, 'status': 'completed', 'orders': [
+        {**facts['orders'][0], 'state': 'filled', 'filled_shares': 500, 'fill_price': 32.98}]}
+    assert notices.publish('result', final) != first
+    notices.close()
+    assert len(sent) == 2
+
+
+@pytest.mark.app_simulation
+def test_unbound_legacy_history_change_does_not_create_another_send(tmp_path):
+    from xiaocao.live.morning_notifications import result_fingerprint
+
+    path = tmp_path / 'original.json'
+    record = {'notification_id': 'original', 'automation_id': 'xiaocao-book-b-live-morning',
+        'trade_date': '2026-10-21', 'kind': 'result', 'status': 'pending',
+        'title': 'old', 'body': 'old', 'recipients': {'user': {'status': 'uncertain'}},
+        'result_fingerprint': result_fingerprint({'status': 'completed',
+            'pending_orders': [{'plan_id': 'old', 'state': 'unknown'}]})}
+    path.write_text(json.dumps(record))
+    sent = []
+    notices = MorningNotifications('2026-10-21', root=tmp_path,
+        sender=lambda *args: sent.append(args) or {'status': 'ok'}, recipients=lambda: ('user',))
+    notices.publish('result', {'status': 'completed', 'pending_orders': []})
+    assert notices.close()[0]['status'] == 'pending_reconcile'
+    assert not sent and json.loads(path.read_text()) == record
+
+
+@pytest.mark.app_simulation
+def test_concurrent_history_only_publishers_share_one_atomic_delivery_claim(tmp_path, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    barrier, sent = Barrier(2), []
+    original = MorningNotifications._legacy_result_alias
+    def rendezvous(self, *args):
+        result = original(self, *args)
+        barrier.wait(timeout=2)
+        return result
+    monkeypatch.setattr(MorningNotifications, '_legacy_result_alias', rendezvous)
+    publishers = [MorningNotifications('2026-10-21', root=tmp_path,
+        sender=lambda *args: sent.append(args) or {'status': 'ok'},
+        recipients=lambda: ('user',)) for _ in range(2)]
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        calls = [pool.submit(p.publish, 'result', {'status': 'completed',
+            'pending_evidence_unproven': bool(i)}) for i, p in enumerate(publishers)]
+        keys = [call.result() for call in calls]
+    for publisher in publishers:
+        publisher.close()
+    assert keys[0] == keys[1] and keys[0] is not None
+    assert len(sent) == 1 and len(list(tmp_path.glob('*.json'))) == 1

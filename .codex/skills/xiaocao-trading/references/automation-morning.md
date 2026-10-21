@@ -439,8 +439,11 @@ it cannot generate a second morning candidate batch.
 
 The runner records preflight start, APP ready and recoverable dependency problems
 locally. Trading WeCom sends one consolidated opening result; an explicit
-user-only dependency may notify immediately. Per-order incidents remain durable
-locally and are included in the same result. Unchanged same-day recovery results
+user-only dependency may notify immediately. Current-batch incidents belong in
+that result. Apply Contract §1b's notification policy: routine historical pending
+orders and evidence gaps stay in local artifacts, reconciled by the owner after
+the golden window. Routine WeCom/Codex summaries show current execution and
+specific user actions. Unchanged same-day recovery results
 are deduplicated; `morning_preflight_alert.py --kind book-b --receipt ...` reuses
 the runner result claim. Messages explain result, cause and required user action
 in plain Chinese, with exact order IDs; hashes, paths and diagnostics stay in Codex. `ready` means native session/account preflight passed, not future

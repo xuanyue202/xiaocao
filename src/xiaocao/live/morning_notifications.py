@@ -83,10 +83,10 @@ def message(kind: str, trade_date: str, facts: dict) -> tuple[str, str]:
     if kind not in {"result", "golden-window"}:
         raise ValueError("MORNING_NOTIFICATION_KIND_INVALID")
     orders = facts.get("orders") or []
-    pending = facts.get("pending_orders") or []
     status = facts.get("status", "unproven")
     preflight = facts.get("failed_stage") == "preflight"
-    # Historical reconciliation is reported separately from today's outcome.
+    # Historical reconciliation stays in the durable task evidence. Only the
+    # current batch and an explicit user action belong in a trading notice.
     terminal = status in {"completed", "no_action", "skipped"} and not preflight
     working = (status in {"pending", "unresolved", "blocked"} and not facts.get("failed_stage")
         and bool(orders) and all(row.get("state") in {"acknowledged", "partial"}
@@ -99,12 +99,10 @@ def message(kind: str, trade_date: str, facts: dict) -> tuple[str, str]:
         lines.append("结果：09:30 尚未取得全部委托终态；当前已知情况如下。" if orders else
                      "结果：09:30 尚未取得完整交易回执，委托和成交数量暂未证明。")
         lines.extend(_order_line(row) for row in orders)
-        if pending:
-            lines.append(f"另有 {len(pending)} 笔历史委托待核对：")
-            lines.extend(_order_line(row) for row in pending)
-        if facts.get("pending_evidence_unproven"):
-            lines.append("历史委托证据暂无法读取，未决数量尚未证明。")
-        lines.append("系统继续处理，确认结果后再通知；暂不需要你操作。")
+        if facts.get("user_action_required") is True:
+            lines.append(f"需要你处理：{(facts.get('user_action') or {}).get('request') or '请打开 Codex 查看具体请求。'}")
+        else:
+            lines.append("系统继续处理，确认结果后再通知；暂不需要你操作。")
     else:
         if preflight:
             lines.append("结果：未进入开盘交易，本次没有新增委托。")
@@ -117,14 +115,9 @@ def message(kind: str, trade_date: str, facts: dict) -> tuple[str, str]:
         elif not terminal or not orders:
             lines.append(f"原因：{_cause(facts.get('reason'))}")
         lines.extend(_order_line(row) for row in orders)
-        if pending:
-            lines.append(f"另有 {len(pending)} 笔历史委托待核对：")
-            lines.extend(_order_line(row) for row in pending)
-        if facts.get("pending_evidence_unproven"):
-            lines.append("历史委托证据暂无法读取，未决数量尚未证明。")
         if facts.get("user_action_required") is True:
             lines.append(f"需要你处理：{(facts.get('user_action') or {}).get('request') or '请打开 Codex 查看具体请求。'}")
-        elif pending or facts.get("pending_evidence_unproven") or not terminal:
+        elif not terminal:
             lines.append("需要你处理：暂不需要操作。系统负责精确对账；未决委托不会自动重发。")
         else:
             lines.append("需要你处理：无需操作。")
@@ -158,6 +151,12 @@ def result_fingerprint(facts: dict) -> str:
                    user_action={"required": action.get("required") is True, "request": action.get("request")},
                    pending_evidence_unproven=facts.get("pending_evidence_unproven") is True)
     return hashlib.sha256(json.dumps(content, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+
+
+def current_result_fingerprint(facts: dict) -> str:
+    """Notification equivalence excludes internal historical reconciliation."""
+    return result_fingerprint({**facts, "pending_orders": [],
+                               "pending_evidence_unproven": False})
 
 
 def local_only(record: dict) -> bool:
@@ -246,7 +245,7 @@ class MorningNotifications:
         if kind == "result":
             # Recovery runs with unchanged business results do not warrant
             # another message. Clocks, paths and run IDs are audit data.
-            identity = result_fingerprint(facts)
+            identity = current_result_fingerprint(facts)
         elif kind == "preflight-problem":
             # One dependency request can change from an agent repair into a
             # human-only action without changing its sanitized failure code.
@@ -259,7 +258,8 @@ class MorningNotifications:
         ) == (facts.get("user_action_required") is True)):
             key = legacy_key  # Preserve equivalent delivered/uncertain claims.
         elif kind == "result":
-            alias, equivalence_unproven = self._legacy_result_alias(identity)
+            alias, equivalence_unproven = self._legacy_result_alias(
+                result_fingerprint(facts), identity)
             key = alias or key
         path = self.root / f"{key}.json"
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -270,7 +270,9 @@ class MorningNotifications:
                               "trade_date": self.trade_date, "kind": kind, "title": title,
                               "body": body, "created_at": _clock(), "recipients": {},
                               "user_action_required": facts.get("user_action_required") is True,
-                              **({"result_fingerprint": identity} if kind == "result" else {}),
+                              **({"result_fingerprint": identity,
+                                  "current_result_fingerprint": current_result_fingerprint(facts)}
+                                 if kind == "result" else {}),
                               **({"delivery_policy": "reconcile_only", "status": "pending_reconcile",
                                   "reason": "LEGACY_MORNING_RESULT_EQUIVALENCE_UNPROVEN"}
                                  if equivalence_unproven else {})})
@@ -286,7 +288,7 @@ class MorningNotifications:
         self._enqueue(path)
         return key
 
-    def _legacy_result_alias(self, fingerprint: str) -> tuple[str | None, bool]:
+    def _legacy_result_alias(self, fingerprint: str, current_fingerprint: str) -> tuple[str | None, bool]:
         """Bind old delivery claims to exact receipts before semantic migration."""
         from .morning_observability import terminal_notice
         unproven = False
@@ -318,8 +320,18 @@ class MorningNotifications:
                         continue
                     record["result_fingerprint"] = prior
                     _write(path, record)  # Keep body, times and recipient claims intact.
-                if prior == fingerprint:
+                current = record.get("current_result_fingerprint")
+                if current == current_fingerprint or prior == fingerprint:
+                    if current is None:
+                        # The exact old full-evidence identity proves this
+                        # migration. Preserve body and all recipient claims.
+                        record["current_result_fingerprint"] = current_fingerprint
+                        _write(path, record)
                     return record["notification_id"], False
+                if current is None:
+                    # Changed history cannot prove an old claim is different.
+                    # Isolate an unbound legacy notice rather than resend it.
+                    unproven = True
         return None, unproven
 
     def send(self, path: Path):
