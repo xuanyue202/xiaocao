@@ -8,5 +8,10 @@
     "path": "internal/api/routes.go",
     "before_sha256": "a5f9740c5a688165a707ead3b897d7a2340b2682a438af61863dc4e9e4f4915b",
     "after_sha256": "91e4e8a272d4f30bc1f66053aa5769bccbdd88f02d01d7527cff1c4c78380686"
+  },
+  {
+    "path": "internal/interceptor/interceptor.go",
+    "before_sha256": "cadad86a80f268c1014dafbde75d1df0c75291865d7a2268d442da37c5f10c81",
+    "after_sha256": "d3bbb134e25f8ab996a48e8d3b9d18a505b8f7b92a3b491c6e234b353ced9917"
   }
 ]

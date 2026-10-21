@@ -325,3 +325,27 @@ helper or H5-player attempts to the routine route. Those experiments did not
 prove the current branded course entry. Historical HTTPS entries are supported
 only through their current emitted, identity-validated resolver; a past ticket
 is never a replacement for the current native share.
+
+### Capture transport diagnostics
+
+The capture-only backend may persist a separate private per-process transport
+journal under `elive_live_debug/capture_transport/transport-*.jsonl`. It restores
+the standard logger's sink on stop and records only time, self PID/run identity,
+allowlisted event type and coarse target group. It never writes raw standard-log
+lines, URLs/query, headers/cookies, response text, typed credentials or raw host.
+It changes no routing/interception domains or native action count. Request and
+CONNECT observations, TLS-handshake failure and generic upstream failure are
+transport facts, not WeChat protection decision codes or causal proof.
+
+Bind the journal's start PID/time/run to the exact current capture readiness and
+original item; never choose an old file as current evidence. Inspect its fresh
+bytes/hash and coverage before every export. No closed marker, a partial tail,
+zero selected transport events, `coverage_limited`, `write_failures>0` or
+unclassified messages leaves evidence incomplete; never infer no failure or
+protection. Unknown/oversized standard messages are counted without retention;
+8MiB caps produce an explicit coverage-loss marker. Keep the actual native tool
+transcript and first abnormal/security readbacks separately. These logs cannot
+reconstruct discarded historical failures, identify unlogged DIRECT traffic or
+prove which action triggered WeChat. Do not repeat native actions to populate
+logs. Install only after the current completed capture's fresh cleanup gate;
+never replace the active downloader for logging.

@@ -38,6 +38,8 @@ def main() -> int:
         'repair_stream.go':'pkg/gopeed/pkg/download/repair_stream.go',
         'repair_stream_test.go':'pkg/gopeed/pkg/download/repair_stream_test.go',
         'repair_stream_handler.go':'internal/api/repair_stream_handler.go',
+        'capture_diagnostics.go':'internal/interceptor/capture_diagnostics.go',
+        'capture_diagnostics_test.go':'internal/interceptor/capture_diagnostics_test.go',
     }
     for source,relative in copies.items():
         target=backend/relative
