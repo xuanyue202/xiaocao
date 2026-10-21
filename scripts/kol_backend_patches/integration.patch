@@ -108,3 +108,46 @@
  	c.engine.POST("/api/task/delete", c.handleDeleteTask)
  	c.engine.POST("/api/task/clear", c.handleClearTasks)
  	c.engine.GET("/api/file", c.handleFetchFile)
+--- a/internal/interceptor/interceptor.go
++++ b/internal/interceptor/interceptor.go
+@@ -4,6 +4,7 @@
+ 	"encoding/json"
+ 	"fmt"
+ 	"io"
++	"log"
+ 	"net"
+ 	"net/http"
+ 	"strconv"
+@@ -30,6 +31,7 @@
+ 	OnCookies          func(url string, cookies []*http.Cookie) // 捕获到 cookie 时的回调
+ 	proxyCleanup       func() error
+ 	systemProxyEnabled bool
++	captureDiagnostics *captureTransportDiagnostics
+ }
+ 
+ type pluginRegistrar interface {
+@@ -72,7 +74,16 @@
+ 			}
+ 		}
+ 	}
++	if c.Settings.CaptureXiaoetongOnly {
++		diagnostics, err := newCaptureTransportDiagnostics("elive_live_debug/capture_transport")
++		if err != nil {
++			return err
++		}
++		c.captureDiagnostics = diagnostics
++		log.SetOutput(diagnostics)
++	}
+ 	if err := client.Start(c.Settings.ProxyServerPort); err != nil {
++		c.stopCaptureDiagnostics()
+ 		return err
+ 	}
+ 	return nil
+@@ -136,6 +147,7 @@
+ }
+ 
+ func (c *Interceptor) Stop() error {
++	defer c.stopCaptureDiagnostics()
+ 	if c.proxyCleanup != nil {
+ 		if err := c.proxyCleanup(); err != nil {
+ 			return fmt.Errorf("恢复系统代理失败: %w", err)
