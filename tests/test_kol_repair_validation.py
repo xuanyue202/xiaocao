@@ -142,6 +142,8 @@ def test_household_context_provider_recovery_rejects_unproven_recovery(tmp_path,
     ("implementation_path", "regression_path"),
     [
         ("src/xiaocao/kol/mailbox.py", "tests/test_kol_mailbox.py"),
+        ("src/xiaocao/kol/daily.py", "tests/test_kol_daily.py"),
+        ("src/xiaocao/kol/publication.py", "tests/test_kol_publication.py"),
         (
             "src/xiaocao/kol/semantic_bundle.py",
             "tests/test_kol_semantic_bundle.py",
@@ -221,6 +223,7 @@ def test_repair_validation_runs_repo_owned_profile_and_persists_matching_receipt
             "tests/test_kol_daily_semantic_delegation.py",
             "tests/test_kol_netdisk_enrichment.py",
             "tests/test_kol_household.py",
+            "tests/test_kol_publication.py",
             "-q",
         )
         return CompletedProcess(command, 0, "42 passed\n", "")

@@ -38,6 +38,7 @@ from .publication import (
     evaluation_id,
     manifest_sha256,
     publication_id_for_source,
+    publication_thesis_id,
     relation_id,
     report_id,
     record_content_sha256,
@@ -393,6 +394,7 @@ def _normalize_longitudinal_projection(
             raise DailyError(
                 f"longitudinal viewpoint {index} has an invalid local thesis id"
             )
+        local_id = publication_thesis_id(local_id)
         if local_id in local_ids:
             raise DailyError("longitudinal viewpoint ids must be unique")
         local_ids.add(local_id)
@@ -1660,6 +1662,10 @@ class DailyPublicationPipeline:
                     )
             if not state or not state.get("completed"):
                 candidate = _publication_candidate(item, context=self.context)
+                if state:
+                    candidate = self.ledger.reconcile_short_thesis_repair(
+                        candidate, self.client
+                    )
                 self.ledger.prepare(
                     candidate["publication_key"],
                     candidate["records"],

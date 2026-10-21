@@ -22,6 +22,8 @@ from xiaocao.kol.publication import (
     report_id,
     stable_claim,
     viewpoint_id,
+    publication_thesis_id,
+    _rebind_short_theses,
 )
 
 
@@ -824,3 +826,148 @@ def test_status_snapshot_is_equivalent_and_reads_ledger_once(tmp_path, monkeypat
     monkeypatch.setattr(ledger, "_events_unlocked", counted)
     assert ledger.status_snapshot() == expected
     assert len(calls) == 1
+
+
+def _legacy_short_projection():
+    report = _initial_report()
+    view = _viewpoint(report)
+    view['payload']['local_thesis_id'] = 't1'
+    view['record_id'] = viewpoint_id(report['record_id'], 't1', view['payload']['evidence_refs'])
+    view['payload']['viewpoint_id'] = view['record_id']
+    view['idempotency_key'] = stable_claim('put', PUBLICATION_ID, 'initial-viewpoint-v1', view['record_id'])
+    view['content_sha256'] = canonical_sha256({k: view[k] for k in ('schema_version', 'kind', 'record_id', 'created_at', 'source_binding', 'payload')})
+    report['payload']['viewpoint_ids'] = [view['record_id']]
+    report['content_sha256'] = canonical_sha256({k: report[k] for k in ('schema_version', 'kind', 'record_id', 'created_at', 'source_binding', 'payload')})
+    eid = evaluation_id(view['record_id'], view['created_at'], view['created_at'])
+    evaluation = build_record(kind='viewpoint_evaluation', record_id_value=eid,
+        idempotency_key=stable_claim('put', PUBLICATION_ID, 'initial-evaluation-v1', eid),
+        created_at=view['created_at'], source_binding=report['source_binding'],
+        payload={'evaluation_id': eid, 'viewpoint_id': view['record_id'], 'as_of': view['created_at'],
+            'evaluated_at': view['created_at'], 'status': 'uncertain', 'basis': '尚待观察'})
+    records = [report, view, evaluation]
+    return {'records': records, 'publish_request': build_publish_request(records,
+        idempotency_key='publish-short-thesis', reason='首次发布'), 'metadata': {'viewpoint_count': 1}}
+
+
+class _ShortThesisLiangHui(_FakeLiangHui):
+    def __init__(self):
+        super().__init__()
+        self.raise_after_first_put = False
+        self.records = {}
+        self.rejected_calls = []
+
+    def call_tool(self, name, arguments):
+        if name == 'get_kol_record':
+            record = self.records.get(arguments['record_id'])
+            if record is None:
+                raise LiangHuiMcpError('missing', code='NOT_FOUND')
+            return record
+        if name == 'put_kol_record':
+            if arguments['kind'] == 'viewpoint' and len(arguments['payload']['local_thesis_id']) < 3:
+                self.rejected_calls.append(arguments)
+                raise LiangHuiMcpError('local_thesis_id', code='INVALID_ARGUMENT')
+            if arguments['kind'] == 'report' and arguments.get('expected_content_sha256'):
+                raise LiangHuiMcpError('report not published', code='CONFLICT')
+            result = super().call_tool(name, arguments)
+            self.records[arguments['record_id']] = {**arguments, 'state': 'staged'}
+            return result
+        return super().call_tool(name, arguments)
+
+
+def _failed_short_projection(tmp_path):
+    artifact = _legacy_short_projection()
+    ledger = PublicationLedger(tmp_path)
+    # Restore the pre-fix checkpoint; new builders must reject this wire ID.
+    ledger._append('publication_prepared', publication_key=PUBLICATION_ID,
+        artifact_sha256=canonical_sha256(artifact), artifact=artifact,
+        large_payload_local_bytes=0)
+    client = _ShortThesisLiangHui()
+    with pytest.raises(LiangHuiMcpError, match='local_thesis_id'):
+        ledger.run(PUBLICATION_ID, client)
+    candidate = {'publication_key': PUBLICATION_ID, **_rebind_short_theses(artifact)}
+    return ledger, client, candidate
+
+
+def test_short_semantic_ids_have_stable_wire_aliases_and_raw_wire_ids_fail():
+    assert publication_thesis_id('t1') == publication_thesis_id('t1')
+    assert len(publication_thesis_id('t1')) >= 3
+    assert publication_thesis_id('thesis-growth') == 'thesis-growth'
+    old = _legacy_short_projection()['records'][1]
+    with pytest.raises(PublicationError, match='local_thesis_id'):
+        build_record(kind=old['kind'], record_id_value=old['record_id'],
+            idempotency_key=old['idempotency_key'], created_at=old['created_at'],
+            source_binding=old['source_binding'], payload=old['payload'])
+
+
+def test_invalid_short_projection_is_rejected_before_any_report_claim(tmp_path):
+    old = _legacy_short_projection()
+    ledger = PublicationLedger(tmp_path)
+    with pytest.raises(PublicationError, match='local_thesis_id'):
+        ledger.prepare(PUBLICATION_ID, old['records'], old['publish_request'], metadata=old['metadata'])
+    assert ledger.events() == []
+
+
+def test_short_thesis_repair_preserves_reader_source_and_replays_no_effects(tmp_path):
+    ledger, client, candidate = _failed_short_projection(tmp_path)
+    old = ledger.status(PUBLICATION_ID)['artifact']
+    repaired = ledger.reconcile_short_thesis_repair(candidate, client)
+    report = repaired['records'][0]
+    assert 'expected_content_sha256' not in report
+    assert report['idempotency_key'] != old['records'][0]['idempotency_key']
+    assert report['source_binding'] == old['records'][0]['source_binding']
+    assert report['payload']['report_body'] == old['records'][0]['payload']['report_body']
+    assert repaired['records'][2]['payload']['viewpoint_id'] == repaired['records'][1]['record_id']
+    ledger.prepare(PUBLICATION_ID, repaired['records'], repaired['publish_request'], metadata=repaired['metadata'])
+    # Re-entry after preparation uses the same proof and the same content-addressed version.
+    assert ledger.reconcile_short_thesis_repair(candidate, client) == repaired
+    assert ledger.run(PUBLICATION_ID, client)['completed']
+    count = len(client.write_calls)
+    assert ledger.run(PUBLICATION_ID, client)['completed']
+    assert len(client.write_calls) == count
+    assert len(client.rejected_calls) == 1
+    assert len([c for n, c in client.write_calls if n == 'publish_kol_report']) == 1
+    with pytest.raises(PublicationError, match='completed'):
+        ledger.reconcile_short_thesis_repair(candidate, client)
+
+
+@pytest.mark.parametrize('boundary', ['reader_changed', 'published', 'rejected_exists', 'unknown_rejection', 'accepted_viewpoint'])
+def test_short_thesis_repair_fails_closed_on_changed_or_uncertain_effects(tmp_path, boundary):
+    ledger, client, candidate = _failed_short_projection(tmp_path)
+    state = ledger.status(PUBLICATION_ID)
+    old_view = state['artifact']['records'][1]
+    if boundary == 'reader_changed':
+        candidate['records'][0]['payload']['report_body'] += '\n改变观点'
+    elif boundary == 'published':
+        client.records[candidate['records'][0]['record_id']]['state'] = 'published'
+    elif boundary == 'rejected_exists':
+        client.records[old_view['record_id']] = {**old_view, 'state': 'immutable'}
+    elif boundary == 'unknown_rejection':
+        ledger._append('record_call_uncertain', publication_key=PUBLICATION_ID,
+            record_key=ledger._record_key(old_view), error_code='', error_type='TimeoutError')
+    else:
+        ledger._append('record_receipt', publication_key=PUBLICATION_ID,
+            record_key=ledger._record_key(old_view), receipt={'recordState': 'immutable'})
+    count = len(client.write_calls)
+    with pytest.raises(PublicationError):
+        ledger.reconcile_short_thesis_repair(candidate, client)
+    assert len(client.write_calls) == count
+
+
+@pytest.mark.parametrize('boundary', ['accepted_viewpoint', 'unknown_effect'])
+def test_short_thesis_repair_rejects_stale_proof_before_prepare(tmp_path, boundary):
+    ledger, client, candidate = _failed_short_projection(tmp_path)
+    repaired = ledger.reconcile_short_thesis_repair(candidate, client)
+    old_view = ledger.status(PUBLICATION_ID)['artifact']['records'][1]
+    if boundary == 'accepted_viewpoint':
+        ledger._append('record_receipt', publication_key=PUBLICATION_ID,
+            record_key=ledger._record_key(old_view), receipt={'recordState': 'immutable'})
+    else:
+        ledger._append('record_call_uncertain', publication_key=PUBLICATION_ID,
+            record_key=ledger._record_key(old_view), error_code='', error_type='TimeoutError')
+    count = len(client.write_calls)
+    with pytest.raises(PublicationError, match='stale'):
+        ledger.reconcile_short_thesis_repair(candidate, client)
+    with pytest.raises(PublicationError, match='changed under a stable key'):
+        ledger.prepare(PUBLICATION_ID, repaired['records'], repaired['publish_request'],
+            metadata=repaired['metadata'])
+    assert len(client.write_calls) == count

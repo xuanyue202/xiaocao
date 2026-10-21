@@ -14,6 +14,7 @@ import fcntl
 import hashlib
 import json
 import os
+import re
 import signal
 import threading
 from contextlib import contextmanager
@@ -36,6 +37,16 @@ KOL_RECORD_KINDS = {
 REUSABLE_RECORD_STATES = {"staged", "published", "immutable"}
 TERMINAL_PUBLICATION_STATES = {"published", "superseded"}
 MAX_LEDGER_LINE_BYTES = 512 * 1024
+_PUBLICATION_THESIS_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{2,199}\Z")
+
+
+def publication_thesis_id(value: str) -> str:
+    """Keep accepted IDs stable; encode short semantic IDs at the wire boundary."""
+    if _PUBLICATION_THESIS_ID.fullmatch(value):
+        return value
+    if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:-]?", value):
+        return _stable_id("lt", [value])
+    raise PublicationError("publication local_thesis_id is invalid")
 
 
 class PublicationError(DecisionError):
@@ -171,6 +182,10 @@ def build_record(
 ) -> dict[str, Any]:
     if kind not in KOL_RECORD_KINDS:
         raise PublicationError(f"unsupported KOL record kind: {kind}")
+    if kind == "viewpoint" and not _PUBLICATION_THESIS_ID.fullmatch(
+        str(payload.get("local_thesis_id") or "")
+    ):
+        raise PublicationError("publication local_thesis_id is invalid")
     _require_utc_z(created_at, field="created_at")
     try:
         validate_reader_payload(kind, payload)
@@ -530,6 +545,78 @@ def build_append_only_publication_update(
     return records, publish
 
 
+def _rebind_short_theses(artifact: dict[str, Any]) -> dict[str, Any]:
+    """Derive only the wire-ID changes from an unpublished legacy artifact."""
+    result = copy.deepcopy(artifact)
+    records = result["records"]
+    reports = [row for row in records if row["kind"] == "report"]
+    if len(reports) != 1 or any(
+        row["kind"] not in {"report", "viewpoint", "viewpoint_evaluation"}
+        for row in records
+    ):
+        raise PublicationError("short thesis repair needs an initial projection")
+    mapping: dict[str, str] = {}
+    for row in records:
+        if row["kind"] != "viewpoint":
+            continue
+        payload = row["payload"]
+        old_id = payload["local_thesis_id"]
+        local_id = publication_thesis_id(old_id)
+        if local_id == old_id:
+            continue
+        if row["record_id"] != viewpoint_id(
+            payload["report_id"], old_id, payload["evidence_refs"]
+        ):
+            raise PublicationError("legacy viewpoint identity does not bind")
+        new_id = viewpoint_id(payload["report_id"], local_id, payload["evidence_refs"])
+        mapping[row["record_id"]] = new_id
+        payload.update(local_thesis_id=local_id, viewpoint_id=new_id)
+        row["record_id"] = new_id
+        row["idempotency_key"] = stable_claim(
+            "put", row["source_binding"]["publication_id"],
+            "initial-viewpoint-v1", new_id,
+        )
+    if not mapping:
+        raise PublicationError("publication has no short thesis IDs to repair")
+    for row in records:
+        payload = row["payload"]
+        if row["kind"] == "viewpoint_evaluation" and payload["viewpoint_id"] in mapping:
+            payload["viewpoint_id"] = mapping[payload["viewpoint_id"]]
+            new_id = evaluation_id(
+                payload["viewpoint_id"], payload["as_of"], payload["evaluated_at"]
+            )
+            payload["evaluation_id"] = new_id
+            row["record_id"] = new_id
+            row["idempotency_key"] = stable_claim(
+                "put", row["source_binding"]["publication_id"],
+                "initial-evaluation-v1", new_id,
+            )
+    report = reports[0]
+    report["payload"]["viewpoint_ids"] = [
+        mapping.get(value, value) for value in report["payload"]["viewpoint_ids"]
+    ]
+    for row in records:
+        row["content_sha256"] = record_content_sha256(row)
+    prior_publish = artifact["publish_request"]
+    if prior_publish.get("expected_content_sha256") or prior_publish.get("expected_manifest_sha256"):
+        raise PublicationError("short thesis repair cannot replace a correction")
+    result["publish_request"] = build_publish_request(
+        records, idempotency_key=prior_publish["idempotency_key"],
+        reason=prior_publish.get("reason"),
+    )
+    return result
+
+
+def _with_staged_report_version(artifact: dict[str, Any]) -> dict[str, Any]:
+    result = copy.deepcopy(artifact)
+    report = next(row for row in result["records"] if row["kind"] == "report")
+    report["idempotency_key"] = stable_claim(
+        "put", report["source_binding"]["publication_id"],
+        "short-thesis-report-repair-v1", report["content_sha256"],
+    )
+    return result
+
+
 class PublicationLedger:
     """Append-only exact-request and receipt ledger for LiangHui writes."""
 
@@ -635,6 +722,10 @@ class PublicationLedger:
         for record in records:
             if record.get("content_sha256") != record_content_sha256(record):
                 raise PublicationError("record content hash does not match")
+            if record.get("kind") == "viewpoint" and not _PUBLICATION_THESIS_ID.fullmatch(
+                str((record.get("payload") or {}).get("local_thesis_id") or "")
+            ):
+                raise PublicationError("publication local_thesis_id is invalid")
         expected = build_publish_request(
             records,
             idempotency_key=str(publish_request["idempotency_key"]),
@@ -742,7 +833,14 @@ class PublicationLedger:
                                 for key in receipt_keys
                             )
                         )
-                    recoverable_rejection = rejection_base and (
+                    verified_projection_repair = any(
+                        row.get("event") == "publication_short_thesis_repair_verified"
+                        and row.get("event_id") == latest.get("event_id")
+                        and row.get("prior_artifact_sha256") == prepared[-1]["artifact_sha256"]
+                        and row.get("replacement_artifact_sha256") == artifact_sha256
+                        for row in publication_events
+                    )
+                    recoverable_rejection = verified_projection_repair or rejection_base and (
                         not receipt_keys or strict_partial_repair
                     )
                     if not recoverable_rejection:
@@ -757,9 +855,8 @@ class PublicationLedger:
                         supersedes_artifact_sha256=prepared[-1][
                             "artifact_sha256"
                         ],
-                        repair_reason=(
-                            "server_rejected_prior_record_as_invalid_argument"
-                        ),
+                        repair_reason=("verified_short_thesis_wire_id_repair" if verified_projection_repair
+                                       else "server_rejected_prior_record_as_invalid_argument"),
                         large_payload_local_bytes=0,
                     )
             else:
@@ -771,6 +868,91 @@ class PublicationLedger:
                     large_payload_local_bytes=0,
                 )
         return self.status(publication_key)
+
+    def reconcile_short_thesis_repair(
+        self, candidate: dict[str, Any], client: PublicationTransport,
+    ) -> dict[str, Any]:
+        """Stage corrected wire IDs only behind an exactly reconciled initial report.
+
+        Source bindings, reader text and judgments must be byte-equivalent.
+        Completed publications and any accepted longitudinal record are excluded.
+        """
+        key = candidate["publication_key"]
+        events = [row for row in self.events() if row.get("publication_key") == key]
+        state = self._status_from_events(key, events)
+        if state["completed"]:
+            raise PublicationError("short thesis repair excludes completed publications")
+        base = {field: candidate[field] for field in ("records", "publish_request", "metadata")}
+        base_sha = canonical_sha256(base)
+        proofs = [row for row in events if row.get("event") == "publication_short_thesis_repair_verified"]
+        for proof in reversed(proofs):
+            if proof.get("candidate_artifact_sha256") == base_sha:
+                repaired = _with_staged_report_version(base)
+                if canonical_sha256(repaired) != proof["replacement_artifact_sha256"]:
+                    raise PublicationError("short thesis repair proof changed")
+                if (
+                    state["artifact_sha256"] != proof["replacement_artifact_sha256"]
+                    and events[-1]["event_id"] != proof["event_id"]
+                ):
+                    raise PublicationError("short thesis repair proof is stale")
+                return {"publication_key": key, **repaired}
+        old = state["artifact"]
+        if not any(
+            row["kind"] == "viewpoint" and len(row["payload"]["local_thesis_id"]) < 3
+            for row in old["records"]
+        ):
+            return candidate
+        expected = _rebind_short_theses(old)
+        if expected != base:
+            raise PublicationError("short thesis repair changed source judgment or reader content")
+        report = next(row for row in old["records"] if row["kind"] == "report")
+        report_key = self._record_key(report)
+        rejected = next((row for row in reversed(events) if row.get("event") == "record_call_uncertain"), {})
+        failed_record = next((row for row in old["records"] if self._record_key(row) == rejected.get("record_key")), {})
+        claims = state["record_claims"]
+        if (state["completed"] or any(row.get("event") == "publication_call_claimed" for row in events)
+            or set(state["record_receipts"]) != {report_key}
+            or set(claims) != {report_key, rejected.get("record_key")}
+            or rejected.get("error_code") != "INVALID_ARGUMENT"
+            or failed_record.get("kind") != "viewpoint"
+            or len(failed_record.get("payload", {}).get("local_thesis_id", "")) >= 3
+            or any(count != 1 for count in state["record_claim_counts"].values())):
+            raise PublicationError("short thesis repair has incompatible prior effects")
+        report_status = self._status_or_missing(client, report["idempotency_key"])
+        current = client.call_tool("get_kol_record", {"kind": "report", "record_id": report["record_id"]})
+        if (not report_status or report_status.get("recordState") != "staged"
+            or report_status.get("contentSha256") != report["content_sha256"]
+            or report_status.get("recordId") != report["record_id"]
+            or report_status.get("idempotencyKey") != report["idempotency_key"]
+            or report_status.get("familyId") != state["record_receipts"][report_key].get("familyId")
+            or current.get("state") != "staged"
+            or any(current.get(field) != report[field] for field in (
+                "record_id", "content_sha256", "created_at", "source_binding", "payload"))):
+            raise PublicationError("short thesis repair requires the exact unpublished staged report")
+        if self._status_or_missing(client, failed_record["idempotency_key"]) is not None:
+            raise PublicationError("rejected viewpoint has an external receipt")
+        try:
+            client.call_tool("get_kol_record", {"kind": "viewpoint", "record_id": failed_record["record_id"]})
+        except Exception as exc:
+            if self._mcp_code(exc) != "NOT_FOUND":
+                raise
+        else:
+            raise PublicationError("rejected viewpoint already exists")
+        repaired = _with_staged_report_version(base)
+        with self._locked():
+            latest = [row for row in self._events_unlocked() if row.get("publication_key") == key]
+            if latest[-1]["event_id"] != events[-1]["event_id"]:
+                raise PublicationError("publication changed during short thesis reconciliation")
+            self._append(
+                "publication_short_thesis_repair_verified", publication_key=key,
+                prior_artifact_sha256=canonical_sha256(old), candidate_artifact_sha256=base_sha,
+                replacement_artifact_sha256=canonical_sha256(repaired),
+                prior_report_content_sha256=report["content_sha256"],
+                report_status=report_status, rejected_record_id=failed_record["record_id"],
+                rejected_claim=failed_record["idempotency_key"], rejected_status="NOT_FOUND",
+                rejected_claim_outcome="confirmed_no_record_or_receipt",
+            )
+        return {"publication_key": key, **repaired}
 
     def status(self, publication_key: str) -> dict[str, Any]:
         with self._locked():

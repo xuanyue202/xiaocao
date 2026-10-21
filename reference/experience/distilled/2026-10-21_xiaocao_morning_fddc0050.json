@@ -1,0 +1,457 @@
+{
+  "schema_version": 1,
+  "knowledge_status": "reusable_knowledge",
+  "authority": 0,
+  "date": "2026-10-21",
+  "kind": "盘前大师班直播",
+  "author": "小草",
+  "source": "小草直播",
+  "summary": "本场可复用的是弱势环境中的决策顺序与证据纪律：先把空仓作为合法基准，再按波动承受力区分竞价下跌低吸、竞价红盘起爆、盘中起爆、N字与倒接力；断板大幅低开只有在满足条件时才观察，已有亏损仓反弹时优先高抛减亏；大跌幅盘中低吸高分票在模式评分完成前只能观察，盘中与回放数据缺失时不得把事后上涨倒写成事前可执行信号。全部内容仅为authority=0研究候选，不改变策略、参数、仓位或执行权限。",
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/reference/experience/transcripts/2026-10/2026-10-21_xiaocao_morning_fddc0050.txt",
+      "sha256": "fddc00500a57ee41f1992a130440dce6aec9a5fc9d99e5e2972dfc58b5a0f7a0",
+      "size": 11319,
+      "size_bytes": 11319
+    }
+  ],
+  "posture": {
+    "regime": "来源在10月21日盘前把A股大环境判断为空仓或主跌环境，并预期当天较易出现分歧",
+    "dominant_style": "若仍参与，求稳者优先下跌低吸，其次在涨幅不高时观察红盘起爆；N字只勉强观察，倒接力和断板承担更高波动",
+    "risk": "作者认为即使反弹也更可能是磨出来的反弹；断板若无大幅低开条件则不看，盘中数据缺失时只能退回竞价证据",
+    "style_ranking": [
+      "空仓等待",
+      "满足条件的下跌低吸",
+      "涨幅不高且评分足够的红盘起爆",
+      "低分N字仅勉强观察",
+      "倒接力与断板仅在接受高波动且满足具体条件时考虑"
+    ]
+  },
+  "regime_call": {
+    "horizon": "来源中的当日分歧与具体模式窗口截至2026年10月21日收盘；大环境防守姿态最迟应在下一交易日开盘用新证据重判",
+    "what_would_falsify": [
+      "下一交易日开盘后市场广度、承接和赚钱效应持续转强，空仓或主跌判断不再成立",
+      "冻结样本显示倒接力、N字或断板在同类弱势阶段的净收益和左尾风险优于作者偏好的下跌低吸",
+      "完整竞价、盘中评分和可成交数据证明来源中的模式比较来自缺失或选择性样本"
+    ]
+  },
+  "directions": [
+    {
+      "name": "下跌低吸",
+      "role": "空仓或主跌环境中相对求稳的例外参与路径",
+      "conditions": [
+        "先确认市场仍处于作者所说的弱势环境",
+        "来源只说明四只候选中的第一只是主板标的；后三只名称和‘买不了’原因都不清，不能补成20cm、科创板或特定权限规则",
+        "候选满足该模式自己的冻结评分和可成交条件",
+        "相对求稳不等于低风险，也不等于所有下跌票都可买"
+      ]
+    },
+    {
+      "name": "红盘起爆",
+      "role": "竞价语境中近期表现较好、当日优先于倒接力的条件性短线路径",
+      "conditions": [
+        "候选涨幅不能已经过高",
+        "评分与身份需要事前冻结",
+        "莱美药业的事后涨停口述不能替代成交与样本外证据"
+      ]
+    },
+    {
+      "name": "盘中起爆",
+      "role": "少做当日倒接力后另行提出的盘中筛选路径，不与竞价红盘起爆合并",
+      "conditions": [
+        "必须有当时可见的完整盘中数据、模式评分和唯一候选身份",
+        "来源当天盘中数据及09:31回放不足，不能从后见榜单恢复事前交易",
+        "也不能与大跌幅盘中低吸高分票的只观察语境合并"
+      ]
+    },
+    {
+      "name": "N字",
+      "role": "作者个人偏好较低、分数也偏低的勉强观察路径",
+      "conditions": [
+        "只能保留为低优先级备选",
+        "不能因为后来有排名股涨停而倒写为开盘前强推荐"
+      ]
+    },
+    {
+      "name": "断板与倒接力",
+      "role": "高波动路径与亏损仓修复管理",
+      "conditions": [
+        "断板当日要有大幅低开才考虑观察，否则放弃",
+        "已有前一日亏损仓若反弹，应高抛减亏而非把修复当成新的盈利保证",
+        "倒接力在分歧日少做，且其高收益弹性伴随更大亏损尾部",
+        "来源确实点出一只具体倒接力候选，但原始音近名称身份未确认，不映射为协和电子或其他证券"
+      ]
+    },
+    {
+      "name": "大跌幅高分观察",
+      "role": "盘中研究观察，不是买入建议",
+      "conditions": [
+        "作者明确说先观察、不要买",
+        "先完成模式评分；100分罕见但仍不等于入场许可",
+        "盘中数据或09:31回放缺失时不能补做事后筛选"
+      ]
+    }
+  ],
+  "stocks": [
+    {
+      "surface_form": "莱美药业",
+      "classification": "emitted_qibao_hit",
+      "role": "源日红盘起爆重点例子，被称为第三次进攻，并有口述涨停回看",
+      "resolution": "补充本地冻结策略审计确认名称与代码300006，但只证明独立本地系统发出ACTIVE起爆信号；没有本地纸面成交，也不证明老师账户、涨停收益或模式胜率",
+      "actionability": "源日入场窗口已过期；仅保留为模式审计例子"
+    },
+    {
+      "surface_form": "百洋股份、白洋股份",
+      "classification": "emitted_strategy_hit",
+      "role": "源日弱转强与连板接力口述涨停例子",
+      "resolution": "上下文可校正为百洋股份；补充本地冻结审计确认002696发出COLD信号，但不具执行资格、无星标且无纸面成交",
+      "actionability": "老师涨停和排名说法未获独立证明，不可据此追认交易"
+    },
+    {
+      "surface_form": "信通电子",
+      "classification": "no_evidence",
+      "role": "源日明确提到的一只具体倒接力候选；候选角色成立，证券身份未确认",
+      "resolution": "未决；音近名称不能与本地协和电子605258的COLD信号强行合并",
+      "actionability": "身份未决且窗口过期"
+    },
+    {
+      "surface_form": "段家大厅、段家大地",
+      "classification": "no_evidence",
+      "role": "来源提到前一日对象并说当时没有票，具体身份与动作均含混",
+      "resolution": "未决；同一段出现两个音近转写，不能唯一映射证券",
+      "actionability": "不可据此交易"
+    },
+    {
+      "surface_form": "永达股份",
+      "classification": "not_emitted",
+      "role": "源日排名与未涨停回看例子",
+      "resolution": "来源名称清楚；仅限2026年10月21日完整13条冻结信号清单判定没有同名发出，正式代码与教师排名未独立核验",
+      "actionability": "仅保留来源回看"
+    },
+    {
+      "surface_form": "润建",
+      "classification": "not_emitted",
+      "role": "源日第三名涨停回看例子",
+      "resolution": "保留来源清晰简称；仅限2026年10月21日完整13条冻结信号清单判定没有同名发出，正式全称和代码未独立核验",
+      "actionability": "不可据此交易"
+    },
+    {
+      "surface_form": "闽东、闽东电力",
+      "classification": "not_emitted",
+      "role": "下跌低吸小幅盈利的口述例子",
+      "resolution": "来源后文明确说闽东电力；仅限2026年10月21日完整13条冻结信号清单判定没有同名发出，正式代码、教师买入与收益未核验",
+      "actionability": "仅保留历史或当日回看"
+    },
+    {
+      "surface_form": "冰山冷热",
+      "classification": "not_emitted",
+      "role": "大跌幅高分观察和事后表现例子",
+      "resolution": "名称清楚；仅限2026年10月21日完整13条冻结信号清单判定没有同名发出，来源所称100分、买入和涨幅未独立核验",
+      "actionability": "作者明确把该类高分票先定为观察，不构成买入"
+    },
+    {
+      "surface_form": "九阳",
+      "classification": "no_evidence",
+      "role": "前一日红盘起爆回看例子",
+      "resolution": "未决；简称不足以唯一确认证券身份",
+      "actionability": "不可据此交易"
+    },
+    {
+      "surface_form": "水阳",
+      "classification": "no_evidence",
+      "role": "前一日上涨回看例子",
+      "resolution": "未决；音近证券名不唯一",
+      "actionability": "不可据此交易"
+    },
+    {
+      "surface_form": "繁多数串",
+      "classification": "no_evidence",
+      "role": "N字模式事后表现口述",
+      "resolution": "未决；转写不足以唯一确认证券身份",
+      "actionability": "不可据此交易"
+    },
+    {
+      "surface_form": "紧急",
+      "classification": "no_evidence",
+      "role": "前一日倒接力反弹回看例子",
+      "resolution": "未决；音近表述不能唯一映射证券",
+      "actionability": "不可据此交易"
+    },
+    {
+      "surface_form": "20米人气五七八",
+      "classification": "no_evidence",
+      "role": "广告段前的含混盘中例子",
+      "resolution": "无法判断是证券、榜单还是人气字段，不做资产映射",
+      "actionability": "排除"
+    }
+  ],
+  "method_principles": [
+    "先判断环境与总风险，再选模式，最后才看个股；空仓是合法基准，不应为了参与感强行交易。",
+    "把模式选择与波动承受力绑定：下跌低吸相对求稳，倒接力与断板的收益弹性和亏损尾部都更大。",
+    "条件不能互相偷换：下跌低吸候选范围、断板的大幅低开、红盘起爆的涨幅边界、N字的低分和大跌幅高分观察各自独立；含混的‘买不了’不能被补成特定市场权限。",
+    "数据缺失时降低动作权限：没有盘中数据就不能补做盘中筛选，没有09:31回放就不能用事后赢家重构当时榜单。",
+    "明确发出的COLD信号仍是系统信号，但执行资格、星标、目标权重和纸面成交是不同证据维度。"
+  ],
+  "exit_lessons": [
+    "前一日断板或倒接力仓位若在弱势环境里反弹，作者给出的动作是高抛减亏；不能把修复反弹自动改写为继续持有。",
+    "没有大幅低开条件时不做断板，属于入场取消条件；这与持仓后的高抛减亏是两个阶段，不能合并。",
+    "紧邻红盘起爆与倒接力比较的“两天后可能上来”缺少主语，不能强归给任何模式或标的，更不能替代退出纪律。"
+  ],
+  "decision_trace": [
+    {
+      "observation": "作者看到前一日上涨、美股冲高回落，并预期10月21日容易分歧；他把更大的市场环境称为空仓或主跌。",
+      "inference": "当日反弹即使发生，也更可能是慢磨，主动进攻的容错较低。",
+      "action": "以空仓为基准；若仍参与，优先相对求稳的下跌低吸。",
+      "why": "先控制总风险，再比较局部模式。"
+    },
+    {
+      "observation": "红盘起爆近期表现较好，莱美药业被反复点名；N字分数偏低，倒接力波动大，断板只有大幅低开才看。",
+      "inference": "模式优先级不能只按事后涨停排序，应同时保留评分、开盘条件和波动边界。",
+      "action": "当日优先下跌低吸和红盘起爆，降低N字、倒接力与无大低开断板的优先级。",
+      "why": "用条件与尾部风险约束模式选择。"
+    },
+    {
+      "observation": "下跌低吸有四只候选，只明确第一只是主板标的，后三只伴随含混的‘买不了’；倒接力则明确提过一只具体候选，但其证券身份无法确认。",
+      "inference": "候选角色、证券身份与交易权限是三个独立证据层，不能用音近名称或含混限制互相补全。",
+      "action": "保留第一只主板属性和具体倒接力候选角色；后三只范围、限制原因及倒接力候选身份均保持未决，不进入执行。",
+      "why": "避免把缺失信息误写成20cm、科创权限或协和电子映射。"
+    },
+    {
+      "observation": "盘中数据未更新，09:31回放也缺失；作者后续仍回看了多只上涨例子。",
+      "inference": "后见赢家无法证明开盘时可见、可选或可成交。",
+      "action": "把大跌幅高分票保留为观察，不买入；模式表现进入冻结样本审计。",
+      "why": "避免选择性样本和时间穿越。"
+    }
+  ],
+  "judgment_heuristics": [
+    "总环境、模式门槛、个股身份与成交证据按顺序成立，任何一层缺失都不能用后续涨幅补回。",
+    "低吸的相对稳健和倒接力的高弹性应通过统一成交、退出和成本口径比较，而不是听单日口述。",
+    "老师点名、本地同名信号、执行资格、星标和纸面成交必须逐层分开；只有名称相同才能讨论重合。",
+    "音近或简称证券保持未决，不以同行业、本地候选或事后涨停强行消歧。",
+    "候选角色可以在身份未决时保留，但不能因此生成代码、持仓映射或执行权限；含混的购买限制也只保留原始边界。"
+  ],
+  "timing_notes": [
+    "来源从09:25竞价附近延续到开盘后；当日直接模式和个股机会在10月21日收盘后已经过期。",
+    "下跌低吸四只候选只明确第一只是主板，后三只购买限制未决；源日具体倒接力候选的身份也未确认。",
+    "紧邻红盘起爆与倒接力比较的“两天后可能上来”缺少主语，只能保留为语义未决证据，不能强归模式或形成持仓授权。",
+    "09:31回放数据被作者明确判断为缺失或不足，因此无法用它重建完整盘中榜单。"
+  ],
+  "typo_corrections": [
+    {
+      "raw": "下跌利息、下跌地区、下跌地基、下列地区",
+      "corrected": "下跌低吸",
+      "basis": "同一模式在相邻语境中反复出现，语义稳定"
+    },
+    {
+      "raw": "红盘举报、红盘情报、红杉举报、红房举报",
+      "corrected": "红盘起爆",
+      "basis": "同一短线模式与莱美药业语境一致"
+    },
+    {
+      "raw": "断班",
+      "corrected": "断板",
+      "basis": "相邻语境明确谈大幅低开和断板卖法"
+    },
+    {
+      "raw": "白洋股份",
+      "corrected": "百洋股份",
+      "basis": "同段后文自校为百洋股份，补充冻结审计也有同名信号"
+    },
+    {
+      "raw": "信通电子、九阳、水阳、繁多数串、紧急",
+      "corrected": "证券身份保持未决",
+      "basis": "音近或简称不足以唯一映射，禁止与本地候选强行合并"
+    },
+    {
+      "raw": "润建",
+      "corrected": "保留来源简称",
+      "basis": "来源名称清楚，但正式全称和代码未由本批证据独立核验"
+    }
+  ],
+  "hypotheses": [
+    {
+      "claim": "当交易者判断环境不利且没有通过其模式门槛的机会时，允许空仓可能比为了参与感强行交易更能控制回撤与纪律违约。",
+      "implied_rule": "所有候选都未通过预注册门槛时，把空仓设为合法基准动作。",
+      "expected_effect": "空仓应降低左尾和纪律违约；若实时组合能稳定覆盖成本并控制风险，则门槛需要重估。",
+      "falsifiable_test": "复用既有XH-178，在不利环境中比较空仓、强制选择候选和实时门控组合的净收益、回撤、换手与纪律违约；本场只增加来源日期，不新建近义候选。",
+      "category": "风险预算",
+      "reuse_existing_id": "XH-178"
+    },
+    {
+      "claim": "主跌阶段中，下跌低吸相对倒接力可能具有更低回撤和更稳定的次日收益。",
+      "implied_rule": "按冻结评分同时记录两个模式候选、成交与固定退出。",
+      "expected_effect": "降低模式切换期的短线回撤。",
+      "falsifiable_test": "复用既有XH-271，跨主跌、震荡和趋势阶段比较净收益、最大回撤、尾部亏损与成交率；若主跌期不具稳定优势则否决。",
+      "category": "模式环境",
+      "reuse_existing_id": "XH-271"
+    }
+  ],
+  "existing_hypothesis_feedback": [
+    {
+      "id": "XH-178",
+      "relationship": "repeats_evidence",
+      "reason": "本场再次把空仓设为不利环境中的合法基准，并强调没有合适机会时不要强行参与；它只是重复来源证据，不构成验证。"
+    },
+    {
+      "id": "XH-271",
+      "relationship": "repeats_evidence",
+      "reason": "本场明确把主跌或空仓环境中的下跌低吸描述为相对稳健，把倒接力描述为高波动；它重复了既有命题，不构成统计确认。"
+    }
+  ],
+  "strategy_hit_audit": {
+    "scope": "仅比较来源点名与2026年10月21日冻结本地数字模拟信号、纸面持仓和纸面成交；不证明老师账户、APP、券商成交、收益或模式胜率",
+    "teacher_named_winners": [
+      {
+        "surface_form": "莱美药业",
+        "source_claim": "红盘起爆候选，被称为第三次进攻并在回看时口述涨停",
+        "classification": "emitted_qibao_hit",
+        "reason": "本地冻结切片同名300006发出ACTIVE标杆短线起爆信号，具模式资格但无星标、目标权重为0且无纸面成交；只能证明独立系统发出信号"
+      },
+      {
+        "surface_form": "百洋股份",
+        "source_claim": "弱转强涨停并被称为连板接力命中",
+        "classification": "emitted_strategy_hit",
+        "reason": "本地冻结切片同名002696明确发出COLD接力低弱转1信号；COLD仍是已发出信号，但不具执行资格、无星标、目标权重为0且无纸面成交"
+      },
+      {
+        "surface_form": "闽东电力",
+        "source_claim": "下跌低吸小幅盈利",
+        "classification": "not_emitted",
+        "reason": "仅限2026年10月21日完整13条冻结信号清单没有同名记录；不否定来源清晰名称，也不核验教师收益"
+      },
+      {
+        "surface_form": "润建",
+        "source_claim": "第三名涨停",
+        "classification": "not_emitted",
+        "reason": "来源简称清楚；仅限2026年10月21日完整13条冻结信号清单没有同名记录，正式全称、代码与涨停未核"
+      },
+      {
+        "surface_form": "冰山冷热",
+        "source_claim": "大跌幅高分观察后表现强，口述达到100分",
+        "classification": "not_emitted",
+        "reason": "仅限2026年10月21日完整13条冻结信号清单没有同名记录；来源同时明确该类标的先观察、不买入"
+      },
+      {
+        "surface_form": "九阳",
+        "source_claim": "前一日红盘起爆回看被称为‘也可以’",
+        "classification": "no_evidence",
+        "reason": "简称身份未决，不能与本地资产强行合并"
+      },
+      {
+        "surface_form": "水阳",
+        "source_claim": "前一日回看被称为上涨",
+        "classification": "no_evidence",
+        "reason": "音近证券身份未决，不能与本地资产强行合并"
+      },
+      {
+        "surface_form": "繁多数串",
+        "source_claim": "N字语境中被口述为又吃肉并疑似涨停",
+        "classification": "no_evidence",
+        "reason": "转写身份与表现均含混，不能与本地资产强行合并"
+      },
+      {
+        "surface_form": "紧急",
+        "source_claim": "前一日倒接力例子被称为涨上来",
+        "classification": "no_evidence",
+        "reason": "音近证券身份未决，不能与本地资产强行合并"
+      }
+    ],
+    "local_strategy_benchmark_hits": [
+      {
+        "asset": "果麦文化（301052）",
+        "classification": "emitted_qibao_hit",
+        "reason": "本地Book B在09:26发出ACTIVE标杆短线起爆信号并标星，目标权重25%；Book B与Book A各有一笔09:32纸面买入。老师未点名该股，不能认定重合"
+      },
+      {
+        "asset": "东方嘉盛（002889）",
+        "classification": "emitted_strategy_hit",
+        "reason": "本地Book B发出ACTIVE绿断低吸信号并标星，目标权重25%，09:32有一笔Book B纸面买入。老师未点名该股"
+      }
+    ],
+    "teacher_named_non_winner_or_candidate_only": [
+      {
+        "surface_form": "信通电子",
+        "role": "源日倒接力候选，未被口述为赢家",
+        "classification": "no_evidence",
+        "reason": "身份未决，禁止与本地协和电子605258强行合并"
+      },
+      {
+        "surface_form": "段家大厅、段家大地",
+        "role": "前一日对象的音近提及，并伴随‘没票’，未被口述为赢家",
+        "classification": "no_evidence",
+        "reason": "同段两个音近转写均无法唯一映射证券"
+      },
+      {
+        "surface_form": "永达股份",
+        "role": "排名靠前但明确说未涨停，不归入赢家桶",
+        "classification": "not_emitted",
+        "reason": "仅限2026年10月21日完整13条冻结信号清单没有同名记录；正式代码与教师排名未核"
+      }
+    ],
+    "historical_position_exit_records": [
+      {
+        "asset": "粤宏远A（000573）",
+        "classification": "cohort_benchmark",
+        "reason": "仅为既有纸面持仓在源日的两条SELL退出记录；2026年10月21日完整13条冻结信号没有该股，不能暗示当日新增选股或老师点名"
+      }
+    ],
+    "local_signal_inventory": [
+      {"asset": "301052果麦文化", "signal_status": "ACTIVE", "mode_trade_eligible": true, "star": true, "mode_exec_target_weight": 0.25},
+      {"asset": "002696百洋股份", "signal_status": "COLD", "mode_trade_eligible": false, "star": false, "mode_exec_target_weight": 0.0},
+      {"asset": "603366日出东方", "signal_status": "COLD", "mode_trade_eligible": false, "star": false, "mode_exec_target_weight": 0.0},
+      {"asset": "002889东方嘉盛", "signal_status": "ACTIVE", "mode_trade_eligible": true, "star": true, "mode_exec_target_weight": 0.25},
+      {"asset": "603197保隆科技", "signal_status": "ACTIVE", "mode_trade_eligible": true, "star": false, "mode_exec_target_weight": 0.0},
+      {"asset": "605258协和电子", "signal_status": "COLD", "mode_trade_eligible": false, "star": false, "mode_exec_target_weight": 0.0},
+      {"asset": "000576甘化科工", "signal_status": "COLD", "mode_trade_eligible": false, "star": false, "mode_exec_target_weight": 0.0},
+      {"asset": "002085万丰奥威", "signal_status": "COLD", "mode_trade_eligible": false, "star": false, "mode_exec_target_weight": 0.0},
+      {"asset": "603348文灿股份", "signal_status": "ACTIVE", "mode_trade_eligible": true, "star": false, "mode_exec_target_weight": 0.0},
+      {"asset": "300006莱美药业", "signal_status": "ACTIVE", "mode_trade_eligible": true, "star": false, "mode_exec_target_weight": 0.0},
+      {"asset": "301716鸿富诚", "signal_status": "ACTIVE", "mode_trade_eligible": true, "star": false, "mode_exec_target_weight": 0.0},
+      {"asset": "301230泓博医药", "signal_status": "ACTIVE", "mode_trade_eligible": true, "star": false, "mode_exec_target_weight": 0.0},
+      {"asset": "301666大普微", "signal_status": "ACTIVE", "mode_trade_eligible": true, "star": false, "mode_exec_target_weight": 0.0}
+    ],
+    "paper_trade_inventory": [
+      {"time": "09:32", "side": "BUY", "book": "Book B", "asset": "301052果麦文化", "reason": "标杆短线起爆"},
+      {"time": "09:32", "side": "BUY", "book": "Book B", "asset": "002889东方嘉盛", "reason": "绿断低吸"},
+      {"time": "09:32", "side": "BUY", "book": "Book A", "asset": "301052果麦文化", "reason": "纸面买入"},
+      {"time": "14:45", "side": "SELL", "book": "Book B", "asset": "000573粤宏远A", "reason": "跟踪止损；既有仓位退出"},
+      {"time": "15:14", "side": "SELL", "book": "Book A", "asset": "000573粤宏远A", "reason": "次日收盘退出；既有仓位退出"}
+    ],
+    "direction_core_observations": [
+      "13条本地信号、模式状态、执行资格、星标与目标权重是不同字段；目标权重不是胜率。",
+      "明确发出的COLD信号属于emitted signal，不能误写成raw_pool_only；但它也不等于可执行或成交。",
+      "老师点名与本地同名才可讨论重合；莱美药业和百洋股份存在同名信号，其他音近名称保持未决。",
+      "5条纸面成交必须按BUY或SELL以及Book A或Book B分别解释，不能汇总成老师或APP结果。"
+    ],
+    "audit_limit": "本地切片只证明独立数字模拟在列明时间发出过信号和纸面记录；老师排名、模式分数、涨停、真实成交与收益仍未核验。"
+  },
+  "reality_check": {
+    "prior_relationship": "本场重复了空仓基准与主跌阶段下跌低吸相对倒接力更稳的先验，但没有提供统一候选、成交、退出和费用样本，因此不能确认XH-178或XH-271。",
+    "market_evidence_result": "10月21日创业板指收跌1.62%、上证指数收跌0.6%，本地广度从早盘趋势延续转为午后分歧；这与作者预期分歧的方向相容，但不能还原09:25盘口或证明模式收益。",
+    "calibration_action": "不新增校准行、不修改姿态；只把本场作为XH-178和XH-271的新增authority=0来源证据。"
+  },
+  "action_summary": {
+    "posture_update": "no_change：盘前大环境观点需下一交易日新证据复核，本草稿不直接更新全局姿态",
+    "playbook_update": "proposal_only：空仓基准、弱势模式分层、断板低开条件、高抛减亏和数据缺失时降权作为待复验方法",
+    "hypothesis_update": "reuse_existing：仅复用XH-178与XH-271的exact claim，不新增近义候选",
+    "audit_evidence": "reviewed：完整33段原文、10月21日收盘指数、家庭上下文、13条冻结本地信号与5条纸面成交；未把同名或事后上涨写成老师命中",
+    "instrumentation_todo": "no_issue_created：后续研究需冻结09:25候选、候选市场与权限字段、评分、首次可成交价、完整模式池、09:31回放、固定退出与费用，并保存教师原始名称到正式证券身份的独立核验",
+    "routing": [
+      "authority_0_only",
+      "reuse_exact_claim_XH-178",
+      "reuse_exact_claim_XH-271",
+      "no_new_near_duplicate_hypothesis",
+      "no_strategy_or_parameter_change",
+      "no_posture_promotion"
+    ]
+  },
+  "limitations": [
+    "来源中的当日个股与入场时点已经过期，不能回放或顺延。",
+    "指数收盘与本地数字模拟切片不能证明老师09:25盘口、排名、评分、账户收益或成交。",
+    "盘中数据和09:31回放被来源明确说明缺失，事后赢家不能补足这一证据。",
+    "下跌低吸四只候选只明确第一只是主板标的，后三只名称与‘买不了’原因未决；不能推断为20cm、科创板或特定权限。",
+    "来源明确提过一只具体倒接力候选，但原始音近名称无法确认证券身份，也不能映射成协和电子。",
+    "家庭上下文只用于相关性与风险预算；没有任何老师点名标的与家庭持仓直接重合，家庭内部金额和标识不进入知识结论。",
+    "未决证券名未强行消歧；它们不能进入建议或执行。"
+  ]
+}

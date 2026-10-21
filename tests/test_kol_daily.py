@@ -58,6 +58,7 @@ from xiaocao.kol.publication import (
     PublicationLedger,
     build_record,
     publication_id_for_source,
+    publication_thesis_id,
     record_content_sha256,
     report_id,
     viewpoint_id,
@@ -5625,8 +5626,9 @@ def _projection_bundle() -> dict:
     return bundle
 
 
+@pytest.mark.parametrize("local_thesis_id", ["light-position-boundary", "t1"])
 def test_publication_pipeline_creates_initial_viewpoint_and_evaluation(
-    tmp_path,
+    tmp_path, local_thesis_id,
 ):
     order: list[str] = []
     pipeline = DailyPublicationPipeline(
@@ -5651,7 +5653,9 @@ def test_publication_pipeline_creates_initial_viewpoint_and_evaluation(
         ),
     )
 
-    result = pipeline.process(_projection_bundle())
+    bundle = _projection_bundle()
+    bundle["items"][0]["longitudinal_projection"]["viewpoints"][0]["local_thesis_id"] = local_thesis_id
+    result = pipeline.process(bundle)
 
     assert result["status"] == "completed"
     publication_key = publication_id_for_source(
@@ -5666,7 +5670,7 @@ def test_publication_pipeline_creates_initial_viewpoint_and_evaluation(
     )
     assert report["payload"]["viewpoint_ids"] == [viewpoint["record_id"]]
     assert viewpoint["payload"]["local_thesis_id"] == (
-        "light-position-boundary"
+        publication_thesis_id(local_thesis_id)
     )
     assert evaluation["payload"]["viewpoint_id"] == viewpoint["record_id"]
     assert evaluation["payload"]["status"] == "uncertain"
@@ -5676,6 +5680,9 @@ def test_publication_pipeline_creates_initial_viewpoint_and_evaluation(
     assert "evidence" not in evaluation["payload"]
     assert evaluation["created_at"] == "2026-07-27T02:05:00Z"
     assert order == ["gray", "book"]
+    assert bundle["items"][0]["longitudinal_projection"]["viewpoints"][0]["local_thesis_id"] == local_thesis_id
+    pipeline.process(bundle)
+    assert order.count("gray") == 1
 
 
 def test_promoted_event_requires_explicit_longitudinal_decision(tmp_path):

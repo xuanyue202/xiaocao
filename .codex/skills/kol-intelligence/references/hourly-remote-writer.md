@@ -132,6 +132,15 @@ The LiangHui publication client may retry the same `get_kol_write_status` or
 `get_kol_record` read up to five times after a transport timeout or connection failure, with
 short backoff. This never retries a write or an application error; uncertain
 writes still require the original claim's authoritative status reconciliation.
+Short semantic thesis IDs are encoded only at the publication wire boundary;
+already-valid IDs keep their identity. A rejected first viewpoint behind an
+unpublished staged report may resume only after exact report/claim readback and
+authoritative absence of the rejected record and receipt. The narrow repair
+changes wire IDs and stages a new content-addressed report version with a fresh
+claim, preserves the original staged version/receipt and reader
+content/source judgments and all prior claims, and excludes published reports,
+accepted longitudinal records and unknown failures. Never resend the rejected
+payload or rebuild the source semantics to work around this protocol mismatch.
 For a source-level video repair with one retained request-bound bundle, narrow
 resume uses that exact pending identity without scanning subscriptions again.
 Multiple retained bundles fail closed until the exact target is resolved.
