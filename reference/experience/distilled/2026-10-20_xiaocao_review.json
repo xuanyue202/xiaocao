@@ -1,0 +1,768 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-20",
+  "kind": "晚间大师班复盘",
+  "summary": "小草把主跌环境下的交易拆成风险预算、模式切换、条件分支、固定退出与研究验证：当时先空仓或严格控仓，求稳时偏向下跌低吸；倒接力要到次日早盘复核，若评分仍为负再退出；N字低吸只有出现N形态才理论可做，红盘起爆能否出现尚不确定。“断板+大低开”“盘中大跌幅低吸”和“断板起爆”仍是未经长期、样本外和可成交验证的实验候选。",
+  "author": "小草",
+  "source": "小草直播",
+  "authority": 0,
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_netdisk_enrichment/artifacts/kol-netdisk-8446e154138c350c/20261020 大师班专场(晚18：00开播)-compressed (1).txt",
+      "sha256": "f0e5a540c93e2e9edd1f0bf6329fbcc7f44ba9ef2d2058c2e6c3ea31c533897a",
+      "size": 83640
+    }
+  ],
+  "posture": {
+    "regime": "小草把2026年10月20日收盘附近的A股判断为主跌阶段，缩量状态下直接转稳向上的概率较小，可能还需磨底或一次放量下跌。",
+    "dominant_style": "风险优先，其次是下跌低吸；倒接力收盘评分已转负，需等次日早盘复核，断板的大低开和盘中大跌幅变体仅作待验证研究。",
+    "risk": "主跌、模式评分转负、高波动短线、ST与跌停板、事后翻图和主观卖点都会放大回撤与研究偏差。",
+    "style_ranking": [
+      "空仓或严格控制新增风险",
+      "下跌低吸",
+      "经过重新核验的盘中超跌高分候选",
+      "断板大低开与盘中大跌幅实验",
+      "倒接力次日早盘复核仍负后退出"
+    ]
+  },
+  "regime_call": {
+    "call": "在主跌和模式切换期，先用环境与模式评分决定是否开放风险，再用分散组合、固定买卖时点和样本外验证约束单票冲动；未经长期检验的新模式不得因现场翻图漂亮而直接升级。",
+    "horizon": "原场次面向2026年10月20日复盘及10月21日下一交易日；具体窗口已过期，方法只以零权威候选保留。",
+    "what_would_falsify": [
+      "后续权威行情证明市场已持续放量转强并形成稳定主线",
+      "倒接力评分重新转正且样本外风险调整收益恢复",
+      "下跌低吸不再相对稳定",
+      "断板大低开或盘中大跌幅在严格样本外与成交约束下没有增益"
+    ]
+  },
+  "directions": [
+    {
+      "name": "下跌低吸",
+      "stance": "作者认为它在当时仍是相对稳健的优先模式。",
+      "conditions": [
+        "市场仍处下跌或超跌环境",
+        "候选符合冻结的评分与可成交条件",
+        "按高抛或次日固定规则退出"
+      ],
+      "boundary": "来源的当日收益、评分和个股映射未获独立核验。"
+    },
+    {
+      "name": "倒接力",
+      "stance": "倒接力收盘评分转负后，次日早盘先复核；若仍为负分则退出并停做。",
+      "conditions": [
+        "次日早盘先复核评分",
+        "若仍为负分则停做"
+      ],
+      "boundary": "作者同时承认已有亏损票可能出现小阳反包，且次日早盘评分未知；不能把退出写成无条件动作，也不能把反包当成保证。"
+    },
+    {
+      "name": "断板加大低开",
+      "stance": "只作为高波动实验候选。",
+      "conditions": [
+        "先完成长期和样本外统计",
+        "冻结第一名或前两名、成交、滑点和退出规则",
+        "剔除无分、一字跌停与已跌停候选"
+      ],
+      "boundary": "现场逐日点击与听众口述的九月份约131%都不是验证。"
+    },
+    {
+      "name": "盘中大跌幅低吸与断板起爆",
+      "stance": "可研究高分、排名靠前的盘中候选，但低吸和起爆是不同方向，不能合并。",
+      "conditions": [
+        "9:31前的固定时点示例约10分即可，不能与全天监控阈值混为一谈",
+        "后续盘中低吸重点看100分与靠前排名",
+        "起爆需要高于100分的更高阈值，且避免已高涨幅候选",
+        "约6%的追高边界是作者个人设置，作者明确说尚未测试",
+        "ST不参与"
+      ],
+      "boundary": "作者明确说部分新实验尚无模式评分或完整统计；固定9:31翻图有选择偏差，约6%参数也未经测试。"
+    },
+    {
+      "name": "N字低吸与红盘起爆的次日分支",
+      "stance": "来源称当天没有N形态；若次日出现N，理论上可以做。红盘起爆次日能否出现或走出来仍未知。",
+      "conditions": [
+        "必须先实际出现N形态，不能预设已有机会",
+        "红盘起爆需等待当时信号，不能把不确定性改写成计划"
+      ],
+      "boundary": "只对应来源所说的2026年10月21日，现已过期；本地N字低吸信号是独立体系，不能反向证明教师分支。"
+    }
+  ],
+  "stocks": [
+    {
+      "surface_form": "水阳股份、汇博新材",
+      "role": "当日与前一日下跌低吸例证",
+      "lesson": "用于说明下跌低吸和高抛退出；六个点与两个多点均为来源口述。",
+      "resolution": "目录只提供多个拼写候选，不能唯一确认口述所指。"
+    },
+    {
+      "surface_form": "冰山冷热、福建水泥、康强",
+      "role": "倒接力和模式切换例证",
+      "lesson": "冰山冷热被反复用于倒接力与盘中大跌幅回看；福建水泥是前期阶段例证；康强名称不完整。",
+      "resolution": "冰山冷热、福建水泥按来源名称保留；康强未唯一确认。收益、时点和代码不由口述证明。"
+    },
+    {
+      "surface_form": "金奥博、持文／齿轮传媒、读者传媒、百洋股份、华阳国际、丽人丽妆、中视传媒、华北制药、新华文轩",
+      "role": "断板加大低开历史回看",
+      "lesson": "作者用这些例子支持新实验，也承认无正式模式评分、未跑长期数据且有亏损样本。",
+      "resolution": "若干名称存在同音或截断；只保留来源角色，不作唯一证券映射。"
+    },
+    {
+      "surface_form": "奥比中光、天元／千元智能、金研科技、迪安／提纲诊断、百花医药、雪人集团",
+      "role": "盘中低吸或起爆监控例证",
+      "lesson": "用于说明固定时点约10分、后续100分、涨幅过滤和排名靠前的不同观察口径。",
+      "resolution": "天元智能和迪安诊断有同段重复语境候选；金研科技等仍未唯一确认，代码与分时均未验证。"
+    },
+    {
+      "surface_form": "康盛股份、爱丽家居、艾艾／爱爱精工、安记／氨基食品、长裕集团、赤天化、开润股份、信通电子、兴业股份、德明利、中山精密",
+      "role": "跨月份历史回看例证",
+      "lesson": "用于声称新实验在部分月份表现较好，也暴露六月趋势大票阶段适配较差。",
+      "resolution": "目录存在“长裕集团603407.XSHG”同名候选，但不能证明口述所指，更不能改猜成长华集团；其余同音或截断名称也不作唯一映射。"
+    },
+    {
+      "surface_form": "德才股份、万象德龙、中环种业、上海洗发、奥宏电子、莱美药业、松林科技、伊顿电子",
+      "role": "盘中大跌幅低吸与断板起爆例证",
+      "lesson": "用于两个不同实验分支，不构成当前推荐。",
+      "resolution": "目录候选不足以唯一识别；伊顿电子至少可能对应依顿电子603328.XSHG或奕东电子300991.XSHE，不能二选一。"
+    }
+  ],
+  "method_principles": [
+    "先判断市场阶段和模式评分，再决定是否开放风险；模式必须随环境切换。",
+    "组合不同模式或候选可以降低单一高波动结果对账户与心态的冲击，但需要冻结权重与相关性。",
+    "研究卖出必须先比较次日开盘、次日收盘等固定规则，不能把主观高抛当作可复制收益。",
+    "新模式要冻结候选排名、入场时点、滑点、可成交性、退出和样本外区间，避免现场翻图挑赢家。",
+    "盘中低吸与盘中起爆方向不同，前者等回落与超跌，后者追随启动；9:31前约10分、后续低吸100分和起爆高于100分不能共用一个阈值。",
+    "ST、无分、一字跌停和已跌停候选应保持独立风险标签，不能被历史大肉样例覆盖。",
+    "交易者应从全市场与组合视角评估机会，避免为单只亏损股票补仓解套或用交易追逐多巴胺。"
+  ],
+  "exit_lessons": [
+    "倒接力收盘评分转负后，次日早盘先复核；若仍为负分才退出并停做，不因前期赚钱效应继续恋战。",
+    "断板和大跌幅实验需要比较次日开盘卖与收盘卖；弱市里作者倾向更早兑现。",
+    "快速涨停可作为延后退出的例外候选，但必须预先定义，不能事后决定。",
+    "一字跌停、已跌停或无评分候选应避免参与，不能用第二天可能反包为入场理由。",
+    "下跌低吸的高抛信号是来源方法的一部分，但信号定义与成交证据仍需版本化。"
+  ],
+  "decision_trace": [
+    {
+      "observation": "作者判断市场处于主跌，量能未明显释放，倒接力收盘评分转负。",
+      "inference": "直接转稳上涨概率低，前期高分模式进入尾声。",
+      "action": "空仓或严格控仓；次日早盘先复核倒接力，仍为负分才退出；下跌低吸、N字与红盘起爆均需各自条件真实出现。",
+      "boundary": "具体交易窗口已过且缺独立行情核验。"
+    },
+    {
+      "observation": "现场历史翻图显示断板加大低开、盘中大跌幅和起爆在若干日有大收益，也有跌停与亏损。",
+      "inference": "可能存在结构性候选，但样本、阈值、成交和选择偏差尚未解决。",
+      "action": "记录为研究假设，先测试再决定。",
+      "boundary": "authority=0，不自动改变任何策略或账户。"
+    }
+  ],
+  "judgment_heuristics": [
+    "倒接力收盘分数由高转负时，次日早盘先复核；持续为负才停做，并把重新转正视为需要重新开放权限的状态变化，而非用历史胜绩续命。",
+    "当日大盘持续加速下跌一段后，再观察逆势高分候选；不能把刚开始下跌直接等同于机会。",
+    "评估新模式时同时记录盈利样本与跌停样本，并跨不同市场阶段检查适配性。",
+    "把无法唯一解析的证券名称、来源口述收益和听众统计保持为未核验，不补猜代码和收益。",
+    "先用历史数据研究，再用前瞻纸面或仿真验证；不能从回看直接跳到真实资金。"
+  ],
+  "hypotheses": [
+    {
+      "claim": "主跌阶段中，下跌低吸相对倒接力可能具有更低回撤和更稳定的次日收益。",
+      "implied_rule": "按冻结评分同时记录两个模式候选、成交与固定退出。",
+      "falsifiable_test": "跨主跌、震荡和趋势阶段比较净收益、最大回撤、尾部亏损与成交率；若主跌期不具稳定优势则否决。",
+      "expected_effect": "降低模式切换期的短线回撤。",
+      "category": "mode_regime",
+      "authority": 0,
+      "dedup": {
+        "disposition": "new_candidate_related_only",
+        "related_ids": [
+          "XH-154",
+          "XH-175",
+          "XH-132",
+          "XH-011"
+        ],
+        "boundary": "XH-154、XH-175和XH-132仅覆盖部分模式或阈值；XH-011已被否决且不得因本场相近表述复活。"
+      }
+    },
+    {
+      "claim": "倒接力收盘评分转负、且次日早盘复核仍为负，可能识别该模式赚钱阶段结束。",
+      "implied_rule": "次日早盘复核仍为负后停做，直到重新满足预先定义的开放条件。",
+      "falsifiable_test": "比较持续负分后继续做、停做和基准三组未来一至五日收益与尾部风险；若停做无风险改善则否决。",
+      "expected_effect": "减少退潮阶段亏损。",
+      "category": "mode_switch",
+      "authority": 0,
+      "dedup": {
+        "disposition": "new_candidate_related_only",
+        "related_ids": [
+          "XH-061",
+          "XH-175",
+          "XH-194"
+        ],
+        "boundary": "既有候选覆盖全模式负分或接力退潮，但未完整包含倒接力收盘转负、次早复核和再开放条件。"
+      }
+    },
+    {
+      "claim": "断板加大低开、且在冻结排名中位于第一名或前两名的候选，可能获得正的次日开盘收益。",
+      "implied_rule": "冻结大低开阈值、断板定义、排名、价格笼子、滑点和次日开盘退出。",
+      "falsifiable_test": "使用未参与想法形成的样本外区间检验收益、回撤、跌停率、成交率与容量；若扣除成本后不优于断板基线则否决。",
+      "expected_effect": "识别高波动反包候选。",
+      "category": "auction_reversal",
+      "authority": 0,
+      "dedup": {
+        "disposition": "new_candidate_related_only",
+        "related_ids": [
+          "XH-076",
+          "XH-078",
+          "XH-139",
+          "XH-226"
+        ],
+        "boundary": "既有候选分别覆盖低开、前两名平铺或复核，未完整覆盖断板、大低开、冻结排名和次日开盘退出。"
+      }
+    },
+    {
+      "claim": "大盘已经加速下跌一段后，盘中大跌幅且低吸评分达到高位、排名前二的候选可能存在逆势修复。",
+      "implied_rule": "先定义大盘加速段，再在全市场冻结100分等阈值和排名，排除ST及已高涨幅候选。",
+      "falsifiable_test": "前瞻比较信号后收益、最大不利变动、成交率与随机低吸基线；若增益不稳定则否决。",
+      "expected_effect": "在恐慌后段寻找被错杀候选。",
+      "category": "intraday_reversal",
+      "authority": 0,
+      "dedup": {
+        "disposition": "new_candidate_related_only",
+        "related_ids": [
+          "XH-156",
+          "XH-207",
+          "XH-223",
+          "XH-246"
+        ],
+        "boundary": "既有候选覆盖恐慌、盘中筛选或高分低吸的局部，未完整覆盖先跌一段、继续加速、排名与涨幅约束。"
+      }
+    },
+    {
+      "claim": "断板后的盘中起爆在高于低吸100分口径的更高评分条件下，可能有增量收益。",
+      "implied_rule": "与盘中低吸分开建模，冻结追涨上限、评分阈值和次日退出；约6%的个人边界在验证前不作为参数。",
+      "falsifiable_test": "跨样本外月份比较断板起爆、普通起爆和不交易三组结果；若追涨成本和回撤抵消收益则否决。",
+      "expected_effect": "验证断板修复启动是否可交易。",
+      "category": "intraday_breakout",
+      "authority": 0,
+      "dedup": {
+        "disposition": "new_candidate_related_only",
+        "related_ids": [
+          "XH-030",
+          "XH-190",
+          "XH-223",
+          "XH-246"
+        ],
+        "boundary": "既有候选涉及起爆或盘中分数，但未完整覆盖断板后起爆、分模、未测试追高上限和固定退出。"
+      }
+    },
+    {
+      "claim": "在固定总风险下组合多个短线模式，可能降低单一模式波动并提高执行一致性。",
+      "implied_rule": "冻结模式间风险权重，记录相关性、收益、回撤和交易成本；不把单一模式内部的前两名平铺重复计为新命题。",
+      "falsifiable_test": "与单一模式和随机跨模式组合比较风险调整收益；若组合未降低回撤或稀释收益过多则否决。",
+      "expected_effect": "降低单一短线模式波动。",
+      "category": "portfolio_construction",
+      "authority": 0,
+      "dedup": {
+        "disposition": "new_candidate_related_only",
+        "related_ids": [
+          "XH-078",
+          "XH-157",
+          "XH-020"
+        ],
+        "boundary": "XH-078已覆盖前两名平铺，故本候选仅保留跨短线模式组合；XH-020已搁置且不因本场自动恢复。"
+      }
+    }
+  ],
+  "strategy_hit_audit": {
+    "status": "evidence_limited",
+    "source_recommendation": {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/recommend_2026-10-20.md",
+      "sha256": "415e85666c7000c81a915204f8844efad50f8a821d2138bc1d2b3b09b97d96a6"
+    },
+    "local_audit": {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261021_01a15dcf/video20_local_strategy_audit.json",
+      "sha256": "5538aabcbb40151230d3a8acd08ffcbf455d74ecd1ae10f292de84134e7bc018"
+    },
+    "teacher_named_winners": [
+      "水阳股份",
+      "冰山冷热",
+      "金奥博",
+      "奥比中光",
+      "天元／千元智能",
+      "金研科技",
+      "迪安／提纲诊断",
+      "百花医药",
+      "乘加／加乘智能"
+    ],
+    "teacher_same_day_watch_or_experiment_mentions": [
+      "持文／齿轮传媒",
+      "读者传媒"
+    ],
+    "historical_worked_examples": [
+      "汇博新材",
+      "福建水泥",
+      "华北制药",
+      "新华文轩",
+      "百洋股份",
+      "华阳国际",
+      "丽人丽妆",
+      "中视传媒",
+      "康盛股份",
+      "爱丽家居",
+      "艾艾／爱爱精工",
+      "安记／氨基食品",
+      "长裕集团",
+      "赤天化",
+      "开润股份",
+      "信通电子",
+      "兴业股份",
+      "德明利",
+      "中山精密",
+      "德才股份",
+      "万象德龙",
+      "中环种业",
+      "上海洗发",
+      "奥宏电子",
+      "莱美药业",
+      "松林科技",
+      "伊顿电子"
+    ],
+    "local_strategy_benchmark_hits": [
+      {
+        "instrument": "000573.XSHE 粤宏远Ａ",
+        "classification": "emitted_strategy_hit",
+        "execution_status": "paper_books_closed_2026-10-21",
+        "details": "10月20日冻结链唯一★E，N字低吸、ACTIVE、目标50%；纸面Book B与纸面Book A记录彼此独立。它不是教师点名赢家，不证明教师体系，也没有APP成交主张。"
+      }
+    ],
+    "emitted_qibao_hits": [],
+    "direction_core_observations": [
+      "下跌低吸被作者称为当时较稳模式",
+      "倒接力要在次日早盘复核，若仍负分才停做",
+      "六月趋势大票环境被作者视为断板实验的弱适配阶段"
+    ],
+    "classifications": [
+      {
+        "mention": "水阳股份",
+        "source_time_scope": "2026-10-20同日低吸例证",
+        "classification": "no_evidence",
+        "execution_status": "identity_unresolved",
+        "reason": "口述名称未唯一确认，不能与冻结本地信号逐项比较。"
+      },
+      {
+        "mention": "冰山冷热",
+        "source_time_scope": "10月19日倒接力例证兼10月20日盘中回看",
+        "classification": "cohort_watchlist",
+        "execution_status": "emitted_but_not_executable",
+        "reason": "本地10月20日有000530.XSHE红断低吸观察信号，COLD、未进二级筛选、非★E，无纸面持仓成交或日志动作；本地红断与教师倒接力/盘中体系不同，不能称教师模式命中。"
+      },
+      {
+        "mention": "金奥博",
+        "source_time_scope": "2026-10-20同日断板/起爆例证",
+        "classification": "not_emitted",
+        "execution_status": "no_local_signal",
+        "reason": "名称可明确比较，冻结的10月20日18条本地信号没有金奥博；这只说明同日未发出本地信号，不评价教师口述收益。"
+      },
+      {
+        "mention": "奥比中光",
+        "source_time_scope": "2026-10-20同日盘中例证",
+        "classification": "not_emitted",
+        "execution_status": "no_local_signal",
+        "reason": "冻结的10月20日18条本地信号没有奥比中光；不评价教师分数、首次价格或收益。"
+      },
+      {
+        "mention": "天元／千元智能",
+        "source_time_scope": "2026-10-20同日盘中例证",
+        "classification": "no_evidence",
+        "execution_status": "identity_unresolved",
+        "reason": "同段语境指向天元智能只是候选，未获独立唯一确认，不能做本地信号命中判断。"
+      },
+      {
+        "mention": "金研科技",
+        "source_time_scope": "2026-10-20同日盘中例证",
+        "classification": "no_evidence",
+        "execution_status": "identity_unresolved",
+        "reason": "名称无法唯一映射，不能与本地信号逐项比较。"
+      },
+      {
+        "mention": "迪安／提纲诊断",
+        "source_time_scope": "2026-10-20同日盘中例证",
+        "classification": "no_evidence",
+        "execution_status": "identity_unresolved",
+        "reason": "同段语境指向迪安诊断只是候选，未获独立唯一确认。"
+      },
+      {
+        "mention": "百花医药",
+        "source_time_scope": "2026-10-20同日盘中例证",
+        "classification": "not_emitted",
+        "execution_status": "no_local_signal",
+        "reason": "冻结的10月20日18条本地信号没有百花医药；不评价教师口述收益。"
+      },
+      {
+        "mention": "乘加／加乘智能",
+        "source_time_scope": "2026-10-20同日盘中例证",
+        "classification": "no_evidence",
+        "execution_status": "identity_unresolved",
+        "reason": "名称无法唯一映射，不能与本地信号逐项比较。"
+      },
+      {
+        "mention": "持文／齿轮传媒",
+        "source_time_scope": "10月20日提到的前一日断板与大低开例证",
+        "classification": "no_evidence",
+        "execution_status": "identity_and_source_date_link_unresolved",
+        "reason": "口述名称未唯一确认，不能据目录候选或10月20日快照判断历史策略命中。"
+      },
+      {
+        "mention": "读者传媒",
+        "source_time_scope": "2026-10-20同日实验观察",
+        "classification": "cohort_watchlist",
+        "execution_status": "emitted_but_not_executable",
+        "reason": "本地10月20日有603999.XSHG绿断低吸观察信号，COLD、未进二级筛选、非★E，无纸面持仓成交或日志动作；本地绿断与教师断板实验不同，不能称教师模式命中。"
+      },
+      {
+        "mention": "汇博新材",
+        "source_time_scope": "historical_worked_example",
+        "classification": "no_evidence",
+        "execution_status": "historical_date_not_audited",
+        "reason": "来源称为前一日低吸例证；本次只有10月20日冻结本地链，不能判断10月19日是否命中。"
+      },
+      {
+        "mention": "福建水泥",
+        "source_time_scope": "historical_worked_example",
+        "classification": "no_evidence",
+        "execution_status": "historical_date_not_audited",
+        "reason": "来源属于历史回看；本次只有10月20日冻结本地链，没有其来源日期的同日审计证据。"
+      },
+      {
+        "mention": "华北制药",
+        "source_time_scope": "historical_worked_example",
+        "classification": "no_evidence",
+        "execution_status": "historical_date_not_audited",
+        "reason": "来源属于历史回看；本次只有10月20日冻结本地链，没有其来源日期的同日审计证据。"
+      },
+      {
+        "mention": "新华文轩",
+        "source_time_scope": "historical_worked_example",
+        "classification": "no_evidence",
+        "execution_status": "historical_date_not_audited",
+        "reason": "来源跨多个历史月份回看；没有相应日期逐日冻结的本地审计链。"
+      },
+      {
+        "mention": "百洋股份",
+        "source_time_scope": "historical_worked_example",
+        "classification": "no_evidence",
+        "execution_status": "historical_date_not_audited",
+        "reason": "来源属于历史回看；本次只有10月20日冻结本地链，没有其来源日期的同日审计证据。"
+      },
+      {
+        "mention": "华阳国际",
+        "source_time_scope": "historical_worked_example",
+        "classification": "no_evidence",
+        "execution_status": "historical_date_not_audited",
+        "reason": "来源属于历史回看；本次只有10月20日冻结本地链，没有其来源日期的同日审计证据。"
+      },
+      {
+        "mention": "丽人丽妆",
+        "source_time_scope": "historical_worked_example",
+        "classification": "no_evidence",
+        "execution_status": "historical_date_not_audited",
+        "reason": "来源属于历史回看；本次只有10月20日冻结本地链，没有其来源日期的同日审计证据。"
+      },
+      {
+        "mention": "中视传媒",
+        "source_time_scope": "historical_worked_example",
+        "classification": "no_evidence",
+        "execution_status": "historical_date_not_audited",
+        "reason": "来源属于历史回看；本次只有10月20日冻结本地链，没有其来源日期的同日审计证据。"
+      },
+      {
+        "mention": "康盛股份",
+        "source_time_scope": "historical_worked_example",
+        "classification": "no_evidence",
+        "execution_status": "historical_date_not_audited",
+        "reason": "来源回看8月31日样本；没有该历史日期的冻结本地推荐、信号、纸面或日志证据。"
+      },
+      {
+        "mention": "爱丽家居",
+        "source_time_scope": "historical_worked_example",
+        "classification": "no_evidence",
+        "execution_status": "historical_date_not_audited",
+        "reason": "来源属于历史回看；本次只有10月20日冻结本地链，没有其来源日期的同日审计证据。"
+      },
+      {
+        "mention": "艾艾／爱爱精工",
+        "source_time_scope": "historical_worked_example",
+        "classification": "no_evidence",
+        "execution_status": "historical_date_not_audited",
+        "reason": "来源属于历史回看；本次只有10月20日冻结本地链，没有其来源日期的同日审计证据。"
+      },
+      {
+        "mention": "安记／氨基食品",
+        "source_time_scope": "historical_worked_example",
+        "classification": "no_evidence",
+        "execution_status": "historical_date_not_audited",
+        "reason": "来源属于历史回看；本次只有10月20日冻结本地链，没有其来源日期的同日审计证据。"
+      },
+      {
+        "mention": "长裕集团",
+        "source_time_scope": "historical_worked_example",
+        "classification": "no_evidence",
+        "execution_status": "historical_date_not_audited",
+        "reason": "来源属于历史回看；本次只有10月20日冻结本地链，没有其来源日期的同日审计证据。"
+      },
+      {
+        "mention": "赤天化",
+        "source_time_scope": "historical_worked_example",
+        "classification": "no_evidence",
+        "execution_status": "historical_date_not_audited",
+        "reason": "来源属于历史回看；本次只有10月20日冻结本地链，没有其来源日期的同日审计证据。"
+      },
+      {
+        "mention": "开润股份",
+        "source_time_scope": "historical_worked_example",
+        "classification": "no_evidence",
+        "execution_status": "historical_date_not_audited",
+        "reason": "来源属于历史回看；本次只有10月20日冻结本地链，没有其来源日期的同日审计证据。"
+      },
+      {
+        "mention": "信通电子",
+        "source_time_scope": "historical_worked_example",
+        "classification": "no_evidence",
+        "execution_status": "historical_date_not_audited",
+        "reason": "来源回看7月17日样本；没有该历史日期的冻结本地推荐、信号、纸面或日志证据。"
+      },
+      {
+        "mention": "兴业股份",
+        "source_time_scope": "historical_worked_example",
+        "classification": "no_evidence",
+        "execution_status": "historical_date_not_audited",
+        "reason": "来源属于历史回看；本次只有10月20日冻结本地链，没有其来源日期的同日审计证据。"
+      },
+      {
+        "mention": "德明利",
+        "source_time_scope": "historical_worked_example",
+        "classification": "no_evidence",
+        "execution_status": "historical_date_not_audited",
+        "reason": "来源属于历史回看；本次只有10月20日冻结本地链，没有其来源日期的同日审计证据。"
+      },
+      {
+        "mention": "中山精密",
+        "source_time_scope": "historical_worked_example",
+        "classification": "no_evidence",
+        "execution_status": "historical_date_not_audited",
+        "reason": "来源属于历史回看；本次只有10月20日冻结本地链，没有其来源日期的同日审计证据。"
+      },
+      {
+        "mention": "德才股份",
+        "source_time_scope": "historical_worked_example",
+        "classification": "no_evidence",
+        "execution_status": "historical_date_not_audited",
+        "reason": "来源属于历史回看；本次只有10月20日冻结本地链，没有其来源日期的同日审计证据。"
+      },
+      {
+        "mention": "万象德龙",
+        "source_time_scope": "historical_worked_example",
+        "classification": "no_evidence",
+        "execution_status": "historical_date_not_audited",
+        "reason": "来源属于历史回看；本次只有10月20日冻结本地链，没有其来源日期的同日审计证据。"
+      },
+      {
+        "mention": "中环种业",
+        "source_time_scope": "historical_worked_example",
+        "classification": "no_evidence",
+        "execution_status": "historical_date_not_audited",
+        "reason": "来源属于历史回看；本次只有10月20日冻结本地链，没有其来源日期的同日审计证据。"
+      },
+      {
+        "mention": "上海洗发",
+        "source_time_scope": "historical_worked_example",
+        "classification": "no_evidence",
+        "execution_status": "historical_date_not_audited",
+        "reason": "来源属于历史回看；本次只有10月20日冻结本地链，没有其来源日期的同日审计证据。"
+      },
+      {
+        "mention": "奥宏电子",
+        "source_time_scope": "historical_worked_example",
+        "classification": "no_evidence",
+        "execution_status": "historical_date_not_audited",
+        "reason": "来源属于历史回看；本次只有10月20日冻结本地链，没有其来源日期的同日审计证据。"
+      },
+      {
+        "mention": "莱美药业",
+        "source_time_scope": "historical_worked_example",
+        "classification": "no_evidence",
+        "execution_status": "historical_date_not_audited",
+        "reason": "来源属于历史回看；本次只有10月20日冻结本地链，没有其来源日期的同日审计证据。"
+      },
+      {
+        "mention": "松林科技",
+        "source_time_scope": "historical_worked_example",
+        "classification": "no_evidence",
+        "execution_status": "historical_date_not_audited",
+        "reason": "来源属于历史回看；本次只有10月20日冻结本地链，没有其来源日期的同日审计证据。"
+      },
+      {
+        "mention": "伊顿电子",
+        "source_time_scope": "historical_worked_example",
+        "classification": "no_evidence",
+        "execution_status": "historical_date_not_audited",
+        "reason": "来源属于历史回看；本次只有10月20日冻结本地链，没有其来源日期的同日审计证据。"
+      }
+    ],
+    "classification_vocabulary": [
+      "emitted_strategy_hit",
+      "emitted_qibao_hit",
+      "raw_pool_only",
+      "cohort_benchmark",
+      "cohort_watchlist",
+      "not_emitted",
+      "no_evidence"
+    ],
+    "boundary": "10月20日冻结本地快照只允许判断同日明确、可唯一识别的名称是否发出；它不能判断7月、8月或其他历史日期的策略命中。历史回看统一标记no_evidence，表示缺对应来源日期的不可变链，不表示当时未发出。KOL原始观点、纸面Book B、纸面Book A与APP继续分开；本地红断/绿断不与教师倒接力或断板实验合并。"
+  },
+  "timing_notes": [
+    "场次标题与发布时间指向2026年10月20日晚间大师班；原文的今天和明天分别对应10月20日与10月21日。",
+    "截至语义处理时，10月21日A股交易时段已结束，具体次日计划已经过期。",
+    "作者把盘中大跌幅定义为开盘后跌幅，把大低开定义为开盘缺口，两者不能混同。",
+    "盘中示例常固定在9:31附近或13:41附近，不能把这些翻图时点当成已验证最佳参数。",
+    "作者反复强调新实验没有正式模式评分或长期数据。"
+  ],
+  "typo_corrections": [
+    {
+      "raw": "到吉利、刀接力、道接力",
+      "corrected": "倒接力",
+      "basis": "全场连续讨论同一短线模式，属于上下文可确认的模式词。"
+    },
+    {
+      "raw": "下跌利息",
+      "corrected": "下跌低吸",
+      "basis": "前后连续使用标准下跌低吸、盘中低吸和次日计划，属于上下文可确认的模式词。"
+    },
+    {
+      "raw": "千元智能",
+      "corrected": "天元智能（上下文候选）",
+      "basis": "同段前文清楚出现天元智能。",
+      "uncertainty": "仅作同段语境校正；代码、分数和分时未核验。"
+    },
+    {
+      "raw": "提纲诊断",
+      "corrected": "迪安诊断（上下文候选）",
+      "basis": "同一盘中例证前文清楚出现迪安诊断。",
+      "uncertainty": "仅作同段语境校正；代码、分数和分时未核验。"
+    },
+    {
+      "raw": "水阳股份、汇博新材、持文／齿轮传媒、康强、沈阳、雅邦股份、中山精密、万象德龙、中环种业、上海洗发、奥宏电子、松林科技",
+      "corrected": null,
+      "basis": "缓存证券目录只给出一个或多个拼写候选，不是口述对象的识别证明。",
+      "uncertainty": "全部保持未唯一确认。"
+    },
+    {
+      "raw": "长裕集团",
+      "corrected": null,
+      "basis": "缓存目录存在同名长裕集团603407.XSHG，但目录存在性不能确认口述对象。",
+      "uncertainty": "不得在没有额外证据时改猜成长华集团。"
+    },
+    {
+      "raw": "伊顿电子",
+      "corrected": null,
+      "basis": "可能对应依顿电子603328.XSHG或奕东电子300991.XSHE。",
+      "uncertainty": "现有证据不足以二选一。"
+    }
+  ],
+  "action_summary": {
+    "posture_update": "proposal_only：原场次窗口已过期；现有指数收盘数据只支持弱势方向，仍缺当前教师资格判断与全市场阶段证明，因此不直接改写posture_current。",
+    "playbook_update": "proposal_only：保留下跌低吸、倒接力收盘转负后次日早盘复核仍负才停做，以及固定退出的研究原则，等待独立验证。",
+    "hypothesis_update": "propose_six_authority_0_candidates_after_full_recurrence_dedup",
+    "audit_evidence": "完整来源f0e5a540…已读至EOF；10月20日本地策略审计5538aabc…仅用于同日名称对照：冰山冷热/读者传媒是非可执行观察项，粤宏远A是独立本地★E。7月、8月及其他历史例证因缺来源日期同日链统一保持no_evidence，不写成未发出。",
+    "instrumentation_todo": "冻结断板、大低开、大跌幅、评分、排名、滑点、成交和退出口径，做跨阶段样本外及仿真验证。",
+    "routing": [
+      "research_backlog",
+      "strategy_hit_audit",
+      "strict_full_recurrence_dedup",
+      "no_automatic_parameter_change",
+      "no_posture_mutation_before_current_validation"
+    ]
+  },
+  "dedup_review": {
+    "reference_path": "reference/experience/xiaocao_hypotheses.jsonl",
+    "reference_sha256": "c2ef31c77e65a639d04912b8e36e3f6ff4901a7adf370404ecdee7bfe2b01588",
+    "reference_lines": 280,
+    "feedback_command": "PYTHONPATH=src .venv/bin/python scripts/distill_transcript.py --feedback",
+    "feedback_snapshot": {
+      "total_candidates": 270,
+      "untested": 261,
+      "retired": 5
+    },
+    "rule": "只有规则、条件、期限和失效边界完整重合才算复现；相关概念不合并。",
+    "proposals": [
+      {
+        "proposal": "主跌期下跌低吸相对倒接力",
+        "disposition": "new_candidate_related_only",
+        "related_ids": [
+          "XH-154",
+          "XH-175",
+          "XH-132",
+          "XH-011"
+        ],
+        "note": "XH-011为已否决的宽泛熊市门控，不复活。"
+      },
+      {
+        "proposal": "倒接力持续负分后的停做",
+        "disposition": "new_candidate_related_only",
+        "related_ids": [
+          "XH-061",
+          "XH-175",
+          "XH-194"
+        ]
+      },
+      {
+        "proposal": "断板加大低开且排名前一或前二",
+        "disposition": "new_candidate_related_only",
+        "related_ids": [
+          "XH-076",
+          "XH-078",
+          "XH-139",
+          "XH-226"
+        ]
+      },
+      {
+        "proposal": "大盘加速下跌一段后的高分前二低吸",
+        "disposition": "new_candidate_related_only",
+        "related_ids": [
+          "XH-156",
+          "XH-207",
+          "XH-223",
+          "XH-246"
+        ]
+      },
+      {
+        "proposal": "断板盘中起爆需更高分",
+        "disposition": "new_candidate_related_only",
+        "related_ids": [
+          "XH-030",
+          "XH-190",
+          "XH-223",
+          "XH-246"
+        ]
+      },
+      {
+        "proposal": "固定次日开盘/收盘退出约束回测偷价",
+        "disposition": "related_existing_method_no_new_candidate",
+        "related_ids": [
+          "XH-074",
+          "XH-044",
+          "XH-193",
+          "XH-266"
+        ],
+        "note": "保留为方法原则并复用既有研究框架，不重复新增候选。"
+      },
+      {
+        "proposal": "前两名平铺或跨模式组合",
+        "disposition": "refined_new_candidate_related_only",
+        "related_ids": [
+          "XH-078",
+          "XH-157",
+          "XH-020"
+        ],
+        "note": "前两名平铺已由XH-078覆盖；新候选只保留固定总风险下的跨短线模式组合，XH-020维持搁置。"
+      }
+    ]
+  }
+}
