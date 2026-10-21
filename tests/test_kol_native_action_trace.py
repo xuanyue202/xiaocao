@@ -114,6 +114,25 @@ def test_window_input_rejection_is_not_security_or_success():
     assert result["findings"]["root_trigger_proven"] is False
 
 
+def test_checkpoint_instructions_are_not_observed_native_errors_or_security():
+    request = {"instructions": "If noWindowsAvailable or 为了你的账号安全，请重新登录 appears, stop inputs.",
+               "required_response": {"error": "windowNotFoundAtPosition"}}
+    source = journal(
+        event("custom_tool_call", name="exec", call_id="ready",
+              input="// KOL_ACTION:READINESS\ntext(await tools.write_stdin({session_id:123}));"),
+        event("custom_tool_call_output", call_id="ready", output=json.dumps(request, ensure_ascii=False)),
+        call("read", "// KOL_ACTION:B0_READBACK\nawait wechat.getAXStateAndScreenshot();"),
+        output("read", 'Window: "草料二维码", App: 微信.'),
+    )
+    result = inspect(source)
+    assert result["calls"][0]["reported_error_code"] is None
+    assert result["findings"]["first_tool_error_call_id"] is None
+    assert result["findings"]["first_abnormal_call_id"] is None
+    assert result["findings"]["first_security_text_call_id"] is None
+    assert result["calls"][1]["state"] == "bridge_observed"
+    assert "noWindowsAvailable" not in json.dumps(result)
+
+
 def test_hashes_images_and_sensitive_payloads_without_exporting_them():
     frame = b"private screen bytes"
     result_event = output("input", 'Window: "草料二维码"; personal chat text')

@@ -176,6 +176,9 @@ The exporter only reads local evidence and the original manifest; it starts no
 apps/services and changes no claims. It retains immutable source-hash snapshots
 and a `latest.json` pointer. Image/code/text hashes bind original evidence;
 raw images, typed text, credentials and issued URLs are not copied into reports.
+Readiness/checkpoint payloads may quote error codes and security instructions;
+their hashes are evidence, but only native tool outputs classify observed
+WeChat errors/window/security states. Quoted instructions are not observations.
 Inspect `coverage` on every export: `source_before_run`, `no_selected_calls`,
 an incomplete tail or pending outputs mean evidence is incomplete. A stale
 current-task journal can return zero calls; this never proves no operation,
