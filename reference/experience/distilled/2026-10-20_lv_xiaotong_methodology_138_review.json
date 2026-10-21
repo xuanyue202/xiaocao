@@ -1,0 +1,215 @@
+{
+  "schema_version": 1,
+  "knowledge_status": "reusable_knowledge",
+  "authority": 0,
+  "author": "吕晓彤",
+  "source": "百度网盘订阅视频《138.投资方法论--举例浅谈回购.配售以及大宗交易》",
+  "date": "2026-10-20",
+  "date_boundary": "2026-10-20仅来自网盘文件更新时间与归档命名，不是已证明的讲述日期；原话中的‘今天’‘周五’均不得据此换算成具体日历日期。",
+  "kind": "review",
+  "summary": "本场可复用的是三组资本动作辨析方法：回购后注销、库存股或再用于股权激励要按条款和稀释效果分别核对；配售要同时看折价、覆盖、投资者期限、交收、对冲与交割后供给；大宗交易则要分清资金流向公司还是原股东。作者以智谱配售和乐舒适大宗交易说明短钱、套保与抛压，但具体交易日期和部分条款未获同一事件绑定。知识只作为authority=0的方法材料，不生成当前交易动作，不更新小草全局姿态，也不把相邻旧命题反向灌入本源。",
+  "posture": {
+    "regime": "not_applied_other_author",
+    "dominant_style": "来源强调资本动作、交收工具和资金属性会改变短期供给，同时承认好公司、竞争融资与价格压力可以并存。",
+    "risk": "讲述日期未知；智谱候选公告与口述价格不一致；回购评价是作者治理判断而非法律结论；乐舒适大宗价格、智谱认购覆盖和作者下单均未由独立凭证核验。",
+    "style_ranking": [
+      "先识别资金进公司还是进原股东",
+      "再核对折价、覆盖、交收和对冲形成的短期供给",
+      "把公司质量与融资事件的价格压力分开判断",
+      "回购用途按公告、适用法和稀释效果核对",
+      "任何候选进入策略前均需research_run与人工门槛"
+    ]
+  },
+  "regime_call": {
+    "horizon": "资本动作公告至交收后供给消化的事件研究方法",
+    "claim": "来源提出：配售折价本身会吸引套利型短钱，T+2交收和预先设计的对冲工具可能使抛压早于实物到账；覆盖不足则可能降低长线资金占比。大宗交易与配售不同，前者在本例中是老股东退出，资金不进入公司。",
+    "what_would_falsify": "若公告、分配名单、交收、借券或衍生品和成交数据不支持折价资金快速卖出，或事件后供给并未增加，则不能用该机制解释价格；若资金实际进入公司或交易结构不同，则大宗与配售的分类也必须重做。"
+  },
+  "directions": [
+    {
+      "name": "回购、库存股与股权激励",
+      "view": "核对回购股份是注销、依法持作库存股还是用于激励，以及授予对象、价格、解锁与总稀释；作者反对低价激励高管，但该道德评价不等于违法或必然损害。",
+      "authority": 0,
+      "provenance_type": "source_derived_with_system_legal_boundary"
+    },
+    {
+      "name": "配售交收与套保供给",
+      "view": "折价、覆盖、长短资金、T+2交收和交收前对冲共同决定短期供给；口述案例只能生成核对清单，不能替代公告与成交数据。",
+      "authority": 0,
+      "provenance_type": "source_derived"
+    },
+    {
+      "name": "配售与大宗交易的资金去向",
+      "view": "先区分新增融资与老股转让，再判断折价、持有人动机和后续卖压；两类事件不能因都有折价而合并。",
+      "authority": 0,
+      "provenance_type": "source_derived"
+    }
+  ],
+  "stocks": [
+    {
+      "name": "北京智谱华章科技股份有限公司",
+      "ticker": "02513.HK",
+      "role": "配售、可转债、覆盖和短期供给案例",
+      "boundary": "交易所已核发行人身份；2026-09-18候选公告的714港元配售价和892.50港元初始转股价与口述710/826不同，同一事件未绑定，不能把候选公告条款改写成口述事实。"
+    },
+    {
+      "name": "乐舒适有限公司",
+      "ticker": "02698.HK",
+      "role": "老股东大宗交易与接盘后抛压案例",
+      "boundary": "交易所已核发行人身份；28.2港元成交、董事长来电、次日抛压和作者持有决定均为来源口述，未独立核验。"
+    },
+    {
+      "name": "小米集团",
+      "ticker": "01810.HK",
+      "role": "作者用于说明配售可能成为阶段价格终点的历史类比",
+      "boundary": "本场没有给出对应事件日期、条款和后续路径，不纳入当前证券判断。"
+    }
+  ],
+  "method_principles": [
+    "回购判断先查注销、库存股、再出售或激励的法律与公告条款，再查授予对象、价格、解锁和完全摊薄影响；不能把作者的道德评价直接写成法律结论或机械剔除规则。",
+    "配售事件至少记录发行规模、折价、覆盖倍数、订单质量、长短资金、交收日期、可用套保工具和交割后换手；单看折价或认购热度不足以判断供给。",
+    "零息只说明票息为零，不代表本金没有信用、流动性或条款风险；转股价、期限、赎回和偿付能力必须另查。",
+    "配售新增融资与大宗老股转让的资金去向不同，必须分开分析公司获资、股东退出和二级市场供给。",
+    "公司质量、管理团队声誉、竞争融资必要性与短期供给压力可以同时成立，不能用‘好公司’抵消事件风险，也不能用事件风险直接否定长期质量。",
+    "面对需要公告、交收、对冲和资金属性判断的个股事件，普通家庭以指数作为默认工具可以降低信息与操作负担；这是一项适配原则，不是对所有投资者的强制规则。"
+  ],
+  "exit_lessons": [
+    "配售折价吸引短钱且可在交收前套保时，交割窗口内不要把价格下跌自动解释为基本面恶化，也不要仅因已跌至配售价附近就抄底。",
+    "大宗接盘后若其他接盘者抛售，是否持有要回到已核基本面、流动性和预先风险预算；关系或面子不是可复用的持有理由。",
+    "融资可能用于竞争储备，但反复融资也可能延长供给压力；后续观察应同时跟踪资金用途、消耗速度和再次融资概率。"
+  ],
+  "hypotheses": [],
+  "timing_notes": [
+    "网盘provider_modified_at为2026-10-20T21:47:44+08:00，只证明文件更新时间，不证明讲述时间。",
+    "来源所说‘周五晚上’‘今天一开盘’以及T+2均保留相对时间，当前是否仍处于交收窗口未知。",
+    "2026-09-18智谱交易所公告只是规模相近的候选事件；价格差异和缺少同一事件标识使其不能完成绑定。",
+    "香港库存股框架自2024-06-11起允许合资格发行人在注册地法律和章程允许时持有库存股并按新股发行规则再出售；该规则不证明任何具体公司方案。"
+  ],
+  "typo_corrections": [
+    {
+      "raw": "质朴／质谱／只普",
+      "normalized": "智谱",
+      "reason": "连续配售语境与交易所发行人身份核对共同支持实体归一；具体事件条款仍未绑定。"
+    },
+    {
+      "raw": "乐舒市",
+      "normalized": "乐舒适",
+      "reason": "大宗交易语境与交易所发行人身份支持实体归一。"
+    },
+    {
+      "raw": "息币",
+      "normalized": "零息可转债",
+      "reason": "上下文明确描述本金、零利息和转股选择。"
+    },
+    {
+      "raw": "大模高盛",
+      "normalized": "大摩、高盛等投行（疑似）",
+      "reason": "上下文讨论机构与投行设计对冲产品；保留疑似，不能据此证明任何投行参与。"
+    },
+    {
+      "raw": "s若平",
+      "normalized": "未解析叙事",
+      "reason": "原音实体不足，禁止猜测具体人物、产品或事件。"
+    }
+  ],
+  "decision_trace": [
+    {
+      "observation": "作者称智谱股权配售成本约710港元，T+2交收，短钱可借助期权或类权证工具在货未到账时先对冲卖出，并提示当时720至750港元附近存在抛压。",
+      "inference": "事件窗口内的供给可能由折价套利、交收和套保共同驱动；来源没有证明讲述日期、真实分配或对冲头寸，不能延伸为当前仍有效的卖压事实。",
+      "action": "沉淀事件核对清单，不生成当前交易信号。",
+      "evidence": {
+        "segment_id": "7a6f2b1a011f0503c537d94fed552ea3673a5d0d6772d66228aa60f6c1b16836",
+        "quote": "有很多的人就是为了赚这10%的差价t+2交货之后"
+      }
+    },
+    {
+      "observation": "作者把乐舒适案例解释为原股东折价退出，资金不进入公司，并称自己以28.2港元接大宗后面对其他接盘者卖出。",
+      "inference": "配售与大宗的资金去向和供给角色不同，不能合并成单一‘融资’标签；具体价格与参与事实未核。",
+      "action": "沉淀资金去向和交易角色分类法。",
+      "evidence": {
+        "segment_id": "3edaadf378cc87b27c941e2b44aeec1c04822602f7084443c906ce54edfa7c53",
+        "quote": "他的钱没有进到公司，而是原来的股东要退出"
+      }
+    },
+    {
+      "observation": "作者普遍反对回购后不注销、再以低价用于高管激励。",
+      "inference": "该观点可转化为回购用途、受益人和摊薄的核对清单，但不能直接等同违法、必然侵害或机械排除。",
+      "action": "保留作者治理警报，并用香港库存股规则限定法律边界。",
+      "evidence": {
+        "segment_id": "a08cd409cad302bf297662946f4d74ee6ced746cbc226dcb8f7288576582872b",
+        "quote": "他们做股权激励都是用非常低的价格激励给自己的员工"
+      }
+    }
+  ],
+  "judgment_heuristics": [
+    "先分辨资本动作类型与资金去向，再评价价格影响。",
+    "口述价格、覆盖和参与身份全部保留为source-only，公告只做独立对照。",
+    "候选公告条款与口述不一致时，不用公告修正口述，也不把两者强绑。",
+    "短期供给机制需要交收、借券、对冲与成交数据支持，不能靠折价数字单独确认。",
+    "治理评价与适用法律分层：评价可触发核对，法律结论必须来自具体规则和公司方案。",
+    "家庭持仓和既有假设不能限制本源观点抽取，也不能反向补齐来源未说的内容。"
+  ],
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/reference/experience/transcripts/2026-10/2026-10-20_lv_xiaotong_methodology_138_794cdeeb.txt",
+      "sha256": "794cdeeb5c5cf205eb8511ca75890d638787d93f83b04e0d15691f21d85656d3",
+      "size": 9444,
+      "role": "complete_source_transcript"
+    }
+  ],
+  "system_validation_evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261021_01a15bab/video138_market_evidence.json",
+      "sha256": "d2c252ff251f1c3366d6f073c95be332ab93bc1a45a8a48d69be8403e7028979",
+      "size": 2525,
+      "role": "issuer_identity_and_candidate_announcement_comparison_only"
+    },
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261021_01a15bab/video138_treasury_fact.json",
+      "sha256": "de3fb64a1f559c57ff343d097f60ba85c60ad72b41f088ada65cc582f83928e8",
+      "size": 725,
+      "role": "hong_kong_treasury_share_legal_boundary_only"
+    }
+  ],
+  "deduplication_review": {
+    "ledger_read": "/Users/xuanyue202/Documents/project/xiaocao/reference/experience/xiaocao_hypotheses.jsonl",
+    "candidate_records_reviewed": 234,
+    "conclusion": "本场形成可复用方法，但没有一条既有hypothesis被完整复现，也没有足够独立的新命题需要新增。XH-129、XH-212和XH-113均只存在局部相邻，不能增加来源日期或把其完整claim写回本源。",
+    "adjacent_hypotheses": [
+      {
+        "id": "XH-129",
+        "exact_claim": "公司融资和控制人行为必须穿透到稀释、资金用途、质押、解禁和司法事实，才能识别治理风险。",
+        "relationship": "adjacent_partial_not_recurrence",
+        "reason": "来源涉及稀释、融资与部分资金用途，但没有质押、解禁、司法事实，也没有完整陈述控制人穿透框架；不能复现整条claim。"
+      },
+      {
+        "id": "XH-212",
+        "exact_claim": "高频折价配售且缺少回购约束的公司，后续回撤和相对收益可能显著弱于同业。",
+        "relationship": "adjacent_partial_not_recurrence",
+        "reason": "来源批评反复配售并描述短期抛压，也另有回购不注销评价，但没有证明两者属于同一公司条件、没有同业相对收益比较，也未陈述完整可检验claim。"
+      },
+      {
+        "id": "XH-113",
+        "exact_claim": "公司低位配售、管理层增持和认购热度主要反映融资与流动性安排，不能单独证明盈利能力、估值低估或股东回报；中外同行的毛利差异需要完整经营数据解释。",
+        "relationship": "adjacent_partial_not_recurrence",
+        "reason": "来源讲低价配售、覆盖和融资竞争，但没有管理层增持、盈利与估值证明边界、股东回报或中外毛利比较；不能复现整条claim。"
+      }
+    ],
+    "posture_update": "not_applied：吕晓彤为其他作者，不修改posture_current或REGIME_TIMELINE。"
+  },
+  "action_summary": {
+    "posture_update": "not_applied：其他作者，不修改小草全局姿态或时间线。",
+    "playbook_update": "no_deterministic_change：只保留authority=0的资本动作核对方法。",
+    "hypothesis_update": "no_ingestible_hypothesis：XH-129、XH-212、XH-113均为局部相邻但非完整复现，不增加来源日期。",
+    "audit_evidence": "bound_to_complete_transcript_sha256_794cdeeb5c5cf205eb8511ca75890d638787d93f83b04e0d15691f21d85656d3_and_21_stable_segments",
+    "instrumentation_todo": "若进入研究，补公告事件标识、最终分配、交收、借券或衍生品、逐笔成交、资金用途、稀释和交割后2日/5日/20日相对收益。",
+    "routing": [
+      "authority=0可复用方法",
+      "无可摄入hypotheses",
+      "不更新小草全局姿态",
+      "不修改确定性策略或参数",
+      "不生成当前交易动作"
+    ]
+  },
+  "analyst_synthesis_non_ingestible": "系统对候选公告、库存股规则和家庭持仓的核对只用于限定事实边界；不得把这些系统事实归为吕晓彤原始观点，也不得进入authority=0来源知识。"
+}
