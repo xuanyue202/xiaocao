@@ -1,6 +1,6 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：4.45
+**版本**：4.46
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
 **关联实现**：`src/xiaocao/live/{safety,capital_keychain,foundersc_native_ax,foundersc_native_broker,trading_execution,book_b_live_lifecycle,book_b_live_intraday}.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`native/foundersc_ax_executor/`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{book_b_live_morning,book_b_live_intraday,live_monitor,research_mode_switch_replay}.py`
@@ -492,10 +492,10 @@ APP 在用户明确批准的动态资金政策下，以账户绑定的资金划�
   每次运行写独立 archive receipt；`<date>-<phase>.json` 仅为 latest 指针，碰锁实例
   只能写 collision archive，不能覆盖主实例结果。日间决策写独立 hash-chain ledger，
   不触碰 paper `positions/account/trades`。
-  15:10 EOD 先 reconcile 全部 durable plan；`eod` 入口在中国时间 15:00 前或
+  15:10 EOD 先分类当前盘后经济证据，再 reconcile 仍有效的 durable plan；`eod` 入口在中国时间 15:00 前或
   非 trade_date 当日必须拒绝，且用于结算的三张行表最老 observed_at 也必须不早于
-  15:00，禁止把盘中/缓存 NAV 固化成不可变 settlement。只要仍有 claimed/submitted/
-  acknowledged/partial/unknown/reconciling 就拒绝结算；前日零成交的当前标记例外只支持独立交易，不提供 EOD 终态证明。EOD 必须重新逐单精确对账所有未终态计划，不得因已有新鲜旧 SELL 零成交证明而跳过；晨间复用规则保持。稀疏 tick 对经 canonical intent 校验的前日自有 SELL 保留精确 deferred plan IDs，并允许当前监控取得新鲜 APP 事实后评估独立退出；旧单仍逐单对账。按实际 broker-proved
+  15:00，禁止把盘中/缓存 NAV 固化成不可变 settlement。当前有经济影响的 claimed/submitted/
+  acknowledged/partial/unknown/reconciling 仍阻止正式结算；前日零成交的当前标记例外只支持独立交易，不提供 EOD 终态证明。EOD 先取得同账户盘后三表。用户2026-10-21批准：前日零成交自有SELL的原lot已由不同后续订单完整卖出、执行/所有权链完整且当前同代码账户持仓为零、无当前订单/成交矛盾时，原单保持UNKNOWN，但盘后确认任务标为economically_closed并保存hash-bound eod_review。此类旧单不再反复查历史或全局阻断后续日期封账；同代码BUY栅栏和原单禁止重放保留。新证据出现原单正成交、同代码持仓或未处置余额时自动回到有效待核，当前/未知BUY及未清仓SELL仍阻止结算。只有零持仓或时间流逝不能收口。稀疏 tick 对经 canonical intent 校验的前日自有 SELL 保留精确 deferred plan IDs，并允许当前监控取得新鲜 APP 事实后评估独立退出；旧单仍逐单对账。订单、现金、实际费用等待核原因一次完整列入eod_review。仅会计证据未齐时，盘后读取流程为observed/accounting_pending，正式settlement与最终PnL仍待核，不包装为交易失败。仅在其余会计门完整通过后，按实际 broker-proved
   BUY/SELL fills 与最新持仓 mark 写当日不可变 settlement；下一交易日 morning 只有
   settlement ownership head 与当前 ownership chain 完全一致时，才以
   `broker_reconciled_book_b_nav` 作为滚动 NAV/敞口基准；链头变化走上文的
@@ -709,6 +709,7 @@ APP 在用户明确批准的动态资金政策下，以账户绑定的资金划�
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| 4.46 | 2026-10-21 | 用户批准修复盘后旧单确认无收口、回执身份导致重复告警及首错遮盖。证据完备的后续独立清仓关闭经济核对任务，保留原UNKNOWN/同代码BUY/费用现金门；每次新快照重新评估，汇总全部待核，静默未变化历史与会计缺口，仅对当前风险或具体用户动作通知。 |
 | 4.45 | 2026-10-21 | 用户要求常规历史未决留在内部对账，黄金窗口后由原任务核对；晨间通知保留本次交易结果、实际受阻原因和具体用户动作，保留历史状态及原配送 claim。 |
 | 4.43 | 2026-10-19 | 用户批准当天证券池与新鲜有效目录取交集，目录外代码留证剔除；目录/有效候选缺证仍受阻，历史不受当前目录筛选；复用60秒内已证明完整版本，修正缺口及未检查价格状态。 |
 | 4.42 | 2026-10-15 | 用户纠正09:25–09:30固定竞价报价被60秒门误判：同日09:25起且不晚于当前的报价在该阶段可用；09:30起恢复连续竞价时效，其他市场/资本/精确一次门及历史终态不变。 |

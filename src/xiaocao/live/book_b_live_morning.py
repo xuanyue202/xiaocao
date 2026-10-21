@@ -1110,6 +1110,7 @@ def reconcile_open_book_b_plans(
     now: datetime | None = None,
     defer_prior_day_sells: bool = False,
     reconcile_proven_prior_day_sells: bool = False,
+    economic_closure_snapshot: dict | None = None,
 ) -> tuple[dict, ...]:
     """Reconcile submitted plans; EOD also refreshes proven zero-fill old SELLs."""
     root = Path(state_dir)
@@ -1126,6 +1127,10 @@ def reconcile_open_book_b_plans(
         ExecutionState.RECONCILING,
     }
     receipts: list[dict] = []
+    from .eod_reconciliation import historical_sell_resolutions
+    economically_closed = {r["plan_id"] for r in historical_sell_resolutions(
+        root, economic_closure_snapshot, now=now
+    )} if economic_closure_snapshot is not None and now is not None else set()
     proven_old_sells = set(proven_prior_day_zero_fill_sell_ids(
         root, trade_date=trade_date, asof=now,
     )) if now is not None else set()
@@ -1151,6 +1156,8 @@ def reconcile_open_book_b_plans(
             continue
         if current.plan_hash != plan.plan_hash:
             raise ValueError("LIVE_PLAN_INTENT_EVENT_HASH_MISMATCH")
+        if plan.plan_id in economically_closed:
+            continue
         if plan.plan_id in proven_old_sells and not reconcile_proven_prior_day_sells:
             continue
         if defer_prior_day_sells and plan.side == "SELL" and plan.trade_date < trade_date:

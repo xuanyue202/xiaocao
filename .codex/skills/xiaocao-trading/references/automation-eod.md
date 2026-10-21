@@ -55,21 +55,20 @@ broker row tables must also be at or after 15:00. This prevents a premature or
 cached run from making an intraday NAV immutable.
 
 This is read/reconcile/settle only: it creates no new SELL decision or order.
-It reconciles existing durable live plans through the native execution port,
-requires fresh account-bound positions/orders/trades row tables plus the funds
-summary embedded in the same positions capture, projects
-only broker-proved Book-B owned fills, and writes the immutable settled NAV only
-when every durable live plan is terminal. Fresh zero-fill evidence supports
-independent current transactions; it does not make an old SELL terminal or
-permit EOD settlement. EOD refreshes every nonterminal plan even when a fresh
-zero-fill prior-day SELL proof can be reused by morning callers. That reuse
-never skips EOD reconciliation or supplies terminal-order authority.
-An unresolved current or prior-day SELL must not stop
-the read-only post-close snapshot and owned-lot projection; its validated
-intent/event chain stays open and the strict settlement writer still blocks.
-If the strict settlement writer blocks after a valid
-post-close projection, the blocked receipt retains that account and exact
-reconciliation receipts; these are current observations, not settled NAV.
+It first reads fresh account-bound positions/orders/trades plus the positions
+funds summary, then classifies historical SELL tasks under Operating Contract §4.
+An independently disposed lot with validated chains, zero current same-code
+account holdings and no contradictory current order/trade evidence becomes
+`economically_closed` for EOD only; its original UNKNOWN, no-replay claim and
+same-code BUY fence remain. Record the exact disposal/snapshot hashes in
+`eod_review`; skip redundant old-history queries for that proved closure.
+Every new EOD snapshot reevaluates the proof and reopens changed economic facts.
+Current/unknown BUY, unproved disposal, residual holdings and new contradictory
+fills remain active blockers. A zero holding or elapsed time alone cannot close.
+The structured `eod_review` lists all execution/cash/actual-fee blockers together.
+With accounting-only gaps, EOD terminates `observed` / `accounting_pending`;
+formal immutable settlement and exact PnL still require their original cash and
+itemized-fee proofs. Do not describe bookkeeping incompleteness as failed trade.
 The original archive also retains `broker_snapshot`: the exact normalized
 positions/orders/trades and positions-funds evidence used by that projection,
 with its original clocks and snapshot hash. Default CLI output gives its archive
@@ -82,12 +81,22 @@ original EOD archive contains a nonterminal reconciliation receipt; report the
 remaining valid basis and exact historical gap without rewriting either file.
 Never add
 `--execute-sells` to the EOD call.
-The APP entrypoint durably queues a blocked-result WeCom notice after saving its
+The APP entrypoint durably queues an actionable blocked-result WeCom notice after saving its
 original archive, including native login/read failures before a snapshot exists.
+Use a stable economic incident identity across dates/runs/clocks. Unchanged
+historical/economically-closed and accounting-only gaps stay in local evidence;
+notify on current execution impact, meaningful state change or a concrete user
+action. Exact legacy delivered/uncertain claims prevent equivalent resends.
 If a code repair adds this delivery to an already terminated run, use
 `scripts/book_b_eod_alert.py --receipt <exact-original-archive>` under the original
 Automation/Thread identity. This notice-only recovery never queries APP or reruns
 EOD; uncertain delivery remains pending for exact reconciliation.
+For a terminated original EOD whose schema predates this review, use
+`CODEX_AUTOMATION_ID=xiaocao-daily-eod PYTHONPATH=src .venv/bin/python scripts/book_b_eod_review.py --receipt <exact-original-archive>`
+under its original runtime thread identity. This derives one hash-bound dated
+review from the original account/snapshot and current unchanged journal heads,
+records economic task closures and all remaining blockers, and makes no APP,
+order, settlement, feedback or statement call. Keep the original archive intact.
 After the original business process terminates, run
 `PYTHONPATH=src .venv/bin/python scripts/book_b_accounting.py statement` once to
 export cumulative JSON/CSV. Retain its dated mark or missing/stale status even if
@@ -297,13 +306,14 @@ incomplete step chain, data-doctor CRITICAL, HARD_STOP,
 SELL_BLOCKED/unresolved event risk, PnL/account `MISMATCH`, Book-T
 ledger/valuation drift, missing index coverage, or clearly unusual A/B/F
 behavior. For real Book B also escalate incomplete three-table/positions-funds readback,
-ownership/broker mismatch, any nonterminal or UNKNOWN plan at EOD, and settlement
-immutability/hash failure.
+ownership/broker mismatch, any active economically relevant nonterminal or UNKNOWN
+plan at EOD, and settlement immutability/hash failure. A proved economically_closed
+historical task stays in the internal audit while its facts are unchanged.
 
 Completion requires terminal evidence for both the paper EOD shell and live EOD
 process, dated run-flow/log, paper ledger/account agreement, attribution check,
-benchmark report, plus either a hash-bound real settlement or an explicit
-reconcile blocker. If a code/orchestration repair is identified, completion of
+benchmark report, plus either a hash-bound formal settlement or a complete structured
+review of active execution and accounting evidence. If a code/orchestration repair is identified, completion of
 the audit also requires its named owner, repair status and next legal
 verification checkpoint; `reconcile_only` does not close that separate defect.
 Do not claim completion from intermediate commentary.

@@ -28,6 +28,10 @@
 
 EOD 在原交易/对账入口结束后导出一次累计明细。周报读取这份日期绑定的报告，
 保留估值时间、待核实际费用和 UNKNOWN/缺失结算，不把观测当成结算。
+EOD 的 eod_review 一次列出当前订单、现金和费用全部待核项。已经证明由后续独立
+订单完整清仓的历史 SELL 可关闭经济核对待办，原始 UNKNOWN 和同代码 BUY 栅栏保留；
+其证据门与自动重开规则见 Operating Contract §4。仅现金/费用未齐时，盘后流程
+完成为 observed/accounting_pending，最终收益和正式结算仍未知，例行缺口留内部。
 正式结算还要求 `actual_fees_complete`，现金碰巧闭合不能证明费用已核对。
 
 ```bash

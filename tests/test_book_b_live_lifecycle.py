@@ -273,6 +273,8 @@ def _record_fill(
         filled_shares=plan.shares,
         remaining_shares=0,
         broker_order_id=f"order-{event_id}",
+        account_binding="proven",
+        receipt_mapping=True,
         fill_price=price,
         event_id=event_id,
         observed_at=datetime.fromisoformat(plan.trade_date).replace(
@@ -779,17 +781,9 @@ def test_eod_settlement_blocks_while_any_execution_is_open(tmp_path: Path) -> No
         trade_date="2026-09-01",
         now=EOD_NOW,
     )
-    (tmp_path / "events.jsonl").write_text(
-        json.dumps(
-            {
-                "plan_id": "book-b:open",
-                "state": "unknown",
-                "receipt": {"state": "unknown"},
-            }
-        )
-        + "\n",
-        encoding="utf-8",
-    )
+    plan = _bind_plan_intent(tmp_path, _plan())
+    ExecutionStore(tmp_path / "events.jsonl").append(plan=plan,
+        receipt=ExecutionReceipt(plan.plan_id, plan.plan_hash, ExecutionState.UNKNOWN))
 
     with pytest.raises(ValueError, match="OPEN_EXECUTION_RECONCILE_REQUIRED"):
         write_book_b_live_settlement(tmp_path, account, now=EOD_NOW)
@@ -860,6 +854,7 @@ def test_old_zero_fill_sell_after_lot_exit_allows_fresh_mark_for_other_codes(
         receipt=ExecutionReceipt(old_sell.plan_id, old_sell.plan_hash,
             ExecutionState.UNKNOWN, filled_shares=0, remaining_shares=100,
             broker_order_id="6007019", locator_proof=proof,
+            account_binding="proven",
             next_action="reconcile_only", observed_at=current),
         kind="historical_reconcile")
 
@@ -1583,7 +1578,7 @@ def _prior_zero_fill_sell_after_independent_exit(tmp_path: Path, state=Execution
     unresolved = store.append(plan=old_sell,
         receipt=ExecutionReceipt(old_sell.plan_id, old_sell.plan_hash,
             state, filled_shares=0, remaining_shares=100,
-            broker_order_id="6007019", locator_proof=proof,
+            broker_order_id="6007019", locator_proof=proof, account_binding="proven",
             next_action="reconcile_only", observed_at=current),
         kind="historical-reconcile")
     snapshot = _snapshot(observed_at=current)
@@ -1596,7 +1591,7 @@ def _prior_zero_fill_sell_after_independent_exit(tmp_path: Path, state=Execution
 @pytest.mark.app_simulation
 @pytest.mark.parametrize("state", [ExecutionState.UNKNOWN, ExecutionState.ACKNOWLEDGED,
                                    ExecutionState.RECONCILING])
-def test_blocked_eod_retains_fresh_account_and_exact_reconciliation(tmp_path: Path, state) -> None:
+def test_eod_closes_disposed_history_but_retains_accounting_quality(tmp_path: Path, state) -> None:
     old_sell, current, store, unresolved, snapshot = _prior_zero_fill_sell_after_independent_exit(tmp_path, state)
     reads, reconciliations = [], []
 
@@ -1622,21 +1617,23 @@ def test_blocked_eod_retains_fresh_account_and_exact_reconciliation(tmp_path: Pa
         execute=reconcile, now=lambda: current, execute_sells=False,
     )
 
-    assert receipt.status == "blocked"
-    assert receipt.reason == "LIVE_BOOK_B_EOD_OPEN_EXECUTION_RECONCILE_REQUIRED"
+    assert receipt.status == "observed"
+    assert receipt.reason == "EOD_RECONCILED_ACCOUNTING_PENDING"
+    assert receipt.eod_review["active_plan_ids"] == []
+    assert receipt.eod_review["historical_order_resolutions"][0]["plan_id"] == old_sell.plan_id
     assert receipt.account["broker_snapshot_sha256"] == snapshot["snapshot_sha256"]
     assert receipt.broker_snapshot == snapshot
     assert receipt.account["cash"] == 30_099.79
-    assert receipt.reconciliation_receipts == (unresolved.as_dict(),)
+    assert receipt.reconciliation_receipts == ()
     assert receipt.decisions == receipt.execution_receipts == ()
     assert receipt.settlement is None
-    assert reads == [True] and reconciliations == [old_sell.plan_id]
+    assert reads and reconciliations == []
     assert store.current(old_sell.plan_id).state == state
     assert not (tmp_path / "settlements/2026-09-04.json").exists()
 
 
 @pytest.mark.app_simulation
-def test_eod_settles_only_after_exact_old_sell_terminal_readback(tmp_path: Path) -> None:
+def test_eod_settles_after_disposal_proof_without_fabricating_old_terminal(tmp_path: Path) -> None:
     old_sell, current, store, unresolved, snapshot = _prior_zero_fill_sell_after_independent_exit(tmp_path)
     from tests.book_b_fee_fixtures import proved_fee_account
     proved_fee_account(tmp_path, snapshot)
@@ -1651,10 +1648,10 @@ def test_eod_settles_only_after_exact_old_sell_terminal_readback(tmp_path: Path)
         phase="eod", account_snapshot_provider=lambda: snapshot,
         status_provider=lambda lots: pytest.fail("EOD must not evaluate new exits"),
         execute=reconcile, now=lambda: current, execute_sells=False)
-    assert reconciliations == [old_sell.plan_id]
+    assert reconciliations == []
     assert receipt.status == "settled" and receipt.settlement is not None
-    assert len(receipt.reconciliation_receipts) == 1
-    assert receipt.reconciliation_receipts[0]["state"] == "cancelled"
+    assert receipt.reconciliation_receipts == ()
+    assert receipt.eod_review["historical_order_resolutions"][0]["broker_order_state"] == "unknown"
     assert receipt.decisions == receipt.execution_receipts == ()
     assert store.current(old_sell.plan_id).filled_shares == 0
 
@@ -1697,7 +1694,7 @@ def test_eod_observes_owned_lot_while_sell_remains_unresolved(
     assert receipt.account["broker_snapshot_sha256"] == snapshot["snapshot_sha256"]
     assert receipt.account["lots"][0]["shares"] == 100
     assert receipt.reconciliation_receipts == (unresolved.as_dict(),)
-    assert reads == [True] and reconciliations == [sell.plan_id]
+    assert reads and reconciliations == [sell.plan_id]
     assert receipt.decisions == receipt.execution_receipts == ()
     assert receipt.settlement is None
     assert store.current(sell.plan_id).state == state
