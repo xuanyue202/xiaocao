@@ -1,0 +1,368 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-19",
+  "kind": "盘前至早盘直播",
+  "summary": "小草在集合竞价至早盘持续走弱的环境里，把交易拆成三层：先把总风险限制在最多10%至20%的轮动仓位；再按风险偏好区分较稳的下跌、超跌低吸与波动更大的倒接力；最后把前一交易日持仓的高抛和当日新批次严格分开。盘中对红盘起爆、盘中起爆和断板的观察只是后续证据，不能反向改写开盘前‘不做紫薇、优先低吸’的原始判断。",
+  "author": "小草",
+  "source": "小草直播",
+  "authority": 0,
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_netdisk_enrichment/artifacts/kol-netdisk-2748c3df41137c1e/20261019 盘前大师班直播10月19日-compressed.txt",
+      "sha256": "d976b1cc5a4f54370d7de5fb2f6e564147c0e76c20e8382c52f8a5ebe71bab89",
+      "size": 10221
+    }
+  ],
+  "posture": {
+    "regime": "作者在2026年10月19日集合竞价至早盘把市场称为低开家数多、下跌家数持续增加且盘中继续跳水的空仓环境，但同时保留最多10%至20%的轮动试错空间。",
+    "dominant_style": "求稳优先下跌、超跌低吸；愿意承受更大波动才观察倒接力。开盘前不做紫薇或起爆，盘中出现红盘起爆、盘中起爆和断板强势后只作为新的观察证据。",
+    "risk": "弱广度、连续跳水、高波动接力、同一股票不同交易日批次混淆、未核验评分与收益，以及把盘中事后表现倒灌成盘前许可，都会放大执行风险。",
+    "style_ranking": [
+      "空仓或最多10%至20%的轮动仓位",
+      "下跌、超跌低吸",
+      "两只候选分散而不是集中单票",
+      "愿意承受高波动时才观察倒接力",
+      "红盘或盘中起爆只按当时新信号独立观察"
+    ]
+  },
+  "regime_call": {
+    "call": "在弱广度和持续跳水阶段，先限制总风险，再按个人风险承受能力选择低吸或高波动模式；旧批次的退出与新批次的入场必须各自记账。",
+    "horizon": "原判断覆盖2026年10月19日集合竞价至盘中，并把断板观察延伸到10月20日；所有具体交易窗口在本次处理时已经结束，方法只以零权威先验保留。",
+    "what_would_falsify": [
+      "同一时点的全市场广度和主要指数持续转强，证明空仓或轮动环境判断不再成立",
+      "下跌、超跌低吸在可成交样本中并不比倒接力更稳",
+      "两只分散在固定总风险下没有降低单票波动",
+      "批次分离与预设高抛规则没有改善可审计性或风险收益"
+    ]
+  },
+  "directions": [
+    {
+      "name": "下跌、超跌低吸",
+      "stance": "作者把它作为弱市中求稳的首选，包括竞价后的盘中低吸；开盘低开过多时不做紫薇或起爆。",
+      "conditions": [
+        "市场仍处于低开多、下跌家数多或盘中跳水状态",
+        "候选来自当时有效的低吸模式而不是事后回看",
+        "总风险不超过来源所说的轮动仓位上限"
+      ],
+      "boundary": "教师侧冻结榜单、评分、成交和收益均未取得；本地同名信号不能证明教师模式一致。"
+    },
+    {
+      "name": "倒接力",
+      "stance": "作者认为当时仍有赚钱效应，但明确把它归为高波动选择，并反复要求控制仓位。",
+      "conditions": [
+        "交易者主动接受较大波动",
+        "当时模式仍满足作者体系的评分与切换条件",
+        "不把前一交易日盈利自动当成当日继续有效的证明"
+      ],
+      "boundary": "冰山冷热的口述收益、评分和高抛信号没有独立交易证据。"
+    },
+    {
+      "name": "红盘与盘中起爆",
+      "stance": "盘前因低开过多而不做起爆；盘中作者随后观察到红盘起爆、直播中听作“上水智能”的对象以及较高分盘中起爆的表现。后者是时间上更晚的新观察，不是对盘前限制的追溯改写。",
+      "conditions": [
+        "只使用盘中真实出现且当时可见的新信号",
+        "分数、排名、发现时点、涨幅和可成交价格必须冻结",
+        "不能用收盘或后续大涨反推盘前可买"
+      ],
+      "boundary": "“上水智能”未唯一识别；尚水智能（301513.SZ）只是同日本地目录候选，本地信号也不能证明教师对象、模式、排名或收益。"
+    },
+    {
+      "name": "断板观察",
+      "stance": "作者在盘中看到断板较强后，只提出从下一交易日开始观察状态，明确说当天已经过去。",
+      "conditions": [
+        "必须等下一交易日新的竞价和盘中状态",
+        "重新取得当时评分、排名与可成交证据"
+      ],
+      "boundary": "这里的下一交易日是2026年10月20日，现已过期；不能回放成当前行动。"
+    }
+  ],
+  "stocks": [
+    {
+      "surface_form": "冰山冷热",
+      "role": "倒接力高波动例证，并同时出现前一交易日旧批次与当日新批次",
+      "lesson": "旧批次若出现高抛信号可卖出或卖一半；当日新批次是另一笔交易，不能因同名股票混成一个仓位决策。",
+      "resolution": "可对应冰山冷热（000530.SZ）；来源口述的11%、12%、17%及约3%高抛时点未获独立核验。"
+    },
+    {
+      "surface_form": "东百集团",
+      "role": "下跌低吸阶梯式表现的历史例证",
+      "lesson": "作者用它说明低吸可能缓慢、阶梯式上行，不代表当前推荐。",
+      "resolution": "可对应东百集团（600693.SH）；来源没有给出该例证的精确日期、价格或成交。"
+    },
+    {
+      "surface_form": "汇博新材、桂博新材",
+      "role": "下跌低吸当日小幅亏损例证",
+      "lesson": "作者把小亏解释为大盘跳水时低吸模式的正常波动。",
+      "resolution": "教师口述对象未唯一识别；惠柏新材（301555.SZ）只是同日本地目录候选，不能据此确认老师所指证券或模式。"
+    },
+    {
+      "surface_form": "上水智能",
+      "role": "红盘起爆盘中表现例证",
+      "lesson": "用于说明起爆标的开幅未必很高、盘中排名和评分仍需当时核验。",
+      "resolution": "教师口述对象未唯一识别；尚水智能（301513.SZ）只是同日本地目录候选，不能据此确认老师所指证券、模式或收益。"
+    },
+    {
+      "surface_form": "四商情报",
+      "role": "尾段疑似排名前三的个股例证",
+      "lesson": "名称与语义均不清，不能据本地同日对象反向确认。",
+      "resolution": "四会富仕（300852.SZ）只是同日目录候选，现有来源不足以唯一确认。"
+    },
+    {
+      "surface_form": "大普威、庞东",
+      "role": "盘中低吸段落里的含混对象",
+      "lesson": "只保留其含混出现，不作证券映射或交易结论。",
+      "resolution": "未唯一确认。"
+    }
+  ],
+  "method_principles": [
+    "环境参与权先于模式选择：即使某模式近期赚钱，弱市也先限制总风险。",
+    "同一日内的判断会随证据更新；盘前不做起爆与盘中观察到起爆表现要按时间顺序并存，不能合并成单一许可。",
+    "求稳与求波动是两套风险偏好；不能只看收益样例而隐藏倒接力的高波动。",
+    "在固定总风险下分散两只候选是一项待验证的组合方法，不等于把总仓位翻倍。",
+    "同名股票的前一交易日旧批次和当日新批次各自记账、各自执行，避免T+1和成本混淆。",
+    "算法给出高分不等于存在可解释因果；评分、排名、时点、可成交价格和退出必须另行验证。"
+  ],
+  "exit_lessons": [
+    "前一交易日持仓在当日冲高并出现高抛信号时，可以高抛；若当日仍在模式内，可只卖旧批次的一半并保留另一半观察。",
+    "允许卖飞是风险管理的一部分；不能因为后来继续上涨就把预设高抛判为错误。",
+    "高抛指向前一交易日可卖旧批次，不能卖当日新买批次，也不能把两个批次的收益合并。",
+    "下跌低吸可能磨、可能小亏，退出质量需要按固定规则和完整样本研究，不能由东百集团或另一只名称尚未唯一确认的低吸案例决定；惠柏新材只是同日本地目录候选。"
+  ],
+  "decision_trace": [
+    {
+      "observation": "9:25前后低开和下跌家数持续增加，作者随后又看到大盘盘中继续跳水。",
+      "inference": "市场属于空仓或轮动风险环境，不能猛冲猛打。",
+      "action": "新增风险最多控制在10%至20%；求稳者用下跌、超跌低吸，愿意承受高波动者才观察倒接力。",
+      "boundary": "来源的9:25统计和教师榜单没有独立冻结证据，所有时点动作已过期。"
+    },
+    {
+      "observation": "盘中倒接力、红盘起爆、盘中起爆和断板出现较强表现。",
+      "inference": "盘中证据可以更新观察清单，但不同模式的风险和时点仍然不同。",
+      "action": "保留盘前低吸优先的原始判断，同时把盘中起爆与次日断板观察作为后续分支，禁止事后倒灌。",
+      "boundary": "来源收益、评分、排名和实际成交未独立核验。"
+    },
+    {
+      "observation": "冰山冷热同时出现在前一交易日持仓和当日新模式批次中。",
+      "inference": "按股票名称合并会混淆可卖数量、成本和收益。",
+      "action": "旧批次出现高抛时可卖或卖半；新批次按自己的当日逻辑独立跟踪。",
+      "boundary": "旧批次来自前一交易日10月16日，不是周日交易；当日新批次受T+1约束。"
+    }
+  ],
+  "judgment_heuristics": [
+    "看到弱广度时先问账户允许承担多少风险，再问用哪个模式，而不是先追逐当天最亮眼的赢家。",
+    "同一场直播里的早盘计划和盘中更新要保留时间戳；后段观察只能新增分支，不能抹去前段限制。",
+    "高波动模式的右尾收益不能替代对左尾、卖飞和仓位的说明。",
+    "同名标的跨日出现时按批次而非名称决策；先确定哪一批可卖。",
+    "未能解释因果的算法信号只能作为待验证评分，不得自动提升为知识或执行规则。"
+  ],
+  "hypotheses": [],
+  "strategy_hit_audit": {
+    "status": "evidence_limited",
+    "source_recommendation": {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/recommend_2026-10-19.md",
+      "sha256": "2f2c40a15dd327254772fd63de43ab633bf02408ac59e30cadba07632b2a3999"
+    },
+    "local_audit": {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261021_01a15dcf/video19_local_strategy_20261019.json",
+      "sha256": "d786ee86158aea2f3993f0ff30002ee392e033df93e6e6c312c6c19e117be59a"
+    },
+    "teacher_named_winners": [
+      "冰山冷热"
+    ],
+    "teacher_same_day_watch_or_experiment_mentions": [
+      "汇博新材／桂博新材（身份未唯一确认；惠柏新材仅为本地目录候选）",
+      "四商情报（未确认）",
+      "大普威／庞东（未确认）"
+    ],
+    "historical_worked_examples": [
+      "东百集团"
+    ],
+    "local_strategy_benchmark_hits": [],
+    "emitted_qibao_hits": [],
+    "direction_core_observations": [
+      "来源先以弱市和空仓环境限制总仓位",
+      "来源区分求稳的下跌低吸与高波动的倒接力",
+      "来源把盘前限制和盘中后续观察按时间顺序分开"
+    ],
+    "classifications": [
+      {
+        "mention": "冰山冷热",
+        "source_time_scope": "10月19日新批次；不评价10月16日旧批次",
+        "classification": "not_emitted",
+        "execution_status": "no_local_signal",
+        "reason": "10月19日冻结的17条本地信号没有冰山冷热，因此只可说10月19日本地新批未发出；这不评价教师倒接力收益，也不能证明10月16日旧批未发出。"
+      },
+      {
+        "mention": "上水智能（本地候选：尚水智能）",
+        "source_time_scope": "10月19日盘中红盘起爆例证",
+        "classification": "no_evidence",
+        "execution_status": "identity_unresolved",
+        "reason": "教师口述“上水智能”未唯一识别；本地虽有301513.XSHE信号，但语音近似与目录存在不足以确认对象同一，更不能证明教师模式、排名或收益。"
+      },
+      {
+        "mention": "汇博／桂博新材（本地候选：惠柏新材）",
+        "source_time_scope": "10月19日下跌低吸小亏例证",
+        "classification": "no_evidence",
+        "execution_status": "identity_unresolved",
+        "reason": "教师口述“汇博／桂博新材”未唯一识别；本地虽有301555.XSHE信号，但语音近似与目录存在不足以确认对象同一，本地孕线低吸也不等同教师下跌低吸。"
+      },
+      {
+        "mention": "东百集团",
+        "source_time_scope": "历史低吸风格例证",
+        "classification": "no_evidence",
+        "execution_status": "historical_date_not_audited",
+        "reason": "来源没有给出精确例证日期，10月19日冻结链不能判断其历史命中。"
+      },
+      {
+        "mention": "四商情报",
+        "source_time_scope": "10月19日尾段疑似前三例证",
+        "classification": "no_evidence",
+        "execution_status": "identity_unresolved",
+        "reason": "四会富仕只是同日目录候选，来源不足以唯一确认。"
+      },
+      {
+        "mention": "大普威／庞东",
+        "source_time_scope": "10月19日盘中低吸段落",
+        "classification": "no_evidence",
+        "execution_status": "identity_unresolved",
+        "reason": "口述对象无法唯一识别。"
+      }
+    ],
+    "classification_vocabulary": [
+      "emitted_strategy_hit",
+      "emitted_qibao_hit",
+      "raw_pool_only",
+      "cohort_benchmark",
+      "cohort_watchlist",
+      "not_emitted",
+      "no_evidence"
+    ],
+    "boundary": "冻结本地链只允许判断10月19日同日、已经唯一识别对象是否出现；冰山未发出仅指10月19日新批，不能延伸到10月16日旧批。教师口述“上水智能”“汇博／桂博新材”与尚水智能、惠柏新材的本地目录候选身份未闭合。教师倒接力、下跌低吸、红盘起爆不与本地红断、孕线或标杆起爆合并。纸面Book B、纸面Book A和APP仍彼此分开。",
+    "teacher_named_watch": [
+      {
+        "surface_form": "上水智能",
+        "local_directory_candidate": "尚水智能（301513.SZ）",
+        "resolution": "identity_unresolved",
+        "boundary": "语音近似与同日目录存在不足以唯一确认教师对象。"
+      }
+    ]
+  },
+  "timing_notes": [
+    "标题称盘前大师班，正文从9:25集合竞价继续到9:30后盘中，因此读者标题使用中性的10月19日直播。",
+    "来源中的‘昨天冰山’在‘星期五做的人’语境下指上一交易日2026年10月16日，不是周日交易。",
+    "‘从明天开始注意断板’指2026年10月20日；截至处理时窗口已经结束。",
+    "盘前‘不用做紫薇／不是起爆’与盘中观察起爆表现必须按时间顺序保留。",
+    "本次处理日是2026年10月21日，任何10月19日盘中动作都不能回放。"
+  ],
+  "typo_corrections": [
+    {
+      "raw": "下跌低息、下跌地区、下跌第",
+      "corrected": "下跌低吸",
+      "basis": "全场连续讨论求稳、超跌和盘中低吸，属于上下文稳定模式词。"
+    },
+    {
+      "raw": "到接力",
+      "corrected": "倒接力",
+      "basis": "尾段明确说‘模式切换倒接力’，可确认同一模式词。"
+    },
+    {
+      "raw": "起包、红杉渠道",
+      "corrected": "起爆、红盘起爆",
+      "basis": "前后连续出现盘中起爆、模式评分和高分起爆。"
+    },
+    {
+      "raw": "汇博新材、桂博新材",
+      "corrected": null,
+      "basis": "同日冻结对象目录存在惠柏新材且语音近似，但这些证据不足以唯一确认教师口述对象。",
+      "uncertainty": "identity_unresolved；保留来源原始听辨，不能把目录候选当成老师资产。",
+      "candidate": "惠柏新材（301555.SZ）"
+    },
+    {
+      "raw": "上水智能",
+      "corrected": null,
+      "basis": "同日冻结对象目录存在尚水智能且语音近似，但这些证据不足以唯一确认教师口述对象。",
+      "uncertainty": "identity_unresolved；保留来源原始听辨，不能把目录候选当成老师资产。",
+      "candidate": "尚水智能（301513.SZ）"
+    },
+    {
+      "raw": "四商情报",
+      "corrected": null,
+      "basis": "四会富仕虽是同日目录候选，但目录存在性不能确认口述对象。",
+      "uncertainty": "保持未唯一确认。"
+    },
+    {
+      "raw": "大普威、庞东",
+      "corrected": null,
+      "basis": "同段不足以判断是证券名称、昵称还是识别错误。",
+      "uncertainty": "保持未唯一确认。"
+    }
+  ],
+  "action_summary": {
+    "posture_update": "proposal_only：原场次及次日观察窗口均已过期；源日指数只支持弱势方向，不能把10月19日空仓或轮动判断改写为当前posture。",
+    "playbook_update": "proposal_only：保留弱市先限总风险、低吸与高波动模式分轨、旧批次与新批次独立记账、早盘计划允许盘中证据更新四项方法，等待既有研究链验证。",
+    "hypothesis_update": "no_new_candidate：本场关于弱市低吸对倒接力、两只平铺、高抛退出和断板观察仅部分复现XH-271、XH-078、XH-074与XH-273/XH-275，不满足完整规则、条件、期限和失效边界重合，也不足以新增不重复候选。",
+    "audit_evidence": "完整来源d976b1cc…已读至EOF并复核30/30稳定段；10月19日本地审计d786ee86…只用于同日候选目录与是否发出对照；目录候选不确认教师对象身份，17条信号均COLD或UNKNOWN、0个星标可执行候选，四条纸面记录均为旧龙江交通/建新股份卖出，Book B与Book A独立且无APP证明。",
+    "instrumentation_todo": "未来研究需冻结环境、模式、第一二名、固定总风险、批次、评分首次出现时点、可成交价和退出；把盘前许可与盘中更新分栏记录。",
+    "routing": [
+      "judgment_prior",
+      "strict_full_recurrence_dedup",
+      "strategy_hit_audit",
+      "no_new_hypothesis",
+      "no_automatic_parameter_change",
+      "no_posture_mutation_before_current_validation"
+    ]
+  },
+  "dedup_review": {
+    "reference_path": "reference/experience/xiaocao_hypotheses.jsonl",
+    "reference_lines": 286,
+    "feedback_command": "PYTHONPATH=src .venv/bin/python scripts/distill_transcript.py --feedback",
+    "feedback_snapshot": {
+      "total_candidates": 276,
+      "untested": 267,
+      "retired": 5
+    },
+    "rule": "只有规则、条件、期限和失效边界完整重合才算复现；局部相近只作关联，不合并、不新增，也不复活已否决或搁置候选。",
+    "proposals": [
+      {
+        "proposal": "弱市中下跌低吸相对倒接力更稳",
+        "disposition": "partial_recurrence_no_merge",
+        "related_ids": [
+          "XH-271",
+          "XH-154",
+          "XH-194"
+        ],
+        "note": "本场没有XH-271所需的次日收益和正式主跌定义，也没有完整复现XH-194的越规链。"
+      },
+      {
+        "proposal": "两只平铺提高稳定性",
+        "disposition": "partial_recurrence_no_merge",
+        "related_ids": [
+          "XH-078",
+          "XH-157",
+          "XH-276"
+        ],
+        "note": "来源只说两只平铺提高胜率，没有明确第一二名、等权、固定总风险或跨模式组合。"
+      },
+      {
+        "proposal": "前一交易日旧批次按首次高抛卖出或卖半",
+        "disposition": "partial_recurrence_no_merge",
+        "related_ids": [
+          "XH-074",
+          "XH-044"
+        ],
+        "note": "本场强化批次分离与卖半例外，但没有完整退出样本和固定比较。"
+      },
+      {
+        "proposal": "下一交易日观察断板与盘中起爆",
+        "disposition": "partial_recurrence_no_merge",
+        "related_ids": [
+          "XH-273",
+          "XH-275",
+          "XH-223",
+          "XH-246"
+        ],
+        "note": "来源缺少大低开、正式阈值、排名、退出与样本外边界，不能并入既有候选或新增。"
+      }
+    ]
+  }
+}

@@ -1,0 +1,541 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-18",
+  "kind": "周末大师班复盘",
+  "summary": "小草把2026年10月16日归为主跌与高开易兑现的弱市环境，正常基准是空仓；他的条件例外是完整模式仍持续赚钱时可有限参与，一旦表现转弱就收回风险。方法上优先观察下跌低吸、倒接力和盘中超跌低吸，红盘起爆要结合前一日涨幅；盘中低吸的10分或100分与前二排名属于后段规则，回落后第一次拐头属于前段紫薇模式下的国脉文化案例。把评分排名与第一次拐头联用只能作为系统跨段研究合成，不能归成作者的一条完整规则。作者还否定当时传媒的持续性，并反对由单日上涨直接推断游资参与。长期层面，他按环境和赚钱效应切换仓位，甚至用低位也可空仓、高位有赚钱效应也可满仓作反直觉对照，但这不是当前家庭或Book仓位授权；他同时反对脱离环境套用情绪周期、无条件尾盘选股、龙虎榜明星和海外大师框架。来源中的当日收益、评分、账户动作、传媒后续、游资损失与历史周期均未完整独立核验，所有知识只作为authority=0候选。",
+  "author": "小草",
+  "source": "小草直播",
+  "authority": 0,
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_netdisk_enrichment/artifacts/kol-netdisk-e8691e9e4926951a/20261018 大师班专场(晚18：00开播)-compressed.txt",
+      "sha256": "f1bcfcd18e54c06ddf5fea5d5ffdd71a5c3c8b09484eaa4309085765b263b8b2",
+      "size": 46388
+    },
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261021_01a15dcf/video18_market_evidence_v1.json",
+      "sha256": "e3e33853eb028681cf7497fb7ab5a5a902b4b88e24c0ef88d2fee5f8cd8c639d",
+      "size": 4138,
+      "role": "system_fact_check_only"
+    },
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261021_01a15dcf/video18_paper_sides.json",
+      "sha256": "9f629c498bfb93ef14847cb9f19334a3092606c567dfd834ff61ea8af9918426",
+      "size": 1261,
+      "role": "local_paper_audit_only"
+    }
+  ],
+  "posture": {
+    "regime": "作者把10月16日诊断为主跌阶段，早盘难做且高开低走反复出现；有限系统事实只能确认创业板指当日高开后收低，并不能证明全A都符合该描述。",
+    "dominant_style": "空仓是弱市基准；若完整模式仍有正反馈，有限开放下跌低吸、倒接力或盘中超跌低吸，模式转弱后停止。",
+    "risk": "高开追涨、科技趋势大票补跌、把口述赢家当完整样本、把尾盘或龙虎榜叙事当无条件优势，都会放大左尾和选择偏差。",
+    "style_ranking": [
+      "空仓或严格控制新增风险",
+      "经当日完整样本确认仍有效的下跌低吸",
+      "经当日完整样本确认仍有效的倒接力",
+      "高分且排名靠前的盘中超跌低吸",
+      "满足前一日涨幅条件的红盘起爆观察",
+      "回避高开追涨和无条件尾盘埋伏"
+    ]
+  },
+  "regime_call": {
+    "call": "环境先给出空仓基准，模式完整样本的真实赚钱效应决定是否开放例外；执行再受高开、前一日涨幅、评分、排名、承接和可成交性约束。",
+    "horizon": "当日与下一交易日的具体窗口已经过去；高开风险、模式资格和市场结构等方法命题只作为后续逐日复核框架。",
+    "what_would_falsify": [
+      "主跌或轮动样本中，高开组的风险调整收益并不弱于其他开盘组",
+      "空仓环境中的模式例外在完整样本、费用和可成交约束下不能改善收益或尾损",
+      "评分与排名对盘中低吸没有稳定样本外增量",
+      "连续高标衔接与短线赚钱效应扩散不存在稳定关系"
+    ]
+  },
+  "directions": [
+    {
+      "name": "下跌低吸与倒接力",
+      "stance": "来源认为10月16日这两类模式仍有赚钱效应，因此可作为空仓环境下的条件例外。",
+      "conditions": [
+        "使用完整候选而非只看赢家",
+        "当日模式资格与可成交性仍有效",
+        "表现转弱后收回风险"
+      ],
+      "boundary": "来源没有给出可独立复核的完整候选、教师成交和账户收益，不能由口述直接开放后续交易。"
+    },
+    {
+      "name": "红盘起爆",
+      "stance": "昨天已大涨且今天再高开时不做；昨天未明显上涨而今天整体高开时才允许观察。",
+      "conditions": [
+        "冻结前一日涨幅",
+        "冻结当日开盘缺口和发现时点",
+        "纳入全部信号与失败样本"
+      ],
+      "boundary": "这是条件分支，不是看到高开就追；出版传媒、莱美、超声和闽东仅为当日口述例证。"
+    },
+    {
+      "name": "盘中超跌低吸",
+      "stance": "口述门槛至少10分，求稳最好100分，并优先第一名、其次第二名；作者没有在这条规则中绑定前段紫薇国脉文化案例的第一次拐头。",
+      "conditions": [
+        "冻结评分、排名与首次出现时点",
+        "处理滑点、停牌和不可成交",
+        "若系统研究评分排名与拐头组合，必须分别保留两段来源角色并设置不交易基线"
+      ],
+      "boundary": "评分系统、标签与教师分时未独立核验；10分与100分不能在未研究前直接成为参数。第一次拐头来自紫薇模式下的国脉文化案例，不是作者陈述的完整盘中低吸评分规则。"
+    },
+    {
+      "name": "科技趋势大票",
+      "stance": "作者原期待一次反弹，但当时认为反弹没有出现，并警告即使反弹后仍可能继续大跌。",
+      "conditions": [
+        "等待核心标的主动修复",
+        "检查板块承接与持续性",
+        "不把历史新能源反弹类比当保证"
+      ],
+      "boundary": "口述核心名称未唯一解析，且没有当前个股级事实，不能生成证券动作。"
+    },
+    {
+      "name": "传媒",
+      "stance": "作者把当时的传媒上涨视为一日游和缺乏持续性，并反对由上涨直接推断游资参与。",
+      "conditions": [
+        "恢复10月16日及后续板块广度、成交和持续性",
+        "区分板块走势与席位归因"
+      ],
+      "boundary": "这是来源当时的短线板块判断；本次缺后续传媒事实和游资证据，不形成当前交易指令。"
+    },
+    {
+      "name": "尾盘选择",
+      "stance": "作者单独批评无条件尾盘选股，认为它常依赖提前埋伏、预判或留下低质量对象。",
+      "conditions": [
+        "只有预先注册的环境、板块和相对强弱条件齐全才进入研究样本",
+        "与好行情尾盘、缺条件尾盘和不交易基线比较"
+      ],
+      "boundary": "本场宽泛批评没有完整复现XH-195的四项窄条件，因此只强化边界，不否定或合并既有候选。"
+    }
+  ],
+  "stocks": [
+    {
+      "surface_form": "冰山冷热、出版传媒、莱美的、超声、闽东、国脉文化、富祥、威龙峰、荣丰控股／融风",
+      "role": "2026年10月16日模式回看与候选例证",
+      "lesson": "作者用这些简称说明倒接力、红盘起爆和盘中低吸的盈亏、分数与排名差异；回落后的第一次拐头只属于紫薇模式下的国脉文化案例。",
+      "resolution": "冰山冷热、出版传媒、国脉文化和荣丰控股等名称可从上下文辨认，但教师评分、代码、成交和收益未获独立证明；教师简称“莱美的”“超声”“闽东”“富祥”和“威龙峰”不得静默补猜或与本地代码绑定。"
+    },
+    {
+      "surface_form": "宁德时代、中级预算",
+      "role": "新能源历史反弹与当前科技趋势风险类比",
+      "lesson": "历史新能源核心反弹被用来解释作者原本对科技核心的反弹预期，随后又承认该预期未兑现。",
+      "resolution": "中级预算疑似某科技核心，但来源不足以唯一识别；不做代码映射。"
+    },
+    {
+      "surface_form": "捷荣技术、圣龙股份、天龙股份、西陇科学、龙韵股份",
+      "role": "2023年连续高标接力历史样本",
+      "lesson": "用于定义作者认可的约两个半月至三个月短线周期窗口。",
+      "resolution": "名称按上下文校正，但日期链、代码、收益与无赢家样本未逐日独立复原。"
+    },
+    {
+      "surface_form": "九安医疗、浙江建投、中国医药、中交地产、中通客车、集泰股份、大港股份、竞业达",
+      "role": "2021至2022年高标历史回看",
+      "lesson": "作者据此说明高标并非始终无缝衔接，历史周期结构会改变。",
+      "resolution": "原始语音存在多处同音和现名冲突，全部只保留历史角色，不作10月16日策略命中。"
+    },
+    {
+      "surface_form": "顺控发展、金发拉比、锦泓集团、小康股份／赛力斯、任何软件、江特电机",
+      "role": "2021年短线与趋势历史例证",
+      "lesson": "用于区分短线高标与趋势新能源的不同牛熊状态。",
+      "resolution": "部分名称只属上下文候选，缺权威映射和逐日行情复原。"
+    },
+    {
+      "surface_form": "龙江交通（601188）、建新股份（300107）、亚邦股份（603188）",
+      "role": "独立本地纸面Book审计",
+      "lesson": "10月16日纸面Book B与Book A各自买入龙江交通和建新股份，Book B另卖出既有亚邦股份；这与教师体系分开。",
+      "resolution": "晚补事实只证明纸面记录，不证明教师信号、APP成交或五笔买入。"
+    }
+  ],
+  "method_principles": [
+    "先看环境、赚钱效应和亏钱效应，再决定追涨、低吸还是空仓；模式资格每天重估。",
+    "按环境和赚钱效应判断仓位，价格低不等于安全、价格高也不自动排除参与；作者的低位空仓与高位满仓只是方法对照，不扩大当前家庭或Book权限。",
+    "空仓环境可以研究模式例外，但必须保留完整候选、失败样本、费用和可成交性，并与不交易基线比较。",
+    "高开不能单独决定起爆：至少与前一日涨幅、当日广度、承接和模式资格交互检验。",
+    "盘中系统更适合轮动；一路下跌时竞价和盘中系统通常都不适合，倒接力只是待验证例外。",
+    "来源中的评分与排名规则、紫薇国脉文化第一次拐头案例必须分开保存；只有系统研究才能把两段合成待验组合，并同时冻结首次出现、拐头、可成交价和不交易基线。",
+    "情绪周期只在连续高标衔接、赚钱效应扩散等结构真实出现时使用，不能设固定月份或永久循环。",
+    "龙虎榜、知名游资和公开赢家存在幸存者偏差；必须把炸板、亏损和未上榜样本一并纳入。",
+    "海外投资框架可作为类比，参数和结论必须在A股本地制度、参与者和样本中重新验证。"
+  ],
+  "exit_lessons": [
+    "弱市里模式表现从赚钱转为一般时，停止把例外继续外推，回到空仓或低风险基准。",
+    "高开后承接不足应避免追涨，不能把当天可能冲高当作可复制退出空间。",
+    "科技趋势大票即使出现反弹，也不能自动解释为风险出清；后续补跌是作者明确保留的路径。",
+    "来源没有给出个股止损价、仓位百分比或可复用卖点，不能补写精确退出指令。"
+  ],
+  "decision_trace": [
+    {
+      "observation": "作者判断10月16日仍处主跌，早盘难做且高开低走反复。",
+      "inference": "环境本身对应空仓或防守。",
+      "action": "不追高；只有完整模式仍赚钱时，有限观察下跌低吸、倒接力或高分盘中低吸。",
+      "boundary": "有限行情只验证创业板指高开后收低，不能把全A诊断写成系统事实。"
+    },
+    {
+      "observation": "作者称若模式持续赚钱可以做，表现一般时就老实。",
+      "inference": "赚钱效应是空仓基准的条件例外，而非永久权限。",
+      "action": "把不交易、模式例外和继续交易三组做前瞻对照。",
+      "boundary": "这与XH-194的空仓环境不切换形成竞争假设，必须并列测试。"
+    },
+    {
+      "observation": "作者用历史高标、尾盘选股和龙虎榜说明固定叙事会漏掉失败样本。",
+      "inference": "策略结论必须建立在完整同期候选与匹配基线上。",
+      "action": "冻结全样本、环境、发现时点、费用、成交和退出后再比较。",
+      "boundary": "游资损失数字与历史链仍是未核验口述。"
+    }
+  ],
+  "judgment_heuristics": [
+    "弱市先设不交易基线，再要求模式用完整样本证明自己有资格成为例外。",
+    "同样是高开，昨天已大涨和昨天未明显上涨要分层，不能混成一个起爆样本。",
+    "盘中低吸按首次出现时点冻结评分与排名；紫薇国脉文化案例的第一次拐头另存模式角色，只有研究时才与评分排名组成系统待验组合。",
+    "行业或个股案例只说明来源如何论证，不由口述收益反推策略命中。",
+    "历史赢家链、龙虎榜和大师名言都需要加入失败对照与本地制度匹配。",
+    "无法唯一解析的名称只保留原词与角色，不补猜代码。"
+  ],
+  "hypotheses": [
+    {
+      "claim": "主跌或弱轮动环境中，高开组在承接不足时可能比平开和低开组有更差的风险调整收益与更大左尾。",
+      "implied_rule": "按事前环境和开盘缺口分组，高开后不因短时冲高追入；只有承接和模式资格同时改善才重新开放。",
+      "falsifiable_test": "在匹配前一日涨幅、流动性、行业与模式分数后，比较高开、平开和低开组30分钟、收盘与次日收益、最大不利变动和成交率；若高开组不劣则否决。",
+      "expected_effect": "减少弱市高开低走造成的左尾。",
+      "category": "regime_opening_risk",
+      "authority": 0,
+      "dedup": {
+        "disposition": "new_candidate_related_only",
+        "related_ids": [
+          "XH-066",
+          "XH-137"
+        ],
+        "boundary": "XH-066只覆盖7月极端回撤后的弱轮动，XH-137研究开盘条件切换；本命题加入主跌、承接不足和匹配前日涨幅，未完整复现。"
+      }
+    },
+    {
+      "claim": "红盘起爆中，前一日未明显上涨且当日整体高开的候选，可能优于前一日已大涨后再次高开的候选。",
+      "implied_rule": "冻结前一日收益、当日缺口、开盘广度和起爆信号，排除事后挑选。",
+      "falsifiable_test": "在相同环境、分数、流动性和风险预算下做交互分组，比较费用后收益、回撤、炸板率和成交率；若前日涨幅分层无增量则否决。",
+      "expected_effect": "过滤连续高开后的兑现风险。",
+      "category": "opening_conditional_breakout",
+      "authority": 0,
+      "dedup": {
+        "disposition": "new_candidate_related_only",
+        "related_ids": [
+          "XH-137",
+          "XH-219",
+          "XH-223"
+        ],
+        "boundary": "既有候选覆盖开盘切换、起爆延续和分数时点，但没有完整包含前一日已涨与否的交互条件。"
+      }
+    },
+    {
+      "claim": "在空仓环境中，若某模式的完整候选仍持续产生正的风险调整收益，有限继续该模式可能优于一律停做；当模式表现转弱后应停止。",
+      "implied_rule": "事前冻结空仓环境、模式候选池、风险上限和停止条件，同时保留不交易基线。",
+      "falsifiable_test": "比较一律空仓、首次例外、持续至表现转弱和无约束继续四组费用后收益、左尾、错失收益及纪律违约；若例外不能改善风险调整结果则否决。",
+      "expected_effect": "在弱市中保留可验证的模式阿尔法，同时限制左尾。",
+      "category": "mode_governance",
+      "authority": 0,
+      "dedup": {
+        "disposition": "new_competing_candidate",
+        "related_ids": [
+          "XH-194",
+          "XH-271",
+          "XH-272"
+        ],
+        "boundary": "XH-194主张空仓环境不做模式切换，本场主张完整样本仍赚钱时允许条件例外，两者结论不同，必须用同一环境、同一候选和同一风险基准正面对照。"
+      }
+    },
+    {
+      "claim": "系统跨段合成的待验命题：把来源后段盘中低吸的10分或100分与前二排名资格，和前段紫薇模式下国脉文化回落后的第一次拐头组成两阶段过滤，可能改善风险调整结果；作者没有把二者直接陈述为一条完整规则。",
+      "implied_rule": "仅作为系统研究组合：分别冻结后段评分排名资格与前段紫薇国脉文化第一次拐头案例的模式标签、时点和可成交价，保留单条件组、立即接入组、等待拐头组与不交易基线；不得把组合规则归因给作者。",
+      "falsifiable_test": "在同一市场阶段、流动性、发现时点与风险预算下，分别比较评分排名单条件、国脉案例式拐头单条件、系统两阶段组合、立即接入与不交易组的费用后收益、最大不利变动、成交率和漏失率；若组合没有匹配基线后的稳定增量则否决。",
+      "expected_effect": "检验系统跨段组合能否降低盘中低吸的低质量候选和不利波动，同时防止把不同模式事后误合并。",
+      "category": "intraday_score_ranking_entry",
+      "authority": 0,
+      "dedup": {
+        "disposition": "new_candidate_related_only",
+        "related_ids": [
+          "XH-207",
+          "XH-223",
+          "XH-274"
+        ],
+        "boundary": "XH-207直接研究排名后仍下跌时等待拐头，XH-223宽泛研究高分、较早出现和时间递进阈值；XH-274另有大盘已加速下跌一段、盘中大跌幅、排除ST及已高涨幅候选等完整条件。本场只分别出现后段评分排名和前段紫薇国脉文化第一次拐头，系统可合成新研究候选，但不能声称作者给出完整组合规则，不能合并或给XH-274追加来源。"
+      }
+    },
+    {
+      "claim": "只有连续高标快速衔接且短线赚钱效应同步扩散的阶段，情绪周期的历史类比才可能具有样本外解释力。",
+      "implied_rule": "事前定义高标、衔接间隔、持续期和赚钱效应；结构缺失时不依据固定周期增加风险。",
+      "falsifiable_test": "把历史窗口按是否满足连续高标与赚钱效应扩散分组，比较未来5、10、20和40日短线收益、回撤与持续性；若有无结构无稳定差异则否决。",
+      "expected_effect": "减少把偶发高标链泛化为永久情绪周期。",
+      "category": "regime_quality",
+      "authority": 0,
+      "dedup": {
+        "disposition": "new_candidate_related_only",
+        "related_ids": [
+          "XH-085"
+        ],
+        "boundary": "XH-085还包含换手核心与跌停未扩散；本场更窄地强调连续高标衔接和赚钱效应，不是完整复现。"
+      }
+    },
+    {
+      "claim": "只观察龙虎榜成功封板者或知名游资公开案例，会因缺失炸板、亏损和未上榜样本而系统性高估可复制收益。",
+      "implied_rule": "按同一日期与同一发现时点恢复全部候选，把上榜、炸板、亏损和未上榜对照纳入。",
+      "falsifiable_test": "比较仅看榜单样本和全候选样本的胜率、收益、回撤与成交率，并与匹配流动性和涨停状态的基线对照；若偏差不显著则否决。",
+      "expected_effect": "降低名人和榜单驱动的幸存者偏差。",
+      "category": "data_quality",
+      "authority": 0,
+      "dedup": {
+        "disposition": "new_candidate_related_only",
+        "related_ids": [
+          "XH-247"
+        ],
+        "boundary": "XH-247研究监控缺失造成的赢家偏差，本场限定龙虎榜与知名游资展示机制，基线和缺失机制不同。"
+      }
+    }
+  ],
+  "strategy_hit_audit": {
+    "status": "evidence_limited",
+    "teacher_named_winners": [
+      "冰山冷热",
+      "莱美的",
+      "国脉文化",
+      "富祥",
+      "威龙峰",
+      "荣丰控股／融风"
+    ],
+    "teacher_named_loser_or_weaker_cases": [
+      "超声"
+    ],
+    "teacher_same_day_watch_or_candidate_mentions": [
+      "出版传媒",
+      "闽东"
+    ],
+    "historical_worked_examples": [
+      "捷荣技术",
+      "圣龙股份",
+      "天龙股份",
+      "西陇科学",
+      "龙韵股份",
+      "九安医疗",
+      "浙江建投",
+      "中国医药",
+      "中交地产",
+      "中通客车",
+      "集泰股份",
+      "大港股份",
+      "竞业达",
+      "顺控发展",
+      "金发拉比",
+      "锦泓集团",
+      "小康股份／赛力斯",
+      "任何软件",
+      "江特电机"
+    ],
+    "local_strategy_benchmark_hits": [
+      {
+        "instrument": "601188 龙江交通",
+        "classification": "emitted_strategy_hit",
+        "execution_status": "paper_book_b_and_book_a_independent_buy_records",
+        "details": "10月16日本地★E，模式执行目标权重约33.3%；纸面Book B与Book A分别记录买入。它不是教师点名赢家；本次只核对纸面记录，未取得APP成交证据。"
+      },
+      {
+        "instrument": "300107 建新股份",
+        "classification": "emitted_strategy_hit",
+        "execution_status": "paper_book_b_and_book_a_independent_buy_records",
+        "details": "10月16日本地★E，模式执行目标权重约16.7%；纸面Book B与Book A分别记录买入。它不是教师点名赢家；本次只核对纸面记录，未取得APP成交证据。"
+      },
+      {
+        "instrument": "603188 亚邦股份",
+        "classification": "separate_existing_position_exit",
+        "execution_status": "paper_book_b_sell_record",
+        "details": "10月16日14:45:15纸面Book B卖出既有仓；不属于教师当日信号或本地当日买入命中。"
+      }
+    ],
+    "classifications": [
+      {
+        "mention": "莱美的",
+        "source_time_scope": "2026-10-16红盘起爆强例",
+        "classification": "no_evidence",
+        "execution_status": "identity_unresolved",
+        "reason": "教师原始简称未唯一映射；本地300006是独立发出对象，不能反向证明教师所指身份、评分、成交或收益。"
+      },
+      {
+        "mention": "超声",
+        "source_time_scope": "2026-10-16红盘起爆较弱例",
+        "classification": "no_evidence",
+        "execution_status": "identity_unresolved",
+        "reason": "教师原始简称未唯一映射；本地000823是独立发出对象，不能反向证明教师所指身份、评分、成交或收益。"
+      },
+      {
+        "mention": "300006 莱美药业",
+        "source_time_scope": "2026-10-16独立本地发出链",
+        "classification": "cohort_watchlist",
+        "execution_status": "local_emitted_not_star_e",
+        "reason": "这是独立本地信号且不是★E；没有证据把它绑定为教师简称“莱美的”的对象或教师命中。"
+      },
+      {
+        "mention": "000823 超声电子",
+        "source_time_scope": "2026-10-16独立本地发出链",
+        "classification": "cohort_watchlist",
+        "execution_status": "local_emitted_not_star_e",
+        "reason": "这是独立本地信号且不是★E；没有证据把它绑定为教师简称“超声”的对象或教师命中。"
+      },
+      {
+        "mention": "冰山冷热、出版传媒、闽东、国脉文化、富祥、威龙峰、荣丰控股／融风",
+        "source_time_scope": "2026-10-16同日案例",
+        "classification": "no_evidence",
+        "execution_status": "teacher_score_trade_and_complete_pool_unverified",
+        "reason": "本地证据不足以逐项证明教师评分、成交、收益或完整候选。"
+      },
+      {
+        "mention": "2021至2023年历史高标",
+        "source_time_scope": "historical_examples",
+        "classification": "no_evidence",
+        "execution_status": "historical_dates_not_audited",
+        "reason": "它们是历史结构例证，不能用10月16日本地链判断策略命中。"
+      }
+    ],
+    "classification_vocabulary": [
+      "emitted_strategy_hit",
+      "cohort_watchlist",
+      "separate_existing_position_exit",
+      "no_evidence"
+    ],
+    "boundary": "来源教师案例、本地冻结信号、纸面Book B、纸面Book A与APP严格分开。纸面文件有五条记录，但其中是两本账各自买入同两只股票，再加Book B卖出一只既有仓，不能写成五笔买入。本次只核对纸面记录，未取得APP成交证据。"
+  },
+  "timing_notes": [
+    "场次来源日期为2026年10月18日周日，口述中的周五对应10月16日，明天对应10月19日。",
+    "截至2026年10月21日19时，10月19日的大幅低开与低吸计划窗口已过，禁止补做旧入场。",
+    "2027年尚未发生，来源把2027与未来周期混说的部分只保留为未知日期矛盾。",
+    "跨周期方法仍可作为研究候选，但要逐日用新鲜事实复核，不能因具体场次过期而一律失效。"
+  ],
+  "typo_corrections": [
+    {
+      "raw": "赖美的",
+      "corrected": null,
+      "basis": "来源连续讨论红盘起爆案例，本地链也出现莱美方向。",
+      "uncertainty": "本地独立发出不能证明教师正式名称、代码、评分或成交，因此不在知识中绑定。"
+    },
+    {
+      "raw": "融风、荣丰",
+      "corrected": "荣丰控股（上下文候选）",
+      "basis": "同段反复讨论盘中低吸高分案例。",
+      "uncertainty": "缺权威代码与教师分时。"
+    },
+    {
+      "raw": "节融技术、杰龙、盛隆股份、西龙科学、龙运",
+      "corrected": "捷荣技术、圣龙股份、西陇科学、龙韵股份（上下文校正）",
+      "basis": "作者按2023年连续高标链逐一列举。",
+      "uncertainty": "历史日期、代码、收益与失败样本仍未核验。"
+    },
+    {
+      "raw": "浙江电投、中央要、中交发展、中东客车、吉泰股份、其泰股份、敬业达、今夜打",
+      "corrected": "浙江建投、中国医药、中交地产、中通客车、集泰股份、竞业达（上下文候选）",
+      "basis": "作者在2022年高标链中连续列举。",
+      "uncertainty": "语音存在冲突，不能据此绑定代码或当前名称。"
+    },
+    {
+      "raw": "中级预算、威龙峰、富祥、任何软件、锦鸿集团／解控集团",
+      "corrected": null,
+      "basis": "现有证据不足以唯一识别正式证券名称。",
+      "uncertainty": "全部保留原始表面词和角色，禁止补猜。"
+    }
+  ],
+  "action_summary": {
+    "posture_update": "proposal_only：有限指数事实仍偏弱，但不足以把10月16日全A诊断直接升级为当前系统姿态；具体10月19日计划已过期。",
+    "playbook_update": "proposal_only：保留环境先行、空仓基准、模式完整样本例外、高开风险、红盘起爆前日条件、盘中评分排名、传媒短线持续性边界和龙虎榜选择偏差等研究原则；低位空仓/高位满仓只作方法对照，不扩大当前权限。",
+    "hypothesis_update": "six_authority_0_candidates_after_full_claim_dedup_no_recurrence",
+    "audit_evidence": "完整来源f1bcfcd1…已读至EOF并覆盖119个稳定段；市场证据e3e33853…只验证有限指数；纸面补充9f629c49…只证明Book A/B记录；本次未取得APP成交证据。",
+    "instrumentation_todo": "分别冻结环境、完整候选、前日涨幅、开盘缺口、评分排名、紫薇国脉案例的第一次拐头、承接、滑点、不可成交与退出，用匹配基线比较单条件、系统跨段组合和不交易。",
+    "routing": [
+      "research_backlog",
+      "strategy_hit_audit",
+      "strict_full_recurrence_dedup",
+      "no_automatic_parameter_change",
+      "no_posture_mutation_before_current_validation"
+    ]
+  },
+  "dedup_review": {
+    "reference_path": "reference/experience/xiaocao_hypotheses.jsonl",
+    "reference_sha256": "1b80fefda3c11e86ed88d2a0f2b8c24f6d25dd7dc7c9fdb833d9af892840918d",
+    "reference_lines": 292,
+    "feedback_snapshot_path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261021_01a15dcf/video18_knowledge_feedback.txt",
+    "feedback_snapshot_sha256": "d17542b30480a0bcb8f2d6256db24493f08f6a76d12c78fe9deb57ebcae6dda6",
+    "feedback_snapshot": {
+      "reported_candidates": 276,
+      "current_backlog_includes": [
+        "XH-271",
+        "XH-272",
+        "XH-273",
+        "XH-274",
+        "XH-275",
+        "XH-276",
+        "XH-277",
+        "XH-278",
+        "XH-279",
+        "XH-280",
+        "XH-281",
+        "XH-282"
+      ]
+    },
+    "rule": "只有主张、条件、期限、操作规则、比较基线和失效边界完整重合才算复现；部分相关不合并。",
+    "proposals": [
+      {
+        "proposal": "主跌或弱轮动中的高开左尾",
+        "disposition": "new_candidate_related_only",
+        "related_ids": [
+          "XH-066",
+          "XH-137"
+        ]
+      },
+      {
+        "proposal": "红盘起爆的前一日涨幅交互",
+        "disposition": "new_candidate_related_only",
+        "related_ids": [
+          "XH-137",
+          "XH-219",
+          "XH-223"
+        ]
+      },
+      {
+        "proposal": "空仓环境中的赚钱模式例外",
+        "disposition": "new_competing_candidate",
+        "related_ids": [
+          "XH-194",
+          "XH-271",
+          "XH-272"
+        ],
+        "note": "与XH-194结论相反，必须用匹配环境和完整候选直接比较，不能合并。"
+      },
+      {
+        "proposal": "系统跨段合成：盘中低吸评分排名资格与紫薇国脉文化第一次拐头",
+        "disposition": "new_candidate_related_only",
+        "related_ids": [
+          "XH-207",
+          "XH-223",
+          "XH-274"
+        ],
+        "note": "来源后段只给出10分或100分和前二排名，第一次拐头属于前段紫薇国脉文化案例；系统可将两段组成待验候选，但作者没有直接绑定。XH-207直接研究排名后等待拐头；XH-274还要求大盘已加速下跌一段、盘中大跌幅、排除ST及已高涨幅候选，本场没有完整复现，不能合并或追加来源。"
+      },
+      {
+        "proposal": "连续高标衔接与赚钱效应才构成情绪周期窗口",
+        "disposition": "new_candidate_related_only",
+        "related_ids": [
+          "XH-085"
+        ]
+      },
+      {
+        "proposal": "龙虎榜和知名游资展示的幸存者偏差",
+        "disposition": "new_candidate_related_only",
+        "related_ids": [
+          "XH-247"
+        ]
+      },
+      {
+        "proposal": "无条件尾盘选股批评",
+        "disposition": "related_existing_boundary_no_new_candidate",
+        "related_ids": [
+          "XH-195"
+        ],
+        "note": "本场没有完整复现XH-195的轮动、整体下跌、热门板块回撤和热门股抗跌四项条件，只强化严格边界。"
+      }
+    ]
+  }
+}
