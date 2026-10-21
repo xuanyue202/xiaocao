@@ -307,10 +307,12 @@ authorizes no new ID/content; reconcile then retry the same idempotency key.
 
 ## Local schedule
 
-Codex Automation schedules exactly one local capture task with:
+Codex Automation is the scheduling authority. The current verified local capture
+task uses this Beijing cadence; do not restore the older every-20-minute schedule
+from historical instructions:
 
 ```text
-RRULE:FREQ=DAILY;BYHOUR=7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22;BYMINUTE=0,20,40
+RRULE:FREQ=DAILY;BYHOUR=7,10,12,14,17,18,21;BYMINUTE=0
 ```
 
 Use Beijing wall time; omit `DTSTART`/`TZID`; do not run 23:00–06:59. Reopen a

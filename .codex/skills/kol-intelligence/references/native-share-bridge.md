@@ -218,6 +218,14 @@ counts. Export after readback and before the next input; an unfinished tool
 call is pending, never a successful action. Preserve the exact source call IDs
 and request/output bounds. No added menus, screenshots or inputs for telemetry.
 
+At the B1-readback → PAC-checkpoint → B2 boundary, apply/read back the healthy
+exact capture PAC in its labelled call, then export the completed B1/PAC calls
+once before B2. A preliminary export inside an in-flight labelled PAC call
+necessarily sees that same call's output as pending; do not add this self-wait,
+suppress it or label it complete. A subsequent export preserves the real output
+and coverage before the next native input. This reduces orchestration work,
+without batching native input/readback or changing permitted native actions.
+
 For an explicitly user-authorized diagnostic rerun after a security exit,
 once Browser has verified the saved exact target, allow one passive native
 authentication-baseline read before enabling capture PAC or issuing/opening an
