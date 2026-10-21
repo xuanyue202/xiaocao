@@ -79,6 +79,8 @@ Complete read-only link/application validation before touching WeChat or
 changing the capture PAC. Do not rewrite an already correct, enabled PAC.
 Before native activation, read back the current network service's exact capture
 PAC URL and enabled state; singleton health alone does not prove traffic routing.
+For the authorized brand route with PAC off during entry, use the bridge's
+automatic-playback PAC boundary; a password gate must not be assumed.
 Visible playback with no observations is a capture-path diagnosis, not evidence
 that the user has not started playback. If that course opened before PAC takeover,
 its existing connection may bypass capture: preserve the original IDs, close only
