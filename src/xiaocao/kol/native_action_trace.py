@@ -70,6 +70,12 @@ def _output_signals(output: object, *, native_observation: bool) -> dict:
     error_code = next((code for code in (
         "noWindowsAvailable", "windowNotFoundAtPosition", "AXError.notImplemented",
     ) if native_observation and code in text), None)
+    if native_observation and error_code is None:
+        if re.search(r"Computer Use server error[^\n]*\bis an invalid element ID\b", text):
+            error_code = "invalid_element_id"
+        elif ("The user changed '" in text and
+              "Re-query the latest state" in text):
+            error_code = "app_target_changed"
     return {"state": state, "text_sha256": _sha(text.encode()),
             "reported_error_code": error_code,
             "image_sha256": images,
