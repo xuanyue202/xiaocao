@@ -137,6 +137,8 @@ def test_checkpoint_instructions_are_not_observed_native_errors_or_security():
     ("Computer Use server error -10005: 9 is an invalid element ID", "invalid_element_id"),
     ("The user changed '/Applications/WeChat.app'. Re-query the latest state with "
      "`get_app_state` before sending more actions.", "app_target_changed"),
+    ("js execution timed out; kernel reset, rerun your request",
+     "cua_execution_timeout_kernel_reset"),
 ])
 def test_targeting_failures_are_errors_without_inventing_security(message, expected):
     result = inspect(journal(call("input", "await wechat.click(9);"), output("input", message)))
@@ -146,6 +148,17 @@ def test_targeting_failures_are_errors_without_inventing_security(message, expec
     assert result["findings"]["first_security_text_call_id"] is None
     assert result["findings"]["root_trigger_proven"] is False
     assert message not in json.dumps(result)
+
+
+def test_timeout_in_checkpoint_instructions_is_not_a_native_tool_failure():
+    result = inspect(journal(
+        event("custom_tool_call", name="exec", call_id="checkpoint", input=
+              '// KOL_ACTION:READINESS\ntext("checkpoint");'),
+        event("custom_tool_call_output", call_id="checkpoint", output=
+              "If js execution timed out; kernel reset, rerun your request appears, diagnose."),
+    ))
+    assert result["calls"][0]["reported_error_code"] is None
+    assert result["findings"]["first_tool_error_call_id"] is None
 
 
 def test_hashes_images_and_sensitive_payloads_without_exporting_them():
