@@ -1,0 +1,528 @@
+{
+  "schema_version": "xiaocao-knowledge-draft-v1",
+  "knowledge_status": "reusable_knowledge",
+  "date": "2026-10-19",
+  "kind": "大师班晚间复盘直播",
+  "summary": "本场可复用的核心不是某只个股，而是弱市中的分层决策。作者的原始原则是空仓环境不做模式切换、没有模式时空仓；他又单列仍持续赚钱的模式可继续到首次亏损的例外，同时强调个人执行不顺就停。评分相关尾句残缺，不能补成确定停止规则。交易执行上，开盘五分钟内下跌与9:38后随市场回落属于不同触发，竞价价格偏移同时影响成交、滑点与废单风险。作者认为主跌中的放量下跌可能清出恐慌盘与割肉盘，放量大阳也可能止跌但更难；后续广度和承接只是系统为验证该机制设计的研究条件，不是作者已给出的更强规则。全部内容authority=0，不改变策略、参数、仓位、Book或账户。",
+  "author": "小草",
+  "source": "20261019 大师班专场晚间直播完整压缩逐字稿",
+  "authority": 0,
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_netdisk_enrichment/artifacts/kol-netdisk-871c513c21d8dcf7/20261019 大师班专场(晚18：00开播)-compressed.txt",
+      "sha256": "4262d73e6667e3e1d714fccf1a16a7033202cf3ffa75fe46bb9c3802477f25ca",
+      "size": 47459
+    }
+  ],
+  "posture": {
+    "regime": "小草把10月19日仍定义为空仓环境，并判断自9月22日以来的弱势尚未明显结束。局部模式机会只能作为条件例外，不能把总环境直接改成可积极参与。10月21日两指数继续收跌与方向一致，但不足以独立证明全A环境标签。",
+    "dominant_style": "默认空仓；原始原则是空仓环境不做模式切换，另列的例外是仍持续赚钱的模式可继续到首次亏损。个人近期执行不顺时独立暂停。下跌低吸已进入小赚小亏反复期；红盘起爆未获模式评分确认；紫薇模式在弱市回避；断板只等待首个评估，时间未清。",
+    "risk": "高位倒接力存在低开、跌停和次日再低开的尾部风险；模式分值各自独立，不能把100分、600/700分、短线第一和150分门槛混成统一胜率；本场监控死机掉失部分数据。",
+    "style_ranking": [
+      "空仓或等待",
+      "仍持续赚钱的模式例外，可继续到首次亏损，并保持固定总风险",
+      "下跌低吸和倒接力的条件化参与",
+      "红盘起爆与断板的观察",
+      "弱市中的紫薇模式和无条件科技加仓"
+    ],
+    "currentness": "conditional_posture_current_specific_2026_10_20_actions_expired",
+    "global_posture_write": "not_applied"
+  },
+  "regime_call": {
+    "call": "在作者所称的空仓环境被解除前，原始原则是空仓且不做模式切换；另列的例外是仍持续赚钱的模式可在固定总风险内继续到首次亏损，个人执行不顺则独立停止。作者把放量下跌清出恐慌盘与割肉盘视为止跌机会，放量大阳也可能但更难；当前事实未证明任何一种出清已经发生。",
+    "horizon": "方法可用于未来同类弱市；10月20日的具体竞价、低吸和仓位计划已经过期。",
+    "triggers": [
+      "新的全市场证据支持作者所说的空仓环境已经解除",
+      "某模式的完整候选仍持续赚钱，且个人执行没有偏离事前规则",
+      "出现作者所说的放量下跌出清或更难的放量大阳；是否真正止跌仍需后续事实检验"
+    ],
+    "what_would_falsify": [
+      "完整候选出现首次亏损，结束作者所列的赚钱模式例外",
+      "个人执行持续偏离规则，即使模式总体尚未出现亏损",
+      "放量后仍出现扩散性下跌，否定该次放量已经完成出清的解释",
+      "样本外研究显示空仓基线优于条件例外"
+    ],
+    "evidence_boundary": "当前事实包只有两只指数的收盘证据，不含全A广度、科技相对强度、教师模式完整候选、量能出清或教师成交；不能把条件化姿态改写成已触发信号。"
+  },
+  "directions": [
+    {
+      "direction": "下跌低吸",
+      "role": "弱市中的条件模式",
+      "conditions": "模式完整候选仍赚钱，且个股满足该模式自身条件；优先研究开盘五分钟内下跌。若直到9:38至9:40才随市场回落，不再追加。",
+      "limitations": "近期已从连续大肉进入小赚小亏反复；100分案例仍可亏损，分值不是胜率。"
+    },
+    {
+      "direction": "倒接力",
+      "role": "当时相对更强但高波动的条件例外",
+      "conditions": "模式仍持续赚钱、总风险固定且参与者接受低开和跌停尾部。",
+      "limitations": "历史大肉不能覆盖次日再低开的风险；作者明确的例外边界是首次亏损，评分尾句残缺，不能补成另一条确定停止规则。"
+    },
+    {
+      "direction": "科技",
+      "role": "当前回避、条件回归的板块方向",
+      "conditions": "环境回到科技，或作者所说的可能见底后反弹得到新的相对强度、广度和持续性证据，再重新评估。",
+      "limitations": "作者类比互联网泡沫，认为科技也可能有泡沫，同时承认也可能已经见底；这是双向未知和类比，不是独立估值证据，也不是永久排除科技。"
+    },
+    {
+      "direction": "断板",
+      "role": "潜在止跌后强化方向",
+      "conditions": "等待首个正式模式评估；来源后续时间词可能是“周二”或“一周”等转写，无法确定观察期。",
+      "limitations": "10月20日可以观察的动作已经过期；未形成首个评估前不升级为交易。"
+    },
+    {
+      "direction": "紫薇模式",
+      "role": "弱市回避、环境改善后再评估",
+      "conditions": "市场环境明确改善，并取得完整模式样本。",
+      "limitations": "单个约1000分候选不能越过环境闸门。"
+    }
+  ],
+  "stocks": [
+    {
+      "name": "冰山冷热",
+      "code": null,
+      "market": "A股",
+      "identity_status": "name_resolved_code_not_bound",
+      "source_role": "倒接力跨日收益和开盘五分钟低吸例子",
+      "knowledge_use": "仅用于研究早跌与高波动，不作为未来推荐。"
+    },
+    {
+      "name": "万邦医药",
+      "code": null,
+      "market": "A股",
+      "identity_status": "name_surface_only_code_unverified",
+      "source_role": "低吸约100分仍小亏的反例",
+      "knowledge_use": "用于检验模式分值不等于胜率。"
+    },
+    {
+      "name": "音近‘大普威／大富威’的个股",
+      "code": null,
+      "market": "A股",
+      "identity_status": "unresolved",
+      "source_role": "盘中起爆600至700分后上涨的正例",
+      "knowledge_use": "只有唯一识别并取得原始评分和分时后才可进入样本。"
+    },
+    {
+      "name": "音近‘汇博新材’的个股",
+      "code": null,
+      "market": "A股",
+      "identity_status": "unresolved_with_local_name_candidate",
+      "source_role": "9:38后回落不再低吸的教师例子",
+      "knowledge_use": "惠柏新材是独立本地音近候选，冻结时点和不同模式标签不足以证明同一证券；教师身份未解析。"
+    },
+    {
+      "name": "涛涛车业",
+      "code": null,
+      "market": "A股",
+      "identity_status": "name_surface_only_code_unverified",
+      "source_role": "盘中起爆高分小幅盈利例子",
+      "knowledge_use": "用于完整高分候选池审计，不作推荐。"
+    },
+    {
+      "name": "*ST卓然",
+      "code": "688121.XSHG",
+      "market": "A股",
+      "identity_status": "resolved_by_normalized_exact_name_in_bound_same_day_signal",
+      "source_role": "高分但因ST属性排除；本地raw qibao强攻标杆起爆观察",
+      "knowledge_use": "用于记录ST排除与raw_pool_only边界，不作推荐。"
+    },
+    {
+      "name": "晶雪节能",
+      "code": "301010.XSHE",
+      "market": "A股",
+      "identity_status": "local_benchmark_only_teacher_relation_unresolved",
+      "source_role": "本地孕线低吸信号；仅为音近“精选节能”的目录候选",
+      "knowledge_use": "确认本地信号层级，不把它与教师N字第一身份合并。"
+    },
+    {
+      "name": "尚水智能",
+      "code": "301513.XSHE",
+      "market": "A股",
+      "identity_status": "local_benchmark_only_teacher_relation_unresolved",
+      "source_role": "本地raw qibao强攻标杆起爆观察；仅为音近“上水势能／上水智能”的目录候选",
+      "knowledge_use": "确认本地raw pool层级，不把它与教师红盘起爆身份合并。"
+    },
+    {
+      "name": "音近‘精选节能’的个股",
+      "code": null,
+      "market": "A股",
+      "identity_status": "unresolved_with_local_name_candidate",
+      "source_role": "N字第一名口述例子",
+      "knowledge_use": "晶雪节能只是独立本地音近候选；教师身份未解析。"
+    },
+    {
+      "name": "音近‘上水势能／上水智能’的个股",
+      "code": null,
+      "market": "A股",
+      "identity_status": "unresolved_with_local_name_candidate",
+      "source_role": "红盘起爆早强后弱例子",
+      "knowledge_use": "尚水智能只是独立本地音近候选；教师身份未解析。"
+    }
+  ],
+  "method_principles": [
+    "先判断环境参与权，再看模式完整候选与各自分值，最后才决定个股与委托；相对最高分不能覆盖绝对环境门槛。",
+    "把两条来源表述并列保留：原始原则是空仓环境不做模式切换；另列仍持续赚钱的模式可继续到首次亏损。个人执行不顺又是独立暂停条件。评分尾句残缺，不补成规则。",
+    "固定总风险后组合多个模式或候选；增加模式不能增加总仓位，必须记录相关性、费用、滑点和尾部风险。",
+    "用至少三个月完整序列评价模式，冻结第一名和第二名的定义、全部失败样本以及规则变更，不能用单笔盈亏判断有效性。",
+    "开盘五分钟内的下跌与9:38后随市场回落是两个独立触发，研究时必须冻结开盘价、首次跌破时点、市场同步性和可成交价。",
+    "竞价挂单偏移要同时记录成交率、滑点、废单率和拒单原因；1%、1.3%至1.4%、1.9%至1.95%只是假设区间，不能直接写入参数。",
+    "不同模式分值只能在自身候选池内解释；100分低吸、600/700分起爆、短线第一和150分门槛不可横向合成。",
+    "作者把放量下跌清出恐慌盘与割肉盘视为止跌机会，并承认放量大阳也可能但更难；后续广度、承接与持续性是系统验证设计，不是作者原话。",
+    "监控死机、掉数据或只看一种模式时，必须标记漏样本和幸存者偏差，不能用收盘赢家回填实时可见性。"
+  ],
+  "exit_lessons": [
+    "作者明确的两条停止边界是：持续赚钱模式首次出现亏损，以及个人执行不顺。其后评分尾句残缺，不能据此确立“评分失效即停”。",
+    "开盘五分钟窗口过去后，9:38至9:40才出现的随市场回落不应再追加；这是对新入场和加仓的时效约束。",
+    "高位倒接力必须事前接受低开、跌停与次日再低开的情景；若不能承受，不应靠事后组合数字掩盖尾部。",
+    "10月20日具体轻仓、防守和竞价计划已经过期，不能顺延成10月21日委托。"
+  ],
+  "decision_trace": [
+    {
+      "observation": "10月19日仍被定义为空仓环境，弱势自9月22日附近延续。",
+      "inference": "作者的原始原则是空仓环境不做模式切换，局部机会不改变总环境。",
+      "action": "没有模式可做时空仓；保留该原则，不替作者消解与后续例外的张力。"
+    },
+    {
+      "observation": "倒接力仍有大肉，下跌低吸进入小赚小亏反复。",
+      "inference": "作者另列仍持续赚钱的模式可继续到首次亏损；其后评分尾句不清。",
+      "action": "只把持续赚钱至首次亏损作为明确例外；固定总风险，不补写评分停止规则。"
+    },
+    {
+      "observation": "个人可能因为漏做、乱做或被单票困住而感到不顺。",
+      "inference": "个人执行偏差可独立破坏模式收益。",
+      "action": "个人不顺就停；恢复前不以模式总体表现为继续理由。"
+    },
+    {
+      "observation": "市场尚未出现被证实的止跌，作者等待放量下跌出清或更难的放量大阳线。",
+      "inference": "作者提出的是清出恐慌盘与割肉盘的机制；当前事实没有证明已经出清。",
+      "action": "系统研究可另用后续广度和承接检验该机制，未确认前维持防守；验证条件不得反归因给作者。"
+    }
+  ],
+  "judgment_heuristics": [
+    "环境、模式、个人执行是不同层级；原始空仓原则、赚钱模式例外与个人暂停应并列保留。",
+    "赚钱模式例外的来源边界是持续赚钱可做到首次亏损；评分尾句残缺，不扩写为额外停止条件。",
+    "收益加总必须有权重、费用和统一时间轴；17加11减4一类口述不能称作组合净值。",
+    "早跌和晚跌要按时点与市场同步性分组，不能都归为“回调低吸”。",
+    "挂得更高不是单向改善：成交率、滑点和废单风险必须共同评价。",
+    "作者的放量出清是机制假说，不是看到放量即宣告底部；广度和承接属于系统验证设计。",
+    "板块回避必须带回归条件；本场科技观点同时保留泡沫可能与可能见底两端未知。"
+  ],
+  "hypotheses": [
+    {
+      "existing_id": "XH-276",
+      "disposition": "reuse_exact_existing_claim",
+      "claim": "在固定总风险下组合多个短线模式，可能降低单一模式波动并提高执行一致性。",
+      "category": "portfolio_construction",
+      "implied_rule": "冻结模式间风险权重，记录相关性、收益、回撤和交易成本；不把单一模式内部前两名平铺重复计为新命题。",
+      "falsifiable_test": "与单一模式和随机跨模式组合比较费用后收益、回撤、左尾和纪律偏差；若组合未降低回撤或稀释收益过多则否决。",
+      "expected_effect": "在不扩大总风险时降低单一模式波动。",
+      "authority": 0,
+      "rationale": "完整读取当前282条backlog后，与XH-276的条件、规则和失效边界完整一致，只记录本场复现。"
+    },
+    {
+      "candidate_key": "KD-20261019-01",
+      "disposition": "new_candidate_after_full_backlog_dedup",
+      "claim": "在下跌低吸中，开盘五分钟内出现的下跌，可能比开盘未跌破而直到9:38后才随市场回落的样本具有更好的风险调整后反弹。",
+      "category": "intraday_entry_timing",
+      "implied_rule": "冻结开盘价、首次下跌时点、是否在五分钟内、9:38时市场同步性、首次可成交价和后续路径；晚跌组不自动追加。",
+      "falsifiable_test": "在相同模式分数、流动性、市场状态和发现时点下，比较五分钟内早跌组与9:38后晚跌组的1/5/15/30分钟收益、最大不利变动、成交率和尾部损失；若早跌组无稳定优势则拒绝。",
+      "expected_effect": "早跌组可能有更好的反弹质量，晚跌组更像随市场漂移。",
+      "authority": 0,
+      "rationale": "XH-235只讨论9:35前高分时效，XH-246讨论模式内阈值，均未包含早跌与9:38后晚跌的完整分组和失效条件，不能合并。"
+    },
+    {
+      "candidate_key": "KD-20261019-02",
+      "disposition": "new_candidate_after_full_backlog_dedup",
+      "claim": "集合竞价买单的价格偏移存在成交率、滑点和废单率之间的非单调权衡；约1%至1.95%的偏移区间可能需要按活跃度分层，而不是一律挂到更高。",
+      "category": "auction_order_price_offset",
+      "implied_rule": "按证券活跃度和涨跌停约束记录委托基准、偏移、提交时点、订单状态、拒单原因、成交率、滑点和后续收益；任何区间研究通过前不写入执行参数。",
+      "falsifiable_test": "预注册按活跃度分层的中间偏移策略，并与统一低偏移、统一高偏移及券商基线比较成交率、废单率、拒单原因、滑点和费用后收益。若中间或分层策略在样本外相对这些基线没有稳定净优势，且偏移与成交率、滑点、废单率之间没有可复现的区分关系，则否决总体命题；若更高偏移不提高成交率，只否决“偏移提高成交”子机制；若偏移与废单率无关，只否决“偏移影响废单”子机制。",
+      "expected_effect": "中间或按活跃度分层的偏移可能在成交率、滑点和废单风险之间取得更好的样本外净结果；不预设越高越好。",
+      "authority": 0,
+      "rationale": "282条backlog没有覆盖集合竞价买单偏移与废单原因的同文命题；XH-002是跌停卖单阻塞，方向、机制和执行对象不同。"
+    },
+    {
+      "candidate_key": "KD-20261019-03",
+      "disposition": "new_candidate_after_full_backlog_dedup",
+      "claim": "作者认为主跌期的放量下跌可能清出恐慌盘与割肉盘，从而带来止跌机会；放量大阳也可能止跌，但更难。当前事实没有证明出清已经发生。",
+      "category": "capitulation_confirmation",
+      "implied_rule": "研究合成（不是作者原话）：为检验上述出清机制，同时冻结量价、下跌家数、跌停扩散、次日承接、套牢抛压和反弹持续性，并把放量大阳作为独立替代路径。",
+      "falsifiable_test": "识别主跌期放量下跌事件，比较后续广度与承接改善组、未改善组和放量大阳线组未来1/3/5日收益、最大回撤与再创新低率；若后续验证变量没有区分力，或放量组未提高止跌概率，则拒绝系统合成假设。",
+      "expected_effect": "若出清机制成立，获得后续验证的放量事件应有更低的再创新低率；这是待验证的系统预期。",
+      "authority": 0,
+      "rationale": "XH-043和XH-053把“放量出清后”作为科技选股前提，XH-081讨论融资、成交与广度共同止跌；它们没有完整覆盖本场作者所述的恐慌盘出清机制及放量大阳替代路径。广度和承接是为可证伪研究新增的系统验证变量，不归因于作者。"
+    }
+  ],
+  "strategy_hit_audit": {
+    "status": "completed_read_only_with_limits",
+    "audit_date": "2026-10-21",
+    "evidence_binding": {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261021_01a15dcf/video19_evening_market_evidence_v1.json",
+      "sha256": "f65b1d3a15d05926f458f0491aa4bec2cd96b0f8b65ae5744e9d77bde7b07576",
+      "as_of": "2026-10-21T11:45:52.796979Z"
+    },
+    "teacher_named_winners": [
+      {
+        "surface": "冰山冷热",
+        "source_role": "倒接力跨日盈利和开盘五分钟低吸例子",
+        "classification": "not_emitted",
+        "explanation": "绑定的10月19日本地17行冻结信号没有冰山冷热同名记录；这只说明本地发出范围未覆盖它，不评价教师是否买入或盈利。来源“昨天”仍不证明10月18日周日交易。",
+        "book_fit": "仅作来源案例或方向观察；无绑定的同名本地发出、买入或成交证据，不能认定命中或漏选。"
+      },
+      {
+        "surface": "大连热电",
+        "source_role": "下跌低吸历史盈利例子",
+        "classification": "no_evidence",
+        "explanation": "历史回顾不应拿10月19日本地快照判定漏选，且没有绑定的教师成交记录。",
+        "book_fit": "仅作来源案例或方向观察；无绑定的同名本地发出、买入或成交证据，不能认定命中或漏选。"
+      },
+      {
+        "surface": "盛洋股份",
+        "source_role": "历史盈利例子",
+        "classification": "no_evidence",
+        "explanation": "表面名称可能对应音近证券，身份与成交均未绑定。",
+        "book_fit": "仅作来源案例或方向观察；无绑定的同名本地发出、买入或成交证据，不能认定命中或漏选。"
+      },
+      {
+        "surface": "普",
+        "source_role": "历史中等收益例子",
+        "classification": "no_evidence",
+        "explanation": "单字听写无法唯一识别，也没有教师成交记录。",
+        "book_fit": "仅作来源案例或方向观察；无绑定的同名本地发出、买入或成交证据，不能认定命中或漏选。"
+      },
+      {
+        "surface": "相反汽车",
+        "source_role": "历史盈利例子",
+        "classification": "no_evidence",
+        "explanation": "听写表面词无法唯一识别，也没有教师成交记录。",
+        "book_fit": "仅作来源案例或方向观察；无绑定的同名本地发出、买入或成交证据，不能认定命中或漏选。"
+      },
+      {
+        "surface": "晨光新材",
+        "source_role": "历史盈利例子",
+        "classification": "no_evidence",
+        "explanation": "来源未给证券代码；历史回顾不与当日本地发出结果强行配对。",
+        "book_fit": "仅作来源案例或方向观察；无绑定的同名本地发出、买入或成交证据，不能认定命中或漏选。"
+      },
+      {
+        "surface": "大普威／大富威／大补味",
+        "source_role": "盘中起爆高分后上涨例子",
+        "classification": "no_evidence",
+        "explanation": "名称未唯一解析，原始评分、发现时点和逐笔成交未核验。",
+        "book_fit": "仅作来源案例或方向观察；无绑定的同名本地发出、买入或成交证据，不能认定命中或漏选。"
+      },
+      {
+        "surface": "涛涛车业／滔滔车业",
+        "source_role": "盘中起爆高分小幅盈利例子",
+        "classification": "not_emitted",
+        "explanation": "绑定的10月19日本地17行冻结信号没有涛涛车业同名记录；教师口述的高分和小幅盈利仍缺原始评分、委托及成交。",
+        "book_fit": "仅作来源案例或方向观察；无绑定的同名本地发出、买入或成交证据，不能认定命中或漏选。"
+      }
+    ],
+    "local_strategy_benchmark_hits": [
+      {
+        "surface": "惠柏新材",
+        "source_role": "独立本地比较事实：10月19日09:36:48冻结的孕线低吸信号行",
+        "classification": "emitted_strategy_hit",
+        "explanation": "本地清单有惠柏新材（301555.XSHE）信号行，模式COLD且不可执行；它只是“汇博新材”的音近目录候选，没有证据证明与教师提及为同一证券。",
+        "teacher_relation": "unresolved_possible_name_candidate",
+        "book_fit": "确认本地信号层级，不构成教师重合或交易授权。"
+      },
+      {
+        "surface": "晶雪节能",
+        "source_role": "独立本地比较事实：10月19日09:36:48冻结的孕线低吸信号行",
+        "classification": "emitted_strategy_hit",
+        "explanation": "本地清单有晶雪节能（301010.XSHE）信号行，模式COLD且不可执行；它只是“精选节能”的音近目录候选，不能把教师N字排名等同于本地模式。",
+        "teacher_relation": "unresolved_possible_name_candidate",
+        "book_fit": "确认本地信号层级，不构成教师重合或交易授权。"
+      },
+      {
+        "surface": "尚水智能",
+        "source_role": "独立本地比较事实：10月19日09:36:48冻结的raw qibao强攻标杆起爆观察",
+        "classification": "raw_pool_only",
+        "explanation": "本地清单有尚水智能（301513.XSHE），模式UNKNOWN且不可执行；它只是“上水势能／上水智能”的音近目录候选，没有证据证明与教师提及为同一证券。",
+        "teacher_relation": "unresolved_possible_name_candidate",
+        "book_fit": "只记录本地raw pool层级，不构成教师重合或交易授权。"
+      },
+      {
+        "surface": "ST卓然（绑定同日信号为*ST卓然）",
+        "source_role": "高分但因ST属性排除的例子",
+        "classification": "raw_pool_only",
+        "explanation": "绑定清单有*ST卓然（688121.XSHG）规范化同名记录，来自raw qibao前10，模式UNKNOWN、不可执行。该同名重合支持来源的ST排除角色，但不核验教师分数、成交或收益。",
+        "book_fit": "只属于本地原始池观察，ST属性与不可执行状态不满足Book目标函数。",
+        "teacher_relation": "normalized_exact_name_overlap"
+      }
+    ],
+    "direction_core_observations": [
+      {
+        "surface": "信誉人／幸运人／虚拟人",
+        "source_role": "历史亏损与单票执念例子",
+        "classification": "no_evidence",
+        "explanation": "同一案例有多种音近转写，身份、时点和成交均不明。",
+        "book_fit": "仅作来源案例或方向观察；无绑定的同名本地发出、买入或成交证据，不能认定命中或漏选。"
+      },
+      {
+        "surface": "凡拓数创／繁多数创",
+        "source_role": "科创板受限时的历史替代例子",
+        "classification": "no_evidence",
+        "explanation": "名称较强支持但未给代码；这是历史替代说明，不是10月19日入场信号。",
+        "book_fit": "仅作来源案例或方向观察；无绑定的同名本地发出、买入或成交证据，不能认定命中或漏选。"
+      },
+      {
+        "surface": "天府通信",
+        "source_role": "群体讨论后套牢的科技案例",
+        "classification": "no_evidence",
+        "explanation": "音近名称未唯一解析；只作科技风险案例。",
+        "book_fit": "仅作来源案例或方向观察；无绑定的同名本地发出、买入或成交证据，不能认定命中或漏选。"
+      },
+      {
+        "surface": "中继续算／中西算",
+        "source_role": "科技板块对照案例",
+        "classification": "no_evidence",
+        "explanation": "多种音近转写无法唯一解析；只作板块对照。",
+        "book_fit": "仅作来源案例或方向观察；无绑定的同名本地发出、买入或成交证据，不能认定命中或漏选。"
+      },
+      {
+        "surface": "肯特",
+        "source_role": "数日前下跌低吸例子",
+        "classification": "no_evidence",
+        "explanation": "简称无代码或充分上下文；历史例子不与10月19日本地发出强行配对。",
+        "book_fit": "仅作来源案例或方向观察；无绑定的同名本地发出、买入或成交证据，不能认定命中或漏选。"
+      },
+      {
+        "surface": "万邦医药",
+        "source_role": "低吸约100分仍小亏的反例",
+        "classification": "not_emitted",
+        "explanation": "绑定的10月19日本地17行冻结信号没有万邦医药同名记录；这只说明本地发出范围未覆盖它，不影响来源作为低吸100分仍小亏的教师反例，也不核验教师成交。",
+        "book_fit": "仅作来源案例或方向观察；无绑定的同名本地发出、买入或成交证据，不能认定命中或漏选。"
+      },
+      {
+        "surface": "太奇股份",
+        "source_role": "已涨停故排除的例子",
+        "classification": "no_evidence",
+        "explanation": "音近名称未唯一解析；来源排除不等于本地候选或发出。",
+        "book_fit": "仅作来源案例或方向观察；无绑定的同名本地发出、买入或成交证据，不能认定命中或漏选。"
+      },
+      {
+        "surface": "盘拓",
+        "source_role": "下午起爆口述例子",
+        "classification": "no_evidence",
+        "explanation": "表面词无法唯一识别；只作下午信号边际价值观察。",
+        "book_fit": "仅作来源案例或方向观察；无绑定的同名本地发出、买入或成交证据，不能认定命中或漏选。"
+      },
+      {
+        "surface": "房错／房租／房做",
+        "source_role": "需持有两日的历史例子",
+        "classification": "no_evidence",
+        "explanation": "多种音近转写无法唯一解析；只作持有期案例。",
+        "book_fit": "仅作来源案例或方向观察；无绑定的同名本地发出、买入或成交证据，不能认定命中或漏选。"
+      },
+      {
+        "surface": "华东／华池",
+        "source_role": "历史统计和是否参与的反问例子",
+        "classification": "no_evidence",
+        "explanation": "简称和音近词无法唯一识别；没有绑定的当日发出证据。",
+        "book_fit": "仅作来源案例或方向观察；无绑定的同名本地发出、买入或成交证据，不能认定命中或漏选。"
+      },
+      {
+        "surface": "汇博新材",
+        "source_role": "9:38后回落不再低吸的例子",
+        "classification": "no_evidence",
+        "explanation": "教师表面词仍无法唯一解析。绑定清单中的惠柏新材只是音近本地候选；所有行共同冻结于09:36:48，该时间不是教师所述个股9:38分时，且本地孕线低吸与教师下跌低吸不能视为同一模式。",
+        "book_fit": "教师身份未确认，不能判定本地命中、漏选或教师成交。"
+      },
+      {
+        "surface": "精选节能",
+        "source_role": "N字第一名口述例子",
+        "classification": "no_evidence",
+        "explanation": "教师表面词仍无法唯一解析。绑定清单中的晶雪节能只是音近本地候选；共同冻结时间不提供分时对应，教师N字角色与本地孕线低吸也不是同一模式标签。",
+        "book_fit": "教师身份未确认，不能判定本地命中或漏选。"
+      },
+      {
+        "surface": "上水势能／上水智能",
+        "source_role": "红盘起爆早强后弱例子",
+        "classification": "no_evidence",
+        "explanation": "教师表面词仍无法唯一解析。绑定清单中的尚水智能只是音近本地候选；教师红盘起爆与本地强攻标杆起爆并非同一模式，通用起爆语境不能唯一绑定证券。",
+        "book_fit": "教师身份未确认，不能判定本地重合或教师评分。"
+      }
+    ],
+    "local_benchmark_summary": {
+      "signal_rows": 17,
+      "execution_star_rows": 0,
+      "paper_sell_rows": 4,
+      "paper_sell_names": [
+        "龙江交通",
+        "建新股份"
+      ],
+      "classification": "one_normalized_exact_overlap_three_unresolved_name_candidates_three_not_emitted",
+      "explanation": "只有*ST卓然与教师ST卓然构成规范化同名重合，且仅处于本地raw qibao观察层。惠柏新材、晶雪节能、尚水智能是本地真实候选事实，但分别只与教师的汇博新材、精选节能、上水势能／上水智能音近；共同冻结时间和不同模式标签不能完成身份解析。冰山冷热、万邦医药、涛涛车业在17行内无同名发出，分类为not_emitted。纸面卖出仍是旧持仓，Book A与Book B独立，未取得APP成交证据。"
+    },
+    "systemic_issue": "not_established",
+    "parameter_change": "none_authority_0",
+    "boundary": "教师身份先于本地命中判断。*ST卓然保留规范化同名raw_pool_only；惠柏新材、晶雪节能、尚水智能只作为独立本地比较事实，不称教师重合。其余音近名称仍为no_evidence，不凭目录猜名。not_emitted只限定10月19日这份冻结本地发出范围，不评价教师交易与收益；策略信号、raw pool、纸面A/B与APP证据严格分桶。",
+    "local_strategy_binding": {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261021_01a15dcf/video19_local_strategy_20261019.json",
+      "sha256": "d786ee86158aea2f3993f0ff30002ee392e033df93e6e6c312c6c19e117be59a",
+      "date": "2026-10-19",
+      "signal_rows": 17
+    }
+  },
+  "timing_notes": [
+    "来源日期是2026年10月19日，口中的“明天”是10月20日；10月20日竞价、五分钟低吸和轻仓计划均已过期。",
+    "冰山冷热的“昨天”是来源相对时间，不能据此断言10月18日周日发生交易；只保留跨日案例语义。",
+    "空仓环境、科技回归门槛、紫薇弱市回避和放量出清条件未被来源明确限于单日；当前性须按条件和正面事实判断，不能因未见反例自动续为当前。",
+    "断板模式只能确定要等待首个评估；后续时间词可能是“周二”或“一周”等转写，无法确定观察期。10月20日的观察动作已过期。",
+    "开盘五分钟与9:38至9:40后的回落必须分组；不能用“都在下跌”合并。"
+  ],
+  "typo_corrections": [],
+  "limitations": [
+    "天府通信、中继续算、大普威、汇博新材、精选节能、上水势能／上水智能等音近名称没有唯一证据，未凭股票目录猜名；惠柏新材、晶雪节能、尚水智能仅作为独立本地候选事实。*ST卓然是唯一由绑定清单支持的规范化同名重合。",
+    "作者口述的17加11减4、28减4等缺权重、费用和统一退出，不是组合净值。",
+    "教师评分、完整候选池、委托、成交和收益均未独立核验；本地信号或raw pool只证明本地候选层级。",
+    "两指数收盘不足以证明全A环境、科技回归或恐慌盘出清。",
+    "来源监控死机并掉失部分数据，存在漏样本和幸存者偏差。"
+  ],
+  "action_summary": {
+    "posture_update": "not_applied：条件化风险姿态保留在草稿，不改posture_current或REGIME_TIMELINE。",
+    "playbook_update": "proposal_only：三层闸门、五分钟时点、挂单偏移和出清确认须经研究与人审。",
+    "hypothesis_update": "XH-276记录本场完整复现；KD-20261019-01至03为完整282条backlog去重后的新候选，等待摄取审查。",
+    "audit_evidence": "完整读取47459字节、16137个规范字符、122个稳定分段；市场与本地策略事实只作独立审计。",
+    "instrumentation_todo": "未来需冻结完整候选池、模式分、发现时点、开盘价、首次下跌时点、竞价偏移、订单回执、费用、量能、广度、承接和失败样本。",
+    "routing": [
+      "parent_deterministic_validation",
+      "xh276_exact_recurrence_merge",
+      "new_candidate_ingestion_review",
+      "strategy_hit_audit_review",
+      "no_automatic_ingestion",
+      "no_strategy_or_parameter_write"
+    ],
+    "parameter_update": "no_change_authority_0",
+    "knowledge_ingestion": "not_applied_by_analyst",
+    "external_effects": "none"
+  },
+  "dedup_review": {
+    "registry_path": "reference/experience/xiaocao_hypotheses.jsonl",
+    "registry_entries_reviewed": 282,
+    "registry_last_id": "XH-282",
+    "exact_reuse": [
+      "XH-276"
+    ],
+    "partial_not_merged": [
+      "XH-043",
+      "XH-053",
+      "XH-061",
+      "XH-078",
+      "XH-081",
+      "XH-145",
+      "XH-178",
+      "XH-194",
+      "XH-235",
+      "XH-246",
+      "XH-247",
+      "XH-279"
+    ],
+    "excluded_later_source_content": [
+      "XH-272的次晨负分复核"
+    ],
+    "result": "one_exact_recurrence_three_new_candidates_no_partial_merge"
+  }
+}
