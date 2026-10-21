@@ -328,3 +328,15 @@ as `expired`, retaining identity and receipts. Never launch an expired entry or
 report it completed. Bound source jobs, media candidates, downloads, uploads and
 handoffs remain subject to exact-job reconciliation, not age-based deletion.
 Provider failure is a hypothesis unless independently verified.
+
+A direct human decision to skip an already expired, unbound original supersedes
+an earlier dated-backfill range. After exact unbound capture/claim readback,
+`subscription.exclude_expired_backfill(identity, user_skip_authorized=True)`
+appends that exclusion without deleting the item/history, changing its capture
+or touching the shared singleton. A later dated-backfill invocation cannot
+silently restore the excluded original. Exact narrow resume returns `expired`
+with `already_completed=false` and zero effects. If this item retains the
+coordinator's old failure, use applicable pushed fingerprint-bound validation
+and exact narrow continuation to reconcile that real terminal expiry; do not
+claim media/Handoff or that a user skip proves native input was repaired.
+Never retire bound downloads/uploads or stop another capture to record a skip.

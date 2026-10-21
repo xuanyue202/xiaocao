@@ -605,7 +605,8 @@ class XiaocaoLiveCaptureDriver:
             and capture.get("status") == "awaiting_capture"
             and not any(capture.get(key) for key in (
                 "candidate_id", "task_id", "source_job_id", "expected_source",
-                "native_unbound_media",
+                "native_unbound_media", "candidate", "download_task_id",
+                "download_idempotency_key", "media_path",
             ))
         )
 
@@ -1184,6 +1185,28 @@ class XiaocaoWechatLiveSubscription:
             expired.append(item["identity"])
         return expired
 
+    def exclude_expired_backfill(self, identity: str, *, user_skip_authorized: bool) -> dict[str, Any]:
+        """Preserve an expired unbound original while recording a human skip."""
+        if not user_skip_authorized:
+            raise EnrichmentError("backfill exclusion requires a direct user instruction")
+        manifest = self._load()
+        item = manifest["items"].get(identity)
+        if not isinstance(item, dict) or item.get("status") != "expired":
+            raise EnrichmentError("only an expired original can be excluded here")
+        if any(item.get(key) for key in (
+            "candidate_id", "task_id", "media_request_observed", "handoff_id", "source_identity",
+        )):
+            raise EnrichmentError("backfill exclusion must reconcile existing bound claims")
+        job = item.get("capture_job_id")
+        if job:
+            check = getattr(self.capture_driver, "can_expire_wait", None)
+            if not callable(check) or check(identity, job) is not True:
+                raise EnrichmentError("backfill exclusion lacks an exact unbound capture")
+        if item.get("manual_backfill_excluded") is True:
+            return item
+        return self._transition(manifest, item, "expired", manual_backfill_excluded=True,
+            manual_backfill_excluded_at=self._now(), manual_backfill_exclusion_reason="direct_user_skip")
+
     def _prepare_manual_backfill(
         self, manifest: dict[str, Any], identity: str | None, since: str,
     ) -> None:
@@ -1198,6 +1221,8 @@ class XiaocaoWechatLiveSubscription:
         if cutoff > now:
             raise EnrichmentError("manual backfill date is in the future")
         item = manifest["items"].get(identity)
+        if item and item.get("manual_backfill_excluded") is True:
+            raise EnrichmentError("original entry is explicitly excluded from backfill")
         if (
             item and item.get("manual_backfill_since") == since
             and item.get("status") not in {"expired", "superseded", "historical_baseline"}
@@ -2196,6 +2221,8 @@ class XiaocaoWechatLiveSubscription:
                     "already_completed": item.get("status") not in {"unsupported_application", "unsupported_resource", "expired"},
                     "unsupported_resource": item.get("status") == "unsupported_resource",
                     "unsupported_application": item.get("status") == "unsupported_application",
+                    **({"expired": True, "manual_backfill_excluded": item.get("manual_backfill_excluded") is True}
+                       if item.get("status") == "expired" else {}),
                 }
         if item is None:
             return {"status": "no_update"}

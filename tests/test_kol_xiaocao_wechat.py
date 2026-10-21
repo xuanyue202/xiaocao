@@ -2575,3 +2575,35 @@ def test_exact_item_resume_accepts_a_unique_source_identity(tmp_path):
         "unsupported_resource": False,
         "unsupported_application": False,
     }
+
+
+def test_native_input_timeout_expired_user_skip_keeps_history_and_never_reactivates(tmp_path):
+    payload=_history('[2026-09-23 08:44] 小花: #小程序://见势擒龙团/7qBV0CwjiqCrkHB')
+    original=parse_xiaocao_live_messages(payload)[0]
+    driver=_CaptureDriver();driver.can_expire_wait=lambda identity,job:job=='original-capture'
+    sub=XiaocaoWechatLiveSubscription(tmp_path,history_reader=lambda:pytest.fail('excluded original must not fetch history'),
+        browser_exchange=lambda _:pytest.fail('no native/browser input'),capture_driver=driver,
+        clock=lambda:datetime.fromisoformat('2026-09-28T10:15:00+08:00'))
+    manifest=sub._load();manifest['items'][original['identity']]={**original,'status':'expired','capture_job_id':'original-capture','observed_page_state':'native_window_input_unavailable'};sub._save(manifest)
+    excluded=sub.exclude_expired_backfill(original['identity'],user_skip_authorized=True)
+    assert excluded['capture_job_id']=='original-capture' and excluded['observed_page_state']=='native_window_input_unavailable'
+    assert sub.exclude_expired_backfill(original['identity'],user_skip_authorized=True)==excluded
+    terminal=sub.run_once(opencli_session='test',only_identity=original['identity'])
+    assert terminal['expired'] and terminal['manual_backfill_excluded'] and terminal['already_completed'] is False
+    progress=normalize_source_result('xiaocao_wechat_live',terminal,failure_revision='a'*40,provider_contract_version='xiaocao_writer_v1')
+    assert progress.status=='terminal' and progress.details['new_external_effect_count']==0
+    with pytest.raises(EnrichmentError,match='explicitly excluded'):
+        sub.run_once(opencli_session='test',only_identity=original['identity'],backfill_since='2026-09-23')
+    assert driver.arms==[] and driver.advances==0
+
+
+@pytest.mark.parametrize('invalid',['no_authorization','not_expired','bound_item','bound_capture'])
+def test_native_input_timeout_user_skip_rejects_unreconciled_work(tmp_path,invalid):
+    driver=_CaptureDriver();driver.can_expire_wait=lambda *a:invalid!='bound_capture'
+    sub=XiaocaoWechatLiveSubscription(tmp_path,history_reader=lambda:{},browser_exchange=lambda _:pytest.fail('no input'),capture_driver=driver)
+    manifest=sub._load();item={'identity':'same-original','status':'expired','capture_job_id':'same-capture'}
+    if invalid=='not_expired':item['status']='playback_activated'
+    if invalid=='bound_item':item['candidate_id']='same-candidate'
+    manifest['items'][item['identity']]=item;sub._save(manifest)
+    with pytest.raises(EnrichmentError):sub.exclude_expired_backfill(item['identity'],user_skip_authorized=invalid!='no_authorization')
+    assert not sub._load()['items'][item['identity']].get('manual_backfill_excluded')
