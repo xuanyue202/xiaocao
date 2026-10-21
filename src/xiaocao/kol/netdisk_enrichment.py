@@ -58,6 +58,32 @@ _AI_NOTE_POSTCLICK_ZERO_MIN_AGE = timedelta(minutes=5)
 _NETDISK_DIRECTORY = "/课程/自己的课/小草"
 
 
+def _upload_queue_observation(proof: dict[str, Any], observed_at: datetime) -> dict[str, Any]:
+    """Describe current UI health without accepting media or retrying effects."""
+    surface = proof.get("surfaceState") or {}
+    queue = surface.get("transferQueue") or {}
+    rows = surface.get("targetUiRows") or []
+    state, progress = "unknown", []
+    if (queue.get("complete") is True and queue.get("targetCount") == 1
+        and isinstance(rows, list) and len(rows) == 1 and isinstance(rows[0], dict)):
+        row = rows[0]
+        classes = set(str(row.get("rowClassName") or "").split())
+        states = {name for name, tokens in (
+            ("uploading", {"status-uploading"}),
+            ("paused", {"status-pause", "status-paused"}),
+            ("failed", {"status-error", "status-failed"}),
+        ) if classes & tokens}
+        if len(states) == 1 and "status-success" not in classes:
+            state = states.pop()
+        widths = row.get("progressWidths")
+        if isinstance(widths, list):
+            progress = [value for value in widths[:10] if isinstance(value, str)
+                and re.fullmatch(r"\d{1,3}(?:\.\d{1,6})?%", value)
+                and float(value[:-1]) <= 100]
+    return {"state": state, "progress_widths": progress,
+            "observed_at": observed_at.isoformat()}
+
+
 def _decision_process_diagnostic(exc: BaseException) -> EnrichmentDiagnosticError | None:
     """Keep safe failure identities through the video decision adapter."""
     if isinstance(exc, EnrichmentDiagnosticError):
@@ -730,13 +756,15 @@ class NetdiskEnrichmentService:
         inspect_only: bool = False,
         repair_stalled: bool = False,
         continue_stalled: bool = False,
+        restore_readback_only: bool = False,
+        recover_context_page: str | None = None,
     ) -> Any:
         if session != _OPENCLI_UPLOAD_TEMPLATE_SESSION:
             raise EnrichmentError(
                 "Baidu Netdisk upload template requires OpenCLI session "
                 f"{_OPENCLI_UPLOAD_TEMPLATE_SESSION}"
             )
-        if sum(bool(value) for value in (repair_stalled, continue_stalled, inspect_only)) > 1:
+        if sum(bool(value) for value in (repair_stalled, continue_stalled, inspect_only, restore_readback_only, recover_context_page)) > 1:
             raise EnrichmentError("upload recovery and inspection are separate operations")
         command = [
             *self.opencli_command,
@@ -760,6 +788,8 @@ class NetdiskEnrichmentService:
             "--format",
             "json",
             *(["--inspect-only", "true"] if inspect_only else []),
+            *(["--restore-readback-only", "true"] if restore_readback_only else []),
+            *(["--recover-lost-context", "true", "--expected-page", recover_context_page] if recover_context_page else []),
             *(["--repair-stalled", "true"] if repair_stalled else []),
             *(["--continue-stalled", "true"] if continue_stalled else []),
         ]
@@ -789,7 +819,7 @@ class NetdiskEnrichmentService:
                     subprocess.CompletedProcess(command, 75, stdout="", stderr=stderr),
                     target_name=target_name, directory=self.netdisk_directory, claim_id=claim_id,
                 )
-            if inspect_only:
+            if inspect_only or restore_readback_only:
                 raise EnrichmentDiagnosticError(
                     "OpenCLI upload readback timed out; preserve the existing claim",
                     category="timeout", code="upload_readback_timeout", stage="upload_readback",
@@ -1361,6 +1391,7 @@ class NetdiskEnrichmentService:
         *,
         session: str,
         profile: str | None,
+        context_repair_page: str | None = None,
     ) -> dict[str, Any]:
         current = self.store.latest(job_id)
         video_path = Path(str(current["video_path"])).expanduser().resolve()
@@ -1388,6 +1419,7 @@ class NetdiskEnrichmentService:
                         video_path=video_path,
                         target_name=str(current["video_basename"]),
                         claim_id=job_id,
+                        **({"recover_context_page": context_repair_page} if context_repair_page else {}),
                     )
                     receipt = self._validate_opencli_upload_template_receipt(
                         result,
@@ -2621,6 +2653,7 @@ class NetdiskEnrichmentService:
         if status not in {"prepared", "upload_claimed"}:
             raise EnrichmentError(f"OpenCLI advance does not support state {status} yet")
         target_name = str(current["video_basename"])
+        upload_observation = None
         if status == "upload_claimed" and self.use_opencli_upload_template:
             # Poll the page that owns the upload, not the independently leased
             # browser surface. Inspection never navigates or attaches a file.
@@ -2671,6 +2704,7 @@ class NetdiskEnrichmentService:
             if not valid:
                 raise EnrichmentError("claimed upload adapter readback is not exact")
             inspection = {"exact_count": count, "observed_at": self._time()}
+            upload_observation = _upload_queue_observation(proof, inspection["observed_at"])
         else:
             inspection = self._inspect_opencli_target(
                 session=session,
@@ -2725,6 +2759,8 @@ class NetdiskEnrichmentService:
                 ),
                 source_mode="uploaded",
             )
+        if upload_observation is not None:
+            current = {**current, "upload_observation": upload_observation}
         if current.get("upload_started_at"):
             return {**current, "pending": True, "idempotent_replay": True}
         return {
@@ -2860,6 +2896,91 @@ class NetdiskEnrichmentService:
                 "updated_at": now,
             })
         return self._submit_opencli_upload(job_id, session=session, profile=profile)
+
+    def resume_lost_context_upload(
+        self, job_id: str, *, session: str, repair_authorized: bool,
+        loss_evidence: dict[str, Any], human_authorization_sha256: str,
+        profile: str | None = None,
+    ) -> dict[str, Any]:
+        """Explicit same-job continuation after an observed lost uploader context."""
+        if (repair_authorized is not True or not self.use_opencli_upload_template
+            or session != _OPENCLI_UPLOAD_TEMPLATE_SESSION
+            or (profile is not None and not _OPENCLI_PROFILE.fullmatch(profile))
+            or not isinstance(human_authorization_sha256, str)
+            or not _SHA256.fullmatch(human_authorization_sha256)):
+            raise EnrichmentError("lost-context continuation lacks exact repair authorization")
+        current = self.store.latest(job_id)
+        def eligible(row: dict[str, Any]) -> bool:
+            return (row.get("status") == "upload_claimed" and bool(row.get("upload_started_at"))
+                and not row.get("upload_context_repair_claimed_at")
+                and all((row.get(key) or {}).get("category") not in
+                    {"authentication_error", "authorization_error"}
+                    for key in ("diagnostic", "readback_failure")))
+        if not eligible(current):
+            raise EnrichmentError("upload context repair is unavailable or already claimed")
+        try:
+            recorded = datetime.fromisoformat(loss_evidence["recorded_at"])
+            started = datetime.fromisoformat(current["upload_started_at"])
+            valid_loss = (loss_evidence["kind"] == "xiaocao_uploader_binding_missing"
+                and loss_evidence["claimId"] == job_id
+                and type(loss_evidence["netdiskPageCount"]) is int
+                and loss_evidence["netdiskPageCount"] == 0 and loss_evidence["pages"] == []
+                and recorded.tzinfo is not None and started.tzinfo is not None
+                and started <= recorded <= self._time())
+        except (KeyError, TypeError, ValueError) as exc:
+            raise EnrichmentError("lost-context evidence is invalid") from exc
+        if not valid_loss:
+            raise EnrichmentError("lost-context evidence belongs to another upload or time")
+        source = Path(current["video_path"])
+        with source.open("rb") as handle:
+            if (os.fstat(handle.fileno()).st_size != current["video_size_bytes"]
+                or _sha256_handle(handle) != current["video_sha256"]):
+                raise EnrichmentError("lost-context upload source changed")
+        result = self._opencli_upload_template_process(session=session, profile=profile,
+            video_path=source, target_name=current["video_basename"], claim_id=job_id, inspect_only=True)
+        if result.returncode != 0:
+            self._validate_opencli_upload_template_receipt(result,
+                target_name=current["video_basename"], directory=self.netdisk_directory, claim_id=job_id)
+        try:
+            proof, = json.loads(result.stdout)
+            count = proof["exactCountBefore"]
+            bound = (proof["claimId"] == job_id and proof["directory"] == self.netdisk_directory
+                and proof["targetName"] == current["video_basename"]
+                and proof["url"] == "https://pan.baidu.com/disk/main"
+                and proof["uploaded"] is False and proof["uploadTarget"] == ""
+                and type(count) is int and count in {0, 1}
+                and proof["status"] == ("already_present" if count == 1 else "ready_to_upload"))
+            if bound and count == 1:
+                return self.advance_opencli(job_id, session=session, profile=profile)
+            surface = proof["surfaceState"]
+            queue = surface["transferQueue"]
+            page_id = proof["adapterPageId"]
+            absent = (bound and count == 0 and surface["targetInTransferUi"] is False
+                and surface["targetUiRows"] == [] and surface["receiptMatchesTarget"] is False
+                and isinstance(surface["inputs"], list) and bool(surface["inputs"])
+                and all(i.get("targetAttached") is False for i in surface["inputs"])
+                and isinstance(page_id, str) and re.fullmatch(r"[A-Za-z0-9_.:-]{1,128}", page_id)
+                and type(queue.get("panelCount")) is int and queue["panelCount"] in {0, 1}
+                and all(type(queue[k]) is int and queue[k] == 0 for k in ("rowCount", "targetCount")))
+        except (KeyError, TypeError, ValueError, AttributeError) as exc:
+            raise EnrichmentError("lost-context current cloud/queue proof is invalid") from exc
+        if not absent:
+            raise EnrichmentError("lost-context cloud/queue is not empty and exactly bound")
+        with self.store.job_lock(job_id):
+            latest = self.store.latest(job_id)
+            if not eligible(latest) or any(latest.get(k) != current.get(k) for k in
+                ("video_path", "video_sha256", "video_size_bytes", "video_basename", "upload_started_at")):
+                raise EnrichmentError("lost-context upload changed before repair claim")
+            now = self._time().isoformat()
+            self.store.append({**latest, "event": "netdisk_upload_context_repair_claimed",
+                "upload_context_repair_claimed_at": now, "updated_at": now,
+                "original_upload_started_at": current["upload_started_at"],
+                "upload_context_loss_evidence": {k: loss_evidence[k] for k in
+                    ("kind", "claimId", "netdiskPageCount", "pages", "recorded_at")},
+                "upload_context_repair_authorization_sha256": human_authorization_sha256,
+                "upload_context_repair_readback": proof})
+        return self._submit_opencli_upload(job_id, session=session, profile=profile,
+            context_repair_page=page_id)
 
     def resume_reconciled_failed_upload(
         self, job_id: str, *, session: str, profile: str | None = None,

@@ -1376,6 +1376,13 @@ class XiaocaoWechatLiveSubscription:
             "category": "provider_wait",
             "code": wait_code,
         })
+        observation = state.get("upload_observation")
+        if isinstance(observation, dict) and stage == "cloud_handoff":
+            waiting_item["upload_observation"] = observation
+            if observation.get("state") in {"failed", "paused"}:
+                waiting_item.update(category="transport_error",
+                    code="upload_transfer_" + observation["state"],
+                    diagnosis_required=True, diagnosis_owner="agent")
         deadline_base = self.clock()
         if status == "awaiting_playback":
             # Short live windows need the next configured 20-minute boundary.

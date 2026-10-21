@@ -460,6 +460,33 @@ def test_cloud_handoff_wait_has_durable_poll_deadline(tmp_path):
     assert progress.next_action == "resume_after_deadline"
 
 
+@pytest.mark.parametrize("state,category,code", [
+    ("failed", "transport_error", "upload_transfer_failed"),
+    ("paused", "transport_error", "upload_transfer_paused"),
+    ("uploading", "provider_wait", "upload_pending"),
+])
+def test_cloud_wait_exposes_upload_health_without_losing_binding(tmp_path, state, category, code):
+    sub = XiaocaoWechatLiveSubscription(tmp_path / "wechat", history_reader=lambda: {},
+        browser_exchange=lambda _: pytest.fail("upload must not activate browser"),
+        capture_driver=_CaptureDriver(),
+        clock=lambda: datetime.fromisoformat("2026-08-10T15:03:00+08:00"))
+    observation = {"state": state, "progress_widths": ["1.48%"],
+        "observed_at": "2026-08-10T15:03:00+08:00"}
+    result = sub._waiting({"identity": "original", "capture_job_id": "same-capture",
+        "published_at": "2026-08-09T10:00:00+08:00"},
+        {"event": "xiaocao_live_upload_pending", "status": "upload_claimed",
+         "upload_observation": observation})
+    row, = result["waiting_items"]
+    assert (row["identity"], row["capture_job_id"]) == ("original", "same-capture")
+    assert row["category"] == category and row["code"] == code
+    assert row["upload_observation"] == observation
+    assert row.get("diagnosis_owner") == ("agent" if state != "uploading" else None)
+    progress = normalize_source_result("xiaocao_wechat_live", result,
+        failure_revision="a" * 40, provider_contract_version="xiaocao_writer_v1")
+    assert progress.status == "wait_until" and progress.ownership == "provider"
+    assert progress.to_dict()["code"] == code
+
+
 def test_compressed_capture_wait_has_durable_poll_deadline(tmp_path):
     subscription = XiaocaoWechatLiveSubscription(
         tmp_path / "wechat",

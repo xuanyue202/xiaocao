@@ -92,6 +92,25 @@ def test_upload_watchdog_keeps_exact_claim_stage(tmp_path):
     assert caught.value.diagnostic_stage == "upload_event_loop"
 
 
+def test_lost_context_dispatch_binds_expected_page_without_generic_fallback(tmp_path):
+    commands = []
+    def runner(command, **kwargs):
+        commands.append(command)
+        return SimpleNamespace(returncode=0, stdout="[]", stderr="")
+    service = NetdiskEnrichmentService(tmp_path / "out", runner=runner, opencli_command=("opencli",))
+    service._opencli_upload_template_process(session="site:baidu-netdisk", profile=None,
+        video_path=tmp_path / "video.mp4", target_name="video.mp4", claim_id="job-12345678",
+        recover_context_page="exact-page")
+    command = commands[0]
+    assert command[command.index("--recover-lost-context")+1] == "true"
+    assert command[command.index("--expected-page")+1] == "exact-page"
+    with pytest.raises(EnrichmentError, match="separate operations"):
+        service._opencli_upload_template_process(session="site:baidu-netdisk", profile=None,
+            video_path=tmp_path / "video.mp4", target_name="video.mp4", claim_id="job-12345678",
+            recover_context_page="exact-page", inspect_only=True)
+    assert len(commands) == 1
+
+
 def test_upload_auth_failure_is_not_a_retryable_transport_error():
     stage = json.dumps({"kind": "xiaocao_upload_stage", "claimId": "job-12345678",
                         "stage": "folder_scan", "phase": "end"})
@@ -152,6 +171,76 @@ def test_folder_scan_repair_preserves_old_claim_and_is_consumed_once(tmp_path, m
     service.store.append({**service.store.latest(job["job_id"]), "event": "netdisk_upload_failed"})
     with pytest.raises(EnrichmentError, match="pre-attachment"):
         service.resume_pre_attachment_upload(job["job_id"], session="site:baidu-netdisk")
+
+
+@pytest.mark.parametrize("failure", [None, "not_authorized", "wrong_proof", "stale_proof", "changed_file", "active_queue", "multiple_panels", "target_attached", "wrong_cloud_binding", "consumed", "cloud_present", "ambiguous_cloud", "lost_response", "auth"])
+def test_explicit_lost_context_continuation_keeps_same_job_and_claims(tmp_path, monkeypatch, failure):
+    video = tmp_path / "video-compressed.mp4"
+    video.write_bytes(b"real-video")
+    service = NetdiskEnrichmentService(tmp_path / "out", runner=_runner, now=lambda: NOW,
+        use_opencli_upload_template=True)
+    job = service.prepare(video)
+    started = (NOW - timedelta(minutes=30)).isoformat()
+    original = {**job, "status": "upload_claimed", "event": "netdisk_upload_started",
+        "claimed_at": started, "upload_started_at": started}
+    if failure == "consumed": original["upload_context_repair_claimed_at"] = started
+    service.store.append(original)
+    loss = {"kind": "xiaocao_uploader_binding_missing", "claimId": job["job_id"],
+        "netdiskPageCount": 0, "pages": [], "recorded_at": (NOW-timedelta(minutes=10)).isoformat()}
+    if failure == "wrong_proof": loss["claimId"] = "another-job"
+    if failure == "stale_proof": loss["recorded_at"] = (NOW-timedelta(days=1)).isoformat()
+    if failure == "changed_file": video.write_bytes(b"different")
+    proof = {"status": "ready_to_upload", "directory": service.netdisk_directory,
+        "targetName": video.name, "claimId": job["job_id"], "uploaded": False,
+        "uploadTarget": "", "exactCountBefore": 0, "url": "https://pan.baidu.com/disk/main",
+        "adapterPageId": "site-upload-page",
+        "surfaceState": {"targetInTransferUi": False, "targetUiRows": [],
+            "receiptMatchesTarget": False, "inputs": [{"targetAttached": False}],
+            "transferQueue": {"panelCount": 1, "rowCount": 0, "targetCount": 0}}}
+    if failure == "active_queue": proof["surfaceState"]["transferQueue"]["rowCount"] = 1
+    if failure == "multiple_panels": proof["surfaceState"]["transferQueue"]["panelCount"] = 2
+    if failure == "target_attached": proof["surfaceState"]["inputs"][0]["targetAttached"] = True
+    if failure == "wrong_cloud_binding": proof["directory"] = "/wrong"
+    if failure == "cloud_present": proof.update(exactCountBefore=1, status="already_present")
+    if failure == "ambiguous_cloud": proof["exactCountBefore"] = 2
+    def inspect(**kwargs):
+        assert kwargs["inspect_only"] is True
+        if failure == "auth":
+            return SimpleNamespace(returncode=77, stdout=json.dumps({"error":{"code":"AUTH_REQUIRED"}}), stderr="")
+        return SimpleNamespace(returncode=0, stdout=json.dumps([proof]), stderr="")
+    monkeypatch.setattr(service, "_opencli_upload_template_process", inspect)
+    submitted = []
+    def submit(job_id, **kwargs):
+        assert kwargs["context_repair_page"] == "site-upload-page"
+        row = service.store.latest(job_id)
+        assert row["upload_context_repair_claimed_at"]
+        assert row["original_upload_started_at"] == started
+        assert row["upload_started_at"] == started
+        submitted.append(job_id)
+        if failure == "lost_response": raise EnrichmentError("response lost")
+        return row
+    monkeypatch.setattr(service, "_submit_opencli_upload", submit)
+    monkeypatch.setattr(service, "advance_opencli", lambda *args, **kwargs: {"status":"video_ready"})
+    invoke = lambda: service.resume_lost_context_upload(job["job_id"],
+        session="site:baidu-netdisk", repair_authorized=failure != "not_authorized",
+        loss_evidence=loss, human_authorization_sha256="a" * 64)
+    if failure == "cloud_present":
+        assert invoke()["status"] == "video_ready"
+        assert not submitted
+        assert "upload_context_repair_claimed_at" not in service.store.latest(job["job_id"])
+    elif failure == "lost_response":
+        with pytest.raises(EnrichmentError, match="response lost"): invoke()
+        with pytest.raises(EnrichmentError, match="already claimed"): invoke()
+        assert submitted == [job["job_id"]]
+    elif failure:
+        with pytest.raises(EnrichmentError): invoke()
+        assert not submitted
+    else:
+        invoke()
+        assert submitted == [job["job_id"]]
+        with pytest.raises(EnrichmentError): invoke()
+        assert submitted == [job["job_id"]]
+        assert service.store.read()[1]["upload_started_at"] == started
 
 
 def test_unrelated_stage_does_not_reclassify_historical_upload_failure():
@@ -219,6 +308,49 @@ def test_claimed_template_poll_retains_uploader_and_never_reattaches(tmp_path, p
     assert result["upload_started_at"] == original["upload_started_at"]
     assert len(commands) == 1
     assert not any(r["event"] == "netdisk_upload_failed" for r in service.store.read())
+
+
+@pytest.mark.parametrize("row_class,complete,duplicate,expected", [
+    ("file-list status-error", True, False, "failed"),
+    ("file-list status-pause", True, False, "paused"),
+    ("file-list status-uploading", True, False, "uploading"),
+    ("file-list status-error status-uploading", True, False, "unknown"),
+    ("file-list status-error", False, False, "unknown"),
+    ("file-list status-error", True, True, "unknown"),
+])
+def test_claimed_upload_reports_current_queue_health_without_retry(
+    tmp_path, monkeypatch, row_class, complete, duplicate, expected,
+):
+    video = tmp_path / "video-compressed.mp4"
+    video.write_bytes(b"real-video")
+    service = NetdiskEnrichmentService(tmp_path / "out", runner=_runner,
+        now=lambda: NOW, use_opencli_upload_template=True)
+    job = service.prepare(video)
+    original = {**job, "event": "netdisk_upload_started", "status": "upload_claimed",
+        "claimed_at": NOW.isoformat(), "upload_started_at": NOW.isoformat()}
+    service.store.append(original)
+    row = {"rowClassName": row_class, "rowText": "链接超时 signed-secret",
+        "progressWidths": ["1.48%", "101%", "NaN%", "secret"]}
+    proof = {"status": "ready_to_upload", "directory": service.netdisk_directory,
+        "targetName": video.name, "claimId": job["job_id"], "uploaded": False,
+        "uploadTarget": "", "exactCountBefore": 0, "url": "https://pan.baidu.com/disk/main",
+        "surfaceState": {"transferQueue": {"complete": complete, "targetCount": 1},
+                         "targetUiRows": [row, row] if duplicate else [row]}}
+    calls = []
+    def inspect(**kwargs):
+        assert kwargs["inspect_only"] is True
+        calls.append(kwargs["claim_id"])
+        return SimpleNamespace(returncode=0, stdout=json.dumps([proof]))
+    monkeypatch.setattr(service, "_opencli_upload_template_process", inspect)
+    result = service.advance_opencli(job["job_id"], session="site:baidu-netdisk")
+    assert result["status"] == "upload_claimed" and result["pending"] is True
+    assert result["upload_started_at"] == original["upload_started_at"]
+    assert result["upload_observation"]["state"] == expected
+    assert result["upload_observation"]["progress_widths"] == (
+        [] if not complete or duplicate else ["1.48%"])
+    assert "secret" not in json.dumps(result["upload_observation"])
+    assert calls == [job["job_id"]]
+    assert service.store.latest(job["job_id"]) == original
 
 
 @pytest.mark.parametrize("change", [

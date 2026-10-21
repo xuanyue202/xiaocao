@@ -28,16 +28,47 @@ Bind exact claims/receipts, patch repository code/templates/contracts, add a
 regression, and resume the same job without waiting for the user to request a
 retrospective. Preserve unrelated WIP; commit and normally push the repair.
 
-`repair_required` means the Agent owns diagnosis and repair. Only authentication,
-SMS, CAPTCHA, consent, a user-only fact, or an unreconciled external effect may
-become `user_action_required`. Exact-once forbids duplicate effects, not repaired
+`repair_required` means the Agent owns diagnosis and repair. An uncertain
+external effect requires reconciliation, not automatic escalation. Reserve
+`user_action_required` for an irreducible human action or decision after safe
+diagnosis is exhausted. Exact-once forbids duplicate effects, not repaired
 continuation. If the process exited, fix/test/commit, reconcile the exact claim,
 then use the narrow repair resume in the current task; never run the same
 hourly command twice. Keep the task responsible through any provider deadline.
 Do not change investment semantics, recipients, schedules, capital authority,
 or bypass a human gate.
 
+### Reuse authorization; do not turn recovery into repeated approval
+
+A current task to diagnose, repair and finish capture/Handoff authorizes its
+routine readbacks, tested fixes and same-item continuation. Before asking,
+check the actual human messages: reuse applicable authorization across follow-ups
+and approved items. `repair_authorized=True` and a durable one-dispatch claim
+are implementation gates, not instructions to ask again for every retry.
+For the same validated file/hash, capture and upload job, use the reviewed
+recovery after exact cloud/queue reconciliation and preserve all history.
+An unclear effect requires diagnosis; it does not automatically require a new
+permission question when this repair is already authorized. A lost response
+consumes its dispatch claim and requires readback, not another submission.
+
+Ask only for a missing human-only fact/action, a legally binding agreement at
+action time, a change outside the authorized source/destination/access/scope,
+an explicit user pause/approval gate, or an external-effect decision that existing authorization
+and available evidence cannot resolve. Stop a denied/ambiguous input and continue
+safe diagnosis; never bypass a tool policy or infer success. Do not invent
+one-attempt human authorization limits, revive answered/expired questions, or
+copy temporary waiting/approval states into permanent instructions. Keep stable
+rules in the prompt and current run evidence in memory/ledgers.
+
 ## Load only the required contract
+
+- For an independent missing-video/Handoff health check, read
+  [video-gap-watchdog.md](references/video-gap-watchdog.md). This read-only
+  diagnostic does not run the hourly capture gate or acquire a source slot.
+
+- For the local Liuguan/养生自行车 metadata companion, read
+  [liuguan-local-discovery.md](references/liuguan-local-discovery.md). This is
+  cache discovery only; native/media capture remains a separate unaccepted gate.
 
 - For an unambiguous Xiaocao replay capture, read
   [xiaocao-capture-start.md](references/xiaocao-capture-start.md) completely
