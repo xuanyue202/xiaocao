@@ -340,6 +340,25 @@ or replace the capture for this repair. If the branded course is open, use B4;
 do not reconstruct/replay merely to fix its close button. Fresh on-screen brand
 coordinate close still failed in the repair test, while B4 semantic close passed.
 
+On Oct21 evening, selecting the existing bridge, raising it and recreating its
+main-app binding each left B1 without a visible result. The bounded bridge
+reconstruction above then restored B1/Allow and the original course's finite
+replay. This establishes a successful workflow recovery, not its underlying
+input failure or WeChat protection cause, and does not permit repeated probes.
+`cua.getApp` can activate or launch an app: preserve such calls as native binding
+effects, including the observed WeChatAppEx bundle/path `timeoutReached` errors.
+Do not describe binding attempts as passive reads or omit their failed outputs.
+
+Prepare deterministic commands and trace arguments before B0. The Oct21 morning
+B0–B2 interval was 105.338 seconds: all completed tool bounds totalled 10.812
+seconds, leaving 94.526 seconds outside those bounds. That remainder includes
+Agent/dispatch gaps; it is not measured application click latency. Reuse the
+reviewed one-action script with a fresh title/unique AX guard where applicable;
+coordinate targets still require the current screenshot. Keep separate native
+input/readback calls and one completed-call export before the next input. Do
+not add a preliminary export that necessarily sees its own call pending, and
+do not repeat native operations to benchmark or populate telemetry.
+
 ## Continue to local Handoff
 
 Return the existing request's exact response fields to its PTY. A finite replay
