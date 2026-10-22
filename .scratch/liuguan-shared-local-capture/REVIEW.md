@@ -69,3 +69,21 @@ use a one-second read timeout and twenty-second total deadline. Production
 acceptance is still separate from this static review.
 Validation: 70 Python checks, Channels race tests and API/interceptor checks;
 three Node behavior tests including pending SDK call through reconnect.
+
+## Post-download continuation and reconnect grace — baseline bb61e12
+
+Independent Spec review caught a lost ASR wake while an older worker held its
+snapshot; automatic workers now wait up to4h, then read fresh accepted courses.
+Standards caught missing post-processing status validation in owned-only drain;
+reconciliation now requires an explicit list before acceptance. Both re-reviewed
+and closed the findings. The20min timeout is explicitly a polling deadline;
+individual media validators retain their separate subprocess deadlines.
+Local-only reconnect grace35s avoids demanding UI while the page backs off;
+health probes are <=1s and preserve PID/engine/enabled identity. Both reviewers
+accepted the final diff;80 focused tests pass. No UI used by reviewers.
+Actual production evidence: all33 assessed (29 lists/4 exact deactivations),
+2 new full downloads and ASR;5 total completed receipts; backend restart with
+zero native input/zero proxy changes followed by real replay read, all141 task
+identities and source ledger/config preserved. Original Xiaocao native repair
+still open; no whole-backlog completion claim. Backend commit e55fdc26 is local
+only: upstream push was denied to this account; production binary is installed.

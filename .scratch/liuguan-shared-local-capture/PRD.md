@@ -47,3 +47,11 @@ an exact-ID native profile response with Ret=-5900 and nickname 账号已注销 
 classify that account as provider-reported deactivated. Preserve all 33 accounts,
 history, separate available/deactivated/gap counts, and source-bound proof.
 Accept real all-account assessment and the shared activity, not tests alone.
+
+Final shared-activity continuation: another source's retained repair must not
+skip reconciliation and ASR of new Liuguan downloads. Keep its backend/PAC and
+native state; wait only for owned media, then dispatch ASR even if another file
+failed. Automatic wakes wait behind a current ASR worker and read a new accepted
+snapshot; they must not disappear on busy. A retained native page gets a bounded
+local-only reconnection grace before any UI request. Preserve missing-page and
+old Xiaocao repair truth, including the distinction from whole-backlog acceptance.
