@@ -87,10 +87,21 @@ def _run_local(root, api):
     with database(root) as db: initialize(db)
     health = ensure_backend(api)
     if health.get('status') == 'disabled': return health
+    from .artifacts import reconcile_artifacts
+    from .asr import start_worker, summary
+    artifacts = reconcile_artifacts(root, api)
     snapshot = None; discovery_error = None
     try: snapshot = moments_snapshot(root)
     except (OSError, ValueError, subprocess.SubprocessError, CaptureError): discovery_error = 'moments_snapshot_failed'
-    value = cycle(root, api, moments_snapshot=snapshot)
+    try:
+        value = cycle(root, api, moments_snapshot=snapshot)
+    finally:
+        # Accepted downloads remain consumable if the next native scan fails.
+        # cycle has released its catalogue writer lock before dispatch.
+        worker = start_worker(root)
+    value['artifacts'] = artifacts
+    value['asr_worker'] = worker
+    value['asr_status'] = summary(root)
     if discovery_error:
         value['moments_error'] = discovery_error
         if value['status'] == 'scanned': value['status'] = 'degraded'
@@ -176,7 +187,8 @@ def finish(root=DEFAULT_ROOT, api='http://127.0.0.1:2022'):
             # API failure alone cannot establish that the process is gone.
             cleanup = service.cleanup_snapshot()
             validate_cleanup_evidence(cleanup)
-            return {'status': 'already_closed', 'cleanup': cleanup}
+            from .asr import start_worker
+            return {'status': 'already_closed', 'cleanup': cleanup, 'asr_worker': start_worker(root)}
         if health.get('enabled') is not True or executable(health['pid']) != BACKEND.resolve():
             raise CaptureError('shared_backend_identity_unverified')
         with native_lease():
@@ -193,4 +205,5 @@ def finish(root=DEFAULT_ROOT, api='http://127.0.0.1:2022'):
                 except ProcessLookupError: break
                 time.sleep(0.1)
             cleanup = service.cleanup_snapshot(); validate_cleanup_evidence(cleanup)
-    return {'status': 'closed', 'artifacts': proof, 'cleanup': cleanup}
+    from .asr import start_worker
+    return {'status': 'closed', 'artifacts': proof, 'cleanup': cleanup, 'asr_worker': start_worker(root)}

@@ -9,7 +9,7 @@ import time
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, parse_qsl
 from zoneinfo import ZoneInfo
 from .native import CaptureError, digest, evidence, finite_duration, publisher_objects, request
 
@@ -155,7 +155,10 @@ def create_task(db, api, publisher, obj):
     # Keep signed ticket bytes unchanged. Only append the verified format selector.
     if parsed.fragment or (spec and re.fullmatch(r'[A-Za-z0-9_-]+', spec) is None):
         raise CaptureError('invalid_native_media_format')
-    if spec:
+    selectors = [value for key, value in parse_qsl(parsed.query, keep_blank_values=True) if key == 'X-snsvideoflag']
+    if selectors and selectors != [spec]:
+        raise CaptureError('native_media_format_conflict')
+    if spec and not selectors:
         media_url += ('&' if parsed.query else '?') + 'X-snsvideoflag=' + spec
     try: key = int(media.get('decodeKey') or 0)
     except (ValueError, TypeError): raise CaptureError('invalid_native_decode_key') from None

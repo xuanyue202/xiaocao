@@ -201,3 +201,21 @@ def test_invalid_shared_cancel_preserves_proxy_before_refusal(tmp_path, monkeypa
     monkeypatch.setattr(service, '_disable_owned_capture_pac', lambda: pytest.fail('preserve active owner proxy'))
     with pytest.raises(EnrichmentError, match='idle capture wait'):
         service.cancel_capture_wait(armed['job_id'])
+
+
+@pytest.mark.parametrize('selector,ok', [('xWT111', True), ('different', False)])
+def test_retained_media_preserves_existing_signed_selector(tmp_path, monkeypatch, selector, ok):
+    monkeypatch.setattr(capture, 'find_task', lambda *a: None)
+    post = Mock(side_effect=CaptureError('transport_unknown_result'))
+    monkeypatch.setattr(capture, 'request', post)
+    obj = replay(); media = obj['objectDesc']['media'][0]
+    media['url'] += '&X-snsvideoflag=' + selector
+    with capture.database(tmp_path) as db:
+        seed(db)
+        with pytest.raises(CaptureError, match='transport_unknown_result' if ok else 'media_format_conflict'):
+            capture.create_task(db, 'local', 'teacher@finder', obj)
+    if ok:
+        url = post.call_args.args[2]['url']
+        assert url.count('X-snsvideoflag=') == 1
+        assert 'ticket=a%2Bb%20c' in url and 'opaque=keep+bytes' in url
+    else: post.assert_not_called()

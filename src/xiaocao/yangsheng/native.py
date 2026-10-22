@@ -3,8 +3,9 @@
 No media endpoints, cookies or decoding keys are persisted by evidence().
 """
 import hashlib, json, math, os, re, time, urllib.error, urllib.parse, urllib.request
+from xiaocao.kol.enrichment_types import EnrichmentError
 PROTECTION_WORDS = ('captcha', '验证码', '频繁', '登录', 'login', 'protect', '风控')
-class CaptureError(RuntimeError):
+class CaptureError(EnrichmentError):
     """Only constant, credential-free categories may cross the evidence boundary."""
 
 def digest(value):

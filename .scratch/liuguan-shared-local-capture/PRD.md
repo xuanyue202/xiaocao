@@ -30,3 +30,9 @@ The system PAC is temporary and is disabled immediately when page metadata
 capture no longer needs it; background downloads do not extend its lifetime.
 Downloader process shutdown is separate: only after all shared tasks and media
 post-processing/acceptance finish, with a retained closing barrier.
+
+October 22 latest human instruction: finish real shared capture/Local Capture
+acceptance and then cut over; also connect accepted Tingyuan/Liuguan downloads to
+the existing ASR end-to-end. This supersedes the earlier ASR-out-of-scope boundary.
+Keep source replay identity, file hash, original video timeline and resumability;
+no course-system organization, terminology editing or Xiaocao ASR changes.
