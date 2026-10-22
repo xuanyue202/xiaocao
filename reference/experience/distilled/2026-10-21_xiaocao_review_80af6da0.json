@@ -1,0 +1,1121 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-21",
+  "kind": "review",
+  "title": "20261021 大师班专场(晚17：30开播)-compressed.mp4",
+  "summary": "10月21日晚课形成的authority=0候选知识：弱势环境中的模式切换、红盘起爆竞价边界、盘中分数与卡位、分散与退出、资金容量和跌多不等于见底。",
+  "author": "小草",
+  "source": "小草直播",
+  "authority": 0,
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/reference/experience/transcripts/2026-10/2026-10-21_xiaocao_masterclass_80af6da0.txt",
+      "sha256": "80af6da0309985cc02974f918b714d7cbdcdbba97bd04a8829346906864fa1cb",
+      "size": 134417,
+      "byte_size": 134417
+    },
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261022_01a160cc/local_historical_slices.json",
+      "sha256": "11a80586a1dc9d37ebe6acd0a80dfbaef43abb490ec348286337cbb61dbc03fb",
+      "size": 38425,
+      "byte_size": 38425
+    }
+  ],
+  "source_refs": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/reference/experience/transcripts/2026-10/2026-10-21_xiaocao_masterclass_80af6da0.txt",
+      "sha256": "80af6da0309985cc02974f918b714d7cbdcdbba97bd04a8829346906864fa1cb",
+      "size": 134417,
+      "byte_size": 134417,
+      "role": "完整私人逐字稿归档"
+    },
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261022_01a160cc/local_historical_slices.json",
+      "sha256": "11a80586a1dc9d37ebe6acd0a80dfbaef43abb490ec348286337cbb61dbc03fb",
+      "size": 38425,
+      "byte_size": 38425,
+      "role": "冻结本地数字paper账本的10月16/19/20/21完整日期切片，仅用于策略命中审计"
+    }
+  ],
+  "posture": {
+    "regime": "来源判断此前一轮牛市已走完，10月21日高开低走且广泛下跌，开盘前先按弱势框架观察。",
+    "dominant_style": "下跌超跌起爆与低吸、红盘起爆，以及次日可能重新合格的N字或N半；明确暂不做趋势抱团和趋势起爆。",
+    "risk": "10月22日模式与竞价尚未发生；红盘起爆稳定性评分还差一点，N半10月21日为负分；跌多、高分或历史赢家均不保证兑现。",
+    "style_ranking": [
+      "下跌超跌起爆/低吸：当前优先观察，100分以上较优但非硬门",
+      "红盘起爆：短线评分居前，但稳定性未确认",
+      "N字/N半：10月22日可能切换，必须次日重新合格",
+      "盘中卡位：轮动环境中的动态资格，待前向验证",
+      "趋势抱团/趋势起爆：当前明确置后"
+    ],
+    "as_of": "2026-10-21",
+    "status": "candidate_only",
+    "boundary": "这是来源观点与系统分层，不自动改写现行策略姿态或参数。"
+  },
+  "regime_call": {
+    "source_view": "作者认为当前弱势，下跌超跌更稳，并明确暂不做趋势抱团、趋势起爆；“情绪环境”分类仍在计划中，不能外推为全面禁做连板接力。",
+    "system_assessment": "10月21日指数与冻结广度支持弱势描述；N半当日负分、红盘起爆稳定性尚差一点。作者的牛市结束与环境分类仍未独立复现。",
+    "horizon": "2026年10月22日至23日；超过该窗口须用新来源重新判断。",
+    "what_would_falsify": [
+      "10月22日及后续市场广度持续转强且高开后承接稳定",
+      "正式环境分类或完整样本显示趋势抱团、趋势起爆在同类阶段仍占优",
+      "红盘起爆跌出前列或N字/N半次日仍不合格"
+    ]
+  },
+  "directions": [
+    {
+      "name": "下跌超跌起爆与低吸",
+      "stance": "当前优先观察",
+      "conditions": [
+        "候选进入相应模式排名",
+        "100分以上较优但不是必要门，50分、30多分也可结合排名",
+        "ST排除"
+      ],
+      "boundary": "大盘跳水只是作者举出的有利场景，不是必要触发；德生科技高分后未按预期拉升又回落。"
+    },
+    {
+      "name": "红盘起爆",
+      "stance": "短期可观察至10月23日",
+      "conditions": [
+        "短线评分继续靠前",
+        "竞价高开符合该模式上下文中的作者主观标准"
+      ],
+      "boundary": "主板五个百分点/创业板六个百分点只绑定红盘起爆竞价语境；作者说稳定性还差一点，情绪修复不是硬门。"
+    },
+    {
+      "name": "N字或N半",
+      "stance": "10月22日可能切换，条件式观察",
+      "conditions": [
+        "10月22日重新出现非负且靠前的模式评分",
+        "前两名或多模式第一名分散"
+      ],
+      "boundary": "10月21日N半为负分、当日不做；收盘推测不能变成次日无条件信号。"
+    },
+    {
+      "name": "趋势抱团与趋势起爆",
+      "stance": "当前明确置后",
+      "conditions": [
+        "只有后续环境与正式规则重新支持才评估"
+      ],
+      "boundary": "作者明确停做的是这两类趋势模式；情绪接力没有被全面禁做。"
+    },
+    {
+      "name": "盘中卡位",
+      "stance": "轮动行情中的动态观察",
+      "conditions": [
+        "竞价强者盘中失去相对优势",
+        "新候选前向取得卡位资格且可成交"
+      ],
+      "boundary": "不能用收盘赢家倒填盘中资格，需计追价和滑点。"
+    }
+  ],
+  "stocks": [
+    {
+      "surface_form": "闽东/闽东电力",
+      "role": "10月21日下跌低吸与当日样例",
+      "resolution_status": "resolved",
+      "official_name": "闽东电力",
+      "ticker": "000993",
+      "market": "CN"
+    },
+    {
+      "surface_form": "莱美药药业/蓝莓药业/莱美药业",
+      "role": "10月21日红盘起爆与涨停样例",
+      "resolution_status": "resolved",
+      "official_name": "莱美药业",
+      "ticker": "300006",
+      "market": "CN"
+    },
+    {
+      "surface_form": "超声电子",
+      "role": "红盘起爆的隔日表现样例",
+      "resolution_status": "resolved",
+      "official_name": "超声电子",
+      "ticker": "000823",
+      "market": "CN"
+    },
+    {
+      "surface_form": "出版传媒",
+      "role": "红盘起爆模式开始观察的历史样例",
+      "resolution_status": "resolved",
+      "official_name": "出版传媒",
+      "ticker": "601999",
+      "market": "CN"
+    },
+    {
+      "surface_form": "九阳股份",
+      "role": "前一日红盘起爆与10月21日涨停样例",
+      "resolution_status": "resolved",
+      "official_name": "九阳股份",
+      "ticker": "002242",
+      "market": "CN"
+    },
+    {
+      "surface_form": "华胜天成",
+      "role": "10月21日盘中跳水时监测到的候选",
+      "resolution_status": "resolved",
+      "official_name": "华胜天成",
+      "ticker": "600410",
+      "market": "CN"
+    },
+    {
+      "surface_form": "德胜/德生科技",
+      "role": "10月21日盘中高分候选，作者承认未按预期持续拉升",
+      "resolution_status": "resolved",
+      "official_name": "德生科技",
+      "ticker": "002908",
+      "market": "CN"
+    },
+    {
+      "surface_form": "大普威/大普微",
+      "role": "前日下跌超跌高分样例",
+      "resolution_status": "resolved",
+      "official_name": "大普微",
+      "ticker": "301666",
+      "market": "CN"
+    },
+    {
+      "surface_form": "防抖速畅/小凡/凡拓",
+      "role": "历史盘中与下跌低吸样例",
+      "resolution_status": "resolved",
+      "official_name": "凡拓数创",
+      "ticker": "301313",
+      "market": "CN"
+    },
+    {
+      "surface_form": "词汇传媒",
+      "role": "断板大跌幅历史样例；名称按官方候选回读校正",
+      "resolution_status": "resolved",
+      "official_name": "慈文传媒",
+      "ticker": "002343",
+      "market": "CN"
+    },
+    {
+      "surface_form": "读者/读者传媒",
+      "role": "盘中高分历史样例",
+      "resolution_status": "resolved",
+      "official_name": "读者传媒",
+      "ticker": "603999",
+      "market": "CN"
+    },
+    {
+      "surface_form": "冰冰冰山冷热/冰山冷热",
+      "role": "前几日下跌高分与卖出样例",
+      "resolution_status": "resolved",
+      "official_name": "冰山冷热",
+      "ticker": "000530",
+      "market": "CN"
+    },
+    {
+      "surface_form": "百洋股份",
+      "role": "10月21日连板接力前三涨停样例",
+      "resolution_status": "resolved",
+      "official_name": "百洋股份",
+      "ticker": "002696",
+      "market": "CN"
+    },
+    {
+      "surface_form": "华驰股份/华磁股份",
+      "role": "10月21日N字低吸涨停样例；由来源上下文与官方回读共同确认",
+      "resolution_status": "resolved",
+      "official_name": "华瓷股份",
+      "ticker": "001216",
+      "market": "CN"
+    },
+    {
+      "surface_form": "亚星化学",
+      "role": "前两日历史样例",
+      "resolution_status": "resolved",
+      "official_name": "亚星化学",
+      "ticker": "600319",
+      "market": "CN"
+    },
+    {
+      "surface_form": "宁德时代/你的时代",
+      "role": "10月21日大跌与抄底风险提示",
+      "resolution_status": "resolved",
+      "official_name": "宁德时代",
+      "ticker": "300750",
+      "market": "CN"
+    },
+    {
+      "surface_form": "被博",
+      "role": "早期历史个股样例",
+      "resolution_status": "unresolved",
+      "exclusion_reason": "语音不足，无法唯一映射证券"
+    },
+    {
+      "surface_form": "水阳",
+      "role": "10月20日历史个股样例",
+      "resolution_status": "unresolved",
+      "exclusion_reason": "可能为证券简称的语音转写，但官方回读未唯一确认"
+    },
+    {
+      "surface_form": "上美智能",
+      "role": "红盘起爆样例",
+      "resolution_status": "unresolved",
+      "exclusion_reason": "目录候选与来源不足以唯一确认正式证券"
+    },
+    {
+      "surface_form": "新华传媒",
+      "role": "主板红盘起爆历史样例",
+      "resolution_status": "unresolved",
+      "exclusion_reason": "本包没有该名称的官方行情回读，保留名称但不补代码"
+    },
+    {
+      "surface_form": "杭州",
+      "role": "倒接力减亏样例",
+      "resolution_status": "unresolved",
+      "exclusion_reason": "原文仅有城市样表述，无法确认证券"
+    },
+    {
+      "surface_form": "奥比中冠",
+      "role": "下跌超跌历史样例",
+      "resolution_status": "unresolved",
+      "exclusion_reason": "语音不足，无法唯一映射证券"
+    },
+    {
+      "surface_form": "肯特股份",
+      "role": "盘中高分历史样例",
+      "resolution_status": "unresolved",
+      "exclusion_reason": "本包没有对应官方身份回读，保留名称但不补代码"
+    },
+    {
+      "surface_form": "龙丰控股",
+      "role": "断板大跌幅历史样例",
+      "resolution_status": "unresolved",
+      "exclusion_reason": "语音不足，无法唯一映射证券"
+    },
+    {
+      "surface_form": "小便",
+      "role": "断板大跌幅历史样例",
+      "resolution_status": "unresolved",
+      "exclusion_reason": "明显疑似语音转写，无法确认证券"
+    },
+    {
+      "surface_form": "有大股份",
+      "role": "10月21日连板接力前三样例",
+      "resolution_status": "unresolved",
+      "exclusion_reason": "父级目录候选不得用于强行消歧，保持不确定"
+    },
+    {
+      "surface_form": "这届股份",
+      "role": "10月21日连板接力前三样例",
+      "resolution_status": "unresolved",
+      "exclusion_reason": "父级目录候选不得用于强行消歧，保持不确定"
+    },
+    {
+      "surface_form": "上海建功",
+      "role": "长期被套叙事样例",
+      "resolution_status": "unresolved",
+      "exclusion_reason": "可能为上海建工，但来源与官方回读不足，禁止强改"
+    },
+    {
+      "surface_form": "中石油",
+      "role": "2007年高位长期被套样例",
+      "resolution_status": "unresolved",
+      "exclusion_reason": "口语可能指中国石油，但本包不补正式映射"
+    },
+    {
+      "surface_form": "百大集团",
+      "role": "前两日历史样例",
+      "resolution_status": "unresolved",
+      "exclusion_reason": "本包没有对应官方身份回读，保留名称但不补代码"
+    },
+    {
+      "surface_form": "满坤/满坤科技",
+      "role": "盘中历史样例；本场收益未核验",
+      "resolution_status": "resolved",
+      "official_name": "满坤科技",
+      "ticker": "301132",
+      "market": "CN"
+    },
+    {
+      "surface_form": "未具名大白马（71元跌至1元）",
+      "role": "抄底风险样例",
+      "resolution_status": "unresolved",
+      "exclusion_reason": "作者未说出证券名称，禁止猜测"
+    },
+    {
+      "surface_form": "未具名白马（96元跌至5元）",
+      "role": "抄底风险样例",
+      "resolution_status": "unresolved",
+      "exclusion_reason": "作者未说出证券名称，禁止猜测"
+    }
+  ],
+  "method_principles": [
+    "先判环境，再选适配模式；但环境分类若尚未上线，不把口述标签硬化成现成规则。",
+    "红盘起爆的竞价高开主观标准只用于该模式：主板五个百分点以上偏高、最好三至四个百分点以下，创业板六个百分点以下可接受。",
+    "盘中下跌超跌同时有起爆与低吸；100分以上更好但非硬门，50分、30多分可按排名观察，ST排除。",
+    "名单频繁进出可能来自小涨幅或下跌资格越过临界点，不等于分数本体剧烈变化。",
+    "至少分两只或分散到多个模式第一名；资金示例不能直接变成家庭仓位参数。",
+    "逐笔统计并保持一致性；模式停止后出现减亏反弹应退出，不把回本价变成继续持有理由。",
+    "盘中卡位可捕捉竞价强者被后来相对强者替代的动态资格，但必须前向记录。",
+    "资金越大越需考虑容量并拉长周期，不能把小资金短线打法等比例放大。",
+    "来源只证明“跌多不等于见底”；任何额外底部确认条件都属于系统研究设计，不冒充作者原话。",
+    "作者批评宽泛指标事后挑牛股；系统建议用完整候选、费用、失败样本和样本外数据检验。"
+  ],
+  "exit_lessons": [
+    "断板叠加大跌幅时，下一交易日应更早退出。",
+    "模式盈利票可在次日冲高兑现，接受卖飞，不把短线改成长线。",
+    "倒接力等旧模式已切换停做后，盘中反弹给出减亏窗口就退出，不等回本；这不是永久禁做该模式。",
+    "模式停止或切换时停止旧模式，而不是为了回本继续持有。"
+  ],
+  "hypotheses": [
+    {
+      "claim": "涨幅区间筛选会使边界附近股票频繁进出排名，秒级名单变化本身不代表评分或选股质量发生了同等变化。",
+      "implied_rule": "研究与复核同时保留未过滤得分、涨幅、过滤边界和观察时刻，分解名单变化来自得分还是资格。",
+      "falsifiable_test": "取得实际版本定义与逐秒快照，重放同一股票的进出区间，统计由边界穿越解释的变更比例。",
+      "expected_effect": "减少把资格临界点误判为评分剧变。",
+      "category": "ranking_boundary_observability",
+      "authority": 0,
+      "recurrence_status": "exact_match_existing",
+      "registry_id": "XH-138"
+    },
+    {
+      "claim": "盘中弱转强、卡位和对比形成的动态资格，可能提供竞价静态筛选之外的独立增量。",
+      "implied_rule": "把9:25竞价与盘中首次取得资格的事件分账，不按收盘赢家回填。",
+      "falsifiable_test": "前向记录首次资格时间，比较竞价组与盘中新增组的费用后收益、回撤、滑点和失败率。",
+      "expected_effect": "检验电风扇行情中盘中卡位是否有独立增量。",
+      "category": "entry_timing",
+      "authority": 0,
+      "recurrence_status": "exact_match_existing",
+      "registry_id": "XH-077"
+    },
+    {
+      "claim": "在红盘起爆模式内，主板竞价高开约五个百分点以上、创业板约六个百分点以上的候选，可能比各自更低高开组有更差的风险调整结果。",
+      "implied_rule": "只在红盘起爆完整候选内按板块冻结竞价高开分组，不把阈值泛化到其他模式或盘中。",
+      "falsifiable_test": "比较板块分组后的成交率、收益、回撤和高开回落率，并控制评分、流动性与前日涨幅。",
+      "expected_effect": "限定红盘起爆内的追高风险。",
+      "category": "red_board_opening_filter",
+      "authority": 0,
+      "recurrence_status": "new_distinct_candidate",
+      "related_registry_ids": [
+        "XH-277"
+      ],
+      "difference": "XH-277是弱市一般高开风险；本条只绑定红盘起爆且分主板/创业板口述阈值。"
+    },
+    {
+      "claim": "在固定总风险下组合多个短线模式，可能降低单一模式波动并提高执行一致性。",
+      "implied_rule": "冻结模式间风险权重，记录相关性、收益、回撤和交易成本；不把单一模式内部的前两名平铺重复计为新命题。",
+      "falsifiable_test": "与单一模式和随机跨模式组合比较风险调整收益；若组合未降低回撤或稀释收益过多则否决。",
+      "expected_effect": "降低单一短线模式波动。",
+      "category": "portfolio_construction",
+      "authority": 0,
+      "recurrence_status": "exact_match_existing",
+      "registry_id": "XH-276"
+    },
+    {
+      "claim": "断板叠加大跌幅的短线模式在下一交易日早退，可能比统一收盘退出或延长持有降低尾部亏损。",
+      "implied_rule": "预先冻结次日早退、收盘退和延长持有对照。",
+      "falsifiable_test": "比较费用后收益、最大不利变动、尾部损失和可成交率。",
+      "expected_effect": "限制断板大跌幅模式的左尾。",
+      "category": "broken_board_exit",
+      "authority": 0,
+      "recurrence_status": "new_distinct_candidate",
+      "related_registry_ids": [
+        "XH-044",
+        "XH-176",
+        "XH-219"
+      ],
+      "difference": "既有条目分别针对主跌超跌、环境分层和红绿盘退出；本条限定断板叠加大跌幅。"
+    },
+    {
+      "claim": "模式已切换停做后，旧仓盘中反弹时减亏退出，可能比等待回本降低机会成本和继续下跌风险。",
+      "implied_rule": "冻结模式停止点、反弹可成交窗口和回本等待对照，不把反弹当成模式恢复。",
+      "falsifiable_test": "比较反弹减亏退、等待成本价和固定收盘退的净收益、尾损、回本时间与机会成本。",
+      "expected_effect": "减少模式失效后的持有期漂移。",
+      "category": "stopped_mode_exit",
+      "authority": 0,
+      "recurrence_status": "new_distinct_candidate",
+      "related_registry_ids": [
+        "XH-135",
+        "XH-176"
+      ],
+      "difference": "既有条目讨论低吸稳定性或环境退出；本条限定模式停做后的旧仓反弹。"
+    },
+    {
+      "claim": "A股短线资金规模增加到显著影响容量后，延长持有期和提高流动性要求可能优于等比例放大原短线仓位。",
+      "implied_rule": "按成交额占比和冲击成本设置规模桶与持有期。",
+      "falsifiable_test": "用仿真或真实可追溯订单比较不同规模下的滑点、成交率、容量和风险调整收益。",
+      "expected_effect": "避免资金规模与持有期错配。",
+      "category": "market_capacity",
+      "authority": 0,
+      "recurrence_status": "new_distinct_candidate",
+      "related_registry_ids": [
+        "XH-093"
+      ],
+      "difference": "XH-093是量化管理人AUM与未来超额衰减；本条是自有A股短线资金容量和持有期。"
+    },
+    {
+      "claim": "仅因累计跌幅大而抄底，不能获得稳定优势，价格仍可能继续大幅下探。",
+      "implied_rule": "把单一累计跌幅触发与不交易基线前瞻比较，不追加作者未说出的确认条件。",
+      "falsifiable_test": "跨样本比较触发后的未来收益、继续下跌幅度、回本时间和机会成本。",
+      "expected_effect": "减少下跌途中只看跌幅接刀。",
+      "category": "bottom_fishing",
+      "authority": 0,
+      "recurrence_status": "new_distinct_candidate",
+      "related_registry_ids": [
+        "XH-143",
+        "XH-245"
+      ],
+      "difference": "XH-143是系统化多条件底部识别，XH-245是极端低开仓位上限；本条只检验“跌多”本身。"
+    },
+    {
+      "claim": "每天产生上百候选的宽泛图形指标，在只展示少数牛股时不能证明稳定选择力。",
+      "implied_rule": "禁止只挑赢家，统一保存全部信号、未成交和失败样本。",
+      "falsifiable_test": "用完整候选集、费用和样本外区间与随机、行业及市场基线比较。",
+      "expected_effect": "减少选择偏差。",
+      "category": "evidence_quality",
+      "authority": 0,
+      "recurrence_status": "new_distinct_candidate"
+    }
+  ],
+  "recurrence_assessment": {
+    "status": "three_exact_recurrences_and_six_distinct_candidates",
+    "exact_matches": [
+      {
+        "registry_id": "XH-138",
+        "claim": "涨幅区间筛选会使边界附近股票频繁进出排名，秒级名单变化本身不代表评分或选股质量发生了同等变化。"
+      },
+      {
+        "registry_id": "XH-077",
+        "claim": "盘中弱转强、卡位和对比形成的动态资格，可能提供竞价静态筛选之外的独立增量。"
+      },
+      {
+        "registry_id": "XH-276",
+        "claim": "在固定总风险下组合多个短线模式，可能降低单一模式波动并提高执行一致性。"
+      }
+    ],
+    "reason": "本场完整复现XH-276的固定总风险、多模式组合与执行一致性机制；XH-078只部分重合“同模式前两名都买”，来源未说明少量收益让渡，故不按完整复现合并；XH-271也仅部分相关。连同XH-077、XH-138，共三条精确复现，另有六条作用域独立候选。"
+  },
+  "timing_notes": [
+    "来源日期为2026年10月21日；“明天”只指2026年10月22日。",
+    "10月21日N半负分不做；10月22日只是在次日重新评分后可能切到N字或N半。",
+    "红盘起爆口述窗口延续到10月23日，但稳定性评分尚差一点。",
+    "“昨天”明确对应10月20日，“前天”明确对应10月19日；未唯一确定日期的样例继续记未知。"
+  ],
+  "typo_corrections": [
+    {
+      "raw": "华驰股份、华磁股份",
+      "corrected": "华瓷股份（001216）",
+      "basis": "来源上下文的N字低吸涨停角色与10月21日官方名称回读共同支持。",
+      "uncertainty": "不是只凭股票目录候选消歧。"
+    },
+    {
+      "raw": "大普威",
+      "corrected": "大普微（301666）",
+      "basis": "来源反复读音与10月21日本地起爆候选共同支持。"
+    },
+    {
+      "raw": "词汇传媒",
+      "corrected": "慈文传媒（002343）",
+      "basis": "来源断板大跌幅语境与官方候选回读支持。",
+      "uncertainty": "口述收益未验证。"
+    },
+    {
+      "raw": "水阳、上美智能、奥比中冠、龙丰控股、有大股份、这届股份、上海建功、小便",
+      "corrected": "保持未解析",
+      "basis": "来源与官方回读不足以唯一确认，目录候选不得强行消歧。"
+    }
+  ],
+  "decision_trace": [
+    {
+      "observation": "10月21日高开低走、广泛下跌；作者认为牛市阶段已走完，当前暂不做趋势抱团和趋势起爆。",
+      "inference": "10月22日先用弱势与下跌超跌框架观察，同时保留红盘起爆和可能重新合格的N字/N半。",
+      "action": "10月22日重新核对评分、排名和可成交性；N半若仍负分不做。",
+      "why": "10月21日N半负分，情绪环境系统也尚未完成，不能把收盘推测当次日确定信号。",
+      "evidence_claim_ids": [
+        "c01-market-phase",
+        "c02-next-session-modes",
+        "c06-regime-mode-fit"
+      ]
+    },
+    {
+      "observation": "红盘起爆短线评分居前，但稳定性评分还差一点；主板和创业板的数字在该模式竞价语境中给出。",
+      "inference": "高开数字只能作红盘起爆的主观边界，可看不等于稳定性已经确认。",
+      "action": "研究该模式内分板块高开组，不自动调参。",
+      "why": "泛化到所有模式会改变来源含义。",
+      "evidence_claim_ids": [
+        "c03-opening-thresholds",
+        "c07-red-board"
+      ]
+    },
+    {
+      "observation": "盘中下跌超跌有起爆和低吸两条线，100分以上较优但低分也可按排名；德生科技高分后未按预期拉升。",
+      "inference": "分数是排序信息而非保证，名单变化还受资格边界影响。",
+      "action": "前向记录分数、排名、资格变化和真实成交。",
+      "why": "既要避免把100分硬化为门槛，也要保留失败样本。",
+      "evidence_claim_ids": [
+        "c04-dip-high-score"
+      ]
+    },
+    {
+      "observation": "倒接力已切换停做，但旧仓盘中反弹曾给出减亏窗口。",
+      "inference": "模式失效后的反弹应服务退出，不应转成等待回本。",
+      "action": "比较反弹减亏退出与等待成本价。",
+      "why": "避免持有期漂移；不把该案例外推成永久禁做倒接力。",
+      "evidence_claim_ids": [
+        "c16-reverse-relay-loss-reduction"
+      ]
+    },
+    {
+      "observation": "宁德时代单日大跌，作者又用未具名白马说明价格可继续下探。",
+      "inference": "累计跌幅本身不能证明底部。",
+      "action": "只建立“跌幅单因子是否有效”的研究对照，不添加作者未说出的多条件底部规则。",
+      "why": "严格分离来源结论与系统研究设计。",
+      "evidence_claim_ids": [
+        "c10-no-bottom-assumption"
+      ]
+    }
+  ],
+  "judgment_heuristics": [
+    "先环境、后模式、再个股；未上线的环境分类不能硬化。",
+    "阈值必须绑定原模式、时点和板块，不能跨模式泛化。",
+    "高分与历史赢家都要保留失败样本和可成交性。",
+    "盘中卡位是动态资格，不能由收盘赢家倒推。",
+    "资金规模变化必须重新评估容量和持有期。",
+    "模式停止后的反弹先考虑减亏退出，不以回本价续命。"
+  ],
+  "strategy_hit_audit": {
+    "status": "completed_with_date_and_identity_scoped_evidence",
+    "audit_dates": [
+      "2026-10-16",
+      "2026-10-19",
+      "2026-10-20",
+      "2026-10-21"
+    ],
+    "scope": "冻结的61条本地数字paper信号、16条paper交易和10条position；不是教师、APP或券商成交证据。只在来源引用日期和证券身份同时明确时判not_emitted。",
+    "teacher_named_winners": [
+      {
+        "teacher_surface_form": "闽东电力",
+        "source_cited_date": "2026-10-21",
+        "local_audit_date_range": "2026-10-16/19/20/21 frozen slices",
+        "local_classification": "not_emitted",
+        "source_role": "teacher_named_winner",
+        "detail": "10月21日完整13条本地信号未发出；不验证作者入场或“六个点”。"
+      },
+      {
+        "teacher_surface_form": "莱美药业",
+        "source_cited_date": "2026-10-21",
+        "local_audit_date_range": "2026-10-16/19/20/21 frozen slices",
+        "local_classification": "cohort_benchmark",
+        "source_role": "teacher_named_winner",
+        "detail": "10月21日为ACTIVE标杆短线起爆原始排名第1，但无★E、无Book B BUY；本地标杆模式不等于教师红盘起爆命中。"
+      },
+      {
+        "teacher_surface_form": "九阳股份",
+        "source_cited_date": "2026-10-21",
+        "local_audit_date_range": "2026-10-16/19/20/21 frozen slices",
+        "local_classification": "not_emitted",
+        "source_role": "teacher_named_winner",
+        "detail": "10月21日完整13条本地信号未发出。"
+      },
+      {
+        "teacher_surface_form": "华瓷股份",
+        "source_cited_date": "2026-10-21",
+        "local_audit_date_range": "2026-10-16/19/20/21 frozen slices",
+        "local_classification": "not_emitted",
+        "source_role": "teacher_named_winner",
+        "detail": "10月21日未发出；10月20日曾是COLD接力低弱转1候选，日期与教师10月21日N字低吸角色都不相同。"
+      },
+      {
+        "teacher_surface_form": "百洋股份",
+        "source_cited_date": "2026-10-21",
+        "local_audit_date_range": "2026-10-16/19/20/21 frozen slices",
+        "local_classification": "cohort_watchlist",
+        "source_role": "teacher_named_winner",
+        "detail": "10月21日为COLD接力低弱转1候选，无★E、无BUY；教师角色为连板接力前三涨停，模式不可互换。"
+      },
+      {
+        "teacher_surface_form": "超声电子",
+        "source_cited_date": "历史日期不唯一",
+        "local_audit_date_range": "2026-10-16/19/20/21 frozen slices",
+        "local_classification": "no_evidence",
+        "source_role": "teacher_named_winner",
+        "detail": "本地10月16日有PROVISIONAL标杆候选但无★E/BUY；来源未唯一指定该日期，不能据此匹配。"
+      },
+      {
+        "teacher_surface_form": "读者传媒",
+        "source_cited_date": "2026-10-20",
+        "local_audit_date_range": "2026-10-16/19/20/21 frozen slices",
+        "local_classification": "cohort_watchlist",
+        "source_role": "teacher_named_winner",
+        "detail": "10月20日为COLD绿断低吸候选，无★E、无BUY；教师描述为盘中高分，模式不相同。"
+      },
+      {
+        "teacher_surface_form": "冰山冷热",
+        "source_cited_date": "2026-10-20及2026-10-19",
+        "local_audit_date_range": "2026-10-16/19/20/21 frozen slices",
+        "local_classification": "cohort_watchlist",
+        "source_role": "teacher_named_winner",
+        "detail": "10月20日为COLD红断低吸候选，无★E/BUY；10月19日未发出。教师描述为盘中高分，两类模式不可互认。"
+      },
+      {
+        "teacher_surface_form": "大普微",
+        "source_cited_date": "2026-10-19",
+        "local_audit_date_range": "2026-10-16/19/20/21 frozen slices",
+        "local_classification": "not_emitted",
+        "source_role": "teacher_named_winner",
+        "detail": "10月19日未发出；10月21日虽为ACTIVE标杆候选第10名但无★E/BUY，是不同日期，不能替代“前天”案例。"
+      },
+      {
+        "teacher_surface_form": "凡拓数创",
+        "source_cited_date": "历史日期不唯一",
+        "local_audit_date_range": "2026-10-16/19/20/21 frozen slices",
+        "local_classification": "no_evidence",
+        "source_role": "teacher_named_winner",
+        "detail": "四日切片无法绑定来源的具体引用日，65%等口述收益未验证。"
+      },
+      {
+        "teacher_surface_form": "慈文传媒",
+        "source_cited_date": "历史日期不唯一",
+        "local_audit_date_range": "2026-10-16/19/20/21 frozen slices",
+        "local_classification": "no_evidence",
+        "source_role": "teacher_named_winner",
+        "detail": "10月19日存在COLD绿断低吸候选，但来源断板大跌幅案例日期不唯一、模式也不同，不能匹配。"
+      },
+      {
+        "teacher_surface_form": "肯特股份",
+        "source_cited_date": "历史日期不唯一",
+        "local_audit_date_range": "2026-10-16/19/20/21 frozen slices",
+        "local_classification": "no_evidence",
+        "source_role": "teacher_named_winner",
+        "detail": "10月16日存在PROVISIONAL标杆候选但来源日期不唯一，不能匹配。"
+      },
+      {
+        "teacher_surface_form": "出版传媒",
+        "source_cited_date": "历史日期不唯一",
+        "local_audit_date_range": "2026-10-16/19/20/21 frozen slices",
+        "local_classification": "no_evidence",
+        "source_role": "teacher_named_winner",
+        "detail": "来源把它作为红盘起爆起始样例，但未唯一绑定日期；四日切片不能强配。"
+      },
+      {
+        "teacher_surface_form": "新华传媒",
+        "source_cited_date": "历史日期不唯一",
+        "local_audit_date_range": "2026-10-16/19/20/21 frozen slices",
+        "local_classification": "no_evidence",
+        "source_role": "teacher_named_winner",
+        "detail": "10月20日存在COLD红断低吸候选，但来源红盘起爆样例日期不唯一、模式不同。"
+      },
+      {
+        "teacher_surface_form": "百大集团",
+        "source_cited_date": "历史日期不唯一",
+        "local_audit_date_range": "2026-10-16/19/20/21 frozen slices",
+        "local_classification": "no_evidence",
+        "source_role": "teacher_named_winner",
+        "detail": "来源口语只表明前几天，未唯一绑定日期；四日完整切片未见该证券，但不能据此判定老师所指那次命中未发出。"
+      },
+      {
+        "teacher_surface_form": "亚星化学",
+        "source_cited_date": "历史日期不唯一",
+        "local_audit_date_range": "2026-10-16/19/20/21 frozen slices",
+        "local_classification": "no_evidence",
+        "source_role": "teacher_named_winner",
+        "detail": "来源口语只表明前几天，未唯一绑定日期；四日完整切片未见该证券，但不能据此判定老师所指那次命中未发出。"
+      },
+      {
+        "teacher_surface_form": "满坤科技",
+        "source_cited_date": "历史日期不唯一",
+        "local_audit_date_range": "2026-10-16/19/20/21 frozen slices",
+        "local_classification": "no_evidence",
+        "source_role": "teacher_named_winner",
+        "detail": "身份按满坤科技（301132）记录，但来源只说盘中历史样例，日期未唯一确定，四日切片不得强配。"
+      }
+    ],
+    "all_named_asset_classifications": [
+      {
+        "teacher_surface_form": "闽东电力",
+        "source_cited_date": "2026-10-21",
+        "local_audit_date_range": "2026-10-16/19/20/21 frozen slices",
+        "local_classification": "not_emitted",
+        "source_role": "teacher_named_winner",
+        "detail": "10月21日完整13条本地信号未发出；不验证作者入场或“六个点”。"
+      },
+      {
+        "teacher_surface_form": "莱美药业",
+        "source_cited_date": "2026-10-21",
+        "local_audit_date_range": "2026-10-16/19/20/21 frozen slices",
+        "local_classification": "cohort_benchmark",
+        "source_role": "teacher_named_winner",
+        "detail": "10月21日为ACTIVE标杆短线起爆原始排名第1，但无★E、无Book B BUY；本地标杆模式不等于教师红盘起爆命中。"
+      },
+      {
+        "teacher_surface_form": "九阳股份",
+        "source_cited_date": "2026-10-21",
+        "local_audit_date_range": "2026-10-16/19/20/21 frozen slices",
+        "local_classification": "not_emitted",
+        "source_role": "teacher_named_winner",
+        "detail": "10月21日完整13条本地信号未发出。"
+      },
+      {
+        "teacher_surface_form": "华瓷股份",
+        "source_cited_date": "2026-10-21",
+        "local_audit_date_range": "2026-10-16/19/20/21 frozen slices",
+        "local_classification": "not_emitted",
+        "source_role": "teacher_named_winner",
+        "detail": "10月21日未发出；10月20日曾是COLD接力低弱转1候选，日期与教师10月21日N字低吸角色都不相同。"
+      },
+      {
+        "teacher_surface_form": "百洋股份",
+        "source_cited_date": "2026-10-21",
+        "local_audit_date_range": "2026-10-16/19/20/21 frozen slices",
+        "local_classification": "cohort_watchlist",
+        "source_role": "teacher_named_winner",
+        "detail": "10月21日为COLD接力低弱转1候选，无★E、无BUY；教师角色为连板接力前三涨停，模式不可互换。"
+      },
+      {
+        "teacher_surface_form": "超声电子",
+        "source_cited_date": "历史日期不唯一",
+        "local_audit_date_range": "2026-10-16/19/20/21 frozen slices",
+        "local_classification": "no_evidence",
+        "source_role": "teacher_named_winner",
+        "detail": "本地10月16日有PROVISIONAL标杆候选但无★E/BUY；来源未唯一指定该日期，不能据此匹配。"
+      },
+      {
+        "teacher_surface_form": "读者传媒",
+        "source_cited_date": "2026-10-20",
+        "local_audit_date_range": "2026-10-16/19/20/21 frozen slices",
+        "local_classification": "cohort_watchlist",
+        "source_role": "teacher_named_winner",
+        "detail": "10月20日为COLD绿断低吸候选，无★E、无BUY；教师描述为盘中高分，模式不相同。"
+      },
+      {
+        "teacher_surface_form": "冰山冷热",
+        "source_cited_date": "2026-10-20及2026-10-19",
+        "local_audit_date_range": "2026-10-16/19/20/21 frozen slices",
+        "local_classification": "cohort_watchlist",
+        "source_role": "teacher_named_winner",
+        "detail": "10月20日为COLD红断低吸候选，无★E/BUY；10月19日未发出。教师描述为盘中高分，两类模式不可互认。"
+      },
+      {
+        "teacher_surface_form": "大普微",
+        "source_cited_date": "2026-10-19",
+        "local_audit_date_range": "2026-10-16/19/20/21 frozen slices",
+        "local_classification": "not_emitted",
+        "source_role": "teacher_named_winner",
+        "detail": "10月19日未发出；10月21日虽为ACTIVE标杆候选第10名但无★E/BUY，是不同日期，不能替代“前天”案例。"
+      },
+      {
+        "teacher_surface_form": "凡拓数创",
+        "source_cited_date": "历史日期不唯一",
+        "local_audit_date_range": "2026-10-16/19/20/21 frozen slices",
+        "local_classification": "no_evidence",
+        "source_role": "teacher_named_winner",
+        "detail": "四日切片无法绑定来源的具体引用日，65%等口述收益未验证。"
+      },
+      {
+        "teacher_surface_form": "慈文传媒",
+        "source_cited_date": "历史日期不唯一",
+        "local_audit_date_range": "2026-10-16/19/20/21 frozen slices",
+        "local_classification": "no_evidence",
+        "source_role": "teacher_named_winner",
+        "detail": "10月19日存在COLD绿断低吸候选，但来源断板大跌幅案例日期不唯一、模式也不同，不能匹配。"
+      },
+      {
+        "teacher_surface_form": "肯特股份",
+        "source_cited_date": "历史日期不唯一",
+        "local_audit_date_range": "2026-10-16/19/20/21 frozen slices",
+        "local_classification": "no_evidence",
+        "source_role": "teacher_named_winner",
+        "detail": "10月16日存在PROVISIONAL标杆候选但来源日期不唯一，不能匹配。"
+      },
+      {
+        "teacher_surface_form": "出版传媒",
+        "source_cited_date": "历史日期不唯一",
+        "local_audit_date_range": "2026-10-16/19/20/21 frozen slices",
+        "local_classification": "no_evidence",
+        "source_role": "teacher_named_winner",
+        "detail": "来源把它作为红盘起爆起始样例，但未唯一绑定日期；四日切片不能强配。"
+      },
+      {
+        "teacher_surface_form": "新华传媒",
+        "source_cited_date": "历史日期不唯一",
+        "local_audit_date_range": "2026-10-16/19/20/21 frozen slices",
+        "local_classification": "no_evidence",
+        "source_role": "teacher_named_winner",
+        "detail": "10月20日存在COLD红断低吸候选，但来源红盘起爆样例日期不唯一、模式不同。"
+      },
+      {
+        "teacher_surface_form": "百大集团",
+        "source_cited_date": "历史日期不唯一",
+        "local_audit_date_range": "2026-10-16/19/20/21 frozen slices",
+        "local_classification": "no_evidence",
+        "source_role": "teacher_named_winner",
+        "detail": "来源口语只表明前几天，未唯一绑定日期；四日完整切片未见该证券，但不能据此判定老师所指那次命中未发出。"
+      },
+      {
+        "teacher_surface_form": "亚星化学",
+        "source_cited_date": "历史日期不唯一",
+        "local_audit_date_range": "2026-10-16/19/20/21 frozen slices",
+        "local_classification": "no_evidence",
+        "source_role": "teacher_named_winner",
+        "detail": "来源口语只表明前几天，未唯一绑定日期；四日完整切片未见该证券，但不能据此判定老师所指那次命中未发出。"
+      },
+      {
+        "teacher_surface_form": "满坤科技",
+        "source_cited_date": "历史日期不唯一",
+        "local_audit_date_range": "2026-10-16/19/20/21 frozen slices",
+        "local_classification": "no_evidence",
+        "source_role": "teacher_named_winner",
+        "detail": "身份按满坤科技（301132）记录，但来源只说盘中历史样例，日期未唯一确定，四日切片不得强配。"
+      },
+      {
+        "teacher_surface_form": "华胜天成",
+        "source_cited_date": "2026-10-21",
+        "local_audit_date_range": "2026-10-16/19/20/21 frozen slices",
+        "local_classification": "not_emitted",
+        "source_role": "risk_or_material_example",
+        "detail": "盘中跳水监测候选；10月21日本地未发出。"
+      },
+      {
+        "teacher_surface_form": "德生科技",
+        "source_cited_date": "2026-10-21",
+        "local_audit_date_range": "2026-10-16/19/20/21 frozen slices",
+        "local_classification": "not_emitted",
+        "source_role": "risk_or_material_example",
+        "detail": "盘中高分但未按预期拉升的失败边界；10月21日本地未发出。"
+      },
+      {
+        "teacher_surface_form": "宁德时代",
+        "source_cited_date": "2026-10-21",
+        "local_audit_date_range": "2026-10-16/19/20/21 frozen slices",
+        "local_classification": "not_emitted",
+        "source_role": "risk_or_material_example",
+        "detail": "大跌与抄底风险例子，不是教师赢家；10月21日本地未发出。"
+      },
+      {
+        "teacher_surface_form": "中石油",
+        "source_cited_date": "2007年",
+        "local_audit_date_range": "2026-10-16/19/20/21 frozen slices",
+        "local_classification": "no_evidence",
+        "source_role": "risk_or_material_example",
+        "detail": "长期套牢例子，不是教师赢家；冻结切片不能评判2007年。"
+      },
+      {
+        "teacher_surface_form": "被博",
+        "source_cited_date": "历史日期不唯一",
+        "local_audit_date_range": "2026-10-16/19/20/21 frozen slices",
+        "local_classification": "no_evidence",
+        "source_role": "risk_or_material_example",
+        "detail": "身份未解析的历史样例。"
+      },
+      {
+        "teacher_surface_form": "水阳",
+        "source_cited_date": "2026-10-20",
+        "local_audit_date_range": "2026-10-16/19/20/21 frozen slices",
+        "local_classification": "no_evidence",
+        "source_role": "risk_or_material_example",
+        "detail": "“昨天”对应10月20日，但身份未解析，不能以脏ASR名称判未发出。"
+      },
+      {
+        "teacher_surface_form": "上美智能",
+        "source_cited_date": "历史日期不唯一",
+        "local_audit_date_range": "2026-10-16/19/20/21 frozen slices",
+        "local_classification": "no_evidence",
+        "source_role": "risk_or_material_example",
+        "detail": "身份未唯一确认的红盘起爆样例。"
+      },
+      {
+        "teacher_surface_form": "杭州",
+        "source_cited_date": "历史日期不唯一",
+        "local_audit_date_range": "2026-10-16/19/20/21 frozen slices",
+        "local_classification": "no_evidence",
+        "source_role": "risk_or_material_example",
+        "detail": "身份未解析的倒接力减亏案例。"
+      },
+      {
+        "teacher_surface_form": "奥比中冠",
+        "source_cited_date": "2026-10-20",
+        "local_audit_date_range": "2026-10-16/19/20/21 frozen slices",
+        "local_classification": "no_evidence",
+        "source_role": "risk_or_material_example",
+        "detail": "“昨天”对应10月20日，但身份未解析。"
+      },
+      {
+        "teacher_surface_form": "龙丰控股",
+        "source_cited_date": "历史日期不唯一",
+        "local_audit_date_range": "2026-10-16/19/20/21 frozen slices",
+        "local_classification": "no_evidence",
+        "source_role": "risk_or_material_example",
+        "detail": "身份未解析的断板大跌幅案例。"
+      },
+      {
+        "teacher_surface_form": "小便",
+        "source_cited_date": "历史日期不唯一",
+        "local_audit_date_range": "2026-10-16/19/20/21 frozen slices",
+        "local_classification": "no_evidence",
+        "source_role": "risk_or_material_example",
+        "detail": "明显疑似ASR错误的断板案例。"
+      },
+      {
+        "teacher_surface_form": "有大股份",
+        "source_cited_date": "2026-10-21",
+        "local_audit_date_range": "2026-10-16/19/20/21 frozen slices",
+        "local_classification": "no_evidence",
+        "source_role": "risk_or_material_example",
+        "detail": "身份未解析的连板接力前三样例，不能按脏名称判未发出。"
+      },
+      {
+        "teacher_surface_form": "这届股份",
+        "source_cited_date": "2026-10-21",
+        "local_audit_date_range": "2026-10-16/19/20/21 frozen slices",
+        "local_classification": "no_evidence",
+        "source_role": "risk_or_material_example",
+        "detail": "身份未解析的连板接力前三样例，不能按脏名称判未发出。"
+      },
+      {
+        "teacher_surface_form": "上海建功",
+        "source_cited_date": "长期日期不唯一",
+        "local_audit_date_range": "2026-10-16/19/20/21 frozen slices",
+        "local_classification": "no_evidence",
+        "source_role": "risk_or_material_example",
+        "detail": "身份未解析的长期套牢叙事。"
+      },
+      {
+        "teacher_surface_form": "未具名大白马（71元跌至1元）",
+        "source_cited_date": "历史日期不唯一",
+        "local_audit_date_range": "2026-10-16/19/20/21 frozen slices",
+        "local_classification": "no_evidence",
+        "source_role": "risk_or_material_example",
+        "detail": "抄底风险例子，作者未报名称。"
+      },
+      {
+        "teacher_surface_form": "未具名白马（96元跌至5元）",
+        "source_cited_date": "历史日期不唯一",
+        "local_audit_date_range": "2026-10-16/19/20/21 frozen slices",
+        "local_classification": "no_evidence",
+        "source_role": "risk_or_material_example",
+        "detail": "抄底风险例子，作者未报名称。"
+      }
+    ],
+    "local_strategy_benchmark_hits": [
+      {
+        "name": "果麦文化",
+        "date": "2026-10-21",
+        "classification": "emitted_strategy_hit",
+        "detail": "ACTIVE标杆短线起爆、★E、Book B与Book A paper BUY；教师未在本场点名。"
+      },
+      {
+        "name": "东方嘉盛",
+        "date": "2026-10-21",
+        "classification": "emitted_strategy_hit",
+        "detail": "ACTIVE绿断低吸、★E、Book B paper BUY；教师未在本场点名。"
+      }
+    ],
+    "direction_core_observations": [
+      "弱势环境优先观察下跌超跌，但100分与跳水都不是硬门",
+      "10月22日N字或N半必须重新评分，10月21日负分不做",
+      "红盘起爆可看但稳定性评分尚差一点",
+      "盘中卡位解释电风扇行情的动态资格",
+      "断板早退、模式停做后反弹减亏、赢家次日冲高兑现",
+      "跌多不等于见底"
+    ],
+    "boundary": "COLD/PROVISIONAL/ACTIVE候选、★E和paper BUY逐级分开；本地模式名称不替代教师模式。身份不明一律no_evidence，已知身份只在明确引用日的完整切片内判not_emitted，不外推到其他系统或历史日期。"
+  },
+  "action_summary": {
+    "posture_update": "candidate_only：当日弱势与环境匹配观点仍需后续事实复核，不自动改写现行姿态。",
+    "playbook_update": "proposal_only：红盘起爆竞价边界、分数与资格临界点、盘中卡位、分散、退出和容量需研究与人审。",
+    "hypothesis_update": "nine_authority_0_candidates：3条精确复现既有claim，6条按作用域差异保留；全部维持authority=0且未经正式研究与人审，不自动调参。",
+    "audit_evidence": "完整绑定323个稳定片段、134417B私人归档、四日61信号/16paper交易/10position冻结切片，并比较全部285条现有claim。",
+    "instrumentation_todo": "前向记录模式评分、排名、资格边界、首次卡位时点、真实可成交价、费用、统一退出、规模冲击成本和完整失败样本。",
+    "routing": [
+      "research_candidate_only",
+      "strategy_hit_audit_date_scoped",
+      "registry_near_duplicate_curated",
+      "no_auto_tune",
+      "human_gate_required"
+    ]
+  },
+  "non_security_mentions": [
+    {
+      "surface_form": "黄金",
+      "role": "购课价格保值类比，不是黄金投资观点或推荐"
+    },
+    {
+      "surface_form": "联想平板、联想笔记本、联想小新",
+      "role": "课程抽奖和产品推广，不进入投资知识"
+    }
+  ],
+  "registry_curation": {
+    "registry_path": "/Users/xuanyue202/Documents/project/xiaocao/reference/experience/xiaocao_hypotheses.jsonl",
+    "registry_sha256": "0120d1e84e9560f8218324b9dc27ccadc8c14154b6f1bacadec5e3a66d524565",
+    "json_claim_count": 285,
+    "review_scope": "完整读取并对全部285条claim做规范化比较，再对语义近邻逐条裁定。",
+    "decisions": [
+      {
+        "ids": [
+          "XH-077",
+          "XH-138",
+          "XH-276"
+        ],
+        "decision": "reuse_exact_claim",
+        "reason": "本场原意完整匹配，复用原claim以便后续recurrence merge。"
+      },
+      {
+        "ids": [
+          "XH-078"
+        ],
+        "decision": "partial_overlap_not_reused",
+        "reason": "本场明确同模式前两名都买并拆分资金，但没有说这种平铺会让渡少量收益；XH-078的完整收益与方差权衡未被复现。"
+      },
+      {
+        "ids": [
+          "XH-271"
+        ],
+        "decision": "partial_overlap_not_reused",
+        "reason": "本场明确比较的是连板接力不如下跌低吸稳，并另讲倒接力旧仓反弹减亏；未直接给出XH-271所述下跌低吸相对倒接力的回撤和次日收益完整比较。"
+      },
+      {
+        "ids": [
+          "XH-190",
+          "XH-223",
+          "XH-235",
+          "XH-246",
+          "XH-274"
+        ],
+        "decision": "no_new_generic_score_claim",
+        "reason": "本场说明100分是偏好而非硬门、50/30分可按排名，且名单变化可来自资格临界点；不复制或强化旧阈值命题。"
+      },
+      {
+        "ids": [
+          "XH-044",
+          "XH-176",
+          "XH-219"
+        ],
+        "decision": "retain_narrow_new_exit_candidates",
+        "reason": "本场新增的是断板大跌幅次日早退、模式停做后反弹减亏，作用域与既有退出条目不同。"
+      },
+      {
+        "ids": [
+          "XH-178"
+        ],
+        "decision": "not_addressed",
+        "reason": "本场仍给出多个可观察模式，不是所有候选不达标时的空仓命题。"
+      },
+      {
+        "ids": [
+          "XH-277"
+        ],
+        "decision": "retain_mode_scoped_opening_candidate",
+        "reason": "本场数字只绑定红盘起爆竞价，不能并入一般弱市高开风险。"
+      },
+      {
+        "ids": [
+          "XH-093"
+        ],
+        "decision": "retain_self_capital_candidate",
+        "reason": "自有短线资金容量与管理人AUM超额衰减不是同一命题。"
+      },
+      {
+        "ids": [
+          "XH-143",
+          "XH-245"
+        ],
+        "decision": "retain_decline_only_candidate",
+        "reason": "本场只说明跌多不等于底，不声称多条件底部确认或极端低开仓位规则。"
+      }
+    ]
+  }
+}
