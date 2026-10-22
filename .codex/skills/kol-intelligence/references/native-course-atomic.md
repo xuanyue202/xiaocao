@@ -53,7 +53,14 @@ after the permitted entry. This is one invocation labelled
 `// KOL_ACTION:OPEN_ALLOW_ATOMIC`. Each input has a fresh frame, and each step
 writes and fsyncs a hash-only event before continuing. A shared `O_EXCL` claim
 is keyed by original capture plus the provider entry's canonical launch time;
-changing plan or proof filenames cannot authorize another dispatch. An explicit
+changing plan or proof filenames cannot authorize another dispatch.
+
+Original entry provenance remains valid for at most the runner's 20-minute
+activation deadline, allowing a zero-input runtime repair to retain that same
+entry without issuing/opening another one. Plan, Browser and readiness proofs
+still expire after three minutes; the two fresh stable B0 reads and the original
+one-dispatch claim remain mandatory. This does not extend the retained stdin deadline.
+An explicit
 `resumePreinput:true` may resume the same unchanged plan once only when its
 durable original audit proves a legal paired B0 prefix with hashes, no dispatch,
 no rejected/security/authentication/consent state, and an allowed terminal

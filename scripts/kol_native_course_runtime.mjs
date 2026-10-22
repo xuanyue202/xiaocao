@@ -13,7 +13,10 @@ const controllerUrl=new URL('./kol_native_course_allow.mjs',import.meta.url);
 const {runOpenAllow}=await import(controllerUrl.href+'?source='+sha(await fs.readFile(controllerUrl)));
 const json=async p=>JSON.parse(await fs.readFile(p,'utf8'));
 const requireThat=(ok,reason)=>{if(!ok)throw Error(reason);};
-const recent=t=>Number.isFinite(Date.parse(t))&&Date.now()-Date.parse(t)>=0&&Date.now()-Date.parse(t)<180000;
+const recent=(t,maxAgeMs=180000)=>Number.isFinite(Date.parse(t))&&Date.now()-Date.parse(t)>=0&&Date.now()-Date.parse(t)<maxAgeMs;
+// A pre-input runtime repair may reuse its entry within the runner's activation
+// deadline; plan, Browser and readiness proofs still require fresh three-minute reads.
+const recentEntry=t=>recent(t,20*60*1000);
 
 export async function requireEndpointAbsent(port,connect=net.createConnection) {
   await new Promise((resolve,reject)=>{
@@ -45,8 +48,10 @@ async function networkProof(plan,enable=false) {
   if(plan.mode==='capture') {
     const response=await fetch('http://127.0.0.1:2022/api/status',{signal:AbortSignal.timeout(3000)});
     const status=await response.json();requireThat(response.ok&&status.code===0,'capture_api_unhealthy');
-    process.kill(plan.readiness.same_pid,0);
-    for(const port of [2022,2023])await exec('/usr/sbin/lsof',['-nP','-a','-p',String(plan.readiness.same_pid),`-iTCP:${port}`,'-sTCP:LISTEN','-Fp']);
+    for(const port of [2022,2023]){
+      const listeners=(await exec('/usr/sbin/lsof',['-nP','-a','-p',String(plan.readiness.same_pid),`-iTCP:${port}`,'-sTCP:LISTEN','-Fp'])).stdout;
+      requireThat(listeners.split('\n').includes(`p${plan.readiness.same_pid}`),'capture_listener_process_mismatch');
+    }
   } else {
     for(const port of [2022,2023])await requireEndpointAbsent(port);
   }
@@ -81,7 +86,7 @@ export async function validatePlan(plan) {
   const proof=await json(plan.browser_proof_path),entry=await json(plan.entry_proof_path);
   requireThat(recent(proof.observed_at)&&proof.component_reopened===true&&proof.identity===plan.identity&&proof.capture_job_id===plan.capture_job_id&&proof.saved_target===plan.saved_target,'browser_proof_invalid');
   requireThat(proof.editor_url===config.editor_url&&plan.saved_target===`#小程序://见势擒龙团/${item.mini_program_token}`,'saved_target_changed');
-  requireThat(entry.identity===plan.identity&&entry.capture_job_id===plan.capture_job_id&&entry.status==='entry_launched_once'&&recent(entry.launched_at),'entry_proof_invalid');
+  requireThat(entry.identity===plan.identity&&entry.capture_job_id===plan.capture_job_id&&entry.status==='entry_launched_once'&&recentEntry(entry.launched_at),'entry_proof_invalid');
   if(plan.mode==='diagnostic')requireThat(/^[a-f0-9]{64}$/.test(plan.explicit_ui_diagnostic_authorization_sha256),'diagnostic_authorization_missing');
   else {
     const lines=(await fs.readFile(path.join(sub,'items',plan.identity,'capture_jobs.jsonl'),'utf8')).trim().split('\n');
@@ -99,7 +104,7 @@ export async function validatePlan(plan) {
 
 export async function claimExecution(planPath,plan,{resumePreinput=false}={}) {
   const entry=await json(plan.entry_proof_path);
-  requireThat(entry.identity===plan.identity&&entry.capture_job_id===plan.capture_job_id&&recent(entry.launched_at),'entry_proof_invalid');
+  requireThat(entry.identity===plan.identity&&entry.capture_job_id===plan.capture_job_id&&recentEntry(entry.launched_at),'entry_proof_invalid');
   const entryKey=sha(JSON.stringify([plan.identity,plan.capture_job_id,new Date(entry.launched_at).toISOString()]));
   const dir=path.join(plan.repo_root,'output/live/kol_native_atomic/claims');await fs.mkdir(dir,{recursive:true,mode:0o700});
   const claimPath=path.join(dir,entryKey+'.json');
