@@ -1,0 +1,208 @@
+{
+  "date": "2026-10-22",
+  "kind": "kol_durable_knowledge_draft",
+  "authority": 0,
+  "author": "吕晓彤",
+  "source": "baidu_subscription_share_browser",
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_subscription_videos/enrichment/416406b2a904070c6ea4baef03755cf8a7330b82ddab0b9cc1077ab7c091322a/artifacts/kol-netdisk-cloud-d19b7b32ce30bbc2/ScreenRecording_10-22-2026 上午8-30-44_1.txt",
+      "sha256": "38c355112d91cbe7d6127789727bdde77bc2f4044237afb747929111a66b01c3",
+      "size": 47788
+    }
+  ],
+  "summary": "本场可复用的authority=0候选知识只有XH-169的真实复现：外部观点必须保留时间戳、完整上下文并独立核验。高美债收益率叠加AI担忧的机会成本机制只与XH-115局部相邻，亏损后换入债券的回本算术只与XH-260局部相邻；两者放入非摄入审计关系，不追加来源日期。直播中的短期悲观、作者仓位和第三方赎回故事只属于本次点时判断，不改写小草姿态。",
+  "posture": {
+    "regime": "吕晓彤把10月22日直播时点的环境定性为熊市程度问题，并对下一交易日A股偏悲观，同时仍长期相信AI革命未结束。",
+    "dominant_style": "短期防守与现金等待，长期保留AI方向信心；两个时间尺度分开。",
+    "risk": "高美债收益率、AI预期与竞争担忧、基金赎回负反馈，以及作者自己承认的复盘不足。",
+    "style_ranking": [
+      "短期流动性与风险约束",
+      "现金及低风险工具的机会成本比较",
+      "长期AI产业方向",
+      "未经核验的个股与回购叙事"
+    ]
+  },
+  "regime_call": {
+    "call": "source_specific_bearish_near_term_with_long_term_ai_conviction",
+    "scope": "吕晓彤10月22日直播的点时观点",
+    "horizon": "下一交易日至多年；短期判断与长期AI观点分别评估",
+    "confidence": "medium",
+    "boundary": "没有10月23日A股开盘或盘中证据；文件名带上午时间，但正文多次说晚上好并讨论明天，因此不用文件名推断盘前时段。",
+    "what_would_falsify": [
+      "10月23日A股和美股风险资产止跌并出现持续资金回流，基金赎回压力没有继续扩大。",
+      "AI需求、盈利与资本开支兑现持续走弱，且算力利用和企业收入证据否定长期产业扩张。"
+    ]
+  },
+  "directions": [
+    {
+      "subject": "全球风险资产与AI",
+      "direction": "短期防守、长期保留方向信心",
+      "horizon": "下一交易日至多年",
+      "conditions": "短期取决于美股能否止跌、基金赎回是否缓和和AI竞争担忧是否降温；长期取决于AI需求、算力利用和企业兑现。"
+    },
+    {
+      "subject": "现金、货币基金与美国国债",
+      "direction": "当前机会成本上升，但不构成保证收益",
+      "horizon": "当前至未来数年",
+      "conditions": "必须核对实际产品收益率、利率路径、债券价格、汇率、期限和流动性。"
+    }
+  ],
+  "stocks": [
+    {
+      "name": "腾讯控股",
+      "ticker": "0700.HK",
+      "role": "作者用于说明中国公司长期持有风险的例子",
+      "boundary": "来源所称八年未涨未获独立核验，不转化为交易结论。"
+    },
+    {
+      "name": "Alphabet/Google",
+      "ticker": null,
+      "role": "观点变化与潜在回购能力的例子",
+      "boundary": "未区分GOOG/GOOGL，回购判断也未由公司披露核验。"
+    },
+    {
+      "name": "IBM",
+      "ticker": "IBM",
+      "role": "他人观点可能变化的历史例子",
+      "boundary": "不是作者当前荐股。"
+    },
+    {
+      "name": "可口可乐",
+      "ticker": "KO",
+      "role": "段永平寻找独立投资体系的比喻",
+      "boundary": "不是作者当前荐股。"
+    }
+  ],
+  "method_principles": [
+    {
+      "principle": "所有外部观点都要绑定说话时间、完整上下文和当时可见事实；单一切片或旧观点不能冒充当前持续观点。",
+      "provenance": "kol_source_reinforces_existing_XH-169",
+      "anti_pattern": "把历史片段、转述人物的交易或作者旧仓位直接当作当前指令。"
+    },
+    {
+      "principle": "比较股票与现金、货币基金或国债时，要用同一时点的实际收益率、期限、复利、价格波动、汇率和机会成本，不使用口播整数替代计算。",
+      "provenance": "analyst_distillation_with_non_ingestible_adjacency_to_XH-115_and_XH-260",
+      "anti_pattern": "把所谓无风险六个点或三年回本当作保证。"
+    },
+    {
+      "principle": "短期风险判断与长期产业信心分别记录触发和证伪；长期看好AI不能抵消短期赎回、利率和竞争压力，短期悲观也不能单独否定长期技术路线。",
+      "provenance": "kol_source_method_recurrence",
+      "anti_pattern": "用同一个多空标签覆盖不同期限。"
+    },
+    {
+      "principle": "作者自己的仓位、作者已赎回的量化产品、第三方基金经理近乎清仓和第三方投资者换入国债必须分角色记录。",
+      "provenance": "analyst_role_separation",
+      "anti_pattern": "把不同人物、不同产品和不同动作合并成作者已全面清仓。"
+    }
+  ],
+  "exit_lessons": [
+    "赎回一个被管理人明确提示风险的量化产品，不代表其他仓位也已卖出。",
+    "基金赎回可能迫使管理人卖出，但来源没有提供全市场申赎数据，不能把机制叙事直接当作规模事实。",
+    "亏损20%后换入十年期美国国债并持有三年，按已核到的4.96%或口述6%都不能保证恢复原本金；中途卖出还承担利率导致的价格波动。",
+    "不加杠杆只降低被迫平仓风险，不证明方向判断正确，也不替代仓位上限和退出条件。"
+  ],
+  "hypotheses": [
+    {
+      "existing_id": "XH-169",
+      "claim": "对KOL观点采用‘有限信任加独立核验’，可能比直接照搬历史业绩故事更能降低盲目跟随、过度集中和高杠杆左尾风险。",
+      "implied_rule": "每条外部观点补齐时间、完整上下文、标的、方向、触发、期限、风险预算、退出条件与独立事实；旧切片只作为历史证据。",
+      "falsifiable_test": "比较完整点时证据门与切片直接跟随两条纸面路径的错误当前化率、交易次数、最大回撤、尾部亏损和错失收益。",
+      "expected_effect": "完整证据门应减少把旧观点、转述和第三方动作误当当前作者指令的错误。",
+      "category": "information_source_judgment",
+      "relationship": "genuine_recurrence_reuse_existing_append_source_date"
+    }
+  ],
+  "timing_notes": [
+    "来源正文多次说晚上好，并围绕明天怎么办展开；仅称为10月22日直播，上传时间为2026-10-23 01:07:52+08:00。",
+    "下一交易日偏空判断最晚只到2026-10-23收盘有效；开盘和盘中走势可提前证伪，收盘后不得续期。",
+    "长期AI观点没有明确到达新高的期限，作者明确承认不知道需要多久。"
+  ],
+  "typo_corrections": [
+    {
+      "raw": "每股三四成/四成仓",
+      "normalized": "美股约三至四成仓位",
+      "confidence": "medium",
+      "reason": "上下文从原来五成降至三四成，语义指向美股；仍保留ASR不确定性。"
+    },
+    {
+      "raw": "牛牛附图/附图",
+      "normalized": "富途牛牛/富途",
+      "confidence": "medium",
+      "reason": "上下文为证券平台自动申购货币基金，但具体产品未指明。"
+    },
+    {
+      "raw": "美股三胜/三圣、海力小海力士影卫大、重工一、质谱",
+      "normalized": null,
+      "confidence": "low",
+      "reason": "不能从完整上下文唯一解析，保持未解析，不猜配人物或证券。"
+    }
+  ],
+  "decision_trace": {
+    "source_scope": "完整16192字符来源，133个稳定段，逐段双遍复核",
+    "dedup_scope": "只读比较291个候选ID及同作者既有distilled记录",
+    "source_decision_chain": {
+      "observations": [
+        "作者回顾：一名香港基金经理当时说自己已近乎清仓；作者当时仍是满仓，并认为对方小看了这一轮AI，所以没有跟随调整。",
+        "作者回顾：一名量化产品管理人后来强烈要求他赎回；作者先叙述自己当时不相信、也没有动作。作者事后解释或推断该管理人从后台看到了大量基金可能赎回的风险，来源没有显示这是管理人直接告诉他的。",
+        "作者在来源后段又说明，因该管理人强烈要求且自己担心产品爆雷，最终只赎回了这只量化产品，并明确说其他仓位没有一起处理。",
+        "作者事后说“实践证明我错了”，承认自己当时对外部风险提示的判断有误。"
+      ],
+      "inference": "系统归纳：作者的AI长期信念一度压过了外部风险提示，造成风险信号接受滞后；这是一条关于信息采纳和仓位范围的过程经验，不代表AI长期观点被推翻。",
+      "action": "来源中可确认的自述动作只有赎回该量化产品；其余仓位未动。",
+      "why": "作者给出的理由是量化产品管理人强烈要求赎回，以及他担心该产品本身发生风险；来源不支持把该动作扩写为全面清仓或当前市场卖出指令。",
+      "temporal_layering": "来源先回顾“我也没动”，后在另一处说“所以我赎回了”；这里只按来源叙述层次保留从未采纳提示到后来局部赎回的变化，不臆造具体日期或精确先后间隔。",
+      "verification_boundary": "基金经理仓位、量化后台数据、作者账户仓位和赎回成交均无独立回读，只能作为作者自述。"
+    },
+    "result": "hypotheses数组只保留XH-169真实复现；XH-115与XH-260移入hypothesis_relationships作局部相邻审计，不摄入、不追加来源日期；不制造新ID。",
+    "limits": "瑞银私聊、基金赎回规模、作者仓位、企业回购和模糊姓名未获独立事实核验。"
+  },
+  "judgment_heuristics": [
+    "先分期限，再分作者与转述角色，最后才评估可交易性。",
+    "先算清收益与本金路径，再讨论回本叙事。",
+    "没有当前事实与完整执行参数时，风险观点只收紧约束，不生成方向性买入。"
+  ],
+  "action_summary": {
+    "posture_update": "not_applied：吕晓彤是其他作者，且当前小草posture为7月过期先验；本草稿不修改REGIME_TIMELINE或任何小草姿态。",
+    "playbook_update": "no_deterministic_change：只复用点时核验、跨资产机会成本与回本计算方法，authority=0。",
+    "hypothesis_update": "reuse_XH-169_only；XH-115与XH-260仅记录在非摄入hypothesis_relationships；没有新ID，没有近义候选。",
+    "audit_evidence": "bound_to_complete_transcript_sha256_38c355112d91cbe7d6127789727bdde77bc2f4044237afb747929111a66b01c3_and_133_stable_segments",
+    "instrumentation_todo": "若进入研究，补点时美债曲线、货币基金实际收益与条款、基金申赎、A股和美股资金流、回购公告及AI需求与资本开支数据。",
+    "routing": [
+      "authority=0_reusable_method",
+      "reuse_existing_hypotheses_only",
+      "no_new_candidate_id",
+      "no_posture_update",
+      "no_parameter_or_book_effect",
+      "human_gate_required"
+    ]
+  },
+  "provenance": {
+    "author": "吕晓彤",
+    "source_type": "baidu_subscription_share_browser_video_transcript",
+    "source_date": "2026-10-22",
+    "published_at": "2026-10-23T01:07:52+08:00",
+    "evidence_sha256": [
+      "38c355112d91cbe7d6127789727bdde77bc2f4044237afb747929111a66b01c3"
+    ],
+    "registry_comparison": "reference/experience/xiaocao_hypotheses.jsonl",
+    "registry_candidate_id_count": 291,
+    "feedback_flagged": false
+  },
+  "hypothesis_relationships": [
+    {
+      "existing_id": "XH-115",
+      "observed_overlap": "本源只支持“高美债收益率与AI担忧共同提高风险资产机会成本”的局部机制，没有出现该候选所列科技、黄金、加密资产、创新药和机器人之间的完整轮动。",
+      "relationship": "partial_support_only",
+      "ingest_action": "do_not_ingest_or_append_source_date",
+      "reason": "完整claim未复现，执行器不得据此合并来源日期。"
+    },
+    {
+      "existing_id": "XH-260",
+      "observed_overlap": "本源的第三方案例和系统算术只支持“回本叙事必须计入机会成本与实际收益”的局部边界，没有复现该候选关于可交易流动性与永久损失的完整命题。",
+      "relationship": "partial_support_only",
+      "ingest_action": "do_not_ingest_or_append_source_date",
+      "reason": "完整claim未复现，执行器不得据此合并来源日期。"
+    }
+  ]
+}
