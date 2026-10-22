@@ -107,6 +107,16 @@ def test_finalizer_failure_preserves_stage_evidence(tmp_path: Path) -> None:
     assert Path(receipts[0]['evidence']['events_path']).is_file()
 
 
+def test_paper_eod_does_not_wait_on_model_research_before_app_reconciliation(tmp_path: Path) -> None:
+    completed, receipts = isolated_daily(tmp_path, fail_program='scripts/research_book_b_forward.py')
+    assert completed.returncode == 0
+    events = [json.loads(line) for line in Path(receipts[0]['evidence']['events_path']).read_text().splitlines()]
+    started = {row['program'] for row in events if row['type']=='command_started'}
+    assert 'kronos_screen/scripts/settle_book_a.py' in started
+    assert 'kronos_screen/scripts/settle_book_t.py' in started
+    assert 'scripts/research_book_b_forward.py' not in started
+
+
 def test_repeated_events_compact_without_hiding_failure_or_order_change() -> None:
     from xiaocao.live import run_flow
     base = run_flow.event(automation='eod', market_date='2026-09-30', step='reconcile', status='info',

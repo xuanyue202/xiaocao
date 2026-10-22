@@ -730,22 +730,53 @@ def render_weekly_evidence(report: dict, *, include_exploration_proposals: bool 
             lines.append(f"- {row['trade_date']} APP 与资金对照：{reason}。")
         if forward.get("missing_morning_dates"):
             lines.append("缺少原 morning 观察日：" + "、".join(forward["missing_morning_dates"]))
+        coverage = forward.get("calendar_coverage", {})
+        if coverage.get("status") not in {"covered_through_report_date", "not_started"}:
+            lines.append(f"日历覆盖仅证明至 {coverage.get('observed_through') or '未知'}；至本次报告日期 {coverage.get('report_date')} 的尾段未证明，不能视作无缺日。")
+        missing_eod = sorted({day for account in forward["accounts"].values() for day in account.get("missing_eod_dates", [])})
+        if missing_eod:
+            lines.append("缺少 EOD 估值日：" + "、".join(missing_eod))
         lines.append("模型成交和盘后时序单独标注；缺证与完整日期分母保留，晋级仍需研究门和人工决策。")
     return lines
 
 
-def observe_app_b_forward(contents: dict, *, as_of) -> dict:
+def observe_app_b_forward(contents: dict, *, as_of: dt.date | dt.datetime) -> dict:
     path = "output/research/app_b_forward/performance.json"
     raw = contents.get(path)
     if raw is None:
         return {"status":"not_observed","authority":0}
     try:
+        # The weekly entrypoint is an inclusive China calendar-date observer;
+        # callers with a timestamp retain their exact, aware evidence cutoff.
+        cutoff = (as_of if isinstance(as_of, dt.datetime) else
+                  dt.datetime.combine(as_of, dt.time.max, ZoneInfo("Asia/Shanghai")))
+        cutoff = _proof_time(cutoff.isoformat()).astimezone(ZoneInfo("Asia/Shanghai"))
         value = json.loads(raw)
         if (value.get("schema_version")!="app-b-forward-performance.v1" or value.get("authority")!=0
-                or _proof_time(value["as_of"])>as_of):
+                or _proof_time(value["as_of"])>cutoff):
             raise ValueError("forward report unproved")
+        coverage = dict(value.get("calendar_coverage") or {"status":"unproved_tail", "observed_through":None})
+        report_date = cutoff.date().isoformat()
+        coverage["report_date"] = report_date
+        # Successful and missing mornings partition the report's known calendar
+        # dates. Re-evaluate their EOD obligation at the consumer's cutoff, even
+        # when a same-day refresh failed. No weekday/calendar inference is used.
+        known_dates = set(value["consumed_morning_days"]) | set(value.get("missing_morning_dates", []))
+        expected_eod = {day for day in known_dates
+                        if day < report_date or (day == report_date and cutoff.hour >= 15)}
+        for account in value["accounts"].values():
+            account["missing_eod_dates"] = sorted(set(account.get("missing_eod_dates", [])) |
+                                                 (expected_eod - set(account.get("eod_curve", {}))))
+            if account["missing_eod_dates"]:
+                account["drawdown_coverage"] = "incomplete"
+        if coverage.get("status") != "not_started" and (not coverage.get("observed_through") or coverage["observed_through"] < report_date):
+            coverage.update(status="unproved_tail", report_date=report_date,
+                            unproved_tail={"after":coverage.get("observed_through"),"through":report_date})
+            for account in value["accounts"].values():
+                account["drawdown_coverage"] = "unproved_calendar_tail"
         return {"status":"observed_model_accounts","authority":0,"source_sha256":_hash(raw),
-                "source_path":path,"accounts":value["accounts"],
+                "source_path":path,"source_reported_at":value["as_of"],"accounts":value["accounts"],
+                "calendar_coverage":coverage,
                 "app_plan_comparisons":value.get("app_plan_comparisons",[]),
                 "missing_morning_dates":value.get("missing_morning_dates",[]),
                 "consumed_morning_days":value["consumed_morning_days"],"promotion":"PROPOSAL_ONLY"}

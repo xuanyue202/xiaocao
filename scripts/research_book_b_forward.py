@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timedelta
 import json
+import os
 import re
 import sqlite3
 from pathlib import Path
@@ -19,7 +20,7 @@ from xiaocao.live.buy_guards import evaluate_buy_market_guard, _TRADING_STATUSES
 from xiaocao.live.live_decision_support import calendar_provider, read_policy
 from xiaocao.live.morning_bundle import acquire_bundle, read_consumed_rows
 from xiaocao.live.book_b_capital import digest
-from xiaocao.research.book_b_forward import CHINA, PROTOCOL, _read_state, _stamp, performance, transact, compare_app_control
+from xiaocao.research.book_b_forward import CHINA, PROTOCOL, _read_state, _stamp, performance, transact, compare_app_control, morning_quote_codes
 from xiaocao.utils.atomic_files import atomic_write
 
 
@@ -84,7 +85,7 @@ def window_evidence(client, order: dict, now: datetime) -> dict:
 
 def write_reports(root: Path, now: datetime) -> dict:
     research = root/"output/research/app_b_forward"
-    report = performance(research)
+    report = performance(research, as_of=now)
     report["as_of"] = now.isoformat()
     result = {"status":"reported","path":str(research/"performance.json"),"authority":0}
     from xiaocao.research.app_b_lifecycle_report import build_lifecycle_report
@@ -110,7 +111,10 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--phase",choices=("morning","monitor","eod","report"),required=True)
     parser.add_argument("--root",type=Path,default=ROOT)
+    parser.add_argument("--checkpoint-phase", choices=("opening", "sparse", "precheck", "closing"))
     args = parser.parse_args(argv)
+    if (args.phase == "monitor") != bool(args.checkpoint_phase):
+        parser.error("--checkpoint-phase is required only for --phase monitor")
     root = args.root.resolve()
     research = root/"output/research/app_b_forward"
     now = datetime.now(CHINA)
@@ -132,7 +136,8 @@ def main(argv=None):
         return 0
     policy = read_policy(root/"output/live/kol_policy/decisions",now)
     inputs = {"trading_dates":[d for d in trading_dates if d >= (state["morning_dates"][0] if state["morning_dates"] else today)], "policy":policy,"marks":{},"statuses":{},"windows":{},"market_guards":{},
-              "source_code_sha":subprocess.check_output(["git","rev-parse","HEAD"],cwd=root,text=True).strip()}
+              "source_code_sha":os.environ.get("XIAOCAO_DAILY_SOURCE_REVISION") or subprocess.check_output(["git","rev-parse","HEAD"],cwd=root,text=True).strip(),
+              "runtime_run_id":os.environ.get("XIAOCAO_DAILY_RUN_ID"), "checkpoint_phase":args.checkpoint_phase}
     codes = {lot["code"] for account in state["accounts"].values() for lot in account["lots"] if lot["shares"]>0}
     for account in state["accounts"].values():
         for order in account["orders"]:
@@ -146,8 +151,7 @@ def main(argv=None):
             raise ValueError("FORWARD_ORIGINAL_BUNDLE_UNAVAILABLE")
         rows = read_consumed_rows(freeze,today,live_dir=root/"output/live")
         inputs.update(rows=rows,freeze=freeze)
-        codes.update(row["code"] for row in rows if row.get("book")=="B" and row.get("is_live") is True
-                     and (row.get("mode_exec_star") is True or row.get("mode_star") is True))
+        codes.update(morning_quote_codes(rows, freeze, policy))
         # This is the existing Book-A performance sensor, read only.
         sys.path.insert(0,str(root/"kronos_screen/scripts"))
         from paper_record import _kill_switch_factor
@@ -189,7 +193,11 @@ def main(argv=None):
                 inputs["statuses"][variant][lot["lot_id"]] = status
     # Persist actual acquisition completion; no model order starts before this instant.
     now = datetime.now(CHINA)
-    inputs["policy"] = read_policy(root/"output/live/kol_policy/decisions",now)
+    current_policy = read_policy(root/"output/live/kol_policy/decisions",now)
+    if args.phase == "morning" and any(policy.get(k) != current_policy.get(k)
+            for k in ("status", "book", "runtime", "decision_sha256")):
+        raise ValueError("FORWARD_POLICY_CHANGED_DURING_ACQUISITION")
+    inputs["policy"] = current_policy
     result = transact(research,phase=args.phase,inputs=inputs,now=now)
     result["reports"] = write_reports(root,now)
     print(json.dumps(result,ensure_ascii=False,sort_keys=True))

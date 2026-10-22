@@ -69,7 +69,7 @@ def test_closing_retains_app_then_paper_even_when_either_branch_fails(
         ["-m", "xiaocao.live.closing_startup"],
         ["scripts/book_b_live_intraday.py", "--date", "today", "--phase", "closing", "--execute-sells"],
         ["scripts/live_monitor.py", "--execute-sells"],
-        ["scripts/research_book_b_forward.py", "--phase", "monitor"],
+        ["scripts/research_book_b_forward.py", "--phase", "monitor", "--checkpoint-phase", "closing"],
     ]
     assert all(row["automation"] == AUTOMATION_ID for row in rows)
     assert all(row["thread"] == "original-runtime-thread" for row in rows)

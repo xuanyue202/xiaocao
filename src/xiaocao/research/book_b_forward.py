@@ -131,6 +131,34 @@ def _order(account: dict, *, code: str, shares: int, limit: float, side: str,
     return result
 
 
+def adjudicate_variant(rows: list[dict], freeze: dict, policy: dict, variant: str) -> tuple:
+    """Use the same derived candidates for quote acquisition and planning."""
+    if variant not in VARIANTS:
+        raise ValueError("FORWARD_VARIANT_INVALID")
+    if variant == "no_kol":
+        policy = {"status":"neutral", "book":"B", "runtime":"live", "reason":"REGISTERED_NO_KOL_CONTROL"}
+    adjudication = adjudicate_book_b(rows, policy, freeze=freeze, runtime="live")
+    derived, explanation = adjudication.rows, deepcopy(adjudication.receipt)
+    if variant == "mode_m":
+        flags = {(r["code"],r.get("mode")):r.get("mode_star") is True for r in rows}
+        derived = [{**r,"mode_exec_star":flags.get((r["code"],r.get("mode")), False)} for r in derived]
+        ids = {(r["code"],r.get("mode")) for r in eligible_buy_rows(derived)}
+        for row in explanation["rows"]:
+            row["star_selected"] = (row["code"],row["mode"]) in ids
+            if row["star_selected"]:
+                row["selection_reason"] = "REGISTERED_MODE_M_CHALLENGE"
+        explanation["strategy_codes"] = [r["code"] for r in eligible_buy_rows(derived)]
+        explanation["strategy_semantics_sha256"] = digest({"source":explanation["strategy_semantics_sha256"], "variant":variant,"rows":explanation["rows"]})
+        explanation["receipt_sha256"] = digest({k:v for k,v in explanation.items() if k!="receipt_sha256"})
+    return derived, explanation, policy
+
+
+def morning_quote_codes(rows: list[dict], freeze: dict, policy: dict) -> set[str]:
+    return {r["code"] for variant in VARIANTS
+            for r in eligible_buy_rows(adjudicate_variant(rows, freeze, policy, variant)[0])
+            if r.get("mode_state") in {"ACTIVE", "PROVISIONAL"} and not r["code"].endswith(".BJSE")}
+
+
 def plan_morning(state: dict, inputs: dict, now: datetime) -> dict:
     today = now.date().isoformat()
     if today in state["morning_dates"]:
@@ -146,22 +174,7 @@ def plan_morning(state: dict, inputs: dict, now: datetime) -> dict:
     # Late invocations record the denominator, without reconstructing a morning order.
     late = not (9,25) <= (now.hour,now.minute) < (10,0)
     for variant, account in state["accounts"].items():
-        policy = inputs["policy"] if variant != "no_kol" else {
-            "status":"neutral", "book":"B", "runtime":"live", "reason":"REGISTERED_NO_KOL_CONTROL"}
-        adjudication = adjudicate_book_b(rows, policy, freeze=freeze, runtime="live")
-        derived = adjudication.rows
-        explanation = deepcopy(adjudication.receipt)
-        if variant == "mode_m":
-            flags = {(r["code"],r.get("mode")):r.get("mode_star") is True for r in rows}
-            derived = [{**r,"mode_exec_star":flags.get((r["code"],r.get("mode")), False)} for r in derived]
-            ids = {(r["code"],r.get("mode")) for r in eligible_buy_rows(derived)}
-            for row in explanation["rows"]:
-                row["star_selected"] = (row["code"],row["mode"]) in ids
-                if row["star_selected"]:
-                    row["selection_reason"] = "REGISTERED_MODE_M_CHALLENGE"
-            explanation["strategy_codes"] = [r["code"] for r in eligible_buy_rows(derived)]
-            explanation["strategy_semantics_sha256"] = digest({"source":explanation["strategy_semantics_sha256"], "variant":variant,"rows":explanation["rows"]})
-            explanation["receipt_sha256"] = digest({k:v for k,v in explanation.items() if k!="receipt_sha256"})
+        derived, explanation, policy = adjudicate_variant(rows, freeze, inputs["policy"], variant)
         risk = _risk(account, inputs["marks"], now)
         marked = _marked(account, inputs["marks"], now)
         held = {lot["code"] for lot in account["lots"] if lot["shares"] > 0}
@@ -280,7 +293,8 @@ def observe_checkpoint(state: dict, inputs: dict, now: datetime) -> dict:
             if (status.get("triggered") is not True or status.get("sell_block_reason")
                     or status.get("market_guard_status") != "ok" or lot["entry_date"] >= now.date().isoformat()
                     or reason not in {"HARD_STOP","AI_EVENT_RISK_EXIT","KOL_DISCRETIONARY_EXIT","TRAILING_STOP","EOD_DISCIPLINE_1455"}
-                    or ((now.hour,now.minute)<(14,45) and reason in {"TRAILING_STOP","EOD_DISCIPLINE_1455"})):
+                    or (reason in {"TRAILING_STOP","EOD_DISCIPLINE_1455"} and
+                        (inputs.get("checkpoint_phase") != "closing" or (now.hour,now.minute)<(14,45)))):
                 continue
             if any(o["side"]=="SELL" and o["lot_id"]==lot["lot_id"] and
                    (o["status"] in {"pending","unknown"} or _stamp(o["created_at"]).date()==now.date()) for o in account["orders"]):
@@ -334,8 +348,22 @@ def transact(root: Path, *, phase: str, inputs: dict, now: datetime) -> dict:
                 "state_path":str((root/"state.json").resolve()),"authority":0}
 
 
-def performance(root: Path) -> dict:
+def performance(root: Path, *, as_of: datetime | None = None) -> dict:
     state = _read_state(Path(root)/"state.json")
+    observations = [_stamp(e["observed_at"]) for e in state["events"] if e["inputs"].get("trading_dates")]
+    cutoff = _stamp(as_of.isoformat()) if as_of else max(observations, default=None)
+    through = max(observations, default=None)
+    tail_unproved = cutoff is not None and (through is None or through.date() < cutoff.date())
+    known_dates = {day for event in state["events"] for day in event["inputs"].get("trading_dates", [])
+                   if state["morning_dates"] and day >= state["morning_dates"][0]
+                   and cutoff is not None and day <= cutoff.date().isoformat()}
+    expected = {day for day in known_dates if day < cutoff.date().isoformat() or cutoff.hour >= 15}
+    coverage = {"status":"not_started" if not state["morning_dates"] else
+                         "unproved_tail" if tail_unproved or through is None else "covered_through_report_date",
+                "observed_through":through.date().isoformat() if through else None,
+                "report_date":cutoff.date().isoformat() if cutoff else None,
+                "unproved_tail":({"after":through.date().isoformat() if through else None,
+                                   "through":cutoff.date().isoformat()} if tail_unproved else None)}
     accounts = {}
     for variant, account in state["accounts"].items():
         observed = account["valuations"][-1] if account["valuations"] else {}
@@ -344,9 +372,6 @@ def performance(root: Path) -> dict:
                 o["status"] in {"pending","unknown"} for o in account["orders"]) else None)
         eod={_stamp(v["observed_at"]).date().isoformat():v for v in account["valuations"]
              if _stamp(v["observed_at"]).hour>=15 and v["nav_cents"] is not None}
-        expected=sorted({day for event in state["events"] for day in event["inputs"].get("trading_dates",[])
-                         if state["morning_dates"] and day>=state["morning_dates"][0]
-                         and (day<_stamp(event["observed_at"]).date().isoformat() or _stamp(event["observed_at"]).hour>=15)})
         peak=PROTOCOL["initial_capital_cents"]
         drawdown=0.
         for day in sorted(eod):
@@ -366,12 +391,11 @@ def performance(root: Path) -> dict:
             "valuation_observed_at":observed.get("observed_at"), "fee_status":"protocol_model_rate",
             "eod_curve":eod, "missing_eod_dates":sorted(set(expected)-set(eod)),
             "observed_eod_max_drawdown_pct":drawdown if eod else None,
-            "drawdown_coverage":"complete_expected_dates" if expected and not set(expected)-set(eod) else "incomplete",
+            "drawdown_coverage":("unproved_calendar_tail" if tail_unproved else
+                                 "complete_expected_dates" if expected and not set(expected)-set(eod) else "incomplete"),
             "app_realized_profit":None, "manual_assistance":"not_applicable_research_model"}
-    expected_mornings = {day for event in state["events"] for day in event["inputs"].get("trading_dates", [])
-        if state["morning_dates"] and state["morning_dates"][0] <= day <= _stamp(event["observed_at"]).date().isoformat()}
     return {"schema_version":"app-b-forward-performance.v1", "authority":0, "promotion":"PROPOSAL_ONLY",
-            "missing_morning_dates":sorted(expected_mornings-set(state["morning_dates"])),
+            "calendar_coverage":coverage, "missing_morning_dates":sorted(known_dates-set(state["morning_dates"])),
             "protocol_sha256":digest(PROTOCOL), "consumed_morning_days":state["morning_dates"], "accounts":accounts,
             "limitations":["model fills are not APP outcomes", "observed NAV does not prove complete daily drawdown",
                             "after-business execution timing is an explicit difference from APP opening"]}

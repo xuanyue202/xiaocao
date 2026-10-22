@@ -93,13 +93,16 @@ claim 保持。资金读取失败不会冒充“已核验资金”。
 未决数为 pending + unknown；缺少 morning 的交易日与缺少 EOD 的交易日分别显示。净值使用
 当前可核验价格；同日正式收盘价可用于 EOD。缺日保持缺日，观察点回撤不称完整日频回撤。
 KOL 到期按真实消费时点降级；原计划与来源字节保留，不能用后来的政策重写前一计划。
+行情按共同裁决后的四组候选并集获取，包含合法模式跟随新增的冻结候选；采集期间政策变更或到期必须明确拒绝这次未覆盖采样。研究事件使用原 supervisor 固定的源码版本，部署目录后续更新不能改写版本归因。
+
+报告时点与已证日历截止分开。已有日历证明的日期按本次报告时点检查缺 morning/EOD；最后日历观测之后的尾段标为未证明，不因刷新报告时间就声称覆盖完整，也不凭周几补出交易日。
 
 ## 原任务的运行顺序
 
 - morning execution：原 B/T 业务都结束后，shell 调 `research_book_b_forward.py --phase morning`。
-- 14:25 与 14:45：原启动器在 paper/APP 都返回后调 `--phase monitor`。普通 opening/sparse
-  原 owner 在其两端业务完成后同样调用一次；无 tick 权限/no-op 的任务不运行研究分支。
-- EOD：paper shell 运行 `--phase eod`；APP EOD/statement 结束后 `--phase report` 刷新只读报告。
+- 14:25 与 14:45：原启动器在 paper/APP 都返回后调 `--phase monitor --checkpoint-phase precheck|closing`。普通 opening/sparse
+  原 owner 在其两端业务完成后携带原 `--checkpoint-phase opening|sparse` 调用一次。晚到不改变阶段；仅 closing 允许软退出。无 tick 权限或控制层 no-op 的任务不运行研究分支，已完成的合法业务 no_action 仍推进独立模型账户。
+- EOD：原 paper shell、APP EOD 和 statement 均结束后，由同一个 EOD owner 调用 `--phase eod` 一次，同时推进模型并刷新报告；研究采样不排在 APP 对账之前。
 - weekly：原 shell 先刷新 report，weekly evidence 固定协议、资金报告、APP 生命周期的精确字节。
 
 独立研究失败只标研究降级，保留原业务退出码；不延迟原 SELL 交接，不把研究 ready 当业务完成。

@@ -2,6 +2,7 @@ from copy import deepcopy
 from datetime import datetime, timedelta
 import json
 import importlib.util
+from types import SimpleNamespace
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -173,7 +174,7 @@ def test_sell_lot_cash_fee_and_t1_close_model_cycle(tmp_path):
         statuses={v:{lot["lot_id"]:{"triggered":True,"sell_reason":"EOD_DISCIPLINE_1455",
             "market_guard_status":"ok","market_guard_observed_at":now.isoformat(),
             "latest_price":11.,"market_guard_down_price":9.} for lot in a["lots"]} for v,a in state["accounts"].items()}
-        transact(tmp_path,phase="monitor",inputs={"statuses":statuses,"marks":{"000001.XSHE":{
+        transact(tmp_path,phase="monitor",inputs={"checkpoint_phase":"closing","statuses":statuses,"marks":{"000001.XSHE":{
             "price":11.,"status":"ok","observed_at":now.isoformat()}}},now=now)
         return now
     closing(22)
@@ -193,3 +194,141 @@ def test_sell_lot_cash_fee_and_t1_close_model_cycle(tmp_path):
         sell=account["orders"][-1]
         assert sell["status"]=="filled" and account["lots"][0]["shares"]==0
         assert account["cash_cents"]==PROTOCOL["initial_capital_cents"]+sell["realized_pnl_cents"]
+
+
+@pytest.mark.parametrize("policy_changes", [False, True])
+def test_morning_cli_quotes_reviewed_mode_follow_and_keeps_pinned_revision(tmp_path, monkeypatch, policy_changes):
+    from tests.test_kol_policy import make_decision, publish, load
+    from xiaocao.live.kol_policy import MODE_OVERRIDE_SCHEMA_VERSION
+
+    spec = importlib.util.spec_from_file_location("forward_runtime_cli", Path(__file__).resolve().parents[1]/"scripts/research_book_b_forward.py")
+    cli = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cli)
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return NOW
+    monkeypatch.setattr(cli, "datetime", Clock)
+    data = inputs()
+    data["rows"][0].update(mode_state="COLD", mode_trade_eligible=False, mode_exec_star=False, mode_star=False)
+    data["freeze"]["snapshot_sha256"] = frozen_rows_digest(data["rows"])
+    decision = make_decision(as_of=NOW.astimezone(ZoneInfo("UTC")), scale=1)
+    decision.update(schema_version=MODE_OVERRIDE_SCHEMA_VERSION, xiaocao_mode_overrides=[{
+        "mode":"m1", "source_report_id":"report-1", "source_quote":"当前跟随已冻结的 m1 模式。",
+        "scope":"frozen_candidates_only"}])
+    decision["source_refs"][0]["author_id"] = "kol-xiaocao"
+    policies = tmp_path/"policies"
+    publish(policies, decision, NOW)
+    snapshot = load(policies, NOW)
+    reads = []
+    def read(*args):
+        reads.append(True)
+        return {"status":"expired","book":"B","runtime":"live"} if policy_changes and len(reads)>1 else snapshot
+    monkeypatch.setattr(cli, "read_policy", read)
+    monkeypatch.setattr(cli.monitor, "_client", lambda: object())
+    monkeypatch.setattr(cli, "calendar_provider", lambda client: lambda now: [NOW.date().isoformat()])
+    monkeypatch.setattr(cli, "acquire_bundle", lambda *a, **k: {**data["freeze"], "status":"ready"})
+    monkeypatch.setattr(cli, "read_consumed_rows", lambda *a, **k: data["rows"])
+    queried = []
+    def quote(client, code):
+        queried.append(code)
+        return {"trade":10., "downPrice":9., "tradeStatus":"T", "tradeDate":"20261022"}
+    monkeypatch.setattr(cli.monitor, "_realtime_detail", quote)
+    monkeypatch.setattr(cli.monitor, "_detail_observed_at", lambda *a: NOW)
+    monkeypatch.setattr(cli.monitor, "_detail_trade_date", lambda *a: "2026-10-22")
+    monkeypatch.setitem(__import__('sys').modules, "paper_record", SimpleNamespace(_kill_switch_factor=lambda: (1., {})))
+    monkeypatch.setenv("XIAOCAO_DAILY_SOURCE_REVISION", "a"*40)
+    monkeypatch.setattr(cli.subprocess, "check_output", lambda *a, **k: "b"*40)
+    if policy_changes:
+        with pytest.raises(ValueError, match="POLICY_CHANGED_DURING_ACQUISITION"):
+            cli.main(["--phase","morning","--root",str(tmp_path)])
+        assert not (tmp_path/"output/research/app_b_forward/state.json").exists()
+        return
+    assert cli.main(["--phase","morning","--root",str(tmp_path)]) == 0
+    state = _read_state(tmp_path/"output/research/app_b_forward/state.json")
+    assert queried == ["000001.XSHE"]
+    assert len(state["accounts"]["app_b_control"]["orders"]) == 1
+    assert len(state["accounts"]["open_limit"]["orders"]) == 1
+    assert state["accounts"]["no_kol"]["orders"] == []
+    assert state["events"][0]["inputs"]["source_code_sha"] == "a"*40
+
+
+def test_report_clock_cannot_claim_unobserved_calendar_tail_complete(tmp_path):
+    data = inputs()
+    data["trading_dates"] = ["2026-10-22"]
+    data["rows"] = []
+    data["freeze"].update(snapshot_row_count=0, snapshot_sha256=frozen_rows_digest([]))
+    transact(tmp_path, phase="morning", inputs=data, now=NOW)
+    transact(tmp_path, phase="eod", inputs={"trading_dates":["2026-10-22"],"marks":{}}, now=NOW.replace(hour=15))
+    report = performance(tmp_path, as_of=NOW.replace(day=23,hour=20))
+    assert report["calendar_coverage"]["status"] == "unproved_tail"
+    assert report["calendar_coverage"]["observed_through"] == "2026-10-22"
+    assert all(a["drawdown_coverage"] == "unproved_calendar_tail" for a in report["accounts"].values())
+    # A proved Friday calendar observation with no Friday morning/EOD still
+    # makes those missing checkpoints visible to that evening's weekly report.
+    transact(tmp_path, phase="monitor", inputs={"trading_dates":["2026-10-22","2026-10-23"],"marks":{}}, now=NOW.replace(day=23))
+    report = performance(tmp_path, as_of=NOW.replace(day=23,hour=20))
+    assert report["calendar_coverage"]["status"] == "covered_through_report_date"
+    assert report["missing_morning_dates"] == ["2026-10-23"]
+    assert all(a["missing_eod_dates"] == ["2026-10-23"] for a in report["accounts"].values())
+
+
+@pytest.mark.parametrize("phase,expected", [("opening",0),("sparse",0),("precheck",0),("closing",4)])
+def test_late_protective_checkpoint_never_acquires_closing_authority(tmp_path, phase, expected):
+    transact(tmp_path, phase="morning", inputs=inputs(), now=NOW)
+    later = NOW+timedelta(minutes=7)
+    transact(tmp_path, phase="monitor", inputs={"marks":{},"windows":order_windows(_read_state(tmp_path/"state.json"),later)}, now=later)
+    now = NOW.replace(day=23,hour=14,minute=46)
+    state = _read_state(tmp_path/"state.json")
+    statuses = {v:{lot["lot_id"]:{"triggered":True,"sell_reason":"EOD_DISCIPLINE_1455",
+        "market_guard_status":"ok","market_guard_observed_at":now.isoformat(),
+        "latest_price":11.,"market_guard_down_price":9.} for lot in a["lots"]} for v,a in state["accounts"].items()}
+    transact(tmp_path, phase="monitor", inputs={"checkpoint_phase":phase,"statuses":statuses,"marks":{}}, now=now)
+    assert sum(o["side"]=="SELL" for a in _read_state(tmp_path/"state.json")["accounts"].values()
+               for o in a["orders"]) == expected
+
+
+def test_weekly_cannot_infer_current_coverage_from_older_report(tmp_path):
+    from xiaocao.research.weekly_evidence import observe_app_b_forward
+    data = inputs()
+    data.update(trading_dates=["2026-10-22"], rows=[])
+    data["freeze"].update(snapshot_row_count=0,snapshot_sha256=frozen_rows_digest([]))
+    transact(tmp_path, phase="morning", inputs=data, now=NOW)
+    transact(tmp_path, phase="eod", inputs={"trading_dates":["2026-10-22"],"marks":{}}, now=NOW.replace(hour=15))
+    report = performance(tmp_path,as_of=NOW.replace(hour=20))
+    assert report["calendar_coverage"]["status"] == "covered_through_report_date"
+    report["as_of"] = NOW.replace(hour=20).isoformat()
+    result = observe_app_b_forward({"output/research/app_b_forward/performance.json":json.dumps(report).encode()},
+                                   as_of=NOW.replace(day=23,hour=20))
+    assert result["calendar_coverage"]["status"] == "unproved_tail"
+    assert all(a["drawdown_coverage"] == "unproved_calendar_tail" for a in result["accounts"].values())
+
+
+@pytest.mark.parametrize("cutoff,expected_status,missing_eod", [
+    (NOW.replace(day=23).date(), "observed_model_accounts", ["2026-10-23"]),
+    (NOW.replace(day=22).date(), "unproved", None),
+])
+def test_real_weekly_date_entry_consumes_report_and_rechecks_same_day_eod(tmp_path, cutoff, expected_status, missing_eod):
+    from xiaocao.research.weekly_evidence import build_weekly_evidence, render_weekly_evidence
+    root = tmp_path/"output/research/app_b_forward"
+    data = inputs()
+    data.update(trading_dates=["2026-10-22"], rows=[])
+    data["freeze"].update(snapshot_row_count=0, snapshot_sha256=frozen_rows_digest([]))
+    transact(root, phase="morning", inputs=data, now=NOW)
+    transact(root, phase="eod", inputs={"trading_dates":["2026-10-22"],"marks":{}}, now=NOW.replace(hour=15))
+    friday = NOW.replace(day=23)
+    transact(root, phase="monitor", inputs={"trading_dates":["2026-10-22","2026-10-23"],"marks":{}}, now=friday)
+    report = performance(root, as_of=friday)
+    report["as_of"] = friday.isoformat()
+    assert all(a["missing_eod_dates"] == [] and a["drawdown_coverage"] == "complete_expected_dates"
+               for a in report["accounts"].values())
+    (root/"performance.json").write_text(json.dumps(report))
+    weekly = build_weekly_evidence(tmp_path, as_of=cutoff)
+    observed = weekly["app_b_forward"]
+    assert observed["status"] == expected_status
+    if missing_eod is not None:
+        assert observed["source_reported_at"] == friday.isoformat()
+        assert all(a["missing_eod_dates"] == missing_eod and a["drawdown_coverage"] == "incomplete"
+                   for a in observed["accounts"].values())
+        rendered = "\n".join(render_weekly_evidence(weekly))
+        assert "app_b_control" in rendered and "缺少 EOD 估值日：2026-10-23" in rendered

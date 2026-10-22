@@ -245,8 +245,6 @@ case "$STEP" in
     run_python kronos_screen/scripts/settle_book_a.py >>"$LOG" 2>&1 || true
     log "settle book T (wide trend stop / low-turnover rebalance)"
     run_python kronos_screen/scripts/settle_book_t.py >>"$LOG" 2>&1 || true
-    log "independent APP B research EOD marks and original APP lifecycle evidence"
-    run_python scripts/research_book_b_forward.py --phase eod >>"$LOG" 2>&1 || log "APP B research EOD degraded"
     log "pnl decomposition (pick_alpha / entry_slippage / exit_timing)"
     run_python kronos_screen/scripts/decompose_pnl.py >>"$LOG" 2>&1 || true
     PAPER_VS_MARKET_START="${PAPER_VS_MARKET_START:-2026-06-01}"

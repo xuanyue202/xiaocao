@@ -52,7 +52,7 @@ def test_precheck_retains_both_branches_without_model_handoff(
     assert [row["args"] for row in rows] == [
         ["scripts/live_monitor.py", "--execute-sells"],
         ["scripts/book_b_live_intraday.py", "--date", "today", "--phase", "precheck", "--execute-sells"],
-        ["scripts/research_book_b_forward.py", "--phase", "monitor"],
+        ["scripts/research_book_b_forward.py", "--phase", "monitor", "--checkpoint-phase", "precheck"],
     ]
     assert all(row["automation"] == AUTOMATION_ID for row in rows)
     assert all(row["thread"] == "original-runtime-thread" for row in rows)
