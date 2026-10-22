@@ -1,5 +1,10 @@
 # Founder Securities native AX helper
 
+## Independent SELL proof (2026-10-22)
+
+The production SELL adapter has a scoped positions/today-orders preflight. It proves the bound account, complete structural rows, owned-code quantity/sellable and exact order identities without requiring unrelated position prices, funds summary, trades or the cancel surface. Full-account fallback is permitted only for the explicitly classified read failures; identity/date mismatches remain terminal. The separate `book-b-sellable-only.v1` projection has no cash/NAV authority, never writes accounting observations and is forbidden for BUY and EOD. Existing batch/per-order dialog checks, credential fences, T+1, market/quantity guards and exact-once claims remain binding. Offline adapter tests and a real read-only APP capture are separate acceptance evidence; neither proves a future fill.
+
+
 Use this branch for the macOS Founder Securities 6.12 native helper under
 `native/foundersc_ax_executor/`.
 

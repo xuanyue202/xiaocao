@@ -1361,7 +1361,7 @@ def test_intraday_unknown_sell_does_not_block_independent_second_lot(
         now=lambda: NOW,
     )
 
-    assert receipt.status == "executed"
+    assert receipt.status == "pending"
     assert len(calls) == 2
     assert len(receipt.execution_receipts) == 2
     assert len(list((tmp_path / "plan_intents").glob("*.json"))) == 2
@@ -1951,7 +1951,7 @@ def test_full_live_lifecycle_buy_decision_sell_fill_eod_and_next_basis(
         now=lambda: NOW,
         strategy_sha="a" * 40,
     )
-    assert intraday.status == "executed"
+    assert intraday.status == "pending"
     assert len(handed_off) == 1
 
     # The transaction implementation owns this transition in production.  The

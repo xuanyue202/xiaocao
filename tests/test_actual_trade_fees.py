@@ -112,7 +112,10 @@ def test_matching_estimated_cash_never_certifies_actual_profit_or_settlement(tmp
         status_provider=lambda _: pytest.fail("EOD must not evaluate exits"),
         execute=lambda _: pytest.fail("fee reconciliation cannot submit orders"),
         now=lambda: EOD_NOW, execute_sells=False)
-    assert receipt.status == "blocked" and receipt.reason == "LIVE_BOOK_B_SETTLEMENT_ACTUAL_FEES_REQUIRED"
+    assert receipt.status == "observed" and receipt.reason == "EOD_RECONCILED_ACCOUNTING_PENDING"
+    assert receipt.settlement is None
+    assert any(row["code"] == "LIVE_BOOK_B_SETTLEMENT_ACTUAL_FEES_REQUIRED"
+               for row in receipt.eod_review["blockers"])
     assert receipt.broker_snapshot == snapshot and receipt.settlement is None
     # An explicitly proved zero or a fee equal to the old estimate is valid.
     import_fees(tmp_path, fee_proof(tmp_path, snapshot, "order-buy", ".10"))

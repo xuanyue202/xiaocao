@@ -10,12 +10,13 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Iterable
 
 from xiaocao.strategy.mode_switch import plan_board_lot_orders
 
 from .book_b_pricing import initial_limit_price
+from .account_risk import AccountRiskReceipt
 
 
 def _number(value: object) -> float | None:
@@ -256,3 +257,60 @@ __all__ = [
     "allocate_frozen_rows",
     "validate_allocation_rows",
 ]
+
+
+def allocate_policy_rows(rows: list[dict], allocation: BookBAllocationFacts,
+                       decision: dict, risk: AccountRiskReceipt) -> tuple[BookBAllocationFacts, dict]:
+    """Size only original allocator slots, retaining each slot's cash ceiling."""
+    from .live_decision_support import buy_cap
+    error = allocation.validation_error()
+    if error:
+        raise ValueError(error)
+    evidence = {
+        str(row["code"]): {
+            **buy_cap(decision, risk, str(row["code"]), allocation.deploy_factor),
+            "kol_mode_override": row.get("kol_mode_override"),
+        }
+        for row in rows
+    }
+    factor = min([allocation.deploy_factor, risk.deploy_factor] +
+                 [item["scale"] for item in evidence.values() if not item["skip"]])
+    effective = replace(allocation, deploy_factor=factor)
+    sized = []
+    if any(not item["skip"] for item in evidence.values()):
+        try:
+            if any(row.get("mode_exec_planned_shares") in (None, "") for row in rows):
+                base_rows = allocate_frozen_rows(rows, allocation)
+            else:
+                validate_allocation_rows(rows, allocation)
+                base_rows = [dict(row) for row in rows]
+        except ValueError as exc:
+            if str(exc) != "ALLOCATION_EMPTY":
+                raise
+            base_rows = []
+        for row in base_rows:
+            adjustment = evidence[str(row["code"])]
+            if adjustment["skip"]:
+                continue
+            ratio = adjustment["effective_deploy_factor"] / allocation.deploy_factor
+            if ratio == 1:
+                planned = [dict(row)]
+            else:
+                from .book_b_pricing import initial_limit_price
+
+                price = initial_limit_price(row.get("open"), row.get("basket_price"))
+                candidate = {**row, "execution_price": price}
+                target = float(row["mode_exec_target_weight"]) * ratio
+                planned = plan_board_lot_orders(
+                    [candidate], nav=allocation.settled_nav, cash_limit=effective.cash_limit,
+                    fee_rate=allocation.fee_rate, price_key="execution_price", max_candidates=1,
+                    max_batch_ratio=effective.batch_ratio * effective.deploy_factor,
+                    weight_resolver=lambda _subset, weight=target: [weight],
+                    per_position_cash_cap=int(row["mode_exec_planned_shares"]) * price *
+                                          (1 + allocation.fee_rate) * ratio,
+                )
+            for item in planned:
+                item.pop("allocation_proof_hash", None)
+                sized.append(item)
+    return effective, {"rows_by_code": {str(row["code"]): row for row in sized},
+                       "by_code": evidence, "base_allocation": allocation.canonical_payload()}

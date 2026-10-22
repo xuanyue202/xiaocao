@@ -1,5 +1,10 @@
 # Weekly deep review automation
 
+## Funded APP B controls (2026-10-22)
+
+Use [BOOK_B_WORKFLOW.md](../../../../docs/BOOK_B_WORKFLOW.md) and `app-b-forward-funded-v1` in the research protocol registry. Weekly evidence includes `output/research/app_b_forward/{protocol,performance,app_lifecycle}.json`; `auto_daily.sh weekly` refreshes reports before inventory freeze. Compare complete funded paths, open lots, fees, unknown orders and missing EOD observations. Keep selection-only comparisons and matched closed trades as separate diagnostics. The E control and three pre-registered challenges are authority=0; no daily-return row may masquerade as an independent trade. Promotion still requires research_run and the human gate.
+
+
 Read this file only for the Friday weekly flywheel-consumer branch.
 
 For APP Book B performance apply Operating Contract §6: inspect the exact

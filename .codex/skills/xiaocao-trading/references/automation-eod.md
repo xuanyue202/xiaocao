@@ -1,5 +1,10 @@
 # EOD automation
 
+## Unified APP B lifecycle reporting (2026-10-22)
+
+`auto_daily.sh eod` advances independent funded controls after canonical paper settlements. After the original APP EOD and statement readback finish, run `PYTHONPATH=src .venv/bin/python scripts/research_book_b_forward.py --phase report` once to refresh the read-only APP lifecycle join. Read [BOOK_B_WORKFLOW.md](../../../../docs/BOOK_B_WORKFLOW.md): model net returns, APP marked NAV, estimated profit and confirmed profit are distinct. Missing actual fees or unclassified cash keep confirmed profit unknown. A report never closes an order or grants settlement authority.
+
+
 Read this file only for the daily post-close capture/evaluation branch.
 
 APP Book B cash/NAV and performance use Operating Contract §6's dynamic

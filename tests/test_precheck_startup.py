@@ -28,7 +28,7 @@ def startup(tmp_path: Path) -> Path:
         "with Path('calls.jsonl').open('a') as stream:\n"
         "    stream.write(json.dumps({'args':sys.argv[1:], 'automation':os.environ.get('CODEX_AUTOMATION_ID'), "
         "'thread':os.environ.get('CODEX_THREAD_ID')})+'\\n')\n"
-        "branch = 'PAPER' if sys.argv[1].endswith('/live_monitor.py') else 'APP'\n"
+        "branch = 'PAPER' if sys.argv[1].endswith('/live_monitor.py') else 'RESEARCH' if sys.argv[1].endswith('/research_book_b_forward.py') else 'APP'\n"
         "sys.exit(int(os.environ.get(branch+'_EXIT', '0')))\n"
     )
     python.chmod(0o755)
@@ -45,13 +45,14 @@ def test_precheck_retains_both_branches_without_model_handoff(
         ["bash", str(startup)], capture_output=True, text=True, check=False,
         env={**os.environ, "CODEX_AUTOMATION_ID": AUTOMATION_ID,
              "CODEX_THREAD_ID": "original-runtime-thread", "PAPER_EXIT": str(paper_exit),
-             "APP_EXIT": str(app_exit)},
+             "APP_EXIT": str(app_exit), "RESEARCH_EXIT": "9"},
     )
     assert result.returncode == expected
     rows = [json.loads(line) for line in (startup.parent.parent / "calls.jsonl").read_text().splitlines()]
     assert [row["args"] for row in rows] == [
         ["scripts/live_monitor.py", "--execute-sells"],
         ["scripts/book_b_live_intraday.py", "--date", "today", "--phase", "precheck", "--execute-sells"],
+        ["scripts/research_book_b_forward.py", "--phase", "monitor"],
     ]
     assert all(row["automation"] == AUTOMATION_ID for row in rows)
     assert all(row["thread"] == "original-runtime-thread" for row in rows)

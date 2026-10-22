@@ -1,5 +1,10 @@
 # Kronos research and flywheels
 
+## APP B forward funded controls (2026-10-22)
+
+The isolated `output/research/app_b_forward` ledger implements the pre-registered `app-b-forward-funded-v1` protocol: an E/B-exit control and M-selection, open-limit and no-KOL challenges, each seeded with 100,000 model yuan. Source, adjudication, allocation, future-window fill evidence, cash, lots, fees and EOD marks are retained. Missing fill windows retain unknown orders/reservations; missing marks do not mint NAV. See [BOOK_B_WORKFLOW.md](../../../../docs/BOOK_B_WORKFLOW.md) for timing and interpretation. These accounts neither alter canonical Paper A/B/T nor carry APP authority. Weekly evaluation retains the complete denominator and human promotion gate.
+
+
 Read this file only for K/P overlays, forward labels, training rows, guarded research, verdicts or flywheel state interpretation.
 
 ## Authority boundary

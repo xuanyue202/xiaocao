@@ -1,5 +1,7 @@
 # APP Book B 账本
 
+Protective SELL may separately use the account-bound `sellable_only` projection described in [BOOK_B_WORKFLOW.md](BOOK_B_WORKFLOW.md). Its cash, NAV and accounting fields are unavailable; it never records an accounting observation and cannot satisfy BUY or EOD settlement requirements. The read-only APP lifecycle report joins existing ownership, execution and SQLite evidence and preserves unknown actual fees/profit.
+
 会计口径以 [Operating Contract §6](OPERATING_CONTRACT.md#6-仓位与资金) 为准。
 `src/xiaocao/live/book_b_accounting.py` 是统一入口，使用 Python 标准库 SQLite；
 原有成交、资金事实及其校验、账户锁继续复用。paper A/B/T 不在此数据库中。

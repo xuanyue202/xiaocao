@@ -1,5 +1,14 @@
 # Intraday and closing automation
 
+## Unified APP B lifecycle (2026-10-22)
+
+Follow [BOOK_B_WORKFLOW.md](../../../../docs/BOOK_B_WORKFLOW.md). On an eligible full-account read failure the original APP runner may obtain an independent `sellable_only` proof for protective SELL: account/date, owned lot, current quantity/sellable, T+1, quote, exact tuple and durable claim remain required. Identity/date failures never downgrade. This proof has no cash/NAV/accounting authority and cannot support BUY or EOD settlement.
+
+After the serial SELL batch the same runner observes only its claimed plans, with a persisted 120-second original budget capped at 14:57. It releases the APP/account operation lease while waiting. ACK/PARTIAL is pending; UNKNOWN is reconcile-only. Consume its final or unresolved-order receipt; never launch a second runner, cancel, replace or replay. Readback duration, batch failure and supporting NAV failure remain separate.
+
+The 14:25 and 14:45 startup launchers advance independent funded research after both business branches; do not call it twice. For an authorized opening/sparse checkpoint, after both paper and APP business have finished, run `PYTHONPATH=src .venv/bin/python scripts/research_book_b_forward.py --phase monitor` once. A no-op/outside-checkpoint or duplicate-owner result remains terminal and does not authorize research acquisition. Research failure cannot suppress production receipts or mutate canonical Paper A/B/T.
+
+
 Read this file only for Book-B/Book-T monitoring, the 14:25 precheck or the 14:45 closing pass.
 
 ## Execute and scope

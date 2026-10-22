@@ -108,6 +108,8 @@ run_morning_books() {
   wait "$book_t_pid"
   book_t_exit=$?
   trap - TERM INT
+  log "isolated APP-rule Book B research after both original business branches"
+  run_python scripts/research_book_b_forward.py --phase morning >>"$LOG" 2>&1 || log "APP B research degraded; production receipts remain authoritative"
   if [ "$book_t_exit" -ne 0 ]; then return "$book_t_exit"; fi
   if [ "$book_b_exit" -ne 0 ]; then
     log "morning execution FAILED: Book B failed; Book T completed independently"
@@ -243,6 +245,8 @@ case "$STEP" in
     run_python kronos_screen/scripts/settle_book_a.py >>"$LOG" 2>&1 || true
     log "settle book T (wide trend stop / low-turnover rebalance)"
     run_python kronos_screen/scripts/settle_book_t.py >>"$LOG" 2>&1 || true
+    log "independent APP B research EOD marks and original APP lifecycle evidence"
+    run_python scripts/research_book_b_forward.py --phase eod >>"$LOG" 2>&1 || log "APP B research EOD degraded"
     log "pnl decomposition (pick_alpha / entry_slippage / exit_timing)"
     run_python kronos_screen/scripts/decompose_pnl.py >>"$LOG" 2>&1 || true
     PAPER_VS_MARKET_START="${PAPER_VS_MARKET_START:-2026-06-01}"
@@ -309,6 +313,7 @@ case "$STEP" in
     run_python scripts/flywheel_sweep.py --top 30 >>"$LOG" 2>&1 || true
     log "weekly deep review: refresh distill action log"
     run_python scripts/distill_transcript.py --refresh-action-log >>"$LOG" 2>&1 || true
+    run_python scripts/research_book_b_forward.py --phase report >>"$LOG" 2>&1 || log "APP B funded evidence report degraded"
     log "weekly deep review: refresh cache-only shortline comparison"
     if ! run_python scripts/research_shortline_comparison.py --end "$TODAY" >>"$LOG" 2>&1; then
       log "weekly supporting_health=degraded: shortline comparison unavailable; no return improvement inferred"

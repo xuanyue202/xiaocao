@@ -1,137 +1,120 @@
-# Book B 统一操作流程与迭代
+# APP Book B 统一操作流程
 
-适用：APP 服务端仿真短线主线、同上游的 paper B，以及独立短线研究。规则权威是
-[Operating Contract](OPERATING_CONTRACT.md) §1c/§2a/§4/§6/§10；本文说明如何操作、解释与验证。
-Book T 是趋势系统，不参与本页的短线优劣排名。
+适用 APP 服务端仿真短线、原 Paper B 和独立前向研究。规则权威为
+[Operating Contract](OPERATING_CONTRACT.md) §1c/§2a/§4/§6/§10。
+Book T 保持趋势体系，不参与短线排名。
 
-## 一条流程，分别兑现账户结果
+## 已采纳的依据与边界
 
-| 阶段 | 唯一职责 | 完成证据 |
+2026-10-22 的完整比较截止 10-21。57 组同进场已平仓 A/B 配对，在统一资金回放中
+A 为 +11.4389%、B 为 +19.0082%；完成样本偏差仍在，支持保留 B 退出而非宣称最优。
+48 个具备严格 D+1 证据的共同信号日，E / M 资金路径为 +14.1879% / +11.9634%；
+扩大到退出日期未证明的旧标签会翻转排序，因此 APP 保留 E 和普通 COLD 默认门。
+共同成交路径的差异同时涉及买价和退出日期，不能只看单笔均值或把差额当可追回利润。
+
+APP 继续现有 E、B 分阶段退出、动态资金、10%/20% 损失预算和原单纪律。
+M、open 限价、no-KOL 只占三个独立研究槽；这次工程升级没有晋级这些策略。
+
+## 从原始批次到实际结果
+
+| 阶段 | 职责 | 完成证据 |
 |---|---|---|
-| morning producer | 捕获全部原候选、确定性模式证据、原始 ★E，提交不可变批次 | 原 checkpoint、raw/canonical hash、run/strategy/日期 |
-| KOL writer | 发布完整来源语义与观点当前性 | LiangHui 观点/评估/关系及来源验证 |
-| 当前适用性判断 | 把合格观点与原冻结、当前条件、对应账户风险核对 | 原请求、明确映射、独立审核、已发布且有效 policy |
-| 共同解释模块 | 确定性消费 policy，给每只冻结候选留下选择原因与限制 | `book-b-adjudication.v1` |
-| APP / paper 各自执行 | 本账户整手分配、行情与风险门、委托/模型成交、账本 | APP 原计划与柜台成交；paper 独立消费 claim/result |
-| 盘后与周复盘 | 对照预期、选择、订单、成交、费用与收益，登记待证假设 | 原件绑定的比较报告与 research manifest |
+| morning producer | 完整原候选、模式事实、不可变批次 | 日期、原 checkpoint、raw/canonical hash、策略 SHA |
+| KOL writer 与当下判断 | 唯一来源语义；当前适用性及独立复核 | 原请求、精确映射、有效 policy |
+| 共同裁决 | 解释原门与 KOL 效应 | `book-b-adjudication.v1` 每只候选的原因 |
+| 最终计划 | 共同整手分配与政策上限 | `book-b-final-plan.v1` 资金事实、候选、计划经济字段 |
+| APP 执行 | 账户/行情/原单门，串行提交、准确终态 | intent、claim、柜台号、成交增量、未决状态 |
+| 会计与研究 | lot、费用、资金流、同频估值、分歧 | 原账链和独立资金账户，实际与模型结果分栏 |
 
-APP 与 paper 在原来的调用点使用 `book_b_workflow.adjudicate_book_b`。
-共同解释模块不增加模型、全局等待或第二个语义 writer。各账户仍消费自己的有效 policy；
-只有确实核对了两账户，才允许 `runtime=both`。APP 不等待 paper 成交。
+`book_b_workflow` 解释策略，`book_b_allocation.allocate_policy_rows` 负责同一分配规则。
+`compare_final_plans` 首先比较来源，再比较规则、政策/选择、资金输入、执行模型和最终
+订单经济字段。日常报告会用原 owner 的 runs/history 中已验 hash 的 APP final_plan 与同日 app_b_control
+逐一比较，并把首处分歧送入 weekly evidence。旧回执缺 final_plan 时记录缺证，不重建。
+相同选择 hash 不能代替相同手数、成交或收益。APP 的 final_plan 是
+归因证据，实际执行权限继续由原 guards 和 durable claim 决定。
 
-当前 APP 的分配输入是冻结 ★E；paper 保留原有合格排名候补池，整手表达不足时可选后备。
-这项适配差异写在 `allocation_adapter` 中。相同策略指纹只证明共同选择阶段相同，
-不证明资金、手数、最终股票集合、价格、订单或收益相同。
+原 Paper A/B/T 及 A 性能传感器保留历史和现行写者。原 Paper B 的较宽候选池作为旧流程
+对照；新的 `app_b_control` 使用 APP 分配器。两者不能混称同一 Paper B 账户。
 
-## 一次判断必须能解释“不动”
+## 当前判断与“不动”的解释
 
-`judgment.outcome` 描述消费到的正式政策：`published_no_change` / `published_changed`、
-缺失/过期等降级，或 `invalid`。它不证明本次请求已经完成。
+有效中性政策、复用有效政策、当前请求已完成、支持超时/缺失/风险免等分别记录。
+当前请求完成要求 decision/review 同时绑定原 `morning_request_sha256`，且原预算内
+完成。`mode_mappings` 保存原词、精确目标、exact/conditional/unmapped、条件和当前
+适用性，独立审核绑定 `mode_mapping_reviewed`。普通 COLD 不因关键词或模式别名解除；
+合法 v2 模式跟随仍只消费原有授权接口，UNKNOWN 不恢复。
 
-`support_attempt.outcome` 单独描述当前请求：
+候选被选中后，政策缩放、账户风险、已有持仓/预留、整手、行情和订单门仍可能拒绝。
+没有 final_plan 的旧回执保持未证明；不补写过去的决策或重放已完成交易日。
 
-- `completed_no_change/changed`：作者与独立审核者都绑定原 `morning_request_sha256`，
-  原 rendezvous 的有效政策 hash 一致，完成时间在原预算内。
-- `reused_valid_policy`：复用之前已验证且仍有效的判断。
-- `timed_out/deferred/blocked`：支持层实际结果；不能写成“模型判断不买”。
-- `valid_policy_request_completion_unproved`、`not_observed`：存在可消费政策或解释，
-  但本请求完成证据不足。旧格式政策仍按原时效与权限消费。
-- `not_required`：原冻结为空，不虚构一次语义审核。
+## SELL 闭环
 
-每只候选记录原模式状态、消费状态、★E 是否选中、选择原因、KOL 缩放/跳过和执行限制。
-被选中只到分配入口；账户风险归零、行情失败、未成交及 UNKNOWN 各有后续原回执。
-`morning_pipeline_status.py` 比较两端共同阶段，terminal notice 展示紧凑原因；原生产者 ready
-不等于任一消费者执行成功。历史回执缺新字段时显示 unproved，不补写旧结果。
+完整账户读失败，只对已分类的只读证据错误尝试独立 `sellable_only`：同账户/同日/
+60 秒内、完整结构及关键格置信度、自有成交链、当前数量/可卖数量、lot 与 T+1。
+身份或日期不符保持阻断。投影不提供现金、估值、NAV 或结算；BUY/EOD 继续原完整门。
+提交前再次检查当前可卖数量、全部当日委托 ID 和目标 tuple，原意图、报价、双钥匙及
+claim 保持。资金读取失败不会冒充“已核验资金”。
 
-## 模式映射与完成回执
+原 intraday checkpoint 在原 120 秒总预算与 14:57 较早截止内，完成串行交接后调用
+`reconcile_existing` 读取已 claim 的原单，等待期间释放 APP/账户锁。预算在 APP 准备前
+持久化；不因回读重置。ACK/PARTIAL/UNKNOWN 是 pending；已成交/撤销/拒绝才有对应
+终态。进度文件和最终回执分别保存。后续 lot 失败也须保留此前订单，禁止用第二个 runner
+重报。截止未证明保留原单、部分成交和 UNKNOWN；正式结算仍严格。
 
-收到原冻结评审请求后，warm worker 在决策中填写 `morning_request_sha256` 和
-`mode_mappings`。每项保存 `source_report_id`、`source_term`、`target_mode`、
-`classification=exact|conditional|unmapped`、`conditions`、
-`current_applicability=supported|uncertain|contradicted`、`reason`。
+`app_lifecycle.json` 将原 freeze 引用、计划、报价、限价、柜台号、fill、lot、资金与
+费用观测连起来。时长标作本地观察时长，不冒称交易所撮合延迟。明确 user-assisted lot
+单列；有自动执行链也不据此排除未记录的人工帮助。最终费用或现金归属不完整时，
+确认利润为未知，估费收益另列。
 
-`unmapped` 的 target 为 null；conditional 必须保存条件。映射覆盖本轮实际涉及模式的
-观点，空列表表示本轮没有模式映射事项，须由原覆盖复核支持。复核者在原 review 中绑定
-同一请求 hash 并写 `mode_mapping_reviewed=true`。有 v2 模式跟随时，必须有同 source report、
-同精确 target、当前 supported 的映射；自然语言条件仍由独立主审逐项验证。
+## 独立前向资金实验
 
-“红盘起爆”不能靠字符串包含自动变成“标杆短线起爆”。无法证实同义或条件尚未满足就
-保留 unmapped/uncertain；没有正式覆盖的 COLD 仍按默认门。新字段是来源忠实性审计，
-不会新增代码、恢复 UNKNOWN 或放宽资金与交易门。
+预登记协议 `app-b-forward-funded-v1` 及机器定义 `book_b_forward.PROTOCOL` 固定一个
+10 万元基准和三个同资金、费用、风险、B 退出的挑战：
 
-## 收益比较：选择对照必须回答同一个问题
+| 账户 | 唯一挑战 |
+|---|---|
+| app_b_control | APP E 筛选、共同分配和当前 live policy 的控制组 |
+| mode_m | 显式 mode_star 参与度；继续当前模式资格、COLD/UNKNOWN 门 |
+| open_limit | 数量保持共同分配，限价改为 min(open,basket)，检验价格与未成交成本 |
+| no_kol | 关闭当前 KOL 增量，保留其余确定性门 |
 
-| 对照 | 用途 | 必须保留的分母 |
-|---|---|---|
-| paper B / APP B | 识别准备、价格、受理、成交与退出执行差异 | 原共同批次、未执行、未成交、人工协助、独立费用/现金流 |
-| Book A / B | 比较固定 next-close 与 B 退出 | 同代码/日期/价/量、双方已平仓；排除数 |
-| ★KP / ★B / ★M / ★E | 检验选择精度与参与度 | 全原始选择、不可成交/缺标签、空槽、版本 |
-| no-KOL / current bounded / challenger | 判断 KOL 的增量 | 同冻结、同预算和风险、全部未执行样本、费用、样本外 |
+全部状态在 `output/research/app_b_forward/`，一个锁内原子提交四账户状态及来源事件。
+首次未来原始 morning 才建立计划；重复同日调用只读已消费结果，过迟输入记录不回填。
+独立账户始终不调用 APP，不修改 canonical paper，不获取新的交易权限。
 
-本轮读回：截至 2026-10-21，57 对严格同进场退出中 B−A 均值 +0.6287pp，去掉最大正差后
-+0.3736pp；支持保留 B 退出。988 行历史候选的 ★E 条件单笔标签较好，但共同完整日期里
-只在 37/50 日有选择。固定三个名义槽的算术指标会改变排序，提示优先研究空仓机会成本。
-这些标签未模拟重叠持仓/T+1/现金，不能直接复利成资金收益或证明永久晋级。
-57 对样本均保存了窗口成交标签，未出现 fallback；这仍是模型标签，未经原窗口、hash 与
-时钟逐笔复核。比较报告分别披露配对及各模式的窗口、fallback、重试代理和未知依据，
-保留全样本描述性收益，不把有标签升级成 APP 可实现收益证明。
+研究在原业务完成后运行，因此与 APP 的开盘执行时刻可能不同。该时序差异在协议、计划
+和收益报告中明示；这不是同一时刻可实现收益的证明。每个模型订单登记实际创建时钟后，
+才使用下一个完整五分钟窗口。只有完整分钟覆盖、时间/代码绑定、价格及成交量单位可核验
+才模拟撮合：达到限价且最多使用窗口内满足价格条件成交量的 1%，按限价计费成交；剩余
+数量仅在模型内到期。未知窗口保留资金/数量预留，不填入确定成交或确定净值。
+这些是事先固定的模型假设，不能推断 APP 会成交、会部分成交或会自动撤单。
 
-复算命令（无网络、无交易、先检查数据健康；只写独立研究报告与输入副本）：
+限价挑战同时保留全部计划、pending、零成交、未知、部分成交、费用、持仓和资本占用。
+未决数为 pending + unknown；缺少 morning 的交易日与缺少 EOD 的交易日分别显示。净值使用
+当前可核验价格；同日正式收盘价可用于 EOD。缺日保持缺日，观察点回撤不称完整日频回撤。
+KOL 到期按真实消费时点降级；原计划与来源字节保留，不能用后来的政策重写前一计划。
 
-```bash
-PYTHONPATH=src .venv/bin/python scripts/research_shortline_comparison.py --start 2026-06-01 --end YYYY-MM-DD
-```
+## 原任务的运行顺序
 
-输出 `output/research/shortline_comparisons/`，保存输入 hash、剔除日期与成熟性限制。
-`--end` 是观察窗口，不是证明历史标签当时已知。APP 净收益仍以 §6 独立费用/资金核验为准。
+- morning execution：原 B/T 业务都结束后，shell 调 `research_book_b_forward.py --phase morning`。
+- 14:25 与 14:45：原启动器在 paper/APP 都返回后调 `--phase monitor`。普通 opening/sparse
+  原 owner 在其两端业务完成后同样调用一次；无 tick 权限/no-op 的任务不运行研究分支。
+- EOD：paper shell 运行 `--phase eod`；APP EOD/statement 结束后 `--phase report` 刷新只读报告。
+- weekly：原 shell 先刷新 report，weekly evidence 固定协议、资金报告、APP 生命周期的精确字节。
 
-## APP 收益改进的落地顺序
+独立研究失败只标研究降级，保留原业务退出码；不延迟原 SELL 交接，不把研究 ready 当业务完成。
+研究订单后续通过原登记窗口核验，不能靠重复 canonical paper_record 获取另一策略的成交。
 
-统一回执是归因与维护基础，不应被记作已经提高收益。当前证据支持以下顺序：
+## 维护、晋级与验收
 
-| 优先项 | 已观察事实 | APP 动作与验收 |
-|---|---|---|
-| 保留 B 退出并兑现执行 | 57 对同进场样本 B 比固定次日收盘 A 平均高 0.6287 个百分点；并非每笔占优 | 保留共用退出规则；逐次核对合法触发、提交、成交，修复当前仍复现的执行故障，不整体延迟卖出 |
-| 消除可避免的未执行 | 历史 paper 独有的 8 组中，5 组准备/解锁受阻、1 组行情缺证；另 2 组是未成交与合法价格跳过 | 验收现有准备、原请求恢复及竞价报价修复；分别统计工程阻断、合法跳过、未成交。原历史利润不能称可追回利润 |
-| 核查买入价格机制 | 10/14—10/21 的 6 个共同已成交组，APP 均价都等于各自委托限价，平均较 paper 模型价高 49.43bp | 先核查仿真撮合和原委托/行情时钟，区分撮合规则、限价设置、提交延迟和 paper 模型差异；没有因果证明前不调低限价、不把固定滑点写入参数 |
-| 研究 COLD 与参与度 | ★E 条件标签较好，但 50 个共同完整日期中仅 37 日选中 | 先在隔离 paper 中固定资金、退出、费用、T+1 和失败处理，只改变一个研究变量；APP 继续当前默认门 |
+每周沿三个固定 experiment_id 跟踪继续、反证、修订或退役，先处理既有实验再新增。
+完整费用后资金收益是目标，同时看回撤、资金利用、尾部损失、未成交与未知分母。
+APP 撮合规律仍须实际原单和 contemporaneous quote 验证，不能从模型或六组样本推断。
 
-价格验证必须保留未成交订单分母：只看已成交样本会高估低限价方案。若以后注册限价
-对照，要同时衡量成交后的价格、未成交机会成本、费用后资金收益和回撤，不能只以成交率
-或“买得更便宜”判优。6 组限价等于成交价是待解释现象，不证明服务端永远按限价撮合。
-新价格/参与度方案依次占用现有研究实验槽，避免同时换选股、入场和退出造成归因混乱。
+有收益结论前须核对完整机会日期、点时、资金约束、费用、样本外和成本敏感性。
+`research_run.py` 的逐笔护栏与完整资金账户证据各自满足；组合日收益不能冒充逐笔样本。
+永久晋级继续 §10 人工门，不由周报或累计收益排名自动启用。
 
-## 可持续的 paper 研究
-
-原 paper B 消费时自动把原冻结的四种选择标记、无 KOL/当前有界模式选择、policy、
-候选行 hash 与 checkpoint 保存到 `output/research/shortline_experiments/<date>/`。
-记录失败只降级研究观测；不会延迟或阻断正式交易。空选择也保存，未知 flag 保持 null。
-同内容重复写幂等；已终态日期不重跑来补数据。
-
-这层是 **选择证据采集**。`selection_recorded_outcomes_pending` 不代表另一个资金账户
-已经运行，更不代表收益已成熟。`paper_record --pick vb_star/kp_star/mode_star` 仍会写
-canonical B 账户，不能用多次运行它制造隔离试验。
-
-新资金组合实验使用独立 account/positions/trades/claim/fees/NAV 根，复用生产分配、成交、
-退出规则，按 [研究协议](../reference/experience/research_protocols.yaml) 的
-`shortline-book-b-v1` 登记后启动。首个挑战变量建议是 COLD 与空槽机会成本；其他条件固定。
-先登记假设、样本外起点、比较族数量、资金约束、费用与失败处理，后读取未来结果。
-当前代码没有自动启动这类新资金组合，也没有将选择记录升级成组合收益。
-
-维护顺序：
-
-1. 原晨间 owner 收齐执行回执，检查共同阶段差异；工程损耗与合法未成交分开。
-2. 原 EOD owner 核对当日会计/费用，保留实际费用未知；研究标签按原 forward_eval 成熟。
-3. 周复盘在原 plan 前运行一次上述比较命令（end 为真实窗口末日），再由 weekly harness
-   冻结报告、输入和每日选择记录。沿现有三个实验槽跟踪，不另建一套无限增长的候选池。
-4. 每槽记录 continue/refine/completed/retired/rolled_back、证据、反证与下一次检查条件。
-   同时看费用后资金收益、回撤、资金利用率、尾部损失与执行损耗；成交率本身不是目标。
-5. 永久变更须 §10 的点时/费用/样本外/失败样本/研究门与回滚；执行修复以受影响行为
-   回归和后续自然运行证明。未证明事项保持显式状态，不靠新的说明文字变成通过。
-
-## 发布验收
-
-顺序为隔离实现 → 独立 Standards/Spec 评审并修复 → 合法测试时段内行为回归 →
-源码/skill/Automation 一致读回 → 下一原始自然批次验收。禁止回放已终态交易日。
-自然验收检查同批 hash、COLD 默认与合法覆盖、空批/零买回执、两端分配适配差异、
-原计划/成交/账本及研究记录隔离。回滚使用本变更 commit 的定向 revert，保留全部历史证据。
+工程验收区分代码/离线隔离测试、真实 APP 只读端口验证、未来原单自然终态、未来资金收益。
+后两项不能由测试或说明替代。回滚定向 revert 源码 commit，保留原订单、协议、输入、研究
+账户和会计历史；已有模型账户协议不兼容时拒绝继续，另行登记新实验而非覆盖旧状态。

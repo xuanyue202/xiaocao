@@ -16,6 +16,23 @@ from xiaocao.research.shortline_comparison import record_selection_experiments
 pytestmark = pytest.mark.app_simulation
 
 
+def test_final_plan_compares_economic_stages_without_claiming_equal_fills():
+    from xiaocao.live.book_b_workflow import final_plan_receipt, compare_final_plans
+    rows = [row(state="ACTIVE")]
+    decision = adjudicate_book_b(rows, {"status":"absent","book":"B","runtime":"live"}, freeze=freeze(rows), runtime="live").receipt
+    order = {"code":"000001.XSHE", "shares":100, "limit_price":10.}
+    app = final_plan_receipt(decision, {"available_cash":10000}, [order])
+    model = final_plan_receipt(decision, {"available_cash":10000}, [order], execution_model="paper_model")
+    result = compare_final_plans(app, model)
+    assert result["first_divergence"] == "execution_model"
+    assert result["same_order_economics"] and result["fill_or_return_equivalence"] == "not_established"
+    different_cash = final_plan_receipt(decision, {"available_cash":1000}, [order])
+    assert compare_final_plans(app,different_cash)["first_divergence"] == "account_allocation"
+    model["orders"][0]["shares"] = 200
+    with pytest.raises(ValueError,match="HASH_MISMATCH"):
+        compare_final_plans(app,model)
+
+
 def row(code="000001.XSHE", state="COLD", **extra):
     return {"date": NOW.date().isoformat(), "code": code, "book": "B", "is_live": True,
             "mode": "标杆短线起爆", "mode_state": state, "mode_exec_score": 10,

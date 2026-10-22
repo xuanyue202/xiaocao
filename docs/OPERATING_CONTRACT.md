@@ -1,6 +1,6 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：4.47
+**版本**：4.48
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
 **关联实现**：`src/xiaocao/live/{safety,capital_keychain,foundersc_native_ax,foundersc_native_broker,trading_execution,book_b_live_lifecycle,book_b_live_intraday}.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`native/foundersc_ax_executor/`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{book_b_live_morning,book_b_live_intraday,live_monitor,research_mode_switch_replay}.py`
@@ -463,9 +463,11 @@ APP 在用户明确批准的动态资金政策下，以账户绑定的资金划�
   可提交数量，其他订单/成交/资金/结算标记为未证并留待对账。成功回执保留
   只读动作、尝试次数、历史失败码及实际证据等级。账户/日期不匹配不可降级；
   broker 写动作按 durable claim 的副作用证据判断，不能因读取失败盲重放。
-  当前 Python native 端口尚未完成独立 `sellable_only` 投影、pre-submit 与
-  回执链；上述是验收目标，使用前须有专用实现及隔离端到端验证。当前完整
-  快照失败时不得伪称已具备这条路径。
+  Python native 端口采用独立 `book-b-sellable-only.v1` 投影及提交前数量证明：
+  60秒内同账户/同日完整持仓结构、所有代码和相关数量格严格核验，自有 lot 重放与
+  T+1保持；prepare 仍核对全部委托ID和目标tuple。现金/NAV/估值为空，完整会计与
+  EOD不消费这个投影。部署验收分别保存隔离端到端测试、真实只读证明及未来原单
+  自然结果；测试通过不能证明未来成交。
   券商混合账户现金/总资产永远只是交叉证据，不能进入 Book-B 子账户计算；券商同
   code 持仓必须覆盖 Book-B owned shares，否则全链 fail-closed。券商可卖数量是
   账号级事实：Book-B 当日 lot 始终按 0 可卖处理，即使同代码人工老仓使账号显示
@@ -487,6 +489,11 @@ APP 在用户明确批准的动态资金政策下，以账户绑定的资金划�
   可卖及 Book-B 自有 lot 的剩余份额。其他 lot 的合法退出不因一个未结单全局
   停下；每笔写入仍串行持锁，保留独立 durable claim 和回执。新 BUY 仍以当前
   可用资金、已验证 owned lot、保守 NAV/敞口和风险限额独立约束。
+  原 intraday owner 在启动时持久化120秒准备/交接/回读预算，截止不晚于14:57。
+  串行交接完成后，只通过 `reconcile_existing` 对已claim的原单继续终态回读，等待
+  期间不占APP/账户锁；保留checkpoint owner锁。ACK/PARTIAL/UNKNOWN显示pending，
+  截止或读取故障保留精确未决回执与进度，不补单、不退款预算、不启动第二个runner。
+  后续lot发生错误仍保留此前订单及回读结果。回执与本地观察时长不能冒充成交时间。
   每个 live checkpoint 还必须持有独立的非阻塞 lifecycle writer lock；重叠实例直接
   `LIVE_BOOK_B_CHECKPOINT_ALREADY_RUNNING` 结束，禁止并发切换 native 查询页。
   每次运行写独立 archive receipt；`<date>-<phase>.json` 仅为 latest 指针，碰锁实例
@@ -540,7 +547,13 @@ canonical/raw/checkpoint 与策略 SHA，逐候选解释选择和执行限制。
 paper 原消费自动留存独立、authority=0 的各选择器前向选择证据；记录不等于组合实验
 或收益。新资金组合须独立账本和 §10 协议，不能多次运行 canonical `paper_record --pick`
 来伪装隔离。只读比较统一标签、披露空槽/缺证/配对分母，周复盘冻结并核对其输入。
-具体操作和自然运行验收见 [Book B 统一流程](BOOK_B_WORKFLOW.md)。
+APP 最终计划增加 `book-b-final-plan.v1`，绑定共同分配器、原裁决、账户输入和最终
+订单。原Paper B保留旧候补池，独立 `app_b_control` 使用APP分配器；差异依次从来源、
+政策、资金到执行解释。用户已批准 `app-b-forward-funded-v1`：10万元控制及M/open-limit/
+no-KOL三项纸盘挑战，共同风险与B退出，仅前向独立账本。原业务后才登记未来模型窗口，
+完整分钟证据与成交量上限决定模型数量；未知保留预留及NAV未知，不冒充APP成交。
+当前APP策略参数不变；完整资金证据、逐笔研究门和§10人工晋级分别验证。
+具体操作、模型假设与自然运行验收见 [Book B 统一流程](BOOK_B_WORKFLOW.md)。
 
 ## 4b. Book T — 趋势模拟口径（paper-only，独立生命周期）
 
@@ -727,6 +740,7 @@ paper 原消费自动留存独立、authority=0 的各选择器前向选择证�
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| 4.48 | 2026-10-22 | 用户批准统一APP B落地：共同最终计划/分配、独立sellable_only与原owner有界SELL终态回读；前向资金控制和三个挑战、APP生命周期/费用/资金报告，保留E/COLD/B退出及晋级门。 |
 | 4.47 | 2026-10-22 | 用户要求 APP 短线沉淀统一操作流程；共同裁决解释、模式映射与本请求完成证明，独立 paper 选择研究与周复盘。保留 COLD/账户/执行门及独立账本，不将选择记录冒充资金收益。 |
 | 4.46 | 2026-10-21 | 用户批准修复盘后旧单确认无收口、回执身份导致重复告警及首错遮盖。证据完备的后续独立清仓关闭经济核对任务，保留原UNKNOWN/同代码BUY/费用现金门；每次新快照重新评估，汇总全部待核，静默未变化历史与会计缺口，仅对当前风险或具体用户动作通知。 |
 | 4.45 | 2026-10-21 | 用户要求常规历史未决留在内部对账，黄金窗口后由原任务核对；晨间通知保留本次交易结果、实际受阻原因和具体用户动作，保留历史状态及原配送 claim。 |

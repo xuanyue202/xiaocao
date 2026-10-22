@@ -20,6 +20,9 @@ app_exit=0
 PYTHONPATH=src .venv/bin/python scripts/book_b_live_intraday.py --date today --phase precheck --execute-sells || app_exit=$?
 echo "precheck branch=app exit=$app_exit"
 
+# The research model runs after both independent production checkpoints.
+PYTHONPATH=src .venv/bin/python scripts/research_book_b_forward.py --phase monitor || echo "research branch=app-b-forward status=degraded"
+
 if (( paper_exit != 0 )); then
   exit "$paper_exit"
 fi

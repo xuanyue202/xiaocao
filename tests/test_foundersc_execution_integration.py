@@ -186,7 +186,8 @@ def test_damaged_execution_history_cannot_be_interpreted_as_no_order(chain, tail
 
 
 @pytest.mark.parametrize("sellable", [0, 100])
-def test_owned_sell_uses_native_side_and_t1_then_reconciles_once(chain, sellable):
+@pytest.mark.parametrize("scoped", [False, True])
+def test_owned_sell_uses_native_side_and_t1_then_reconciles_once(chain, sellable, scoped):
     plan, engine = chain
     native = FakeNative()
     bought = engine(native).execute(plan)
@@ -197,17 +198,34 @@ def test_owned_sell_uses_native_side_and_t1_then_reconciles_once(chain, sellable
     assert engine(native).execute(plan).state == ExecutionState.FILLED
     native.positions.append({"证券代码": "512010", "证券数量": "100",
         "可卖数量": str(sellable), "当前价": "10", "最新市值": "1000"})
+    if scoped:
+        native.payload["helper_version"] = 11
+        native.position_summary = {}
+        native.positions[-1].update({"证券数量":"200", "当前价":"unreadable"})
+        original_read = native.read_query
+        def scoped_read(**kwargs):
+            result = original_read(**kwargs)
+            raw = result.payload["query_readback"]
+            raw.update(structural_parsing_proven=True, critical_confidence_floor=.9,
+                critical_cell_confidences=[{k:.99 for k in row} for row in raw["rows"]],
+                observed_at=datetime.now(timezone.utc).isoformat())
+            return result
+        native.read_query = scoped_read
     sell = replace(plan, plan_id=plan.plan_id + ":sell", side="SELL", basket_price=None,
         owned_lot_id=plan.plan_id, sell_authorized=True, sell_reason="HARD_STOP",
         sell_decision_phase="risk_floor", sell_decision_at=plan.created_at,
         market_guard_required=True, market_guard_observed_at=plan.created_at,
         market_guard_latest_price=10.0, market_guard_down_price=9.0)
-    receipt = engine(native).execute(sell)
+    execution = engine(native)
+    execution.broker.scoped_sell_preflight = scoped
+    receipt = execution.execute(sell)
     if not sellable:
         assert receipt.state in {ExecutionState.SKIPPED, ExecutionState.REJECTED}, receipt.reason
         assert native.submit_calls == 1
     else:
         assert receipt.state == ExecutionState.ACKNOWLEDGED, receipt.reason
+        assert execution.reconcile_existing(sell, execution.broker).state == ExecutionState.ACKNOWLEDGED
+        assert native.submit_calls == 2  # Original BUY and this one SELL, no replay.
         assert native.orders[-1]["买卖标志"] == "卖出"
         assert engine(native).cancel(sell).state == ExecutionState.CANCELLED
         assert engine(native).cancel(sell).state == ExecutionState.CANCELLED

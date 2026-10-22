@@ -36,6 +36,9 @@ paper_exit=0
 PYTHONPATH=src .venv/bin/python scripts/live_monitor.py --execute-sells || paper_exit=$?
 echo "closing branch=paper exit=$paper_exit"
 
+# The research model runs after both independent production checkpoints.
+PYTHONPATH=src .venv/bin/python scripts/research_book_b_forward.py --phase monitor || echo "research branch=app-b-forward status=degraded"
+
 if (( app_exit != 0 )); then
   exit "$app_exit"
 fi

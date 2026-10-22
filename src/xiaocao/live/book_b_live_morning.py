@@ -21,9 +21,9 @@ from pathlib import Path
 from typing import Callable, ContextManager
 from zoneinfo import ZoneInfo
 
-from .book_b_allocation import BookBAllocationFacts, allocate_frozen_rows, validate_allocation_rows
+from .book_b_allocation import allocate_policy_rows, BookBAllocationFacts, allocate_frozen_rows, validate_allocation_rows
 from .account_risk import AccountRiskReceipt
-from .book_b_workflow import adjudicate_book_b, eligible_buy_rows
+from .book_b_workflow import adjudicate_book_b, eligible_buy_rows, final_plan_receipt
 from .live_decision_support import (
     bind_plan_audit, buy_cap, digest, evaluate_live_risk, read_plan_audit, read_policy,
 )
@@ -124,6 +124,7 @@ class BookBLiveMorningReceipt:
     deferred_prior_day_sell_plan_ids: tuple[str, ...] = ()
     checklist_path: str | None = None
     strategy_adjudication: dict | None = None
+    final_plan: dict | None = None
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -1047,61 +1048,6 @@ def _materialize_or_restore_plans(
     ]
 
 
-def _policy_allocation(rows: list[dict], allocation: BookBAllocationFacts,
-                       decision: dict, risk: AccountRiskReceipt) -> tuple[BookBAllocationFacts, dict]:
-    """Size only original allocator slots, retaining each slot's cash ceiling."""
-    error = allocation.validation_error()
-    if error:
-        raise ValueError(error)
-    evidence = {
-        str(row["code"]): {
-            **buy_cap(decision, risk, str(row["code"]), allocation.deploy_factor),
-            "kol_mode_override": row.get("kol_mode_override"),
-        }
-        for row in rows
-    }
-    factor = min([allocation.deploy_factor, risk.deploy_factor] +
-                 [item["scale"] for item in evidence.values() if not item["skip"]])
-    effective = replace(allocation, deploy_factor=factor)
-    sized = []
-    if any(not item["skip"] for item in evidence.values()):
-        try:
-            if any(row.get("mode_exec_planned_shares") in (None, "") for row in rows):
-                base_rows = allocate_frozen_rows(rows, allocation)
-            else:
-                validate_allocation_rows(rows, allocation)
-                base_rows = [dict(row) for row in rows]
-        except ValueError as exc:
-            if str(exc) != "ALLOCATION_EMPTY":
-                raise
-            base_rows = []
-        for row in base_rows:
-            adjustment = evidence[str(row["code"])]
-            if adjustment["skip"]:
-                continue
-            ratio = adjustment["effective_deploy_factor"] / allocation.deploy_factor
-            if ratio == 1:
-                planned = [dict(row)]
-            else:
-                from .book_b_pricing import initial_limit_price
-
-                price = initial_limit_price(row.get("open"), row.get("basket_price"))
-                candidate = {**row, "execution_price": price}
-                target = float(row["mode_exec_target_weight"]) * ratio
-                planned = plan_board_lot_orders(
-                    [candidate], nav=allocation.settled_nav, cash_limit=effective.cash_limit,
-                    fee_rate=allocation.fee_rate, price_key="execution_price", max_candidates=1,
-                    max_batch_ratio=effective.batch_ratio * effective.deploy_factor,
-                    weight_resolver=lambda _subset, weight=target: [weight],
-                    per_position_cash_cap=int(row["mode_exec_planned_shares"]) * price *
-                                          (1 + allocation.fee_rate) * ratio,
-                )
-            for item in planned:
-                item.pop("allocation_proof_hash", None)
-                sized.append(item)
-    return effective, {"rows_by_code": {str(row["code"]): row for row in sized},
-                       "by_code": evidence, "base_allocation": allocation.canonical_payload()}
-
 
 def reconcile_open_book_b_plans(
     state_dir: Path,
@@ -1806,6 +1752,8 @@ def run_book_b_live_morning(
     open_reconciliations: tuple[dict, ...] = ()
     review_receipt: dict | None = None
     strategy_adjudication: dict | None = None
+    final_allocation = None
+    final_policy_evidence = None
     review_requested_at: datetime | None = None
     batch_risk: AccountRiskReceipt | None = None
     snapshot_cache: dict | None = None
@@ -2083,11 +2031,13 @@ def run_book_b_live_morning(
                     policy_evidence = None
                     if config.policy_root is not None:
                         decision, risk = selection_decision, support()[1]
-                        effective_allocation, policy_evidence = _policy_allocation(rows, allocation, decision, risk)
+                        effective_allocation, policy_evidence = allocate_policy_rows(rows, allocation, decision, risk)
                         capsule = json.loads(config.allocation_facts_path.read_text(encoding="utf-8"))
                         policy_evidence["allocation_capsule_sha256"] = capsule["allocation_capsule_sha256"]
                         policy_consumptions.extend({"code": code, "stage": "allocation", **evidence}
                                                    for code, evidence in policy_evidence["by_code"].items())
+                    final_allocation = effective_allocation.canonical_payload()
+                    final_policy_evidence = policy_evidence
                     candidate_plan_ids = [f"book-b:{config.trade_date}:{row.get('code')}:BUY" for row in rows]
                     enter("materialize")
                     plans = _materialize_or_restore_plans(
@@ -2226,6 +2176,9 @@ def run_book_b_live_morning(
                       open_plan_reconciliations=open_reconciliations or receipt.open_plan_reconciliations,
                       review_rendezvous=review_receipt,
                       strategy_adjudication=strategy_adjudication,
+                      final_plan=(final_plan_receipt(strategy_adjudication, final_allocation,
+                          [{**plan.canonical_payload(), "plan_hash": plan.plan_hash} for plan in plans], policy_evidence=final_policy_evidence)
+                          if strategy_adjudication is not None else None),
                       market_guard_refreshes=tuple(market_guard_refreshes),
                       submission_observations=tuple(submission_observations.values()))
     stage_times["finished"] = now().isoformat()

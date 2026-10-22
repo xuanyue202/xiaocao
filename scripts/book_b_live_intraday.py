@@ -148,6 +148,13 @@ def main(argv: list[str] | None = None) -> int:
             _write_json_atomic(run_path, payload)
             print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
             return 0
+        from datetime import timedelta
+        wait_deadline = min(current + timedelta(seconds=120),
+                            current.replace(hour=14, minute=57, second=0, microsecond=0))
+        wait_contract = {"run_id": run_id, "started_at": current.isoformat(),
+                         "deadline": wait_deadline.isoformat(), "budget_seconds": 120,
+                         "mode": "claimed_orders_readback_only"}
+        _write_json_atomic(archive_path.with_suffix(".wait.json"), wait_contract)
         keychain = FounderscKeychainPreflight()
         keychain_receipt = keychain.run(read_trade_secret=True)
         required = (
@@ -166,6 +173,7 @@ def main(argv: list[str] | None = None) -> int:
             state_dir,
             expected_fund_account_fingerprint=fingerprint,
             safety_env_provider=capital_runtime.safety_env,
+            scoped_sell_preflight=args.phase != "eod",
         )
         market_context: dict[str, object] | None = None
         sentiment_map: dict[str, dict[str, object]] | None = None
@@ -184,11 +192,19 @@ def main(argv: list[str] | None = None) -> int:
             reader = getattr(broker, "read_live_account_snapshot", None)
             if not callable(reader):
                 raise RuntimeError("NATIVE_LIVE_ACCOUNT_SNAPSHOT_PORT_MISSING")
-            return reader(
-                trade_date=trade_date,
-                logical_account_id="primary",
-                expected_fund_account_fingerprint=fingerprint,
-            )
+            try:
+                return reader(trade_date=trade_date, logical_account_id="primary",
+                              expected_fund_account_fingerprint=fingerprint)
+            except Exception as exc:
+                if args.phase == "eod" or not broker.sellable_fallback_allowed(exc):
+                    raise
+                from xiaocao.live.book_b_accounting import replay_owned
+                codes = {lot["code"] for lot in replay_owned(state_dir).lots.values() if lot["shares"] > 0}
+                snapshot = broker.read_sellable_snapshot(trade_date=trade_date, owned_codes=codes)
+                snapshot["full_account_failure"] = broker._read_error_code(exc)
+                from xiaocao.live.book_b_capital import digest
+                snapshot["snapshot_sha256"] = digest({k: v for k, v in snapshot.items() if k != "snapshot_sha256"})
+                return snapshot
 
         def status_provider(lots) -> list[dict]:
             nonlocal market_context, sentiment_map, snapshot_map
@@ -226,6 +242,28 @@ def main(argv: list[str] | None = None) -> int:
             ensure_broker_login()
             return execution.execute(plan, broker)
 
+        def await_sell_results(plans, receipts):
+            import time
+            from xiaocao.live.morning_order_wait import await_orders, TERMINAL
+            def save_progress(rows):
+                _write_json_atomic(archive_path.with_suffix(".orders.json"),
+                    {**wait_contract, "observed_at": _china_now().isoformat(),
+                     "execution_receipts": [row.as_dict() for row in rows]})
+            result = dict(wait_contract)
+            try:
+                await_orders(plans, receipts,
+                    reconcile=lambda plan: execution.reconcile_existing(plan, broker),
+                    deadline=wait_deadline, now=_china_now, sleep=time.sleep, on_progress=save_progress)
+            except Exception as exc:
+                result["readback_failure"] = type(exc).__name__
+            try:
+                save_progress(receipts)
+            except OSError as exc:
+                result["progress_persistence_failure"] = type(exc).__name__
+            result.update(completed_at=_china_now().isoformat(),
+                          status="unresolved" if any(row.state not in TERMINAL for row in receipts) else "terminal")
+            return result
+
         receipt = run_book_b_live_intraday(
             state_dir=state_dir,
             trade_date=trade_date,
@@ -239,6 +277,7 @@ def main(argv: list[str] | None = None) -> int:
             execute_sells=args.execute_sells,
             policy_root=Path(args.policy_root),
             trading_dates_provider=trading_calendar,
+            await_sell_results=await_sell_results,
         )
         payload = receipt.as_dict()
         payload["route"] = "native-app"

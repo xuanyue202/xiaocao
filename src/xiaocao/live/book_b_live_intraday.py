@@ -27,6 +27,7 @@ from .book_b_live_lifecycle import (
     BookBLiveOwnedLot,
     open_execution_plan_ids,
     project_book_b_live_account,
+    project_book_b_sellable,
     write_book_b_live_settlement,
 )
 from .book_b_live_morning import (
@@ -333,6 +334,8 @@ class BookBLiveIntradayReceipt:
     deferred_buy_plan_ids: tuple[str, ...] = ()
     broker_snapshot: dict[str, Any] | None = None
     eod_review: dict[str, Any] | None = None
+    order_wait: dict[str, Any] | None = None
+    batch_failure: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -502,6 +505,7 @@ def _run_book_b_live_intraday_locked(
     execute_sells: bool = True,
     policy_root: Path | None = None,
     trading_dates_provider: Callable[[datetime], list[str]] | None = None,
+    await_sell_results: Callable[[list[TradePlan], list[ExecutionReceipt]], dict] | None = None,
 ) -> BookBLiveIntradayReceipt:
     """Run one exact-once live lifecycle checkpoint without broker UI logic."""
     normalized_phase = str(phase or "").lower()
@@ -548,36 +552,28 @@ def _run_book_b_live_intraday_locked(
     current = now()
     if current.tzinfo is None:
         raise ValueError("LIVE_BOOK_B_NOW_NOT_TZ_AWARE")
-    provisional = project_book_b_live_account(
-        state_root,
-        snapshot,
-        trade_date=trade_date,
-        now=current,
-        allow_accounting_unavailable=normalized_phase != "eod",
-    )
+    sellable_only = snapshot.get("schema_version") == "book-b-sellable-only.v1"
+    if sellable_only and normalized_phase == "eod":
+        raise ValueError("LIVE_BOOK_B_EOD_FULL_ACCOUNT_REQUIRED")
+    def project(contexts=None):
+        if sellable_only:
+            return project_book_b_sellable(state_root, snapshot, trade_date=trade_date,
+                                           now=current, monitor_context_by_lot=contexts)
+        return project_book_b_live_account(state_root, snapshot, trade_date=trade_date,
+            now=current, monitor_context_by_lot=contexts,
+            allow_accounting_unavailable=normalized_phase != "eod")
+    provisional = project()
     if provisional.lots and normalized_phase != "eod" and freeze_dir is None:
         raise ValueError("LIVE_BOOK_B_MONITOR_FREEZE_DIR_REQUIRED")
-    contexts = (
-        load_monitor_contexts(Path(freeze_dir), provisional.lots)
-        if freeze_dir is not None
-        and provisional.lots
-        and normalized_phase != "eod"
-        else {}
-    )
-    account = project_book_b_live_account(
-        state_root,
-        snapshot,
-        trade_date=trade_date,
-        now=current,
-        monitor_context_by_lot=contexts,
-        allow_accounting_unavailable=normalized_phase != "eod",
-    )
+    contexts = (load_monitor_contexts(Path(freeze_dir), provisional.lots)
+                if freeze_dir is not None and provisional.lots and normalized_phase != "eod" else {})
+    account = project(contexts)
     risk_receipt = None
 
     def record_risk(*, refresh: bool = False) -> dict | None:
         # Observation only: no calendar/history work may delay a necessary
         # SELL. This is called after handoff (or a proved no-lot checkpoint).
-        if policy_root is None:
+        if policy_root is None or sellable_only:
             return None
         return evaluate_live_risk(state_root, now=now(), account=account,
                                   account_snapshot_provider=account_snapshot_provider if refresh else None,
@@ -659,160 +655,197 @@ def _run_book_b_live_intraday_locked(
         raise ValueError("LIVE_BOOK_B_STATUS_COVERAGE_MISMATCH")
     ledger = BookBLiveDecisionLedger(state_root / "book_b_live_decisions.jsonl")
     decisions: list[dict[str, Any]] = []
-    receipts: list[dict[str, Any]] = []
-    for lot in account.lots:
-        decision_now = now()
-        if decision_now.tzinfo is None:
-            raise ValueError("LIVE_BOOK_B_NOW_NOT_TZ_AWARE")
-        if normalized_phase == "closing" and not _closing_discipline_window(
-            decision_now, trade_date
-        ):
-            # A prior lot may already have produced a durable decision and
-            # terminal execution receipt. Preserve that partial checkpoint
-            # instead of replacing its audit trail with a top-level time-gate
-            # exception. The expired window still forbids any new decision,
-            # intent, prepare, or submit work.
-            break
-        status = dict(by_lot[lot.owned_lot_id])
-        reason = str(status.get("sell_reason") or "") or None
-        triggered = status.get("triggered") is True
-        # Status providers may request a reason; only this fresh exact-code
-        # read grants KOL authority. Ordinary hard/soft exits are independent.
-        kol_decision = read_policy(policy_root, decision_now)
-        kol_exit = exit_adjustment(kol_decision, lot.code)
-        kol_authorized = reason != "KOL_DISCRETIONARY_EXIT" or kol_exit["triggered"]
-        authorized_now = bool(
-            triggered
-            and kol_authorized
-            and reason in _AUTHORIZED_REASONS
-            and not status.get("sell_block_reason")
-            and lot.sellable_shares > 0
-            and lot.entry_date < trade_date
-            and status.get("t1_blocked") is not True
-            and (
-                normalized_phase == "closing"
-                or reason in _INTRADAY_IMMEDIATE_REASONS
+    receipts: list[ExecutionReceipt] = []
+    execution_plans: list[TradePlan] = []
+    batch_failure = None
+    active_plan = None
+    try:
+        for lot in account.lots:
+            active_plan = None
+            decision_now = now()
+            if decision_now.tzinfo is None:
+                raise ValueError("LIVE_BOOK_B_NOW_NOT_TZ_AWARE")
+            if normalized_phase == "closing" and not _closing_discipline_window(
+                decision_now, trade_date
+            ):
+                # A prior lot may already have produced a durable decision and
+                # terminal execution receipt. Preserve that partial checkpoint
+                # instead of replacing its audit trail with a top-level time-gate
+                # exception. The expired window still forbids any new decision,
+                # intent, prepare, or submit work.
+                break
+            status = dict(by_lot[lot.owned_lot_id])
+            reason = str(status.get("sell_reason") or "") or None
+            triggered = status.get("triggered") is True
+            # Status providers may request a reason; only this fresh exact-code
+            # read grants KOL authority. Ordinary hard/soft exits are independent.
+            kol_decision = read_policy(policy_root, decision_now)
+            kol_exit = exit_adjustment(kol_decision, lot.code)
+            kol_authorized = reason != "KOL_DISCRETIONARY_EXIT" or kol_exit["triggered"]
+            authorized_now = bool(
+                triggered
+                and kol_authorized
+                and reason in _AUTHORIZED_REASONS
+                and not status.get("sell_block_reason")
+                and lot.sellable_shares > 0
+                and lot.entry_date < trade_date
+                and status.get("t1_blocked") is not True
+                and (
+                    normalized_phase == "closing"
+                    or reason in _INTRADAY_IMMEDIATE_REASONS
+                )
             )
-        )
-        prior_open_sell = _prior_open_sell_for_lot(
-            state_root, trade_date=trade_date, owned_lot_id=lot.owned_lot_id
-        )
-        handoff_block_reason = None
-        decision_id = _sha256(
-            {
+            prior_open_sell = _prior_open_sell_for_lot(
+                state_root, trade_date=trade_date, owned_lot_id=lot.owned_lot_id
+            )
+            handoff_block_reason = None
+            decision_id = _sha256(
+                {
+                    "trade_date": trade_date,
+                    "phase": normalized_phase,
+                    "owned_lot_id": lot.owned_lot_id,
+                    "broker_snapshot_sha256": account.broker_snapshot_sha256,
+                    "triggered": triggered,
+                    "sell_reason": reason,
+                    "decision_phase": status.get("decision_phase"),
+                    "kol_decision_id": kol_decision.get("decision_id"),
+                    "kol_decision_sha256": kol_decision.get("decision_sha256"),
+                    "kol_policy_status": kol_decision.get("status"),
+                    "sell_authorized": authorized_now,
+                    "handoff_block_reason": handoff_block_reason,
+                    "prior_open_sell_plan_id": prior_open_sell,
+                    "best_bid_price": status.get("best_bid_price"),
+                    "best_bid_volume": status.get("best_bid_volume"),
+                }
+            )
+            decision = {
+                "schema_version": 1,
+                "decision_id": decision_id,
                 "trade_date": trade_date,
                 "phase": normalized_phase,
+                "book": "B",
+                "environment": "live",
+                "logical_account_id": "primary",
                 "owned_lot_id": lot.owned_lot_id,
+                "code": lot.code,
+                "name": lot.name,
+                "shares": lot.shares,
+                "sellable_shares": lot.sellable_shares,
                 "broker_snapshot_sha256": account.broker_snapshot_sha256,
                 "triggered": triggered,
-                "sell_reason": reason,
-                "decision_phase": status.get("decision_phase"),
-                "kol_decision_id": kol_decision.get("decision_id"),
-                "kol_decision_sha256": kol_decision.get("decision_sha256"),
-                "kol_policy_status": kol_decision.get("status"),
                 "sell_authorized": authorized_now,
                 "handoff_block_reason": handoff_block_reason,
                 "prior_open_sell_plan_id": prior_open_sell,
+                "sell_reason": reason,
+                "decision_phase": status.get("decision_phase"),
+                "latest_price": status.get("latest_price"),
+                "market_guard_status": status.get("market_guard_status"),
+                "market_guard_observed_at": (
+                    status["market_guard_observed_at"].isoformat()
+                    if isinstance(status.get("market_guard_observed_at"), datetime)
+                    else status.get("market_guard_observed_at")
+                ),
+                "market_guard_down_price": status.get("market_guard_down_price"),
                 "best_bid_price": status.get("best_bid_price"),
                 "best_bid_volume": status.get("best_bid_volume"),
+                "dd_pct": status.get("dd_pct"),
+                "net_ret_pct": status.get("net_ret_pct"),
+                "strong_hold_reason": status.get("strong_hold_reason"),
+                "deferred_sell_reason": status.get("deferred_sell_reason"),
+                "sell_block_reason": status.get("sell_block_reason"),
+                "kol_decision_id": kol_decision.get("decision_id"),
+                "kol_decision_sha256": kol_decision.get("decision_sha256"),
+                "kol_policy_status": kol_decision.get("status"),
+                "kol_exit_currently_valid": kol_exit["triggered"],
             }
-        )
-        decision = {
-            "schema_version": 1,
-            "decision_id": decision_id,
-            "trade_date": trade_date,
-            "phase": normalized_phase,
-            "book": "B",
-            "environment": "live",
-            "logical_account_id": "primary",
-            "owned_lot_id": lot.owned_lot_id,
-            "code": lot.code,
-            "name": lot.name,
-            "shares": lot.shares,
-            "sellable_shares": lot.sellable_shares,
-            "broker_snapshot_sha256": account.broker_snapshot_sha256,
-            "triggered": triggered,
-            "sell_authorized": authorized_now,
-            "handoff_block_reason": handoff_block_reason,
-            "prior_open_sell_plan_id": prior_open_sell,
-            "sell_reason": reason,
-            "decision_phase": status.get("decision_phase"),
-            "latest_price": status.get("latest_price"),
-            "market_guard_status": status.get("market_guard_status"),
-            "market_guard_observed_at": (
-                status["market_guard_observed_at"].isoformat()
-                if isinstance(status.get("market_guard_observed_at"), datetime)
-                else status.get("market_guard_observed_at")
-            ),
-            "market_guard_down_price": status.get("market_guard_down_price"),
-            "best_bid_price": status.get("best_bid_price"),
-            "best_bid_volume": status.get("best_bid_volume"),
-            "dd_pct": status.get("dd_pct"),
-            "net_ret_pct": status.get("net_ret_pct"),
-            "strong_hold_reason": status.get("strong_hold_reason"),
-            "deferred_sell_reason": status.get("deferred_sell_reason"),
-            "sell_block_reason": status.get("sell_block_reason"),
-            "kol_decision_id": kol_decision.get("decision_id"),
-            "kol_decision_sha256": kol_decision.get("decision_sha256"),
-            "kol_policy_status": kol_decision.get("status"),
-            "kol_exit_currently_valid": kol_exit["triggered"],
-        }
-        decisions.append(ledger.append(decision))
-        if not authorized_now or not execute_sells:
-            continue
-        if not _continuous_auction(decision_now, trade_date):
-            continue
-        existing = _existing_sell_plan_for_lot(
-            state_root, trade_date=trade_date, owned_lot_id=lot.owned_lot_id
-        )
-        if existing is None:
-            plan = _sell_plan(
-                lot,
-                status,
-                trade_date=trade_date,
-                phase=normalized_phase,
-                logical_account_id="primary",
-                strategy_sha=strategy_sha,
-                current=decision_now,
-                decision_id=decision_id,
-                kol_decision=kol_decision,
-            )
-            plan = bind_durable_live_plan_intents(
-                state_root,
-                [plan],
-            )[0]
-            audit: dict[str, Any] = {}
-            if prior_open_sell:
-                audit = {
-                    "prior_open_sell_plan_id": prior_open_sell,
-                    "broker_snapshot_sha256": account.broker_snapshot_sha256,
-                }
-            if reason == "KOL_DISCRETIONARY_EXIT":
-                audit.update({
-                    "decision_ledger_id": decision_id,
-                    "decision_id": kol_decision["decision_id"],
-                    "decision_sha256": kol_decision["decision_sha256"],
-                    "owned_lot_id": lot.owned_lot_id,
-                    "broker_snapshot_sha256": account.broker_snapshot_sha256,
-                })
-            if audit:
-                bind_plan_audit(state_root, plan, audit)
-        else:
-            plan = existing
-        handoff_now = now()
-        if (not _continuous_auction(handoff_now, trade_date)
-                or (normalized_phase == "closing" and not _closing_discipline_window(handoff_now, trade_date))
-                or plan.guard_reason(now=handoff_now)):
-            continue
-        if plan.sell_reason == "KOL_DISCRETIONARY_EXIT":
-            latest = read_policy(policy_root, handoff_now)
-            if not exit_adjustment(latest, plan.code)["triggered"]:
+            decisions.append(ledger.append(decision))
+            if not authorized_now or not execute_sells:
                 continue
-        receipt = execute(plan)
-        receipts.append(receipt.as_dict())
-    status_name = "executed" if receipts else "observed"
-    reason_name = "SELL_INTENTS_HANDED_OFF" if receipts else "NO_NEW_LIVE_SELL_HANDOFF"
-    risk_receipt = record_risk(refresh=any(item.get("filled_shares", 0) > 0 for item in receipts))
+            if not _continuous_auction(decision_now, trade_date):
+                continue
+            existing = _existing_sell_plan_for_lot(
+                state_root, trade_date=trade_date, owned_lot_id=lot.owned_lot_id
+            )
+            if existing is None:
+                plan = _sell_plan(
+                    lot,
+                    status,
+                    trade_date=trade_date,
+                    phase=normalized_phase,
+                    logical_account_id="primary",
+                    strategy_sha=strategy_sha,
+                    current=decision_now,
+                    decision_id=decision_id,
+                    kol_decision=kol_decision,
+                )
+                plan = bind_durable_live_plan_intents(
+                    state_root,
+                    [plan],
+                )[0]
+                audit: dict[str, Any] = {}
+                if prior_open_sell:
+                    audit = {
+                        "prior_open_sell_plan_id": prior_open_sell,
+                        "broker_snapshot_sha256": account.broker_snapshot_sha256,
+                    }
+                if reason == "KOL_DISCRETIONARY_EXIT":
+                    audit.update({
+                        "decision_ledger_id": decision_id,
+                        "decision_id": kol_decision["decision_id"],
+                        "decision_sha256": kol_decision["decision_sha256"],
+                        "owned_lot_id": lot.owned_lot_id,
+                        "broker_snapshot_sha256": account.broker_snapshot_sha256,
+                    })
+                if audit:
+                    bind_plan_audit(state_root, plan, audit)
+            else:
+                plan = existing
+            handoff_now = now()
+            if (not _continuous_auction(handoff_now, trade_date)
+                    or (normalized_phase == "closing" and not _closing_discipline_window(handoff_now, trade_date))
+                    or plan.guard_reason(now=handoff_now)):
+                continue
+            if plan.sell_reason == "KOL_DISCRETIONARY_EXIT":
+                latest = read_policy(policy_root, handoff_now)
+                if not exit_adjustment(latest, plan.code)["triggered"]:
+                    continue
+            active_plan = plan
+            receipt = execute(plan)
+            execution_plans.append(plan)
+            receipts.append(receipt)
+    except Exception as exc:
+        if active_plan is not None:
+            from .trading_execution import ExecutionStore
+            store = ExecutionStore(state_root / "events.jsonl")
+            try:
+                recovered = store.current(active_plan.plan_id)
+                if (recovered is not None and recovered.plan_hash == active_plan.plan_hash
+                        and recovered.submit_claim_id):
+                    execution_plans.append(active_plan)
+                    receipts.append(recovered)
+            except (ValueError, OSError):
+                # Do not manufacture a receipt from an unproved claim.
+                pass
+        if not receipts:
+            raise
+        # Earlier claimed orders remain owned by this checkpoint even when a
+        # later lot's guard/port fails. Read those exact claims to the deadline.
+        batch_failure = type(exc).__name__
+    order_wait = await_sell_results(execution_plans, receipts) if receipts and await_sell_results else None
+    from .morning_order_wait import TERMINAL
+    pending = any(row.state not in TERMINAL for row in receipts)
+    status_name = ("pending" if pending else "executed") if receipts else "observed"
+    if batch_failure:
+        status_name = "blocked"
+    reason_name = ("SELL_TERMINAL_UNPROVEN" if pending else "SELL_TERMINAL_READBACK") if receipts else "NO_NEW_LIVE_SELL_HANDOFF"
+    if batch_failure:
+        reason_name = "SELL_BATCH_FAILED:" + batch_failure
+    try:
+        risk_receipt = record_risk(refresh=any(item.filled_shares > 0 for item in receipts))
+    except Exception as exc:
+        # Completed submissions/observations survive a failed supporting NAV read.
+        risk_receipt = {"status": "unavailable", "reason": type(exc).__name__}
+
     return BookBLiveIntradayReceipt(
         trade_date=trade_date,
         phase=normalized_phase,
@@ -820,7 +853,10 @@ def _run_book_b_live_intraday_locked(
         reason=reason_name,
         account=account.as_dict(),
         decisions=tuple(decisions),
-        execution_receipts=tuple(receipts),
+        execution_receipts=tuple(row.as_dict() for row in receipts),
+        order_wait=order_wait,
+        batch_failure=batch_failure,
+        broker_snapshot=snapshot,
         reconciliation_receipts=tuple(reconciled),
         risk_receipt=risk_receipt,
         deferred_buy_plan_ids=deferred_buys,
@@ -841,6 +877,7 @@ def run_book_b_live_intraday(
     execute_sells: bool = True,
     policy_root: Path | None = None,
     trading_dates_provider: Callable[[datetime], list[str]] | None = None,
+    await_sell_results: Callable[[list[TradePlan], list[ExecutionReceipt]], dict] | None = None,
 ) -> BookBLiveIntradayReceipt:
     """Run one checkpoint under a process-wide lifecycle writer fence."""
     with _checkpoint_lock(Path(state_dir)):
@@ -857,6 +894,7 @@ def run_book_b_live_intraday(
             execute_sells=execute_sells,
             policy_root=policy_root,
             trading_dates_provider=trading_dates_provider,
+            await_sell_results=await_sell_results,
         )
 
 

@@ -35,6 +35,8 @@ PATTERNS = (
     'output/research/paper_vs_market_*.md',
     'output/research/shortline_comparisons/*.json',
     'output/research/shortline_experiments/*/*.json',
+    'output/research/app_b_forward/protocol.json', 'output/research/app_b_forward/performance.json',
+    'output/research/app_b_forward/app_lifecycle.json',
     'output/live/positions.jsonl', 'output/live/paper_trades.jsonl',
     'output/live/paper_holdings_snapshots.jsonl', 'output/live/signal_snapshots.jsonl',
     'output/live/pnl_decompose.csv',
@@ -646,6 +648,7 @@ def build_weekly_evidence(root: Path, *, as_of: dt.date, snapshot_dir: Path | No
         paper_fill_audit=_fill_audit(contents, as_of), accounting_observations=accounting,
         production_observations=build_production_observations(contents, as_of=as_of),
         shortline_research=observe_shortline_research(contents, as_of=as_of),
+        app_b_forward=observe_app_b_forward(contents, as_of=as_of),
         missing_evidence=sorted(set(missing)), exploration_proposals=proposals,
         promotion=dict(auto_promote=False, writes_verdict_ledger=False, changes_strategy=False),
         limitations=['saved observations are not independent broker/source verification',
@@ -710,4 +713,41 @@ def render_weekly_evidence(report: dict, *, include_exploration_proposals: bool 
         lines += ['', '### 下一步探索（提案，未运行）', '']
         for proposal in report['exploration_proposals']:
             lines.append(f"- `{proposal['experiment_id']}`：{proposal['objective']}；证伪：{proposal['falsifier']}；负责人 {proposal['owner']}；复核 {proposal['next_review']}；回滚 {proposal['rollback']}。")
+    forward=report.get("app_b_forward",{})
+    if forward.get("status")=="observed_model_accounts":
+        lines.extend(["", "### APP B 独立资金对照（模型成交）", "",
+                      "| 账户 | 费用后模型收益 | 未决模型订单 | 估值时间 |", "|---|---:|---:|---|"])
+        for variant,account in forward["accounts"].items():
+            value=account.get("net_model_return_pct")
+            shown="未知" if value is None else f"{value:+.3f}%"
+            unresolved = account.get("pending_orders",0) + account["unknown_orders"]
+            lines.append(f"| {variant} | {shown} | {unresolved} | {account['valuation_observed_at']} |")
+        labels = {"source":"原始来源", "rules":"规则版本", "policy_and_selection":"政策或选股",
+                  "account_allocation":"资金分配", "execution_model":"执行模型", "final_order_economics":"订单数量或限价"}
+        for row in forward.get("app_plan_comparisons", []):
+            reason = (labels.get(row.get("first_divergence"),"计划经济字段一致，成交未证明一致")
+                      if row["status"] == "compared" else "APP 最终计划缺证")
+            lines.append(f"- {row['trade_date']} APP 与资金对照：{reason}。")
+        if forward.get("missing_morning_dates"):
+            lines.append("缺少原 morning 观察日：" + "、".join(forward["missing_morning_dates"]))
+        lines.append("模型成交和盘后时序单独标注；缺证与完整日期分母保留，晋级仍需研究门和人工决策。")
     return lines
+
+
+def observe_app_b_forward(contents: dict, *, as_of) -> dict:
+    path = "output/research/app_b_forward/performance.json"
+    raw = contents.get(path)
+    if raw is None:
+        return {"status":"not_observed","authority":0}
+    try:
+        value = json.loads(raw)
+        if (value.get("schema_version")!="app-b-forward-performance.v1" or value.get("authority")!=0
+                or _proof_time(value["as_of"])>as_of):
+            raise ValueError("forward report unproved")
+        return {"status":"observed_model_accounts","authority":0,"source_sha256":_hash(raw),
+                "source_path":path,"accounts":value["accounts"],
+                "app_plan_comparisons":value.get("app_plan_comparisons",[]),
+                "missing_morning_dates":value.get("missing_morning_dates",[]),
+                "consumed_morning_days":value["consumed_morning_days"],"promotion":"PROPOSAL_ONLY"}
+    except (ValueError,KeyError,TypeError):
+        return {"status":"unproved","authority":0}

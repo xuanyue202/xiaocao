@@ -48,6 +48,45 @@ protocols:
       proposal_only: "Required for real-capital, account history, raw truth source, safety, unclear attribution, missing manifest, or dirty target files."
     rollback: "git revert <commit> plus remove any generated output/research run artifacts if needed."
 
+  - id: app-b-forward-funded-v1
+    name: APP Book B funded forward controls
+    scope: "User-approved 2026-10-22 independent research portfolios; no APP parameter promotion."
+    strategy_kernel:
+      - "APP E, COLD gate, shared allocator, staged B exit, T+1, 10/20 risk and existing Book A performance sensor."
+      - "100000 initial cash per portfolio; protocol-rate fees; no external flows or canonical ledger writes."
+    allowed_change_surfaces:
+      - "Isolated forward accounts and source-bound research instrumentation."
+    forbidden_change_surfaces:
+      - "APP authority, canonical Paper A/B/T ledgers, historical plans/fills and automatic strategy promotion."
+    required_manifest_fields:
+      - "protocol_sha256"
+      - "state_sha256"
+      - "events.inputs.source_code_sha"
+      - "events.inputs.freeze"
+      - "events.event_sha256"
+    required_artifacts:
+      - "protocol.json"
+      - "state.json"
+      - "performance.json"
+      - "app_lifecycle.json"
+    experiments:
+      - {id: app-b-mode-m, control: app_b_control, challenger: mode_m, variable: explicit_mode_star_participation}
+      - {id: app-b-open-limit, control: app_b_control, challenger: open_limit, variable: lower_limit_same_planned_quantity}
+      - {id: app-b-no-kol, control: app_b_control, challenger: no_kol, variable: remove_bounded_KOL_effect}
+    sample_policy:
+      unit: "complete funded path plus separately paired trades"
+      n_tried: 3
+      requirements:
+        - "Predeclare source/rules/cash before each future fill window; late plans never use past prices."
+        - "Keep full source dates, skipped/zero/partial/unknown orders, T+1, cash reservations, fees and open lots."
+        - "Read source-bound model fill assumptions and disclose after-business timing versus APP."
+        - "Compare complete same-frequency NAV and chronological OOS; missing dates remain explicit."
+        - "Per-trade research_run.py guards remain separate; daily account returns are not trade samples."
+    promotion_boundary:
+      auto_applied: "Research instrumentation only; no strategy promotion from the funded report."
+      proposal_only: "Permanent APP changes require research_run.py, funded OOS/cost robustness and section 10 human approval."
+    rollback: "Revert code while preserving protocol, source, account and order evidence; incompatible protocols need a new registered experiment."
+
   - id: trend-book-t-v1
     name: Book T trend research protocol
     scope: "Book T paper/simulation trend hypotheses judged with trend_guards/trend_optimize on hold-level compounded evidence."

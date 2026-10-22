@@ -1,5 +1,10 @@
 # Morning automation
 
+## Unified APP B lifecycle (2026-10-22)
+
+Read [BOOK_B_WORKFLOW.md](../../../../docs/BOOK_B_WORKFLOW.md) for the common final-plan receipt and funded forward controls. Keep E selection, the COLD default gate and B staged exits. `book_b_live_morning.py` records the frozen adjudication, account/risk allocation and exact final plans separately from execution receipts. `auto_daily.sh morning-execute` advances `research_book_b_forward.py --phase morning` only after its original paper B and T children finish. Do not start another producer or research writer from the APP task, and never replay an already consumed day. Research is authority=0, uses independent cash/lots and future-window model fills, and cannot certify APP execution or strategy promotion.
+
+
 Morning producer/paper children execute one verified behavior snapshot while
 sharing the original output, account and ledger locks. Read source_integrity
 for the executed snapshot; deployment_source_changes records other writers.

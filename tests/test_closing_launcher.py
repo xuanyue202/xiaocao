@@ -36,7 +36,7 @@ def launcher(tmp_path: Path) -> Path:
         "'automation':os.environ.get('CODEX_AUTOMATION_ID'), "
         "'thread':os.environ.get('CODEX_THREAD_ID')})+'\\n')\n"
         "branch = ('GATE' if sys.argv[1] == '-m' else "
-        "'PAPER' if sys.argv[1].endswith('/live_monitor.py') else 'APP')\n"
+        "'PAPER' if sys.argv[1].endswith('/live_monitor.py') else 'RESEARCH' if sys.argv[1].endswith('/research_book_b_forward.py') else 'APP')\n"
         "sys.exit(int(os.environ.get(branch+'_EXIT', '0')))\n"
     )
     python.chmod(0o755)
@@ -61,7 +61,7 @@ def run_launcher(launcher: Path, **overrides: str) -> subprocess.CompletedProces
 def test_closing_retains_app_then_paper_even_when_either_branch_fails(
     launcher: Path, app_exit: int, paper_exit: int, expected: int,
 ) -> None:
-    result = run_launcher(launcher, APP_EXIT=str(app_exit), PAPER_EXIT=str(paper_exit))
+    result = run_launcher(launcher, APP_EXIT=str(app_exit), PAPER_EXIT=str(paper_exit), RESEARCH_EXIT="9")
     assert result.returncode == expected
     rows = [json.loads(line) for line in
             (launcher.parent.parent / "calls.jsonl").read_text().splitlines()]
@@ -69,6 +69,7 @@ def test_closing_retains_app_then_paper_even_when_either_branch_fails(
         ["-m", "xiaocao.live.closing_startup"],
         ["scripts/book_b_live_intraday.py", "--date", "today", "--phase", "closing", "--execute-sells"],
         ["scripts/live_monitor.py", "--execute-sells"],
+        ["scripts/research_book_b_forward.py", "--phase", "monitor"],
     ]
     assert all(row["automation"] == AUTOMATION_ID for row in rows)
     assert all(row["thread"] == "original-runtime-thread" for row in rows)

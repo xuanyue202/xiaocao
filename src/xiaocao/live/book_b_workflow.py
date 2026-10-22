@@ -192,3 +192,58 @@ def summarize_adjudication(value: object, *, runtime: str) -> dict:
         }
     except (ValueError, KeyError, TypeError):
         return {"status": "unproved"}
+
+
+RULE_PROFILE = "app-b-e-staged-v1"
+
+
+def final_plan_receipt(adjudication: dict, allocation: dict | None, orders: list[dict], *,
+                       policy_evidence: dict | None = None, execution_model: str = "native_app") -> dict:
+    """Bind the last deterministic decision to economic orders, before execution.
+
+    Account facts and execution models may differ across consumers. Identical
+    selection semantics alone never establish identical orders or returns.
+    """
+    runtime = adjudication.get("runtime")
+    if summarize_adjudication(adjudication, runtime=runtime)["status"] != "recorded":
+        raise ValueError("BOOK_B_FINAL_PLAN_ADJUDICATION_UNPROVEN")
+    planned = {row["code"]: row for row in orders}
+    if len(planned) != len(orders):
+        raise ValueError("BOOK_B_FINAL_PLAN_DUPLICATE_CODE")
+    decisions = []
+    caps = (policy_evidence or {}).get("by_code", {})
+    for row in adjudication["rows"]:
+        code = row["code"]
+        cap = caps.get(code, {})
+        reason = ("PLANNED" if code in planned else
+                  "POLICY_OR_RISK_ZERO" if cap.get("skip") else
+                  "ALLOCATION_OR_ACCOUNT_GUARD" if row["star_selected"] else row["selection_reason"])
+        decisions.append({**row, "final_reason": reason,
+                          "allocation_cap": cap, "order": planned.get(code)})
+    result = {"schema_version": "book-b-final-plan.v1", "rule_profile": RULE_PROFILE,
+              "freeze": adjudication["freeze"], "adjudication_sha256": adjudication["receipt_sha256"],
+              "strategy_semantics_sha256": adjudication["strategy_semantics_sha256"],
+              "runtime": runtime, "execution_model": execution_model,
+              "allocation": allocation, "decisions": decisions, "orders": orders,
+              "accounting_basis": "fills_and_funding_required_not_plan_profit"}
+    result["receipt_sha256"] = kol_policy.decision_sha256(result)
+    return result
+
+
+def compare_final_plans(left: dict, right: dict) -> dict:
+    """Report the first material divergence without attributing causal profit."""
+    for value in (left, right):
+        if value.get("receipt_sha256") != kol_policy.decision_sha256(
+                {k: v for k, v in value.items() if k != "receipt_sha256"}):
+            raise ValueError("BOOK_B_FINAL_PLAN_HASH_MISMATCH")
+    stages = (("source", "freeze"), ("rules", "rule_profile"),
+              ("policy_and_selection", "strategy_semantics_sha256"),
+              ("account_allocation", "allocation"), ("execution_model", "execution_model"))
+    first = next((name for name, field in stages if left.get(field) != right.get(field)), None)
+    economics = lambda value: [{k: order.get(k) for k in ("code", "shares", "limit_price")}
+                               for order in value["orders"]]
+    if first is None and economics(left) != economics(right):
+        first = "final_order_economics"
+    return {"first_divergence": first, "same_order_economics": economics(left) == economics(right),
+            "left_sha256": left["receipt_sha256"], "right_sha256": right["receipt_sha256"],
+            "fill_or_return_equivalence": "not_established"}

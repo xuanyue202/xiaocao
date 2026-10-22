@@ -193,6 +193,7 @@ def build_foundersc_native_execution(
     expected_fund_account_fingerprint: str,
     native_client: FounderscNativeAXClient | None = None,
     scoped_buy_preflight: bool = False,
+    scoped_sell_preflight: bool = False,
     safety_env_provider: Callable[[], dict[str, str]] | None = None,
     now=None,
     notifier=None,
@@ -208,6 +209,7 @@ def build_foundersc_native_execution(
     adapter = FounderscNativeAXBrokerAdapter(
         native=native,
         scoped_buy_preflight=scoped_buy_preflight,
+        scoped_sell_preflight=scoped_sell_preflight,
         expected_fund_account_fingerprint=expected_fund_account_fingerprint,
         credential_health_path=root / "credential_health" / (
             hashlib.sha256(expected_fund_account_fingerprint.encode()).hexdigest() + ".json"),

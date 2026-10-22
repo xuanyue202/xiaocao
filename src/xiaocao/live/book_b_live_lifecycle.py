@@ -765,9 +765,9 @@ class BookBLiveOwnedLot:
     entry_price: float
     shares: int
     sellable_shares: int
-    current_price: float
-    market_value: float
-    liquidation_value_after_fee: float
+    current_price: float | None
+    market_value: float | None
+    liquidation_value_after_fee: float | None
     buy_fee_rate: float
     sell_fee_rate: float
     snapshot_ref: str
@@ -804,6 +804,143 @@ class BookBLiveAccountState:
         return payload
 
 
+def _project_owned_lots(lot_rows: dict, position_rows: list[dict], *, trade_date: str,
+                        contexts: dict, sellable_only: bool = False) -> list[BookBLiveOwnedLot]:
+    broker_positions: dict[str, dict[str, Any]] = {}
+    for row in position_rows:
+        code6 = _normalize_code(row.get("证券代码"))
+        if code6 in broker_positions:
+            raise ValueError(f"LIVE_BOOK_B_BROKER_POSITION_DUPLICATE:{code6}")
+        broker_positions[code6] = {
+            "shares": _broker_integer(
+                row.get("证券数量"), reason="LIVE_BOOK_B_BROKER_SHARES_INVALID"
+            ),
+            "sellable": _broker_integer(
+                row.get("可卖数量"), reason="LIVE_BOOK_B_BROKER_SELLABLE_INVALID"
+            ),
+            "price": None if sellable_only else _finite_float(
+                _broker_decimal(row.get("当前价"), reason="LIVE_BOOK_B_BROKER_PRICE_INVALID"),
+                reason="LIVE_BOOK_B_BROKER_PRICE_INVALID",
+            ),
+        }
+
+    owned_by_code: dict[str, int] = {}
+    for lot in lot_rows.values():
+        if lot["shares"] <= 0:
+            continue
+        code6 = _normalize_code(lot["code"])
+        owned_by_code[code6] = owned_by_code.get(code6, 0) + int(lot["shares"])
+    for code6, owned in owned_by_code.items():
+        broker = broker_positions.get(code6)
+        if broker is None or broker["shares"] < owned:
+            raise ValueError(f"LIVE_BOOK_B_BROKER_OWNERSHIP_MISMATCH:{code6}")
+
+    if any(p["shares"] < 0 or not 0 <= p["sellable"] <= p["shares"] for p in broker_positions.values()):
+        raise ValueError("LIVE_BOOK_B_BROKER_SELLABLE_INVALID")
+    remaining_sellable = {
+        code6: min(int(position["sellable"]), owned_by_code.get(code6, 0))
+        for code6, position in broker_positions.items()
+    }
+    lots: list[BookBLiveOwnedLot] = []
+    for lot_id, row in sorted(
+        lot_rows.items(), key=lambda item: (item[1]["entry_date"], item[0])
+    ):
+        shares = int(row["shares"])
+        if shares <= 0:
+            continue
+        code6 = _normalize_code(row["code"])
+        broker = broker_positions[code6]
+        entry_date = str(row["entry_date"])
+        if entry_date >= str(trade_date)[:10]:
+            # Broker sellable is account-level.  A manual older holding of the
+            # same code must never make today's Book-B-owned lot appear T+1
+            # eligible, so same-day lots consume none of that quantity.
+            sellable = 0
+        else:
+            sellable = min(shares, remaining_sellable.get(code6, 0))
+            remaining_sellable[code6] = max(
+                0, remaining_sellable.get(code6, 0) - sellable
+            )
+        price = broker["price"]
+        if price is not None and price <= 0:
+            raise ValueError(f"LIVE_BOOK_B_BROKER_MARK_INVALID:{code6}")
+        entry_price = row["cost"] / shares
+        fee_rate = row["sell_fee_rate"]
+        lots.append(
+            BookBLiveOwnedLot(
+                owned_lot_id=lot_id,
+                code=str(row["code"]),
+                name=str(row["name"]),
+                entry_date=entry_date,
+                entry_price=round(float(entry_price), 6),
+                shares=shares,
+                sellable_shares=sellable,
+                current_price=None if price is None else round(price, 6),
+                market_value=None if price is None else round(price * shares, 2),
+                liquidation_value_after_fee=None if price is None else round(
+                    price * shares * (1.0 - float(fee_rate)), 2
+                ),
+                buy_fee_rate=float(row["buy_fee_rate"]),
+                sell_fee_rate=float(fee_rate),
+                snapshot_ref=str(row["snapshot_ref"]),
+                monitor_context=dict(contexts.get(lot_id) or {}),
+            )
+        )
+    return lots
+
+
+@dataclass(frozen=True)
+class BookBSellableState:
+    """A protective SELL projection has no cash, valuation or settlement authority."""
+    trade_date: str
+    ownership_head_sha256: str | None
+    broker_snapshot_sha256: str
+    broker_snapshot_observed_at: str
+    lots: tuple[BookBLiveOwnedLot, ...]
+
+    def as_dict(self) -> dict:
+        return {**asdict(self), "scope": "sellable_only", "logical_account_id": "primary",
+                "cash": None, "settled_nav": None, "current_open_exposure": None,
+                "realized_cash_delta": None, "liquidation_value_after_fee": None,
+                "accounting": {"status": "unavailable", "reason": "SELLABLE_ONLY_PROJECTION"}}
+
+
+def project_book_b_sellable(state_dir: Path, snapshot: dict, *, trade_date: str,
+                            now: datetime, monitor_context_by_lot: dict | None = None) -> BookBSellableState:
+    from .book_b_accounting import replay_owned
+    from .book_b_capital import policy
+    body = {key: value for key, value in snapshot.items() if key != "snapshot_sha256"}
+    cfg = policy(state_dir)
+    # This branch is restricted to the current account-bound capital deployment.
+    if (snapshot.get("schema_version") != "book-b-sellable-only.v1"
+            or snapshot.get("snapshot_sha256") != _sha256(body)
+            or snapshot.get("source") != "foundersc_native_app"
+            or snapshot.get("environment") != "live"
+            or snapshot.get("logical_account_id") != "primary"
+            or snapshot.get("account_binding") != "proven"
+            or snapshot.get("trade_date") != trade_date or cfg is None
+            or snapshot.get("fund_account_binding_sha256") != cfg["fund_account_binding_sha256"]):
+        raise ValueError("BOOK_B_SELLABLE_SNAPSHOT_BINDING_UNPROVEN")
+    observed = datetime.fromisoformat(snapshot["observed_at"])
+    positions = snapshot["positions"]
+    if (observed.tzinfo is None or now.tzinfo is None
+            or observed.astimezone(ZoneInfo("Asia/Shanghai")).date().isoformat() != trade_date
+            or not -30 <= (now-observed).total_seconds() <= 60
+            or positions.get("observed_at") != snapshot["observed_at"]
+            or positions.get("scope") != "sellable_only"
+            or positions.get("capture_proven") is not True
+            or positions.get("row_count") != len(positions.get("rows", []))):
+        raise ValueError("BOOK_B_SELLABLE_SNAPSHOT_EVIDENCE_UNPROVEN")
+    owned = replay_owned(state_dir)
+    codes = {lot["code"].split(".")[0] for lot in owned.lots.values() if lot["shares"] > 0}
+    if not codes.issubset(set(positions.get("scoped_codes", []))):
+        raise ValueError("BOOK_B_SELLABLE_SCOPE_INCOMPLETE")
+    lots = _project_owned_lots(owned.lots, positions["rows"], trade_date=trade_date,
+        contexts=monitor_context_by_lot or {}, sellable_only=True)
+    return BookBSellableState(trade_date, owned.head, snapshot["snapshot_sha256"],
+                             snapshot["observed_at"], tuple(lots))
+
+
 def project_book_b_live_account(
     state_dir: Path,
     broker_snapshot: dict[str, Any],
@@ -831,86 +968,9 @@ def project_book_b_live_account(
     )
     contexts = monitor_context_by_lot or {}
 
-    broker_positions: dict[str, dict[str, Any]] = {}
-    for row in snapshot["tables"]["positions"]["rows"]:
-        code6 = _normalize_code(row.get("证券代码"))
-        if code6 in broker_positions:
-            raise ValueError(f"LIVE_BOOK_B_BROKER_POSITION_DUPLICATE:{code6}")
-        broker_positions[code6] = {
-            "shares": _broker_integer(
-                row.get("证券数量"), reason="LIVE_BOOK_B_BROKER_SHARES_INVALID"
-            ),
-            "sellable": _broker_integer(
-                row.get("可卖数量"), reason="LIVE_BOOK_B_BROKER_SELLABLE_INVALID"
-            ),
-            "price": _finite_float(
-                _broker_decimal(row.get("当前价"), reason="LIVE_BOOK_B_BROKER_PRICE_INVALID"),
-                reason="LIVE_BOOK_B_BROKER_PRICE_INVALID",
-            ),
-        }
-
-    lot_rows, cash = owned_book.lots, owned_book.cash
-
-    owned_by_code: dict[str, int] = {}
-    for lot in lot_rows.values():
-        if lot["shares"] <= 0:
-            continue
-        code6 = _normalize_code(lot["code"])
-        owned_by_code[code6] = owned_by_code.get(code6, 0) + int(lot["shares"])
-    for code6, owned in owned_by_code.items():
-        broker = broker_positions.get(code6)
-        if broker is None or broker["shares"] < owned:
-            raise ValueError(f"LIVE_BOOK_B_BROKER_OWNERSHIP_MISMATCH:{code6}")
-
-    remaining_sellable = {
-        code6: min(int(position["sellable"]), owned_by_code.get(code6, 0))
-        for code6, position in broker_positions.items()
-    }
-    lots: list[BookBLiveOwnedLot] = []
-    for lot_id, row in sorted(
-        lot_rows.items(), key=lambda item: (item[1]["entry_date"], item[0])
-    ):
-        shares = int(row["shares"])
-        if shares <= 0:
-            continue
-        code6 = _normalize_code(row["code"])
-        broker = broker_positions[code6]
-        entry_date = str(row["entry_date"])
-        if entry_date >= str(trade_date)[:10]:
-            # Broker sellable is account-level.  A manual older holding of the
-            # same code must never make today's Book-B-owned lot appear T+1
-            # eligible, so same-day lots consume none of that quantity.
-            sellable = 0
-        else:
-            sellable = min(shares, remaining_sellable.get(code6, 0))
-            remaining_sellable[code6] = max(
-                0, remaining_sellable.get(code6, 0) - sellable
-            )
-        price = float(broker["price"])
-        if price <= 0:
-            raise ValueError(f"LIVE_BOOK_B_BROKER_MARK_INVALID:{code6}")
-        entry_price = row["cost"] / shares
-        fee_rate = row["sell_fee_rate"]
-        lots.append(
-            BookBLiveOwnedLot(
-                owned_lot_id=lot_id,
-                code=str(row["code"]),
-                name=str(row["name"]),
-                entry_date=entry_date,
-                entry_price=round(float(entry_price), 6),
-                shares=shares,
-                sellable_shares=sellable,
-                current_price=round(price, 6),
-                market_value=round(price * shares, 2),
-                liquidation_value_after_fee=round(
-                    price * shares * (1.0 - float(fee_rate)), 2
-                ),
-                buy_fee_rate=float(row["buy_fee_rate"]),
-                sell_fee_rate=float(fee_rate),
-                snapshot_ref=str(row["snapshot_ref"]),
-                monitor_context=dict(contexts.get(lot_id) or {}),
-            )
-        )
+    cash = owned_book.cash
+    lots = _project_owned_lots(owned_book.lots, snapshot["tables"]["positions"]["rows"],
+                               trade_date=trade_date, contexts=contexts)
     exposure = round(sum(lot.market_value for lot in lots), 2)
     liquidation = round(sum(lot.liquidation_value_after_fee for lot in lots), 2)
     from .book_b_capital import allocate_cash, policy as capital_policy
