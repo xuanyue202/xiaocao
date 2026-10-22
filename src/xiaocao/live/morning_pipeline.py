@@ -7,6 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from xiaocao.utils.trading_session import A_SHARE_TZ
 from xiaocao.utils.atomic_files import atomic_write
+from .book_b_workflow import summarize_adjudication
 
 
 def _evidence(path: Path):
@@ -72,7 +73,8 @@ def pipeline_status(live_dir: Path, date: str) -> dict:
         for app in result["app"]:
             if identity.get("owner_thread_id") == app["thread_id"] and identity.get("runner_pid") == app["runner_pid"]:
                 app["terminal_receipts"].append({"status": receipt.get("status"),
-                    "reason": receipt.get("reason"), "run_id": receipt.get("run_id"), "evidence": ref})
+                    "reason": receipt.get("reason"), "run_id": receipt.get("run_id"), "evidence": ref,
+                    "strategy_adjudication": summarize_adjudication(receipt.get("strategy_adjudication"), runtime="live")})
     from xiaocao.live.morning_bundle import inspect_bundle
     bundle = inspect_bundle(live_dir, date)
     result["bundle"] = {"evidence": _evidence(live_dir / f"morning_bundle_ready_{date}.json")[1],
@@ -103,13 +105,32 @@ def pipeline_status(live_dir: Path, date: str) -> dict:
             "checkpoint_sha256": value.get("checkpoint_sha256") if status == "ready" else None,
             "dependency": value.get("dependency") if key == "producer_inputs" and dated else None}
     # A freeze-acquisition receipt is preparation, not the paper writer result.
-    from xiaocao.live.paper_decision_support import read_consumption_result
+    from xiaocao.live.paper_decision_support import read_consumption, read_consumption_result
     try:
         terminal = read_consumption_result(live_dir.parent.parent, date, "mode_exec_star")
         result["paper_b_result"] = {"status": terminal["status"] if terminal and terminal.get("date") == date else "unproved",
             "receipt_sha256": terminal.get("receipt_sha256") if terminal else None}
+        consumption = read_consumption(live_dir.parent.parent, date, "mode_exec_star") if terminal else None
+        result["paper_b_result"]["strategy_adjudication"] = summarize_adjudication(
+            consumption.get("strategy_adjudication") if consumption else None, runtime="paper")
+        result["paper_b_result"]["experiment_capture"] = consumption.get("experiment_capture") if consumption else None
     except (OSError, ValueError, TypeError, KeyError):
         result["paper_b_result"] = {"status": "unproved"}
+    paper = result["paper_b_result"].get("strategy_adjudication", {})
+    comparisons = []
+    for app in result["app"]:
+        for terminal in app["terminal_receipts"]:
+            explanation = terminal["strategy_adjudication"]
+            same_batch = (bundle["status"] == "ready"
+                and explanation.get("status") == paper.get("status") == "recorded"
+                and explanation.get("input_coverage") == paper.get("input_coverage") == "complete_frozen_batch"
+                and explanation.get("freeze_sha256") == paper.get("freeze_sha256") == bundle.get("snapshot_sha256")
+                and explanation.get("checkpoint_sha256") == paper.get("checkpoint_sha256") == bundle.get("checkpoint_sha256"))
+            comparisons.append({"app_run_id": terminal["run_id"], "same_original_batch": same_batch,
+                "status": ("same_strategy_semantics" if explanation.get("strategy_semantics_sha256") == paper.get("strategy_semantics_sha256")
+                           else "different_strategy_semantics") if same_batch else "unproved",
+                "meaning": "selection_stage_only_account_allocation_orders_and_fills_remain_separate"})
+    result["book_b_strategy_comparison"] = comparisons
     result["support_remaining_seconds"] = max(0, (datetime.fromisoformat(result["support_cutoff"]) - now).total_seconds())
     return result
 

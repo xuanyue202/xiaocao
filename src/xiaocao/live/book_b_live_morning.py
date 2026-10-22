@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo
 
 from .book_b_allocation import BookBAllocationFacts, allocate_frozen_rows, validate_allocation_rows
 from .account_risk import AccountRiskReceipt
-from . import kol_policy
+from .book_b_workflow import adjudicate_book_b, eligible_buy_rows
 from .live_decision_support import (
     bind_plan_audit, buy_cap, digest, evaluate_live_risk, read_plan_audit, read_policy,
 )
@@ -123,6 +123,7 @@ class BookBLiveMorningReceipt:
     preparation_deadline: str | None = None
     deferred_prior_day_sell_plan_ids: tuple[str, ...] = ()
     checklist_path: str | None = None
+    strategy_adjudication: dict | None = None
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -1250,18 +1251,7 @@ def reconcile_prior_day_canary_unknowns(
 
 
 def _eligible_buy_rows(rows: list[dict]) -> list[dict]:
-    return [
-        row
-        for row in rows
-        if row.get("book") == "B"
-        and row.get("is_live") is True
-        and row.get("mode_exec_star") is True
-        and row.get("mode_trade_eligible") is True
-        and (
-            "executable_fillable" not in row
-            or row.get("executable_fillable") is True
-        )
-    ]
+    return eligible_buy_rows(rows)
 
 
 def _read_completed_freeze(
@@ -1815,6 +1805,7 @@ def run_book_b_live_morning(
     policy_consumptions: list[dict] = []
     open_reconciliations: tuple[dict, ...] = ()
     review_receipt: dict | None = None
+    strategy_adjudication: dict | None = None
     review_requested_at: datetime | None = None
     batch_risk: AccountRiskReceipt | None = None
     snapshot_cache: dict | None = None
@@ -1975,6 +1966,12 @@ def run_book_b_live_morning(
                     raise ValueError("LIVE_RECOVERY_INTENT_FREEZE_MISMATCH")
             enter("freeze_ready")
             if not frozen_rows:
+                strategy_adjudication = adjudicate_book_b(
+                    [], {"status": "neutral", "book": "B", "runtime": "live",
+                         "reason": "EMPTY_ORIGINAL_FREEZE_NO_REVIEW_REQUIRED"},
+                    freeze=dated_freeze_receipt, runtime="live",
+                    support_receipt={"status": "not_required", "reason": "EMPTY_ORIGINAL_FREEZE"},
+                ).receipt
                 receipt = _no_action_receipt(config)
             else:
                 # Keep allocation, durable reservations and every submit on
@@ -2061,10 +2058,13 @@ def run_book_b_live_morning(
                     "status": "neutral", "book": "B", "runtime": "live",
                     "reason": "POLICY_NOT_CONFIGURED", "decision_id": None,
                 }
-                prioritized_rows = kol_policy.prioritize_xiaocao_modes(
+                adjudication = adjudicate_book_b(
                     frozen_rows, selection_decision,
+                    freeze=dated_freeze_receipt, runtime="live",
+                    support_receipt=review_receipt,
                 )
-                rows = _eligible_buy_rows(prioritized_rows)
+                strategy_adjudication = adjudication.receipt
+                rows = _eligible_buy_rows(adjudication.rows)
                 if not rows:
                     receipt = _no_action_receipt(config)
                 else:
@@ -2225,6 +2225,7 @@ def run_book_b_live_morning(
                       deferred_prior_day_sell_plan_ids=deferred_sells,
                       open_plan_reconciliations=open_reconciliations or receipt.open_plan_reconciliations,
                       review_rendezvous=review_receipt,
+                      strategy_adjudication=strategy_adjudication,
                       market_guard_refreshes=tuple(market_guard_refreshes),
                       submission_observations=tuple(submission_observations.values()))
     stage_times["finished"] = now().isoformat()

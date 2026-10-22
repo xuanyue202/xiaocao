@@ -1,6 +1,6 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：4.46
+**版本**：4.47
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
 **关联实现**：`src/xiaocao/live/{safety,capital_keychain,foundersc_native_ax,foundersc_native_broker,trading_execution,book_b_live_lifecycle,book_b_live_intraday}.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`native/foundersc_ax_executor/`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{book_b_live_morning,book_b_live_intraday,live_monitor,research_mode_switch_replay}.py`
@@ -524,6 +524,24 @@ APP 在用户明确批准的动态资金政策下，以账户绑定的资金划�
 - **强持有例外**（抑制 trailing 出场）：接力/连板 或 xcjw≥300 或 jsjl>0；近涨停（≥99.7% up_price）；成为领涨且 pct≥8% 且近日高（≥99.5%）。
 - **profile**：v5 = 5 日 / dd 2%；v6 = 3 日 / dd 0.5%（更激进，需前瞻验证）。hard floor 两者均 8%。
 
+## 4a. Book B 共同裁决与研究观测（2026-10-22）
+
+APP 与 paper 在原 consumer 调用点共用 `book_b_workflow`，保持既有确定性选择、
+KOL-before-final-selection、COLD 默认门、各自账户和整手分配适配。回执绑定原批次
+canonical/raw/checkpoint 与策略 SHA，逐候选解释选择和执行限制。相同策略指纹只证明
+共同选择阶段的效应相同，不证明同账户许可、手数、委托、成交或收益；不新增全局等待。
+
+有效已发布中性政策、复用有效政策、当前请求完成、超时/缺失/风险免等分别记录。
+新晨间完成证明由 decision/review 同时绑定原 `morning_request_sha256`；明确模式映射
+须保存原词、精确目标、exact/conditional/unmapped、条件、当前适用性与来源，并独立
+确认 `mode_mapping_reviewed`。只有 supported 且精确对应的映射能支持该新格式 v2
+跟随；旧有效政策保留原消费门，但缺原请求证明不得称本请求完成。不会自动推断模式别名。
+
+paper 原消费自动留存独立、authority=0 的各选择器前向选择证据；记录不等于组合实验
+或收益。新资金组合须独立账本和 §10 协议，不能多次运行 canonical `paper_record --pick`
+来伪装隔离。只读比较统一标签、披露空槽/缺证/配对分母，周复盘冻结并核对其输入。
+具体操作和自然运行验收见 [Book B 统一流程](BOOK_B_WORKFLOW.md)。
+
 ## 4b. Book T — 趋势模拟口径（paper-only，独立生命周期）
 
 - **建仓**：`paper_record.py --trend-only` 调 `strategy.trend_rules.generate_trend_picks`，从当前主线大类中选少量大票/中军候选，写入 `positions.jsonl` 的 `book="T"` 行；同 code 可同时有 B/T 两行，互不阻塞、互不 net。候选分为 `aligned / neutral / external`：电子、半导体、存储、光电、元器件、通信、机器人等与当前小草主线相关者优先；中性候选只作保持趋势仓位的兜底；银行/保险/证券/医药/白酒等外部旧方向是 `external`，不得作为新趋势买入。
@@ -709,6 +727,7 @@ APP 在用户明确批准的动态资金政策下，以账户绑定的资金划�
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| 4.47 | 2026-10-22 | 用户要求 APP 短线沉淀统一操作流程；共同裁决解释、模式映射与本请求完成证明，独立 paper 选择研究与周复盘。保留 COLD/账户/执行门及独立账本，不将选择记录冒充资金收益。 |
 | 4.46 | 2026-10-21 | 用户批准修复盘后旧单确认无收口、回执身份导致重复告警及首错遮盖。证据完备的后续独立清仓关闭经济核对任务，保留原UNKNOWN/同代码BUY/费用现金门；每次新快照重新评估，汇总全部待核，静默未变化历史与会计缺口，仅对当前风险或具体用户动作通知。 |
 | 4.45 | 2026-10-21 | 用户要求常规历史未决留在内部对账，黄金窗口后由原任务核对；晨间通知保留本次交易结果、实际受阻原因和具体用户动作，保留历史状态及原配送 claim。 |
 | 4.43 | 2026-10-19 | 用户批准当天证券池与新鲜有效目录取交集，目录外代码留证剔除；目录/有效候选缺证仍受阻，历史不受当前目录筛选；复用60秒内已证明完整版本，修正缺口及未检查价格状态。 |

@@ -33,6 +33,8 @@ from xiaocao.api.client import XiaocaoClient  # noqa: E402
 from xiaocao.kol.publication import canonical_sha256  # noqa: E402
 from xiaocao.live import accounts, intelligence_policy, kol_policy  # noqa: E402
 from xiaocao.live import paper_decision_support as paper_support  # noqa: E402
+from xiaocao.live.book_b_workflow import adjudicate_book_b  # noqa: E402
+from xiaocao.research.shortline_comparison import record_selection_experiments  # noqa: E402
 from xiaocao.live.book_b_pricing import initial_limit_price  # noqa: E402
 from xiaocao.live.buy_guards import evaluate_buy_market_guard  # noqa: E402
 from xiaocao.live.instrument_contract import (  # noqa: E402
@@ -133,13 +135,17 @@ def _paper_support_context(account: dict, positions: list[dict], client=None) ->
 
 
 def _paper_support_claim(a, risk: dict, decision: dict, baseline: list[dict],
-                         slots: list[dict], *, reason: str, snapshot_sha256: str) -> dict:
+                         slots: list[dict], *, reason: str, snapshot_sha256: str,
+                         strategy_adjudication: dict | None = None,
+                         experiment_capture: dict | None = None) -> dict:
     return paper_support.write_consumption(ROOT, a.date, a.pick, {
         "status": "claimed" if any(row["final_shares"] for row in slots) else "no_buy",
         "reason": reason, "snapshot_sha256": snapshot_sha256,
         "risk_receipt": risk, "kol_decision": decision,
         "supporting_health": "ok" if decision["status"] == "validated" else "degraded",
         "baseline_codes": [row["code"] for row in baseline], "slots": slots,
+        "strategy_adjudication": strategy_adjudication,
+        "experiment_capture": experiment_capture,
     })
 
 
@@ -1037,11 +1043,16 @@ def _main_locked(a=None):
         snapshot_sha256 = hashlib.sha256(raw).hexdigest() if raw else ""
         snaps = [json.loads(line) for line in raw.decode().splitlines() if line.strip()]
 
+    strategy_adjudication = None
+    experiment_capture = None
+
     def no_buy_support(reason: str, *, context=None) -> None:
         if a.pick != "mode_exec_star":
             return
         risk, decision = context or _paper_support_context(account, paper_positions)
-        _paper_support_claim(a, risk, decision, [], [], reason=reason, snapshot_sha256=snapshot_sha256)
+        _paper_support_claim(a, risk, decision, [], [], reason=reason, snapshot_sha256=snapshot_sha256,
+                             strategy_adjudication=strategy_adjudication,
+                             experiment_capture=experiment_capture)
         paper_support.complete_consumption(ROOT, a.date, a.pick, entries=[])
         print(f"{a.date}: paper policy no-buy receipt: {reason}; risk={risk['status']}; KOL={decision['status']}")
 
@@ -1079,9 +1090,21 @@ def _main_locked(a=None):
             runtime="paper",
             now=datetime.now(A_SHARE_TZ),
         )
-        latest_rows = kol_policy.prioritize_xiaocao_modes(
-            latest_rows, decision_for_selection,
-        )
+        # Existing consumption.snapshot_sha256 is the raw file digest. The
+        # shared explanation must use the producer's canonical digest instead.
+        from xiaocao.live.trading_runner import frozen_rows_digest
+        explanation_freeze = frozen_receipt or {
+            "market_date": a.date, "snapshot_sha256": frozen_rows_digest(latest_rows),
+            "snapshot_raw_sha256": snapshot_sha256, "snapshot_row_count": len(latest_rows),
+        }
+        adjudication = adjudicate_book_b(latest_rows, decision_for_selection,
+                                        freeze=explanation_freeze, runtime="paper")
+        try:
+            experiment_capture = record_selection_experiments(ROOT, a.date, snaps, adjudication.receipt)
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            experiment_capture = {"status": "degraded", "reason": type(exc).__name__}
+            print("supporting_health=degraded: isolated shortline experiment capture unavailable")
+        latest_rows, strategy_adjudication = adjudication.rows, adjudication.receipt
     selection = _select_intelligence_picks(
         latest_rows,
         pick=a.pick,
@@ -1300,7 +1323,9 @@ def _main_locked(a=None):
             baseline, decision, risk, kill_factor=ks_factor, fee_rate=fee_rate,
         )
         _paper_support_claim(a, risk, decision, baseline, policy_slots,
-                             reason="POLICY_APPLIED", snapshot_sha256=snapshot_sha256)
+                             reason="POLICY_APPLIED", snapshot_sha256=snapshot_sha256,
+                             strategy_adjudication=strategy_adjudication,
+                             experiment_capture=experiment_capture)
         for slot in policy_slots:
             if slot["final_shares"] == 0:
                 _append_skip({"ts": _now_iso(), "date": a.date, "book": "B",

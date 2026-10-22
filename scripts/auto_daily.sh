@@ -309,6 +309,10 @@ case "$STEP" in
     run_python scripts/flywheel_sweep.py --top 30 >>"$LOG" 2>&1 || true
     log "weekly deep review: refresh distill action log"
     run_python scripts/distill_transcript.py --refresh-action-log >>"$LOG" 2>&1 || true
+    log "weekly deep review: refresh cache-only shortline comparison"
+    if ! run_python scripts/research_shortline_comparison.py --end "$TODAY" >>"$LOG" 2>&1; then
+      log "weekly supporting_health=degraded: shortline comparison unavailable; no return improvement inferred"
+    fi
     log "weekly deep review: build fixed-input plan"
     run_python scripts/weekly_deep_review.py --plan --date "$TODAY" >>"$LOG" 2>&1
     log "weekly plan ready -> output/live/weekly_plan_${TODAY}.json; Codex should apply evidence-backed changes, validate, then finalize/commit"

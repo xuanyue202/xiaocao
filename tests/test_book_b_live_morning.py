@@ -234,6 +234,9 @@ def test_live_morning_accepts_a_proven_empty_freeze_without_snapshot_rows(
 
     assert receipt.status == "no_action"
     assert receipt.reason == "NO_EXECUTABLE_STAR_E"
+    assert receipt.strategy_adjudication["strategy_codes"] == []
+    assert receipt.strategy_adjudication["support_attempt"]["outcome"] == "not_required"
+    assert receipt.strategy_adjudication["freeze_sha256"] == frozen_rows_digest([])
 
 
 def test_live_morning_defers_missing_future_fillability_to_submit_guards(

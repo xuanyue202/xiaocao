@@ -85,6 +85,16 @@ Read this file only for the daily morning recommendation/paper-book branch.
 
 For the current dynamic APP capital policy, independent new BUYs use fresh account-bound available cash and proved current owned-lot marks. Prior-day SELL history/zero-fill proof is post-batch reconciliation, never a global opening dependency. Keep the old UNKNOWN/claim/order identity and same-code BUY fence before intent binding; current BUY, same-day SELL, missing identity and uncertain cash reserves still block. Record deferred_prior_day_sell_plan_ids and let the same owner perform exact readback after business; EOD remains strict. An original blocked preflight or read-only review_account receipt with zero intents/preparations/execution receipts may claim one continuation under its exact original absolute deadline. A receipt with recovery_of cannot become another continuation source; consumed or uncertain claims stay fenced.
 
+## Shared Book-B decision readback
+
+For candidate explanations, COLD/mode-follow mapping, policy completion or
+APP/paper differences, read `docs/BOOK_B_WORKFLOW.md` and Contract §4a.
+Consume each original terminal receipt's `strategy_adjudication`; compare
+canonical freeze/checkpoint and common-stage fingerprints through the pipeline
+status. Published neutral policy, completed current request, reused policy and
+timeout are distinct. Paper's original writer also records isolated selection
+evidence; it does not start another funded experiment or replay a terminal day.
+
 ## Execute
 
 Scheduler wakes are preparation only: producer and paper wake at 09:18; APP

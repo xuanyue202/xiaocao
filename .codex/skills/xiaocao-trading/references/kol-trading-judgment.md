@@ -105,6 +105,14 @@ counterevidence checks. It also binds `context_sha256` and explicitly
 acknowledges all unloaded historical body IDs. These are auditable assertions,
 not a substitute for capital authority.
 
+For a morning request, follow `docs/BOOK_B_WORKFLOW.md`'s mapping/completion
+contract: both decision and independent review bind the original
+`morning_request_sha256`; the decision records typed `mode_mappings`, and review
+confirms `mode_mapping_reviewed=true`. Preserve source wording and conditions;
+only supported exact targets can back a new v2 override. The consumer distinguishes
+published neutral policy from a completed current request. Legacy valid policy
+reuse retains its original lifetime and never claims a fresh review.
+
 ```bash
 PYTHONPATH=src .venv/bin/python scripts/kol_trading_decision.py publish --decision <draft.json> --review <parent-review.json> --context <context.json>
 PYTHONPATH=src .venv/bin/python scripts/kol_trading_decision.py status --book B --runtime live

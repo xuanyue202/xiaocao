@@ -213,6 +213,31 @@ def _validate_pair(decision: dict, review: dict) -> tuple[datetime, datetime, da
     reviewer = review.get("reviewer_agent_id")
     _require(_text(reviewer) and reviewer != decision["agent_id"], "INDEPENDENT_REVIEWER_REQUIRED")
     _require(all(review.get(flag) is True for flag in _REVIEW_FLAGS), "REVIEW_COVERAGE_INCOMPLETE")
+    if "morning_request_sha256" in decision or "morning_request_sha256" in review:
+        request_sha = decision.get("morning_request_sha256")
+        _require(isinstance(request_sha, str) and _SHA.fullmatch(request_sha) is not None
+                 and review.get("morning_request_sha256") == request_sha, "MORNING_REQUEST_BINDING_INVALID")
+        _require(review.get("mode_mapping_reviewed") is True, "MORNING_MODE_MAPPING_REVIEW_REQUIRED")
+        mappings = decision.get("mode_mappings")
+        _require(isinstance(mappings, list), "MORNING_MODE_MAPPINGS_REQUIRED")
+        for mapping in mappings:
+            _require(isinstance(mapping, dict), "MORNING_MODE_MAPPING_INVALID")
+            _require(mapping.get("source_report_id") in report_ids and _text(mapping.get("source_term"))
+                     and _text(mapping.get("reason")), "MORNING_MODE_MAPPING_SOURCE_REQUIRED")
+            _require(mapping.get("classification") in {"exact", "conditional", "unmapped"}
+                     and mapping.get("current_applicability") in {"supported", "uncertain", "contradicted"},
+                     "MORNING_MODE_MAPPING_STATUS_INVALID")
+            conditions = mapping.get("conditions")
+            _require(isinstance(conditions, list) and all(map(_text, conditions)), "MORNING_MODE_MAPPING_CONDITIONS_INVALID")
+            _require(mapping["classification"] != "conditional" or bool(conditions), "MORNING_CONDITIONAL_MAPPING_REQUIRES_CONDITIONS")
+            _require((mapping.get("target_mode") is None if mapping["classification"] == "unmapped"
+                      else _text(mapping.get("target_mode"))), "MORNING_MODE_MAPPING_TARGET_INVALID")
+        for override in mode_overrides or []:
+            _require(any(mapping.get("target_mode") == override["mode"]
+                         and mapping["source_report_id"] == override["source_report_id"]
+                         and mapping["classification"] in {"exact", "conditional"}
+                         and mapping["current_applicability"] == "supported" for mapping in mappings),
+                     "MORNING_MODE_OVERRIDE_MAPPING_UNPROVEN")
     reviewed_at = _time(review.get("reviewed_at"))
     _require(as_of <= reviewed_at < until, "REVIEW_TIME_ORDER")
     return as_of, until, reviewed_at
@@ -429,6 +454,35 @@ def _consumable(snapshot: dict, code: str) -> dict:
     except (ValueError, TypeError, OverflowError, RecursionError) as exc:
         return _state("blocked", expected.get("book"), expected.get("runtime"),
                       "KOL_POLICY_BLOCKED: " + str(exc))
+
+
+def describe_judgment(snapshot: dict) -> dict:
+    """Describe verified policy completion without granting trading authority.
+
+    A validated, reviewed neutral policy is completed work. Missing or expired
+    policy is a baseline fallback, never evidence of a completed neutral review.
+    The original evaluated_at clock is retained; this does not refresh validity.
+    """
+    verified = _consumable_snapshot(snapshot)
+    status = verified["status"]
+    if status == "validated":
+        changed = (verified["buy_scale"] != 1 or bool(verified["skip_codes"])
+                   or bool(verified["exit_codes"]) or bool(verified["xiaocao_mode_overrides"]))
+        outcome = "published_changed" if changed else "published_no_change"
+    else:
+        outcome = "invalid" if status == "blocked" else "degraded_" + status
+    return {
+        "outcome": outcome, "policy_status": status,
+        "completion_scope": "published_policy_not_current_request",
+        "reason": verified["reason"], "book": verified["book"],
+        "runtime": verified["runtime"], "decision_id": verified["decision_id"],
+        "decision_sha256": verified.get("decision_sha256"),
+        "evaluated_at": verified.get("evaluated_at"),
+        "record_sha256": (verified.get("record") or {}).get("record_sha256"),
+        "mode_mappings": (verified.get("record") or {}).get("decision", {}).get("mode_mappings"),
+        "effect": {name: verified[name] for name in (
+            "buy_scale", "skip_codes", "exit_codes", "xiaocao_mode_overrides")},
+    }
 
 
 def prioritize_xiaocao_modes(rows: list[dict], snapshot: dict, *, max_slots: int = 3) -> list[dict]:

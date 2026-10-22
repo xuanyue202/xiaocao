@@ -50,6 +50,11 @@ Backtest outputs include daily signal JSON, `trades.csv` and `summary.json`. A b
 
 ## Paper strategy versus A-share indices
 
+For shortline selector, same-entry A/B exit, or APP/paper process comparisons,
+read `docs/BOOK_B_WORKFLOW.md`. Run `scripts/research_shortline_comparison.py
+--start YYYY-MM-DD --end YYYY-MM-DD` for immutable, cache-only descriptive
+evidence; selection labels and empty-slot diagnostics are not portfolio returns.
+
 ```bash
 PYTHONPATH=src python3 scripts/research_paper_vs_market.py \
   --start 2026-06-01 \

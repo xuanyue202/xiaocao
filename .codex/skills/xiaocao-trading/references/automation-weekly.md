@@ -25,6 +25,13 @@ Before applying any change, read `docs/OPERATING_CONTRACT.md` completely, especi
 
 The first phase must produce `output/live/weekly_plan_<date>.json`. Inspect its fixed-input evidence before choosing exactly one route:
 
+The weekly shell refreshes the cache-only shortline comparison before that plan.
+Inspect `data_evidence_review.shortline_research` for same-entry exits and original
+selection-capture coverage. Missing/invalid files remain explicit; captures are
+not funded portfolios. For a selection/participation experiment or APP/paper
+consistency finding, read `docs/BOOK_B_WORKFLOW.md` and use the existing three
+experiment slots and §10 gates.
+
 For a cache-only observation of a different existing checkout, use
 `scripts/observe_weekly_evidence.py --root <source> --date YYYY-MM-DD --output <outside-source>/weekly.json`.
 It captures existing bytes and renders a report without running the weekly

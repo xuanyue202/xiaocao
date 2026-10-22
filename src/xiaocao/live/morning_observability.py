@@ -102,6 +102,7 @@ def _compact_order(row: dict) -> dict:
 
 def terminal_notice(payload: dict, receipt_path: Path, *, include_durable_pending=True,
                     include_incidents=True) -> dict:
+    from .book_b_workflow import summarize_adjudication
     receipts = list(payload.get('execution_receipts', []))
     reconciliations = [*payload.get('open_plan_reconciliations', []),
                        *payload.get('prior_reconciliations', [])]
@@ -144,6 +145,7 @@ def terminal_notice(payload: dict, receipt_path: Path, *, include_durable_pendin
             'orders': [_compact_order(r) for r in receipts],
             'review': {k: (payload.get('review_rendezvous') or {}).get(k)
                        for k in ('status', 'reason', 'supporting_health', 'decision_id')},
+            'strategy_adjudication': summarize_adjudication(payload.get('strategy_adjudication'), runtime='live'),
             'submission_observations': payload.get('submission_observations', [])}
 
 

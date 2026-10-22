@@ -17,12 +17,12 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from xiaocao.research import guards
+from xiaocao.research.paper_fill_evidence import WINDOW_BASES, classify_paper_fill as _fill_class
 from xiaocao.research.weekly_production_adapter import (
     build_production_observations, render_production_observations,
 )
 
 OPTIONS = ('baseline_no_kol', 'current_bounded', 'kol_challenger')
-WINDOW_BASES = {'opening_window_vwap', 'opening_window_vwap_capped_by_limit'}
 PATTERNS = (
     'kronos_screen/HYPOTHESES.jsonl',
     'reference/experience/xiaocao_hypotheses.jsonl',
@@ -33,6 +33,8 @@ PATTERNS = (
     'output/research/runs/*/verdict.json',
     'output/research/weekly_comparison*.json',
     'output/research/paper_vs_market_*.md',
+    'output/research/shortline_comparisons/*.json',
+    'output/research/shortline_experiments/*/*.json',
     'output/live/positions.jsonl', 'output/live/paper_trades.jsonl',
     'output/live/paper_holdings_snapshots.jsonl', 'output/live/signal_snapshots.jsonl',
     'output/live/pnl_decompose.csv',
@@ -97,10 +99,13 @@ def _capture(root: Path, snapshot_dir: Path | None) -> tuple[dict, dict[str, byt
     # Saved comparison/run artifacts can name inputs beyond the conventional
     # filenames. Capture only local research originals, never another checkout.
     for path in list(paths_to_capture):
-        if path.name.startswith('weekly_comparison') or path.name == 'manifest.json':
+        if (path.name.startswith('weekly_comparison') or path.name == 'manifest.json'
+                or path.parent.name == 'shortline_comparisons'):
             try:
                 value = json.loads(path.read_bytes())
                 refs = [row.get('frozen_candidates_path') for row in value.get('rows', [])]
+                if path.parent.name == 'shortline_comparisons':
+                    refs += [item.get('path') for item in value.get('inputs', []) if isinstance(item, dict)]
                 for row in value.get('rows', []):
                     for reference in (row.get('source_refs') or {}).values():
                         if isinstance(reference, dict):
@@ -176,17 +181,6 @@ def _load(contents: dict[str, bytes], path: str) -> list[dict]:
         return _rows(contents[path], path)
     except (KeyError, ValueError, UnicodeError):
         return []
-
-
-def _fill_class(row: dict) -> str:
-    basis = str(row.get('entry_price_basis') or row.get('price_basis') or row.get('fill_basis') or '')
-    if row.get('fill_fallback') or 'fallback' in basis:
-        return 'fallback'
-    if basis in WINDOW_BASES:
-        return 'reported_window'
-    if 'retry' in basis or 'proxy' in basis:
-        return 'proxy'
-    return 'unknown'
 
 
 def _fill_audit(contents: dict[str, bytes], as_of: dt.date) -> dict:
@@ -571,6 +565,7 @@ def _research_runs(contents: dict[str, bytes], *, as_of: dt.date) -> list[dict]:
 
 
 def build_weekly_evidence(root: Path, *, as_of: dt.date, snapshot_dir: Path | None = None) -> dict:
+    from xiaocao.research.shortline_comparison import observe_shortline_research
     manifest, contents = _capture(root, snapshot_dir)
     manifest_path = None
     if snapshot_dir is not None:
@@ -650,6 +645,7 @@ def build_weekly_evidence(root: Path, *, as_of: dt.date, snapshot_dir: Path | No
         option_comparison=dict(options=empty_options if not comparisons else [], comparisons=comparisons),
         paper_fill_audit=_fill_audit(contents, as_of), accounting_observations=accounting,
         production_observations=build_production_observations(contents, as_of=as_of),
+        shortline_research=observe_shortline_research(contents, as_of=as_of),
         missing_evidence=sorted(set(missing)), exploration_proposals=proposals,
         promotion=dict(auto_promote=False, writes_verdict_ledger=False, changes_strategy=False),
         limitations=['saved observations are not independent broker/source verification',
@@ -697,6 +693,19 @@ def render_weekly_evidence(report: dict, *, include_exploration_proposals: bool 
         value = observation['valuation']
         lines.append(f"- 会计观测 {observation['observed_at']}：净投入 {value.get('net_contributed_capital', 'N/A')}，标记净值 {value.get('marked_nav', 'N/A')}，累计盈亏 {value.get('cumulative_pnl') if value.get('cumulative_pnl') is not None else 'N/A'}，已实现/浮动 {value.get('realized_pnl', 'N/A')}/{value.get('unrealized_pnl', 'N/A')}；费用 {value.get('fee_basis', 'unknown')}，状态 {value.get('status', 'unknown')}（已保存观测，未认证收益）。")
     lines += ['', *render_production_observations(report.get('production_observations') or {})]
+    shortline = report.get('shortline_research') or {}
+    if shortline.get('status') == 'observed':
+        lines += ['', '### 短线统一流程的前向证据', '',
+                  f"- 已保存原冻结选择记录 {shortline['selection_days']} 日；选择记录不代表独立资金组合已运行。"]
+        for item in shortline['comparisons']:
+            pair = item['paired_exit']
+            value = pair['mean_b_minus_a_pp']
+            mean_pp = 'N/A' if value is None else f'{value:+.4f}pp'
+            lines.append(f"- 截至 {item['end']}：严格同进场退出 {pair['eligible_pairs']} 对，B−A 均值 {mean_pp}；仅描述该样本，不自动晋级。证据 `{item['evidence']['path']}`。")
+    if shortline.get('invalid'):
+        lines.append(f"- 短线研究文件校验失败 {len(shortline['invalid'])} 份，未作为比较结论。")
+    if not shortline.get('current_window_report_observed'):
+        lines.append('- 本次窗口的短线比较尚未证明完成；旧报告保留原日期，不作为本周新结论。')
     if include_exploration_proposals:
         lines += ['', '### 下一步探索（提案，未运行）', '']
         for proposal in report['exploration_proposals']:
