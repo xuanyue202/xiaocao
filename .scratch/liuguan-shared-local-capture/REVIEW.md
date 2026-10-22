@@ -58,3 +58,14 @@ companion input expired during investigation; source_busy skipped Xiaocao and
 cleanup preserved the backend. The narrow companion continuation ran, but stopped
 on a native API error after six successful publishers, so the whole shared
 activity and full latest coverage are not accepted. Do not rerun the hour gate.
+
+## Connection reliability review — 2026-10-22
+Baselines e3e6b0f (Xiaocao) / d816d888 (compatible downloader). Independent Spec
+and Standards found that a backend timeout could release the lock before the
+native SDK Promise settled; fixed with page-lifetime in-flight state, including
+socket reconnection. Tests also changed from global no-op sleep to local recorded
+waits. Both reviewers closed these findings. Local deployment health probes now
+use a one-second read timeout and twenty-second total deadline. Production
+acceptance is still separate from this static review.
+Validation: 70 Python checks, Channels race tests and API/interceptor checks;
+three Node behavior tests including pending SDK call through reconnect.

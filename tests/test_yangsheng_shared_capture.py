@@ -321,3 +321,54 @@ def test_visible_refresh_holds_leases_and_restores_pac_on_failure(tmp_path, monk
         assert runtime.bootstrap(None, None, root=tmp_path, refresh=refresh)['status'] == 'connected'
     restored.assert_called_once()
     assert held == [] and guard.stdin.closed
+
+
+def test_exact_provider_deactivation_is_distinct_from_unavailable(monkeypatch):
+    unavailable = {'errCode': 0, 'data': {'BaseResponse': {'Ret': -1, 'ErrMsg': {'String': ''}}}}
+    deactivated = {'errCode': 0, 'data': {'BaseResponse': {'Ret': -5900, 'ErrMsg': {'String': ''}},
+        'contact': {'username': 'teacher@finder', 'nickname': '账号已注销'}}}
+    calls = Mock(side_effect=[unavailable, deactivated])
+    monkeypatch.setattr(native, 'request', calls)
+    with pytest.raises(CaptureError, match='publisher_deactivated'):
+        native.replay_page('local', 'teacher@finder', '')
+    assert calls.call_count == 2
+    deactivated['data']['contact']['username'] = 'someone-else@finder'
+    calls.side_effect = [unavailable, deactivated]
+    with pytest.raises(CaptureError, match='publisher_contact_mismatch'):
+        native.replay_page('local', 'teacher@finder', '')
+
+
+def test_sdk_decode_failure_retries_same_page_once_and_does_not_retry_protection(monkeypatch):
+    page = {'object': [replay()], 'contact': {'username': 'teacher@finder'}}
+    calls = Mock(side_effect=[CaptureError('sdk_decode_failed'), page])
+    monkeypatch.setattr(native, 'replay_page', calls)
+    waits = []
+    monkeypatch.setattr(native, 'sleep', waits.append)
+    progress = {'pages': 0}
+    assert native.publisher_objects('local', 'teacher@finder', 50, 2, progress) == {'123': replay()}
+    assert calls.call_count == 2 and calls.call_args_list[0] == calls.call_args_list[1]
+    assert progress['retries'] == 1 and waits == [3]
+    calls.reset_mock(); calls.side_effect = CaptureError('access_protection')
+    with pytest.raises(CaptureError, match='access_protection'):
+        native.publisher_objects('local', 'teacher@finder', 50, 2, {'pages': 0})
+    assert calls.call_count == 1
+
+
+def test_cycle_accounts_for_deactivated_publishers_without_calling_them_empty(tmp_path, monkeypatch):
+    with capture.database(tmp_path) as db:
+        seed(db)
+        db.execute("INSERT INTO publishers VALUES('z@finder','[]',NULL)"); db.commit()
+    monkeypatch.setattr(capture, 'request', lambda *a: {'enabled': True, 'engine': 'gopeed', 'channels_available': True})
+    waits = []
+    monkeypatch.setattr(capture, 'sleep', waits.append)
+    def objects(api, username, *args):
+        if username == 'z@finder': raise CaptureError('publisher_deactivated')
+        return {'123': replay()}
+    monkeypatch.setattr(capture, 'publisher_objects', objects)
+    result = capture.cycle(tmp_path, create=False)
+    assert result['status'] == 'scanned' and result['covered'] == 1
+    assert waits == [2]
+    assert result['assessed'] == 2 and len(result['deactivated']) == 1 and result['errors'] == []
+    with capture.database(tmp_path) as db:
+        assert db.execute("SELECT state FROM publisher_checks WHERE publisher='z@finder'").fetchone()[0] == 'deactivated'
+        assert db.execute('SELECT count(*) FROM publishers').fetchone()[0] == 2

@@ -36,3 +36,14 @@ acceptance and then cut over; also connect accepted Tingyuan/Liuguan downloads t
 the existing ASR end-to-end. This supersedes the earlier ASR-out-of-scope boundary.
 Keep source replay identity, file hash, original video timeline and resumability;
 no course-system organization, terminology editing or Xiaocao ASR changes.
+
+October 22 connection reliability continuation: minimize native UI; reuse one page,
+reconnect its local socket with bounded backoff without refreshing or issuing
+provider calls. Failed SDK/provider responses must not poison the response cache.
+Serialize native calls with a bounded busy result and extend the replay deadline.
+Retry only known transient timeout/SDK decode/busy failures once with spacing;
+protection and identity failures stop. A failed replay list is not empty. Only
+an exact-ID native profile response with Ret=-5900 and nickname 账号已注销 may
+classify that account as provider-reported deactivated. Preserve all 33 accounts,
+history, separate available/deactivated/gap counts, and source-bound proof.
+Accept real all-account assessment and the shared activity, not tests alone.

@@ -81,7 +81,12 @@ publisher scan in the UI. Do not ask the human to perform routine navigation.
 The catalogue keeps publisher/replay identities, actual publication timestamps,
 coverage gaps, download intent and exact task IDs. An individual unavailability
 or timeout leaves the cycle degraded and does not starve later publishers. A
-login/protection or identity error stops the scan. Never claim global latest
+login/protection or identity error stops the scan. The four provider-reported
+deactivated accounts remain in the registry and history: only a matching native
+profile with Ret=-5900 plus nickname 账号已注销 confirms that state. Report
+available lists, deactivated accounts and unresolved gaps separately; assessed
+accounts are not the same as successful replay lists. Known timeout/SDK JSON
+decode/busy reads retry once with spacing; no UI retry is implied. Never claim global latest
 coverage when a publisher failed. Never infer original livestream time/ID from
 replay publication time or from a Moments share.
 
