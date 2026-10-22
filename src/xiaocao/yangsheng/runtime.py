@@ -108,7 +108,7 @@ def _run_local(root, api):
     return value
 
 
-def bootstrap(window_id, pid, api='http://127.0.0.1:2022', root=DEFAULT_ROOT):
+def bootstrap(window_id, pid, api='http://127.0.0.1:2022', root=DEFAULT_ROOT, *, refresh=None):
     url = urlsplit(api)
     if url.scheme != 'http' or url.hostname != '127.0.0.1' or url.path or url.query or url.port not in (2022, 23222):
         raise CaptureError('invalid_shared_bootstrap_api')
@@ -116,6 +116,8 @@ def bootstrap(window_id, pid, api='http://127.0.0.1:2022', root=DEFAULT_ROOT):
     owned_url = api + '/liuguan/proxy.pac'
     health = request(api, '/api/shared-capture/status')
     if health.get('enabled') is not True: raise CaptureError('shared_backend_not_enabled')
+    if health.get('channels_available') is True:
+        return {'status': 'connected', 'api': api, 'reused': True, 'proxy_changed': False}
     with lifecycle_lease(root), native_lease():
         before = network.snapshot()
         if any('Enabled: No' not in value for value in before.values()): raise CaptureError('existing_active_proxy_preserved')
@@ -129,18 +131,21 @@ def bootstrap(window_id, pid, api='http://127.0.0.1:2022', root=DEFAULT_ROOT):
             network.command('-setautoproxyurl', 'Wi-Fi', owned_url); network.command('-setautoproxystate', 'Wi-Fi', 'on')
             if network.fields(network.command('-getautoproxyurl', 'Wi-Fi')) != {'URL': owned_url, 'Enabled': 'Yes'}:
                 raise CaptureError('native_pac_readback_failed')
-            focused = subprocess.run(['swift', str(ROOT / 'scripts/kol_liuguan_window.swift'), str(window_id), str(pid), '0.74', '0.028', '--focus'],
-                capture_output=True, timeout=20)
-            if focused.returncode: raise CaptureError('native_window_identity_changed')
-            script = f'''tell application "System Events"
- tell first application process whose unix id is {int(pid)}
-  if frontmost is not true then error "target not frontmost"
-  if enabled of menu item "刷新" of menu 1 of menu bar item "文件" of menu bar 1 is not true then error "refresh unavailable"
-  click menu item "刷新" of menu 1 of menu bar item "文件" of menu bar 1
- end tell
-end tell'''
-            refreshed = subprocess.run(['osascript', '-e', script], capture_output=True, timeout=10)
-            if refreshed.returncode: raise CaptureError('native_refresh_unverified')
+            if refresh is not None:
+                refresh()
+            else:
+                focused = subprocess.run(['swift', str(ROOT / 'scripts/kol_liuguan_window.swift'), str(window_id), str(pid), '0.74', '0.028', '--focus'],
+                    capture_output=True, timeout=20)
+                if focused.returncode: raise CaptureError('native_window_identity_changed')
+                script = f'''tell application "System Events"
+     tell first application process whose unix id is {int(pid)}
+      if frontmost is not true then error "target not frontmost"
+      if enabled of menu item "刷新" of menu 1 of menu bar item "文件" of menu bar 1 is not true then error "refresh unavailable"
+      click menu item "刷新" of menu 1 of menu bar item "文件" of menu bar 1
+     end tell
+    end tell'''
+                refreshed = subprocess.run(['osascript', '-e', script], capture_output=True, timeout=10)
+                if refreshed.returncode: raise CaptureError('native_refresh_unverified')
             for _ in range(30):
                 health = request(api, '/api/shared-capture/status')
                 if health.get('channels_available') is True: break

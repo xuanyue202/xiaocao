@@ -278,3 +278,46 @@ def test_native_publisher_failure_preserves_protection_boundary(monkeypatch, mes
     monkeypatch.setattr(native, 'request', lambda *a: {'errCode': 0, 'data': {'BaseResponse': {'Ret': -1, 'ErrMsg': message}}})
     with pytest.raises(CaptureError, match='^' + expected + '$'):
         native.replay_page('local', 'teacher@finder', '')
+
+
+def test_bootstrap_reuses_live_socket_without_native_input_or_proxy_change(tmp_path, monkeypatch):
+    monkeypatch.setattr(runtime, 'request', lambda *a: {'enabled': True, 'channels_available': True})
+    monkeypatch.setattr(network, 'snapshot', lambda: pytest.fail('no proxy reads or changes needed'))
+    refresh = Mock()
+    result = runtime.bootstrap(None, None, root=tmp_path, refresh=refresh)
+    assert result['reused'] and result['proxy_changed'] is False
+    refresh.assert_not_called()
+
+
+@pytest.mark.parametrize('refresh_fails', [False, True])
+def test_visible_refresh_holds_leases_and_restores_pac_on_failure(tmp_path, monkeypatch, refresh_fails):
+    from contextlib import contextmanager
+    from types import SimpleNamespace
+    import io
+    held = []
+    @contextmanager
+    def native_lease():
+        held.append(True)
+        try: yield
+        finally: held.pop()
+    monkeypatch.setattr(runtime, 'native_lease', native_lease)
+    monkeypatch.setattr(runtime, 'request', Mock(side_effect=[{'enabled': True}, {'enabled': True, 'channels_available': True}]))
+    monkeypatch.setattr(network, 'snapshot', lambda: {'pac': 'Enabled: No'})
+    monkeypatch.setattr(network, 'command', lambda *a: 'URL: http://127.0.0.1:2022/liuguan/proxy.pac\nEnabled: Yes')
+    restored = Mock(return_value={'restored': True}); monkeypatch.setattr(network, 'restore', restored)
+    guard = SimpleNamespace(stdin=io.StringIO(), stdout=io.StringIO('armed\n'), wait=Mock())
+    monkeypatch.setattr(runtime.subprocess, 'Popen', lambda *a, **kw: guard)
+    monkeypatch.setattr(runtime.subprocess, 'run', lambda *a, **kw: pytest.fail('visible route must not focus/click separately'))
+    def refresh():
+        assert held == [True]
+        with pytest.raises(CaptureError, match='lifecycle_busy'):
+            with capture.lifecycle_lease(tmp_path, closing=True): pass
+        if refresh_fails: raise CaptureError('native_refresh_not_confirmed')
+    if refresh_fails:
+        with pytest.raises(CaptureError, match='native_refresh_not_confirmed'):
+            runtime.bootstrap(None, None, root=tmp_path, refresh=refresh)
+        assert not (tmp_path / 'native-entry.json').exists()
+    else:
+        assert runtime.bootstrap(None, None, root=tmp_path, refresh=refresh)['status'] == 'connected'
+    restored.assert_called_once()
+    assert held == [] and guard.stdin.closed

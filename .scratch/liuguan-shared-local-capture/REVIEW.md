@@ -38,3 +38,23 @@ Q1cKzYN5z7ydpB-OQDQPc hit a network deadline with 1160683093 bytes retained.
 Resuming that same task accepted 1161776599 bytes with AV, duration, complete
 packet read and SHA 698b85ea3f48cf240d7d315de507bae8b5fbcd5d7d5f91e2f64a6632a9992a91.
 Full ASR of this fresh file is in progress. Production cutover is still pending.
+
+## Minimal native reconnection (baseline fe64eda)
+
+Independent Spec review found a 90-second handshake versus 60-second PAC
+guardian conflict and unbounded partial-line input. Both were fixed: the complete
+line has a 30-second monotonic deadline and 64-byte bound. Standards and follow-up
+Spec reviews have no remaining blocking findings. Slow system calls can still
+fail bootstrap safely; no claim of guaranteed connection. 67 focused tests pass,
+including a real pipe partial-input deadline, PAC recovery on callback failure,
+lifecycle exclusion, CLI wiring and zero-input socket reuse.
+
+Production native connection was verified through one CUA File/Refresh of the
+retained replay tab and the existing network guardian; PAC restored. Subsequent
+CLI bootstrap returned reused=true/proxy_changed=false with no native action.
+Original 139 tasks,1729 candidate identities and capture ledger survived the
+reviewed guarded binary/config cutover unchanged. Original 180-second hourly
+companion input expired during investigation; source_busy skipped Xiaocao and
+cleanup preserved the backend. The narrow companion continuation ran, but stopped
+on a native API error after six successful publishers, so the whole shared
+activity and full latest coverage are not accepted. Do not rerun the hour gate.

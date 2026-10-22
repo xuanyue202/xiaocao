@@ -19,7 +19,8 @@ connection, then return the actual result to the same PTY. The SDK scans all
 publishers and obtains replay IDs, publication times and finite durations; do
 not navigate 33 homepages or sort screenshot positions as dates.
 
-1. Read the current downloader status and the last successful `native-entry.json`
+1. First check `/api/shared-capture/status`: if `channels_available=true`, reuse it
+   without any WeChat input or PAC change. Otherwise read the last successful `native-entry.json`
    as a hint only. Freshly verify the WeChat PID/window and actual replay page.
    Reuse an existing native feed page when available. Do not assume that a missing
    standalone browser means no page exists: WeChat can embed it beside the main
@@ -33,7 +34,24 @@ not navigate 33 homepages or sort screenshot positions as dates.
    repository helper `scripts/kol_liuguan_window.swift` checks PID/window/frame
    and composited visibility. White screenshots alone do not establish logout.
    Wait for a readable target control; do not click through an unreadable page.
-4. On a freshly verified native feed page, run:
+4. On a freshly verified existing native replay tab, prefer the bounded visible
+   refresh handshake in a separate retained PTY:
+
+   ```bash
+   PYTHONPATH=src .venv/bin/python scripts/kol_yangsheng.py bootstrap --visible-refresh
+   ```
+
+   An already connected socket returns immediately with zero native input. Only
+   after `liuguan_visible_refresh_required`, use CUA's freshly observed native
+   File → Refresh menu exactly once on that verified replay tab, then send
+   `refreshed` to this bootstrap PTY. It holds the compatible lease and a guarded
+   narrow PAC, checks the actual socket, and restores PAC even if the 30-second
+   refresh deadline expires. Do not resend the page refresh to fill a missing
+   acknowledgement. If the existing capture-local input's separate 180-second
+   deadline has elapsed, reconcile that returned run; after successful bootstrap
+   use `kol_yangsheng.py capture` for only this companion, never another hour gate.
+
+   The system-script alternative is available when fresh CG/AX identity agrees:
 
    ```bash
    PYTHONPATH=src .venv/bin/python scripts/kol_yangsheng.py bootstrap --window-id <verified-id> --pid <verified-pid>
@@ -49,6 +67,10 @@ not navigate 33 homepages or sort screenshot positions as dates.
    `{"operation":"initialize_liuguan_native_replay","status":"connected"}`.
    The runner rechecks the actual socket and scans. A failed initialization stays
    waiting with its specific evidence; continue safe diagnosis, not blind input.
+
+The normal sweep calls authenticated replay-list APIs for the fixed account IDs;
+none of the 33 publishers needs separate homepage navigation. Never respond to
+a failed account read with repeated UI clicks or assumed protection causes.
 
 A saved native window is a hint, never authority to refresh a different tab.
 Keep the page available for the next activity; reopening it need not repeat a

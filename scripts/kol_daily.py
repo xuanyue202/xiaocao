@@ -1282,6 +1282,8 @@ def _run_liuguan_local_companion() -> dict[str, Any]:
                 value = run_local()
             else: value = {"status": "waiting", "code": "liuguan_native_connection_required"}
         return value
+    except NativePlaybackInputTimeout:
+        return {"status": "waiting", "code": "liuguan_native_input_timeout"}
     except CaptureError as error: return {"status": "degraded", "code": str(error)}
     except Exception:
         return {"status": "degraded", "code": "liuguan_local_companion_failed"}

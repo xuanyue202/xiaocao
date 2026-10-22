@@ -1,9 +1,10 @@
 # Liuguan in the shared Local Capture activity
 
-Implementation is opt-in and **not deployed**. The production downloader binary,
-private configuration and Automation have not been switched. Accepted Liuguan
-artifacts now feed the existing local ASR engine; Xiaocao upload/handoff behavior
-is unchanged. No second schedule is introduced.
+The reviewed compatible binary/configuration and opt-in descriptor are installed
+locally. The original 139 task IDs/statuses,1729 candidate identities and capture
+ledger matched after restart; PAC stayed detached. The existing Automation prompt
+has not yet been changed. Complete shared-activity acceptance remains pending.
+No second schedule is introduced.
 
 The fixed 33 publishers are the primary sweep. Authenticated native replay lists
 provide IDs, publication times and finite durations. Wu's exact cached Moments
@@ -78,6 +79,18 @@ mean unknown; neither can create a download.
 
 Fresh replay 15036599111904070751 was captured as task Q1cKzYN5z7ydpB-OQDQPc.
 A real network deadline near completion recovered on the same task; all
-1161776599 bytes passed AV/duration/full-packet/hash checks. The new file is
-undergoing complete ASR. Production cutover and a complete shared Local Capture
-activity remain pending; the private acceptance does not claim those steps.
+1161776599 bytes passed AV/duration/full-packet/hash checks. The new file completed full ASR (8799.744 seconds) and idempotent readback.
+
+Production native connection also succeeded through one refresh of the retained
+replay tab; subsequent bootstrap reused the socket with zero native/PAC input.
+The one real hour gate expired its 180-second Liuguan input while the entry was
+being diagnosed; Xiaocao was skipped as source_busy, official sources returned
+no_update and cleanup correctly preserved the shared backend. A narrow Liuguan
+continuation then ran on port2022, but stopped on native_api_error after six
+successful publishers. Coverage is incomplete, and complete shared Local Capture
+acceptance must not be claimed. Existing accepted ASR remains complete.
+
+When the socket is healthy, do not interact with WeChat. When it needs reconnect,
+`bootstrap --visible-refresh` uses the existing leases/guardian and a 30-second
+whole-line handshake for one freshly verified native File/Refresh action. A
+late/partial acknowledgement restores PAC; it never authorizes blind re-refresh.

@@ -7,14 +7,36 @@ import json
 import os
 from pathlib import Path
 import re
+import select
+from time import monotonic
 import subprocess
 import sys
+
+
+def _visible_refresh(timeout=30):
+    from xiaocao.yangsheng.native import CaptureError
+    # Leave the 60-second PAC guardian enough time for the socket readback.
+    print(json.dumps({'event': 'liuguan_visible_refresh_required', 'action': 'refresh_existing_verified_native_replay_once', 'deadline_seconds': timeout}), flush=True)
+    deadline = monotonic() + timeout
+    chunks = b''
+    descriptor = sys.stdin.fileno()
+    while b'\n' not in chunks:
+        remaining = deadline - monotonic()
+        if remaining <= 0 or not select.select([descriptor], [], [], remaining)[0]:
+            raise CaptureError('native_refresh_timeout')
+        chunk = os.read(descriptor, 64)
+        if not chunk or len(chunks) + len(chunk) > 64:
+            raise CaptureError('native_refresh_not_confirmed')
+        chunks += chunk
+    if chunks.split(b'\n', 1)[0].strip() != b'refreshed':
+        raise CaptureError('native_refresh_not_confirmed')
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('command', choices=('discover', 'capture', 'finish', 'bootstrap', 'status', 'asr'))
     parser.add_argument('--window-id', type=int); parser.add_argument('--pid', type=int)
+    parser.add_argument('--visible-refresh', action='store_true', help='Retained PTY handshake for one freshly verified native File/Refresh action')
     parser.add_argument('--replay', help='One previously accepted replay for ASR')
     parser.add_argument('--api', default='http://127.0.0.1:2022')
     args = parser.parse_args()
@@ -28,8 +50,8 @@ def main() -> int:
             elif args.command == 'capture': value = run_local(api=args.api)
             elif args.command == 'finish': value = finish(api=args.api)
             elif args.command == 'bootstrap':
-                if not args.window_id or not args.pid: parser.error('fresh verified window ID and PID required')
-                value = bootstrap(args.window_id, args.pid, api=args.api)
+                if not args.visible_refresh and (not args.window_id or not args.pid): parser.error('fresh verified window ID and PID required')
+                value = bootstrap(args.window_id, args.pid, api=args.api, refresh=_visible_refresh if args.visible_refresh else None)
             else:
                 with database(DEFAULT_ROOT) as db:
                     initialize(db)
