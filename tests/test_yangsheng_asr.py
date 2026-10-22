@@ -188,3 +188,31 @@ def test_native_scan_failure_still_dispatches_accepted_downloads(tmp_path, monke
     with pytest.raises(CaptureError, match='native_socket_not_connected'):
         runtime._run_local(tmp_path, 'http://127.0.0.1:23222')
     assert calls == [tmp_path]
+
+
+def test_wake_during_old_worker_consumes_newly_accepted_course(tmp_path, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+    entered = Event(); release = Event()
+    rows = [{'publisher': 'teacher@finder', 'replay': 'A'}]
+    completed = []
+    monkeypatch.setattr(asr, 'accepted_artifacts', lambda *a: list(rows))
+    def transcribe(root, row):
+        if row['replay'] == 'A' and not entered.is_set():
+            entered.set()
+            assert release.wait(5)
+        completed.append(row['replay'])
+        return {'replay_id': row['replay'], 'status': 'complete'}
+    monkeypatch.setattr(asr, 'transcribe_one', transcribe)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        old = executor.submit(asr.run_pending, tmp_path)
+        assert entered.wait(5)
+        rows.append({'publisher': 'teacher@finder', 'replay': 'B'})
+        wake = executor.submit(asr.run_pending, tmp_path, wait_seconds=5)
+        try:
+            assert asr.run_pending(tmp_path)['status'] == 'busy'
+        finally:
+            release.set()
+        assert old.result(timeout=5)['count'] == 1
+        assert wake.result(timeout=5)['count'] == 2
+    assert 'B' in completed

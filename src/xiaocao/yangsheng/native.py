@@ -25,11 +25,12 @@ def check_error(code, message, category):
             raise CaptureError('request_timeout')
         raise CaptureError(category)
 
-def request(api, route, payload=None):
+def request(api, route, payload=None, *, timeout=None):
     body = None if payload is None else json.dumps(payload, ensure_ascii=False).encode()
     req = urllib.request.Request(api + route, data=body, headers={'Content-Type': 'application/json'})
     try:
-        with urllib.request.urlopen(req, timeout=40 if route.startswith('/api/channels/live/replay/list?') else 25) as response:
+        deadline = timeout if timeout is not None else 40 if route.startswith('/api/channels/live/replay/list?') else 25
+        with urllib.request.urlopen(req, timeout=deadline) as response:
             result = json.load(response)
     except urllib.error.HTTPError as error:
         if error.code in (401, 403, 429):

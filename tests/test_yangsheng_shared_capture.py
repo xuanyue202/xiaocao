@@ -372,3 +372,87 @@ def test_cycle_accounts_for_deactivated_publishers_without_calling_them_empty(tm
     with capture.database(tmp_path) as db:
         assert db.execute("SELECT state FROM publisher_checks WHERE publisher='z@finder'").fetchone()[0] == 'deactivated'
         assert db.execute('SELECT count(*) FROM publishers').fetchone()[0] == 2
+
+
+def test_preserved_backend_still_waits_for_owned_artifacts_and_dispatches_asr(tmp_path, monkeypatch):
+    from xiaocao.yangsheng import asr
+    enabled = tmp_path / 'enabled'; enabled.touch()
+    monkeypatch.setattr(runtime, 'ENABLED', enabled)
+    calls = []
+    def wait(root, api, **kwargs):
+        calls.append(('wait', kwargs))
+        with pytest.raises(CaptureError, match='lifecycle_busy'):
+            with capture.lifecycle_lease(root, closing=True): pass
+        return {'accepted': [{'replay_id': '123'}], 'waiting': [], 'failures': []}
+    monkeypatch.setattr(artifacts, 'wait_for_artifacts', wait)
+    monkeypatch.setattr(asr, 'start_worker', lambda root: calls.append(('asr', {})) or {'status': 'dispatched'})
+    monkeypatch.setattr(runtime, 'native_lease', lambda: pytest.fail('no native lease or input'))
+    monkeypatch.setattr(runtime, 'request', lambda *a: pytest.fail('no backend shutdown probe'))
+    result = runtime.finish(tmp_path, preserve_backend=True)
+    assert result['code'] == 'xiaocao_continuation_preserved'
+    assert result['artifacts']['accepted'] == [{'replay_id': '123'}]
+    assert [v[0] for v in calls] == ['wait', 'asr']
+
+
+def test_owned_drain_does_not_wait_for_foreign_download(tmp_path, monkeypatch):
+    monkeypatch.setattr(artifacts, 'reconcile_artifacts', lambda *a: {'accepted': [], 'waiting': [], 'failures': []})
+    monkeypatch.setattr(artifacts, 'tasks', lambda *a: pytest.fail('foreign work is preserved'))
+    monkeypatch.setattr(artifacts, 'request', lambda *a: pytest.fail('reconciler owns post-processing proof'))
+    assert artifacts.wait_for_artifacts(tmp_path, timeout=0)['waiting'] == []
+
+
+def test_owned_drain_failure_still_wakes_already_accepted_asr(tmp_path, monkeypatch):
+    from xiaocao.yangsheng import asr
+    enabled = tmp_path / 'enabled'; enabled.touch()
+    monkeypatch.setattr(runtime, 'ENABLED', enabled)
+    monkeypatch.setattr(artifacts, 'wait_for_artifacts', Mock(side_effect=CaptureError('shared_owned_task_paused')))
+    worker = Mock(return_value={'status': 'dispatched'}); monkeypatch.setattr(asr, 'start_worker', worker)
+    with pytest.raises(CaptureError, match='owned_task_paused'):
+        runtime.finish(tmp_path, preserve_backend=True)
+    worker.assert_called_once_with(tmp_path)
+
+
+@pytest.mark.parametrize('processing', [None, {}, 'unknown'])
+def test_missing_postprocessing_proof_cannot_accept_owned_media(tmp_path, monkeypatch, processing):
+    monkeypatch.setattr(artifacts, 'request', lambda *a: {'enabled': True, 'post_processing_active': processing})
+    with pytest.raises(CaptureError, match='post_processing_status_unverified'):
+        artifacts.reconcile_artifacts(tmp_path)
+
+
+def test_foreign_postprocessing_does_not_block_owned_artifact_acceptance(tmp_path, monkeypatch):
+    monkeypatch.setattr(artifacts, 'request', lambda *a: {'enabled': True, 'post_processing_active': ['foreign'], 'download_dir': str(tmp_path)})
+    monkeypatch.setattr(artifacts, 'find_task', lambda *a: {'id': 'owned', 'status': 'done'})
+    monkeypatch.setattr(artifacts, 'verify_task', lambda *a: {'path': str(tmp_path / 'media'), 'size': 10, 'sha256': 'a'*64})
+    with capture.database(tmp_path) as db:
+        with db:
+            db.execute("INSERT INTO jobs VALUES('teacher@finder','123','spec','owned','running',1)")
+            db.execute("INSERT INTO replays VALUES('teacher@finder','123',1,2,'{}','pending',1,1)")
+    result = artifacts.reconcile_artifacts(tmp_path)
+    assert result['accepted'][0]['task_id'] == 'owned'
+    assert result['waiting'] == []
+
+
+def test_retained_page_gets_reconnect_grace_before_native_input(monkeypatch):
+    initial = {'pid': 100, 'enabled': True, 'engine': 'gopeed', 'channels_available': False}
+    clock = [0.0]; waits = []
+    monkeypatch.setattr(runtime, 'monotonic', lambda: clock[0])
+    def wait(seconds):
+        waits.append(seconds); clock[0] += seconds
+    monkeypatch.setattr(runtime, 'sleep', wait)
+    read = Mock(side_effect=[initial, {**initial, 'channels_available': True}]); monkeypatch.setattr(runtime, 'request', read)
+    assert runtime.wait_for_native_connection('local', initial)['channels_available']
+    assert waits == [1, 1]
+    assert all(c.args[1] == '/api/shared-capture/status' and c.kwargs['timeout'] <= 1 for c in read.call_args_list)
+    read.reset_mock(); waits.clear()
+    assert runtime.wait_for_native_connection('local', {**initial, 'channels_available': True})['channels_available']
+    read.assert_not_called(); assert waits == []
+
+
+def test_reconnect_grace_preserves_missing_page_as_missing(monkeypatch):
+    initial = {'pid': 100, 'enabled': True, 'engine': 'gopeed', 'channels_available': False}
+    clock = [0.0]
+    monkeypatch.setattr(runtime, 'monotonic', lambda: clock[0])
+    monkeypatch.setattr(runtime, 'sleep', lambda seconds: clock.__setitem__(0, clock[0] + seconds))
+    monkeypatch.setattr(runtime, 'request', lambda *a, **k: initial)
+    assert runtime.wait_for_native_connection('local', initial, timeout=3)['channels_available'] is False
+    assert clock[0] == 3

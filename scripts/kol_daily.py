@@ -1292,9 +1292,7 @@ def _run_liuguan_local_companion() -> dict[str, Any]:
 def _finish_liuguan_local_companion(result: dict[str, Any]) -> dict[str, Any]:
     from xiaocao.yangsheng.native import CaptureError
     from xiaocao.yangsheng.runtime import finish
-    if result.get("health") in {"waiting", "degraded"}:
-        return {"status": "waiting", "code": "xiaocao_continuation_preserved"}
-    try: return finish()
+    try: return finish(preserve_backend=result.get("health") in {"waiting", "degraded"})
     except (CaptureError, OSError, ValueError) as error:
         return {"status": "waiting", "code": str(error) if isinstance(error, CaptureError) else "shared_cleanup_failed"}
 

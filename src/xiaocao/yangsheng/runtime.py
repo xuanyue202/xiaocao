@@ -9,6 +9,7 @@ import socket
 import subprocess
 import sys
 import time
+from time import monotonic, sleep
 from contextlib import contextmanager
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -65,6 +66,22 @@ def ensure_backend(api='http://127.0.0.1:2022'):
             else: raise CaptureError('shared_backend_start_timeout')
     if health.get('enabled') is not True or health.get('engine') != 'gopeed' or executable(health['pid']) != BACKEND.resolve():
         raise CaptureError('shared_backend_identity_unverified')
+    return wait_for_native_connection(api, health)
+
+
+def wait_for_native_connection(api, health, timeout=35):
+    """Give the retained page's <=30s reconnect backoff time before requesting UI."""
+    deadline = monotonic() + timeout
+    pid = health['pid']
+    while health.get('channels_available') is not True:
+        remaining = deadline - monotonic()
+        if remaining <= 0: break
+        sleep(min(1, remaining))
+        remaining = deadline - monotonic()
+        if remaining <= 0: break
+        health = request(api, '/api/shared-capture/status', timeout=min(1, remaining))
+        if health.get('pid') != pid or health.get('enabled') is not True or health.get('engine') != 'gopeed':
+            raise CaptureError('shared_backend_identity_unverified')
     return health
 
 
@@ -183,9 +200,16 @@ def drain_for_xiaocao_cleanup(api='http://127.0.0.1:2022'):
     except CaptureError as error: raise EnrichmentError(str(error)) from None
 
 
-def finish(root=DEFAULT_ROOT, api='http://127.0.0.1:2022'):
+def finish(root=DEFAULT_ROOT, api='http://127.0.0.1:2022', *, preserve_backend=False):
     if not ENABLED.is_file(): return {'status': 'disabled'}
-    from .artifacts import drain_before_shutdown
+    from .artifacts import drain_before_shutdown, wait_for_artifacts
+    if preserve_backend:
+        from .asr import start_worker
+        with lifecycle_lease(root):
+            try: proof = wait_for_artifacts(root, api)
+            finally: worker = start_worker(root)
+        return {'status': 'waiting', 'code': 'xiaocao_continuation_preserved',
+                'artifacts': proof, 'asr_worker': worker}
     from xiaocao.kol.xiaocao_live import XiaocaoLiveService, validate_cleanup_evidence
     service = XiaocaoLiveService()
     with lifecycle_lease(root, closing=True):

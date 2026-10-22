@@ -20,7 +20,8 @@ publishers and obtains replay IDs, publication times and finite durations; do
 not navigate 33 homepages or sort screenshot positions as dates.
 
 1. First check `/api/shared-capture/status`: if `channels_available=true`, reuse it
-   without any WeChat input or PAC change. Otherwise read the last successful `native-entry.json`
+   without any WeChat input or PAC change. The runner first allows up to35s for
+   the retained page to reconnect its local socket (no UI or provider calls). Otherwise read the last successful `native-entry.json`
    as a hint only. Freshly verify the WeChat PID/window and actual replay page.
    Reuse an existing native feed page when available. Do not assume that a missing
    standalone browser means no page exists: WeChat can embed it beside the main
@@ -103,6 +104,11 @@ active downloads, post-processing and artifact acceptance. PAC restoration and
 process termination are separate checks: temporary page capture can restore its
 prior PAC once its connection is initialized; background direct downloads do not
 need that PAC. Preserve another source's active PAC and all retained tasks/claims.
+When Xiaocao retains a repair, the finish stage still waits for Liuguan-owned
+media and wakes ASR; it preserves the other source's backend/PAC. The20min
+polling deadline does not include separately bounded file-validation calls.
+Automatic ASR wakeups wait up to4h behind the current worker and then read the
+fresh accepted catalogue; timeout remains a failure. Verify actual receipts.
 ASR does not hold the proxy or native-input lease.
 
 Current activation/acceptance truth is in `docs/development/liuguan-shared-capture.md`

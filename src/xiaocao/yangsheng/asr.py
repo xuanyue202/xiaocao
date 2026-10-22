@@ -112,11 +112,21 @@ def transcribe_one(root, row, *, runner=subprocess.run):
     return bound
 
 
-def run_pending(root=DEFAULT_ROOT, *, replay=None, limit=None):
+def run_pending(root=DEFAULT_ROOT, *, replay=None, limit=None, wait_seconds=0):
     root = Path(root); root.mkdir(parents=True, exist_ok=True, mode=0o700)
     with (root / 'asr-worker.lock').open('a') as lease:
-        try: fcntl.flock(lease, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError: return {'status': 'busy', 'code': 'asr_worker_retained'}
+        deadline = time.monotonic() + wait_seconds
+        while True:
+            try:
+                fcntl.flock(lease, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if wait_seconds <= 0: return {'status': 'busy', 'code': 'asr_worker_retained'}
+                remaining = deadline - time.monotonic()
+                if remaining <= 0: raise CaptureError('asr_worker_wait_expired') from None
+                time.sleep(min(1, remaining))
+        # Take a fresh snapshot only after acquiring the worker. A wake issued
+        # while an older worker runs must still consume newly accepted courses.
         accepted = accepted_artifacts(root)
         if replay is not None:
             accepted = [row for row in accepted if row['replay'] == replay]
@@ -159,7 +169,7 @@ def start_worker(root=DEFAULT_ROOT):
     with (root / 'asr-worker.log').open('a') as output:
         os.chmod(output.name, 0o600)
         env = dict(os.environ, PYTHONPATH=str(ROOT / 'src'))
-        process = subprocess.Popen([sys.executable, '-m', 'xiaocao.yangsheng.asr', '--root', str(root)],
+        process = subprocess.Popen([sys.executable, '-m', 'xiaocao.yangsheng.asr', '--root', str(root), '--wait-seconds', '14400'],
             stdin=subprocess.DEVNULL, stdout=output, stderr=output, start_new_session=True, env=env)
     return {'status': 'dispatched', 'pid': process.pid}
 
@@ -167,9 +177,10 @@ def start_worker(root=DEFAULT_ROOT):
 if __name__ == '__main__':
     os.umask(0o077)
     parser = argparse.ArgumentParser(); parser.add_argument('--root', type=Path, default=DEFAULT_ROOT)
-    parser.add_argument('--replay'); parser.add_argument('--limit', type=int); args = parser.parse_args()
+    parser.add_argument('--replay'); parser.add_argument('--limit', type=int)
+    parser.add_argument('--wait-seconds', type=float, default=0); args = parser.parse_args()
     try:
-        result = run_pending(args.root, replay=args.replay, limit=args.limit)
+        result = run_pending(args.root, replay=args.replay, limit=args.limit, wait_seconds=args.wait_seconds)
         print(json.dumps(result, ensure_ascii=False))
         if result['status'] == 'degraded': raise SystemExit(1)
     except Exception as error:
