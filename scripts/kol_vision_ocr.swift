@@ -12,6 +12,8 @@ struct OcrLine: Codable {
 
 struct OcrResult: Codable {
     let engine: String
+    let width: Int
+    let height: Int
     let lines: [OcrLine]
 }
 
@@ -66,7 +68,7 @@ do {
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
     FileHandle.standardOutput.write(try encoder.encode(
-        OcrResult(engine: "macos_vision", lines: lines)
+        OcrResult(engine: "macos_vision", width: cgImage.width, height: cgImage.height, lines: lines)
     ))
 } catch {
     fail("OCR JSON encoding failed")

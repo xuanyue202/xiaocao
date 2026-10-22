@@ -211,14 +211,17 @@ native operations merely to populate telemetry. Continue the original safe job.
 
 Label each relevant tool call with a code comment `// KOL_ACTION:<STEP>`:
 `BROWSER_PREFLIGHT`, `READINESS`, `PAC_ENABLE`, `PROVIDER_LAUNCH`, and the actual
-native SOP step. For native inputs, split the table's action and immediate
-readback into two consecutive tool calls, labelled e.g. `B2_ALLOW` then
-`B2_READBACK`. This changes recording granularity, not permitted actions or
+native SOP step. For B1/B2, use [native-course-atomic.md](native-course-atomic.md)
+in one CUA invocation; its durable per-action subevents replace the former
+between-action tool exports. The current human atomic request supersedes that
+older granularity only for this macro. For other native inputs, split the table's action and immediate
+readback into two consecutive tool calls, labelled e.g. `W3_CONFIRM` then
+`W3_READBACK`. This changes recording granularity, not permitted actions or
 counts. Export after readback and before the next input; an unfinished tool
 call is pending, never a successful action. Preserve the exact source call IDs
 and request/output bounds. No added menus, screenshots or inputs for telemetry.
 
-At the B1-readback → PAC-checkpoint → B2 boundary, apply/read back the healthy
+For the manual fallback, at the B1-readback → PAC-checkpoint → B2 boundary, apply/read back the healthy
 exact capture PAC in its labelled call, then export the completed B1/PAC calls
 once before B2. A preliminary export inside an in-flight labelled PAC call
 necessarily sees that same call's output as pending; do not add this self-wait,
@@ -354,7 +357,8 @@ B0–B2 interval was 105.338 seconds: all completed tool bounds totalled 10.812
 seconds, leaving 94.526 seconds outside those bounds. That remainder includes
 Agent/dispatch gaps; it is not measured application click latency. Reuse the
 reviewed one-action script with a fresh title/unique AX guard where applicable;
-coordinate targets still require the current screenshot. Keep separate native
+coordinate targets still require the current screenshot. Outside the atomic
+B1/B2 macro, keep separate native
 input/readback calls and one completed-call export before the next input. Do
 not add a preliminary export that necessarily sees its own call pending, and
 do not repeat native operations to benchmark or populate telemetry.
