@@ -758,6 +758,24 @@ def _read_agent_path(request: dict[str, Any], field: str) -> Path:
     attempts = 3 if audit_reply else 1
     for attempt in range(attempts):
         prompt = request
+        if (
+            field == "bundle_path"
+            and (request.get("adapter") == "xiaocao_live" or request.get("author") == "小草")
+            and request.get("analysis_request_path")
+        ):
+            request_path = Path(str(request["analysis_request_path"])).expanduser().resolve()
+            request_sha = hashlib.sha256(request_path.read_bytes()).hexdigest()
+            packet_root = request_path.parent / ".semantic_delegation" / request_sha
+            packets = [packet_root / "context_packet.json"]
+            packets.extend(sorted(packet_root.glob("context-*/context_packet.json")))
+            prompt = {**request, "parent_source_review_contract": {
+                "packet_review_paths": [str(p.with_name("parent_source_review.json"))
+                                        for p in packets if p.is_file()],
+                "request_review_path": str(request_path.with_name("parent_source_review.json")),
+                "packet_review_takes_precedence": True,
+                "required_status": "parent_accepted",
+                "schema": "xiaocao.kol.semantic_delegation.verify_semantic_review",
+            }}
         if audit_reply:
             prompt = {**request, "response_field": field}
             if attempt:

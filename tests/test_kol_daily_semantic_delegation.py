@@ -182,3 +182,48 @@ def test_missing_parent_review_reports_the_required_evidence(tmp_path):
     )
     with pytest.raises(DailyError, match="parent full-source review is missing"):
         kol_daily._require_canonical_semantic_artifact(bundle, request)
+
+
+def test_semantic_stdin_prompt_exposes_consumer_parent_review_paths(tmp_path, monkeypatch):
+    request, request_path, draft, market, bundle = _inputs(tmp_path)
+    prepared = prepare(request_path, market_evidence=market)
+    packet = json.loads(Path(prepared['packet_path']).read_text())
+    draft_path = Path(packet['expected_outputs']['semantic_draft.json'])
+    draft_path.write_text(json.dumps(draft))
+    record_dispatch(request_path, packet_path=prepared['packet_path'],
+                    agent_id='019a7213-73b4-7351-87c4-13e1234abcde',
+                    invocation_args=prepared['spawn_arguments_path'])
+    build_validated_bundle_from_files(request_path, draft_path, market)
+    prompts = []
+    monkeypatch.setattr(kol_daily, '_read_agent_line',
+                        lambda prompt: prompts.append(prompt) or json.dumps({'bundle_path': str(bundle)}))
+    assert kol_daily._read_agent_path(request, 'bundle_path') == bundle
+    contract = prompts[0]['parent_source_review_contract']
+    packet_review = Path(prepared['packet_path']).with_name('parent_source_review.json')
+    assert str(packet_review) in contract['packet_review_paths']
+    assert contract['request_review_path'] == str(request_path.with_name('parent_source_review.json'))
+    assert contract['required_status'] == 'parent_accepted'
+    with pytest.raises(DailyError, match='parent full-source review is missing'):
+        kol_daily._require_canonical_semantic_artifact(bundle, request)
+    # The advertised fallback is the exact path used by the production consumer.
+    fallback = Path(contract['request_review_path'])
+    structural = verify_result(
+        request_path, packet_path=prepared['packet_path'], bundle_path=bundle,
+        semantic_draft=draft_path, agent_id='019a7213-73b4-7351-87c4-13e1234abcde',
+    )
+    fallback.write_text(json.dumps({
+        "decision": "accepted", "reviewer": "parent_main_agent",
+        "reviewed_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "independent_full_evidence_read": True,
+        "reviewed_segment_ids": packet["segment_ids"],
+        "bindings": {
+            "analysis_request": packet["analysis_request"],
+            "packet": {"path": prepared["packet_path"], "sha256": prepared["packet_sha256"]},
+            "semantic_draft": structural["semantic_draft"], "bundle": structural["bundle"],
+            "receipt": structural["receipt"], "knowledge_draft": None,
+        },
+        "checks": {name: {"status": "passed", "evidence": "Fixture independently reviewed."}
+                   for name in PARENT_REVIEW_CHECKS},
+    }))
+    assert kol_daily._require_canonical_semantic_artifact(bundle, request) == bundle
+    assert 'parent_source_review_contract' not in request

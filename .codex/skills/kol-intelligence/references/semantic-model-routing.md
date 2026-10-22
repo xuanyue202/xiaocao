@@ -142,6 +142,10 @@ execution boundaries; they are not alert-currentness states.
    `verify_semantic_review` schema with every reviewed segment and exact
    request/packet/draft/bundle/receipt/knowledge hash. Run `verify-result` with
    `--semantic-review`; only `parent_accepted` may continue.
+   Save the review at the exact packet's sibling `parent_source_review.json`,
+   or at the analysis request's sibling when no packet review exists. The
+   stdin prompt exposes these consumer paths in `parent_source_review_contract`;
+   a review saved only in a separate audit directory is not consumed.
 8. Only the parent returns the validated `bundle_path` to the same runner. The
    deterministic pipeline publishes the exact accepted report and reconciles its
    stable URL/receipt before eligible reminder, paper-only Book KOL-US,
