@@ -1016,6 +1016,23 @@ class XiaocaoLiveService:
                 )
             elif len(pids) != 1 or sniffer_status is None:
                 raise EnrichmentError("sniffer process/API health is inconsistent")
+            else:
+                previous = next((row for row in reversed(self.events())
+                    if row.get("event") in {"sniffer_started", "sniffer_resumed"}), {})
+                if previous.get("process_pid") != pids[0]:
+                    # The other local source may have restarted the singleton.
+                    # Adopt only the verified executable and retain this capture.
+                    sniffer_status = self._confirm_sniffer_stable(expected_pid=pids[0])
+                    if sniffer_status is None:
+                        raise EnrichmentError("shared sniffer did not remain healthy")
+                    self._append(
+                        "sniffer_resumed", status="healthy",
+                        capture_job_id=armed["capture_job_id"], process_pid=pids[0],
+                        executable=str(self.sniffer_binary),
+                        sniffer_version=str(sniffer_status.get("version") or ""),
+                        baseline_sha256=armed["baseline_sha256"],
+                        prompt_replayed=False, process_reused=True,
+                    )
             return {
                 **armed,
                 "process_pid": pids[0],

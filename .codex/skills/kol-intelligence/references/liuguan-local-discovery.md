@@ -9,6 +9,9 @@ prerequisite. A cache miss never proves server absence.
 `~/.codex/yangsheng-capture/production/shared-enabled.json` matches the installed
 shared Gopeed binary. Without that descriptor it stays disabled. Do not create a
 second schedule or execute a second hour gate. The retained PTY owns the run.
+Run Xiaocao's retained capture, local articles and same-item cloud/Handoff
+continuation first, then Liuguan. A Liuguan native-connection request must not
+delay Xiaocao. Outside-window invocations do not start the companion.
 Xiaocao upload, handoff and remote investment processing keep their own semantics.
 Liuguan accepted media feeds the local ASR adapter and never enters those routes.
 

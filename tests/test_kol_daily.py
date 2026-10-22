@@ -83,6 +83,35 @@ class Clock:
         return self.value
 
 
+@pytest.fixture(autouse=True)
+def isolated_capture_companion(monkeypatch):
+    """CLI tests must never use the workstation's deployed downloader."""
+    monkeypatch.setattr(kol_daily_script, "_run_liuguan_local_companion", lambda: {"status": "disabled"})
+    monkeypatch.setattr(kol_daily_script, "_finish_liuguan_local_companion", lambda result: {"status": "disabled"})
+
+
+@pytest.mark.parametrize("status", ["completed", "degraded", "outside_window"])
+def test_capture_local_finishes_xiaocao_before_liuguan(tmp_path, monkeypatch, status):
+    calls = []
+
+    class Coordinator:
+        def __init__(self, output):
+            pass
+
+        def run(self, sources, **kwargs):
+            calls.append("xiaocao")
+            return {"status": status, "silent": True}
+
+    monkeypatch.setattr(kol_daily_script, "DailyCoordinator", Coordinator)
+    monkeypatch.setattr(DailyRuntime, "reconcile_local_mailbox", lambda self: [])
+    monkeypatch.setattr(kol_daily_script, "_follow_cloud_handoff", lambda *a, **kw: calls.append("handoff"))
+    monkeypatch.setattr(kol_daily_script, "_run_liuguan_local_companion", lambda: calls.append("liuguan") or {"status": "completed"})
+    monkeypatch.setattr(kol_daily_script, "_finish_liuguan_local_companion", lambda result: calls.append("cleanup") or {"status": "completed"})
+    monkeypatch.setattr(sys, "argv", ["kol_daily.py", "capture-local", "--output-dir", str(tmp_path)])
+    assert kol_daily_script.main() == 0
+    assert calls == ["xiaocao", "handoff"] + ([] if status == "outside_window" else ["liuguan", "cleanup"])
+
+
 def test_capture_follow_keeps_one_identity_through_download_upload_and_mailbox(monkeypatch):
     def waiting(stage, identity="source-1"):
         return {"waiting_items": [{

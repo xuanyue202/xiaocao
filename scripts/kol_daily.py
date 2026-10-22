@@ -5451,10 +5451,6 @@ def main() -> int:
     if args.command == "capture-local":
         runtime = DailyRuntime.__new__(DailyRuntime)
         runtime.args = args
-        if datetime.now(timezone(timedelta(hours=8))).hour in range(7, 24):
-            companion = _run_liuguan_local_companion()
-            if companion.get("status") != "disabled":
-                _print({"yangsheng_capture": companion})
         mailbox_reconciliation = runtime.reconcile_local_mailbox()
         if mailbox_reconciliation:
             _print({"mailbox_reconciliation": mailbox_reconciliation})
@@ -5512,6 +5508,11 @@ def main() -> int:
         if follow_result is not None:
             _print(follow_result)
         if result.get("status") != "outside_window":
+            # Xiaocao's retained capture and handoff have priority. A companion
+            # connection prompt must never delay the primary source's work.
+            companion = _run_liuguan_local_companion()
+            if companion.get("status") != "disabled":
+                _print({"yangsheng_capture": companion})
             cleanup = _finish_liuguan_local_companion(result)
             if cleanup.get("status") != "disabled":
                 _print({"shared_capture_cleanup": cleanup})
