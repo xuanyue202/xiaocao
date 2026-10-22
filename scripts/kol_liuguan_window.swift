@@ -32,7 +32,7 @@ func pixelsMatch(_ wid:UInt32,_ rect:CGRect,_ point:CGPoint)->Bool {
         difference += Double(abs(a.greenComponent-b.greenComponent))
         difference += Double(abs(a.blueComponent-b.blueComponent))
         count+=3
-        if min(a.redComponent,a.greenComponent,a.blueComponent)<0.7 {ink+=1}
+        if min(a.redComponent,a.greenComponent,a.blueComponent)<0.9 {ink+=1}
     }}
     let ok=ink>=20 && difference/Double(count)<0.02
     if !ok {

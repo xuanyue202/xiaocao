@@ -13,7 +13,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from urllib.parse import urlsplit
 from .capture import DEFAULT_ROOT, cycle, database, initialize, lifecycle_lease, sha_file, tasks
-from .native import CaptureError, request
+from .native import CaptureError, request, save
 from . import network
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -150,7 +150,9 @@ end tell'''
             guard.stdin.close(); guard.wait(timeout=65)
             restored = network.restore(before, owned_url)
             if not restored['restored']: raise CaptureError('native_pac_restore_not_verified')
-        return {'status': 'connected', 'api': api, 'window_id': window_id, 'pid': pid, 'pac_restored': True}
+        result = {'status': 'connected', 'api': api, 'window_id': window_id, 'pid': pid, 'pac_restored': True}
+        save(root / 'native-entry.json', {**result, 'observed_at': time.time(), 'hint_only': True})
+        return result
 
 
 @contextmanager

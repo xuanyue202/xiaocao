@@ -123,7 +123,7 @@ def record_replays(db, publisher, objects, now):
         record = evidence(obj)
         existing = db.execute('SELECT * FROM replays WHERE publisher=? AND id=?', (publisher, record['replay_id'])).fetchone()
         if existing:
-            if existing['created'] != record['created_at'] or existing['duration'] != record['duration_seconds']:
+            if existing['created'] != record['created_at'] or (existing['duration'] or None) != record['duration_seconds']:
                 raise CaptureError('retained_replay_binding_changed')
             db.execute('UPDATE replays SET metadata=?,last_seen=? WHERE publisher=? AND id=?', (json.dumps(record, ensure_ascii=False), now, publisher, record['replay_id']))
         else:
@@ -229,7 +229,7 @@ def cycle(root=DEFAULT_ROOT, api='http://127.0.0.1:2022', *, moments_snapshot=No
                             created.append({'replay_id': str(obj['id']), 'task_id': task['id'], 'status': task['status']})
             except CaptureError as error:
                 errors.append({'publisher_sha256': digest(username), 'code': str(error)})
-                if str(error) not in ('request_timeout', 'replay_media_not_ready'): break
+                if str(error) not in ('request_timeout', 'replay_media_not_ready', 'publisher_unavailable'): break
         with db: db.execute('UPDATE cycles SET finished=?,covered=?,errors=? WHERE id=?', (time.time(), covered, json.dumps(errors), cycle_id))
         return {'status': 'scanned' if covered == len(publishers) and not errors else 'degraded', 'cycle_id': cycle_id,
                 'publisher_count': len(publishers), 'covered': covered, 'catalog_count': db.execute('SELECT count(*) FROM replays').fetchone()[0],

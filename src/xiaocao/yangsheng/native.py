@@ -16,7 +16,7 @@ def check_error(code, message, category):
     if code != 0:
         if any(word in text for word in PROTECTION_WORDS):
             raise CaptureError('access_protection')
-        if 'timed out' in text or 'timeout' in text:
+        if 'timed out' in text or 'timeout' in text or '请求超时' in text:
             raise CaptureError('request_timeout')
         raise CaptureError(category)
 
@@ -53,11 +53,16 @@ def evidence(obj):
         raise CaptureError('invalid_replay_identity_time')
     media = (obj.get('objectDesc') or {}).get('media') or []
     first = media[0] if media else {}
+    # The typed SDK serializes an absent duration as zero. Both mean unknown,
+    # never a finite replay or an accepted change to a known duration.
+    duration = first.get('videoPlayLen')
+    if duration == 0:
+        duration = None
     return {
         'replay_id': replay_id, 'publisher_sha256': digest(obj.get('username') or ''),
         'created_at': created,
         'title': re.sub(r'https?://\S+', '[link]', (obj.get('objectDesc') or {}).get('description') or '')[:200],
-        'duration_seconds': first.get('videoPlayLen'), 'native_source_size': first.get('fileSize'),
+        'duration_seconds': duration, 'native_source_size': first.get('fileSize'),
         'width': first.get('width'), 'height': first.get('height'),
         'variant_specs': [{k: s.get(k) for k in ('fileFormat', 'fileSize', 'width', 'height', 'bitRate') if k in s}
                           for s in first.get('spec') or []],
@@ -69,7 +74,14 @@ def replay_page(api, username, marker):
     check_error(reply.get('errCode'), reply.get('errMsg'), 'native_api_error')
     data = reply.get('data') or {}
     base = data.get('BaseResponse') or {}
-    check_error(base.get('Ret', 0), base.get('ErrMsg'), 'native_base_error')
+    message = base.get('ErrMsg')
+    if isinstance(message, dict):
+        message = message.get('String', '')
+    # A publisher can fail independently; retain an explicit coverage gap.
+    # Any protection text or other error still uses the global stop boundary.
+    if base.get('Ret') == -1 and not str(message or '').strip():
+        raise CaptureError('publisher_unavailable')
+    check_error(base.get('Ret', 0), message, 'native_base_error')
     contact = (data.get('contact') or {}).get('username')
     if contact and contact != username:
         raise CaptureError('publisher_contact_mismatch')

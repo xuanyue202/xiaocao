@@ -20,3 +20,21 @@ pause/resume, same SHA, AV/duration/full packet and full ASR/idempotence accepte
 The compatible task uses retained accepted native media, not fresh discovery.
 Native automatic reconnection and a complete shared Local Capture remain pending;
 production binary/config/Automation were not switched.
+
+## Native reconnection and publisher scan fixes (2026-10-22)
+
+Baseline 791fe990bda45d4bca94db8ee0a862032ed7e26e; scope is the seven
+Liuguan native/scan/SOP/test files. Independent Spec and Standards reviewers
+reported no substantive defects, including follow-up review of the legacy
+null/zero duration compatibility. 55 focused shared-capture/ASR tests pass;
+the unknown-duration regression reproduced the real binding failure before
+the fix. Existing positive-duration and publication-time changes still fail.
+
+Real native search opened the verified publisher replay without Wu navigation.
+Private bootstrap connected the SDK and restored PAC. Full scan attempted all
+33 publishers: 28 successful, four empty provider errors and one timeout;
+275 catalogue rows, degraded coverage retained. A fresh SDK media download
+Q1cKzYN5z7ydpB-OQDQPc hit a network deadline with 1160683093 bytes retained.
+Resuming that same task accepted 1161776599 bytes with AV, duration, complete
+packet read and SHA 698b85ea3f48cf240d7d315de507bae8b5fbcd5d7d5f91e2f64a6632a9992a91.
+Full ASR of this fresh file is in progress. Production cutover is still pending.

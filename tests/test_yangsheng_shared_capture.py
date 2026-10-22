@@ -61,6 +61,25 @@ def test_unknown_create_retains_intent_and_never_reposts(tmp_path, monkeypatch):
     assert body['id'] == capture.task_identity('teacher@finder', '123')
 
 
+@pytest.mark.parametrize('legacy_duration', [None, 0])
+def test_zero_duration_from_typed_sdk_matches_missing_unverified_history(tmp_path, legacy_duration):
+    obj = replay('124', 50)
+    obj['objectDesc']['media'][0].pop('videoPlayLen')
+    with capture.database(tmp_path) as db:
+        seed(db)
+        capture.record_replays(db, 'teacher@finder', {'124': obj}, 1)
+        db.execute("UPDATE replays SET duration=? WHERE id='124'", (legacy_duration,))
+        obj['objectDesc']['media'][0]['videoPlayLen'] = 0
+        capture.record_replays(db, 'teacher@finder', {'124': obj}, 2)
+        row = db.execute("SELECT duration,state FROM replays WHERE id='124'").fetchone()
+        assert row['duration'] == legacy_duration and row['state'] == 'historical_discovered'
+        with pytest.raises(CaptureError, match='replay_media_not_ready'):
+            capture.create_task(db, 'unused', 'teacher@finder', obj)
+        obj['objectDesc']['media'][0]['videoPlayLen'] = 600
+        with pytest.raises(CaptureError, match='binding_changed'):
+            capture.record_replays(db, 'teacher@finder', {'124': obj}, 3)
+
+
 def test_retained_unknown_create_reconciles_exact_existing_task(tmp_path, monkeypatch):
     existing = {'id': 'original-task', 'status': 'running'}
     monkeypatch.setattr(capture, 'find_task', lambda *a: existing)
@@ -219,3 +238,43 @@ def test_retained_media_preserves_existing_signed_selector(tmp_path, monkeypatch
         assert url.count('X-snsvideoflag=') == 1
         assert 'ticket=a%2Bb%20c' in url and 'opaque=keep+bytes' in url
     else: post.assert_not_called()
+
+
+@pytest.mark.parametrize('message', ['请求超时', 'request timed out', 'timeout'])
+def test_backend_timeout_remains_retryable(message):
+    with pytest.raises(CaptureError, match='^request_timeout$'):
+        native.check_error(400, message, 'candidate_api_error')
+
+
+def test_unavailable_publisher_does_not_starve_following_publishers(tmp_path, monkeypatch):
+    with capture.database(tmp_path) as db:
+        seed(db)
+        db.execute("INSERT INTO publishers VALUES('a@finder','[]',NULL)")
+        db.commit()
+    monkeypatch.setattr(capture, 'request', lambda *a: {'enabled': True, 'engine': 'gopeed', 'channels_available': True})
+    calls = []
+    def objects(api, username, *args):
+        calls.append(username)
+        if username == 'a@finder':
+            raise CaptureError('publisher_unavailable')
+        return {'123': replay()}
+    monkeypatch.setattr(capture, 'publisher_objects', objects)
+    value = capture.cycle(tmp_path, create=False)
+    assert calls == ['a@finder', 'teacher@finder']
+    assert value['covered'] == 1 and value['publisher_count'] == 2
+    assert value['status'] == 'degraded'
+    assert value['errors'] == [{'publisher_sha256': native.digest('a@finder'), 'code': 'publisher_unavailable'}]
+    with capture.database(tmp_path) as db:
+        assert db.execute('SELECT count(*) FROM replays').fetchone()[0] == 1
+        assert db.execute("SELECT verified_at FROM publishers WHERE username='a@finder'").fetchone()[0] is None
+
+
+@pytest.mark.parametrize('message,expected', [
+    ({'String': ''}, 'publisher_unavailable'),
+    ({'String': '请重新登录'}, 'access_protection'),
+    ({'String': 'unknown failure'}, 'native_base_error'),
+])
+def test_native_publisher_failure_preserves_protection_boundary(monkeypatch, message, expected):
+    monkeypatch.setattr(native, 'request', lambda *a: {'errCode': 0, 'data': {'BaseResponse': {'Ret': -1, 'ErrMsg': message}}})
+    with pytest.raises(CaptureError, match='^' + expected + '$'):
+        native.replay_page('local', 'teacher@finder', '')

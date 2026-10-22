@@ -69,10 +69,15 @@ kULIgOK7CV-IAtk6VYAAC (533314434 bytes), paused/resumed that same task,
 matched the accepted original SHA and passed AV/duration/full-packet checks.
 That new file separately completed full ASR and idempotent readback.
 
-This real compatible transfer used the retained accepted native task's media;
-`fresh_native_discovery_verified=false`. It does not prove native reconnection.
-The prior native feed window is gone. The user confirms normal WeChat login;
-main-window screenshot/AX unreadability does not establish a login failure.
-Native automatic reconnection and the complete shared Local Capture remain
-unaccepted. Do not activate production from retained media, independent files,
-API availability or offline tests alone.
+Fresh native reconnection is now verified on the private compatible backend:
+one native publisher replay page connected the SDK and restored PAC. The latest
+cycle attempted all 33 publishers: 28 succeeded, four returned empty provider
+errors and one timed out. These remain explicit coverage gaps, not no-update.
+The catalogue contains 275 observations. SDK zero and missing durations both
+mean unknown; neither can create a download.
+
+Fresh replay 15036599111904070751 was captured as task Q1cKzYN5z7ydpB-OQDQPc.
+A real network deadline near completion recovered on the same task; all
+1161776599 bytes passed AV/duration/full-packet/hash checks. The new file is
+undergoing complete ASR. Production cutover and a complete shared Local Capture
+activity remain pending; the private acceptance does not claim those steps.

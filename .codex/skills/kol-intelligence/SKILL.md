@@ -66,9 +66,10 @@ rules in the prompt and current run evidence in memory/ledgers.
   [video-gap-watchdog.md](references/video-gap-watchdog.md). This read-only
   diagnostic does not run the hourly capture gate or acquire a source slot.
 
-- For the local Liuguan/养生自行车 metadata companion, read
-  [liuguan-local-discovery.md](references/liuguan-local-discovery.md). This is
-  cache discovery only; native/media capture remains a separate unaccepted gate.
+- For the local Liuguan/养生自行车 capture companion, read
+  [liuguan-local-discovery.md](references/liuguan-local-discovery.md). This covers the fixed publisher sweep, cache-only Moments supplement,
+  native connection, accepted-artifact ASR and shared cleanup. Activation still
+  requires the private deployed-binary descriptor and real acceptance.
 
 - For an unambiguous Xiaocao replay capture, read
   [xiaocao-capture-start.md](references/xiaocao-capture-start.md) completely
