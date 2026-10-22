@@ -1,8 +1,9 @@
 # Liuguan in the shared Local Capture activity
 
 Implementation is opt-in and **not deployed**. The production downloader binary,
-private configuration and Automation have not been switched. ASR and Xiaocao
-upload/handoff behavior are unchanged. No second schedule is introduced.
+private configuration and Automation have not been switched. Accepted Liuguan
+artifacts now feed the existing local ASR engine; Xiaocao upload/handoff behavior
+is unchanged. No second schedule is introduced.
 
 The fixed 33 publishers are the primary sweep. Authenticated native replay lists
 provide IDs, publication times and finite durations. Wu's exact cached Moments
@@ -41,15 +42,37 @@ Liuguan uses a bounded exact-domain PAC during a freshly verified native feed
 refresh, then restores the original configuration. Foreign proxy configuration
 is preserved. The previously denied `/web/pages/home` stays blocked.
 
+## Accepted-artifact ASR
+
+`PYTHONPATH=src .venv/bin/python scripts/kol_yangsheng.py asr` consumes only
+verified catalogue artifacts. Optional `--replay` selects an accepted ID. A
+single serial worker verifies upstream proof, actual file hash, engine receipt,
+original sample coverage and transcript hash, then writes a source-bound receipt.
+The unchanged local engine still truthfully describes a local file; the adapter
+separately proves its native replay/download origin. Original live IDs remain
+unverified. Corrupt or changed individual courses are isolated; completed results
+are revalidated and reused. No course organization or terminology correction.
+
+A Local Capture invocation and successful final cleanup wake the worker without
+a new schedule. A native scan failure still wakes already accepted courses after
+the writer lock has unwound. ASR does not hold the system PAC or capture lease.
+
 ## Validation and remaining acceptance
 
-376 scoped Python regressions pass; API/interceptor/proxy Go tests pass. Both
-independent Spec and Standards reviews have no remaining blockers. These are
-implementation checks, not shared-production acceptance.
+403 scoped Python regressions pass; API/interceptor/proxy Go tests pass. Both
+independent Spec and Standards reviews have no remaining blockers.
 
-The independent upstream path has three real recordings accepted. The compatible
-shared candidate has not yet downloaded a real recording or passed native
-cold-start acceptance. The prior native feed window is no longer present; the
-main WeChat window remains protected and lacks readable content controls.
-Do not activate the Automation or mark the shared flow accepted from the
-independent files, metadata inventory, API availability or these offline tests.
+The independent upstream path accepted three recordings. All three now have
+complete ASR and idempotent transcript readback. A compatible private Gopeed
+candidate also downloaded replay 15037310283662367768 as task
+kULIgOK7CV-IAtk6VYAAC (533314434 bytes), paused/resumed that same task,
+matched the accepted original SHA and passed AV/duration/full-packet checks.
+That new file separately completed full ASR and idempotent readback.
+
+This real compatible transfer used the retained accepted native task's media;
+`fresh_native_discovery_verified=false`. It does not prove native reconnection.
+The prior native feed window is gone. The user confirms normal WeChat login;
+main-window screenshot/AX unreadability does not establish a login failure.
+Native automatic reconnection and the complete shared Local Capture remain
+unaccepted. Do not activate production from retained media, independent files,
+API availability or offline tests alone.
