@@ -1282,6 +1282,8 @@ def _run_liuguan_local_companion() -> dict[str, Any]:
                 value = run_local()
             else: value = {"status": "waiting", "code": "liuguan_native_connection_required"}
         return value
+    except NativePlaybackInputTimeout:
+        return {"status": "waiting", "code": "liuguan_native_input_timeout"}
     except CaptureError as error: return {"status": "degraded", "code": str(error)}
     except Exception:
         return {"status": "degraded", "code": "liuguan_local_companion_failed"}
@@ -1290,9 +1292,7 @@ def _run_liuguan_local_companion() -> dict[str, Any]:
 def _finish_liuguan_local_companion(result: dict[str, Any]) -> dict[str, Any]:
     from xiaocao.yangsheng.native import CaptureError
     from xiaocao.yangsheng.runtime import finish
-    if result.get("health") in {"waiting", "degraded"}:
-        return {"status": "waiting", "code": "xiaocao_continuation_preserved"}
-    try: return finish()
+    try: return finish(preserve_backend=result.get("health") in {"waiting", "degraded"})
     except (CaptureError, OSError, ValueError) as error:
         return {"status": "waiting", "code": str(error) if isinstance(error, CaptureError) else "shared_cleanup_failed"}
 
@@ -5451,10 +5451,6 @@ def main() -> int:
     if args.command == "capture-local":
         runtime = DailyRuntime.__new__(DailyRuntime)
         runtime.args = args
-        if datetime.now(timezone(timedelta(hours=8))).hour in range(7, 24):
-            companion = _run_liuguan_local_companion()
-            if companion.get("status") != "disabled":
-                _print({"yangsheng_capture": companion})
         mailbox_reconciliation = runtime.reconcile_local_mailbox()
         if mailbox_reconciliation:
             _print({"mailbox_reconciliation": mailbox_reconciliation})
@@ -5512,6 +5508,11 @@ def main() -> int:
         if follow_result is not None:
             _print(follow_result)
         if result.get("status") != "outside_window":
+            # Xiaocao's retained capture and handoff have priority. A companion
+            # connection prompt must never delay the primary source's work.
+            companion = _run_liuguan_local_companion()
+            if companion.get("status") != "disabled":
+                _print({"yangsheng_capture": companion})
             cleanup = _finish_liuguan_local_companion(result)
             if cleanup.get("status") != "disabled":
                 _print({"shared_capture_cleanup": cleanup})

@@ -44,6 +44,8 @@ def verify_task(task, publisher, record, spec, download_root):
 def reconcile_artifacts(root=DEFAULT_ROOT, api='http://127.0.0.1:2022'):
     health = request(api, '/api/shared-capture/status')
     if health.get('enabled') is not True: raise CaptureError('shared_backend_not_enabled')
+    processing = health.get('post_processing_active')
+    if not isinstance(processing, list): raise CaptureError('shared_post_processing_status_unverified')
     accepted = []; waiting = []; failures = []
     with database(Path(root)) as db:
         for job in db.execute('SELECT * FROM jobs').fetchall():
@@ -54,7 +56,7 @@ def reconcile_artifacts(root=DEFAULT_ROOT, api='http://127.0.0.1:2022'):
             with db: db.execute('UPDATE jobs SET task_id=?,state=?,updated=? WHERE publisher=? AND replay=?', (task['id'], task['status'], time.time(), job['publisher'], job['replay']))
             if task['status'] != 'done':
                 (failures if task['status'] == 'error' else waiting).append({'replay_id': job['replay'], 'task_id': task['id'], 'status': task['status']}); continue
-            if task['id'] in health.get('post_processing_active', []):
+            if task['id'] in processing:
                 waiting.append({'replay_id': job['replay'], 'code': 'shared_post_processing_active'}); continue
             record = json.loads(db.execute('SELECT metadata FROM replays WHERE publisher=? AND id=?', (job['publisher'], job['replay'])).fetchone()[0])
             try: proof = verify_task(task, job['publisher'], record, job['spec'], health['download_dir'])
@@ -68,16 +70,29 @@ def reconcile_artifacts(root=DEFAULT_ROOT, api='http://127.0.0.1:2022'):
 
 
 def drain_before_shutdown(root=DEFAULT_ROOT, api='http://127.0.0.1:2022', timeout=1200):
+    return wait_for_artifacts(root, api, timeout, require_shared_idle=True)
+
+
+def wait_for_artifacts(root=DEFAULT_ROOT, api='http://127.0.0.1:2022', timeout=1200, *, require_shared_idle=False):
+    """Finish owned media even when another source retains the shared backend.
+
+    timeout bounds polling; each local media validation has its own subprocess
+    bounds and may extend this deadline. It never cancels an existing download.
+    """
     deadline = time.monotonic() + timeout
+    accepted = []
     while True:
         proof = reconcile_artifacts(root, api)
-        active = [t for t in tasks(api) if t.get('status') in ('running', 'ready', 'wait')]
-        health = request(api, '/api/shared-capture/status')
-        processing = health.get('post_processing_active')
-        if not isinstance(processing, list): raise CaptureError('shared_post_processing_status_unverified')
+        accepted.extend(proof['accepted'])
+        active = []; processing = []
+        if require_shared_idle:
+            active = [t for t in tasks(api) if t.get('status') in ('running', 'ready', 'wait')]
+            health = request(api, '/api/shared-capture/status')
+            processing = health.get('post_processing_active')
+            if not isinstance(processing, list): raise CaptureError('shared_post_processing_status_unverified')
         if proof['failures']: raise CaptureError('shared_artifact_verification_failed')
         paused = any(r.get('status') == 'pause' for r in proof['waiting'])
         if paused: raise CaptureError('shared_owned_task_paused')
-        if not active and not processing and not proof['waiting']: return proof
+        if not active and not processing and not proof['waiting']: return {**proof, 'accepted': accepted}
         if time.monotonic() >= deadline: raise CaptureError('shared_downloads_still_active')
         time.sleep(min(10, max(0, deadline-time.monotonic())))

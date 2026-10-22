@@ -31,6 +31,9 @@ process lifetime, and mailbox completion.
 Before every native activation prompt, the driver restores and checks the
 existing capture's singleton sniffer; a historical armed receipt is not current
 process health. Verify/apply the bounded capture PAC only after that health check.
+If a healthy shared singleton replaced the previously recorded PID, `start()`
+verifies the exact executable/API and records its reuse on the original capture.
+It preserves the baseline and never creates a second capture or download.
 An unbound original native share must not accept a global historical candidate.
 If an older `capture_detected` transition left it `captured` before any native
 source/media/download claim, `prepare_playback` reconciles only the matching

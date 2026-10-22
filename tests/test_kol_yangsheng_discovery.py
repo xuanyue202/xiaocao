@@ -37,3 +37,41 @@ def test_failure_is_structured(response, expected, monkeypatch, tmp_path, capsys
     value = json.loads(capsys.readouterr().out)
     assert value['code'] == expected
     assert value['status'] in ('source_failed', 'source_unavailable')
+
+
+def test_visible_refresh_timeout_does_not_confirm_action(monkeypatch, capsys):
+    from xiaocao.yangsheng.native import CaptureError
+    monkeypatch.setattr(module.sys, 'stdin', SimpleNamespace(fileno=lambda: 0))
+    monkeypatch.setattr(module.select, 'select', lambda *a: ([], [], []))
+    with pytest.raises(CaptureError, match='native_refresh_timeout'):
+        module._visible_refresh()
+    assert json.loads(capsys.readouterr().out)['deadline_seconds'] == 30
+
+
+def test_bootstrap_visible_route_wires_same_guarded_runtime(monkeypatch, capsys):
+    from xiaocao.yangsheng import runtime
+    calls = []
+    def bootstrap(window, pid, **kwargs):
+        calls.append((window, pid, kwargs))
+        return {'status': 'connected', 'reused': True}
+    monkeypatch.setattr(runtime, 'bootstrap', bootstrap)
+    monkeypatch.setattr(module.sys, 'argv', ['kol_yangsheng.py', 'bootstrap', '--visible-refresh'])
+    assert module.main() == 0
+    assert calls[0][2]['refresh'] is module._visible_refresh
+    assert json.loads(capsys.readouterr().out)['reused'] is True
+
+
+def test_partial_refresh_reply_cannot_hold_lease_past_deadline(monkeypatch):
+    import os
+    from time import monotonic
+    from xiaocao.yangsheng.native import CaptureError
+    read_fd, write_fd = os.pipe()
+    try:
+        monkeypatch.setattr(module.sys, 'stdin', SimpleNamespace(fileno=lambda: read_fd))
+        os.write(write_fd, b'refresh')
+        started = monotonic()
+        with pytest.raises(CaptureError, match='native_refresh_timeout'):
+            module._visible_refresh(timeout=0.02)
+        assert monotonic() - started < 0.5
+    finally:
+        os.close(read_fd); os.close(write_fd)

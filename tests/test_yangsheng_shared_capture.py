@@ -61,6 +61,25 @@ def test_unknown_create_retains_intent_and_never_reposts(tmp_path, monkeypatch):
     assert body['id'] == capture.task_identity('teacher@finder', '123')
 
 
+@pytest.mark.parametrize('legacy_duration', [None, 0])
+def test_zero_duration_from_typed_sdk_matches_missing_unverified_history(tmp_path, legacy_duration):
+    obj = replay('124', 50)
+    obj['objectDesc']['media'][0].pop('videoPlayLen')
+    with capture.database(tmp_path) as db:
+        seed(db)
+        capture.record_replays(db, 'teacher@finder', {'124': obj}, 1)
+        db.execute("UPDATE replays SET duration=? WHERE id='124'", (legacy_duration,))
+        obj['objectDesc']['media'][0]['videoPlayLen'] = 0
+        capture.record_replays(db, 'teacher@finder', {'124': obj}, 2)
+        row = db.execute("SELECT duration,state FROM replays WHERE id='124'").fetchone()
+        assert row['duration'] == legacy_duration and row['state'] == 'historical_discovered'
+        with pytest.raises(CaptureError, match='replay_media_not_ready'):
+            capture.create_task(db, 'unused', 'teacher@finder', obj)
+        obj['objectDesc']['media'][0]['videoPlayLen'] = 600
+        with pytest.raises(CaptureError, match='binding_changed'):
+            capture.record_replays(db, 'teacher@finder', {'124': obj}, 3)
+
+
 def test_retained_unknown_create_reconciles_exact_existing_task(tmp_path, monkeypatch):
     existing = {'id': 'original-task', 'status': 'running'}
     monkeypatch.setattr(capture, 'find_task', lambda *a: existing)
@@ -219,3 +238,221 @@ def test_retained_media_preserves_existing_signed_selector(tmp_path, monkeypatch
         assert url.count('X-snsvideoflag=') == 1
         assert 'ticket=a%2Bb%20c' in url and 'opaque=keep+bytes' in url
     else: post.assert_not_called()
+
+
+@pytest.mark.parametrize('message', ['请求超时', 'request timed out', 'timeout'])
+def test_backend_timeout_remains_retryable(message):
+    with pytest.raises(CaptureError, match='^request_timeout$'):
+        native.check_error(400, message, 'candidate_api_error')
+
+
+def test_unavailable_publisher_does_not_starve_following_publishers(tmp_path, monkeypatch):
+    with capture.database(tmp_path) as db:
+        seed(db)
+        db.execute("INSERT INTO publishers VALUES('a@finder','[]',NULL)")
+        db.commit()
+    monkeypatch.setattr(capture, 'request', lambda *a: {'enabled': True, 'engine': 'gopeed', 'channels_available': True})
+    calls = []
+    def objects(api, username, *args):
+        calls.append(username)
+        if username == 'a@finder':
+            raise CaptureError('publisher_unavailable')
+        return {'123': replay()}
+    monkeypatch.setattr(capture, 'publisher_objects', objects)
+    value = capture.cycle(tmp_path, create=False)
+    assert calls == ['a@finder', 'teacher@finder']
+    assert value['covered'] == 1 and value['publisher_count'] == 2
+    assert value['status'] == 'degraded'
+    assert value['errors'] == [{'publisher_sha256': native.digest('a@finder'), 'code': 'publisher_unavailable'}]
+    with capture.database(tmp_path) as db:
+        assert db.execute('SELECT count(*) FROM replays').fetchone()[0] == 1
+        assert db.execute("SELECT verified_at FROM publishers WHERE username='a@finder'").fetchone()[0] is None
+
+
+@pytest.mark.parametrize('message,expected', [
+    ({'String': ''}, 'publisher_unavailable'),
+    ({'String': '请重新登录'}, 'access_protection'),
+    ({'String': 'unknown failure'}, 'native_base_error'),
+])
+def test_native_publisher_failure_preserves_protection_boundary(monkeypatch, message, expected):
+    monkeypatch.setattr(native, 'request', lambda *a: {'errCode': 0, 'data': {'BaseResponse': {'Ret': -1, 'ErrMsg': message}}})
+    with pytest.raises(CaptureError, match='^' + expected + '$'):
+        native.replay_page('local', 'teacher@finder', '')
+
+
+def test_bootstrap_reuses_live_socket_without_native_input_or_proxy_change(tmp_path, monkeypatch):
+    monkeypatch.setattr(runtime, 'request', lambda *a: {'enabled': True, 'channels_available': True})
+    monkeypatch.setattr(network, 'snapshot', lambda: pytest.fail('no proxy reads or changes needed'))
+    refresh = Mock()
+    result = runtime.bootstrap(None, None, root=tmp_path, refresh=refresh)
+    assert result['reused'] and result['proxy_changed'] is False
+    refresh.assert_not_called()
+
+
+@pytest.mark.parametrize('refresh_fails', [False, True])
+def test_visible_refresh_holds_leases_and_restores_pac_on_failure(tmp_path, monkeypatch, refresh_fails):
+    from contextlib import contextmanager
+    from types import SimpleNamespace
+    import io
+    held = []
+    @contextmanager
+    def native_lease():
+        held.append(True)
+        try: yield
+        finally: held.pop()
+    monkeypatch.setattr(runtime, 'native_lease', native_lease)
+    monkeypatch.setattr(runtime, 'request', Mock(side_effect=[{'enabled': True}, {'enabled': True, 'channels_available': True}]))
+    monkeypatch.setattr(network, 'snapshot', lambda: {'pac': 'Enabled: No'})
+    monkeypatch.setattr(network, 'command', lambda *a: 'URL: http://127.0.0.1:2022/liuguan/proxy.pac\nEnabled: Yes')
+    restored = Mock(return_value={'restored': True}); monkeypatch.setattr(network, 'restore', restored)
+    guard = SimpleNamespace(stdin=io.StringIO(), stdout=io.StringIO('armed\n'), wait=Mock())
+    monkeypatch.setattr(runtime.subprocess, 'Popen', lambda *a, **kw: guard)
+    monkeypatch.setattr(runtime.subprocess, 'run', lambda *a, **kw: pytest.fail('visible route must not focus/click separately'))
+    def refresh():
+        assert held == [True]
+        with pytest.raises(CaptureError, match='lifecycle_busy'):
+            with capture.lifecycle_lease(tmp_path, closing=True): pass
+        if refresh_fails: raise CaptureError('native_refresh_not_confirmed')
+    if refresh_fails:
+        with pytest.raises(CaptureError, match='native_refresh_not_confirmed'):
+            runtime.bootstrap(None, None, root=tmp_path, refresh=refresh)
+        assert not (tmp_path / 'native-entry.json').exists()
+    else:
+        assert runtime.bootstrap(None, None, root=tmp_path, refresh=refresh)['status'] == 'connected'
+    restored.assert_called_once()
+    assert held == [] and guard.stdin.closed
+
+
+def test_exact_provider_deactivation_is_distinct_from_unavailable(monkeypatch):
+    unavailable = {'errCode': 0, 'data': {'BaseResponse': {'Ret': -1, 'ErrMsg': {'String': ''}}}}
+    deactivated = {'errCode': 0, 'data': {'BaseResponse': {'Ret': -5900, 'ErrMsg': {'String': ''}},
+        'contact': {'username': 'teacher@finder', 'nickname': '账号已注销'}}}
+    calls = Mock(side_effect=[unavailable, deactivated])
+    monkeypatch.setattr(native, 'request', calls)
+    with pytest.raises(CaptureError, match='publisher_deactivated'):
+        native.replay_page('local', 'teacher@finder', '')
+    assert calls.call_count == 2
+    deactivated['data']['contact']['username'] = 'someone-else@finder'
+    calls.side_effect = [unavailable, deactivated]
+    with pytest.raises(CaptureError, match='publisher_contact_mismatch'):
+        native.replay_page('local', 'teacher@finder', '')
+
+
+def test_sdk_decode_failure_retries_same_page_once_and_does_not_retry_protection(monkeypatch):
+    page = {'object': [replay()], 'contact': {'username': 'teacher@finder'}}
+    calls = Mock(side_effect=[CaptureError('sdk_decode_failed'), page])
+    monkeypatch.setattr(native, 'replay_page', calls)
+    waits = []
+    monkeypatch.setattr(native, 'sleep', waits.append)
+    progress = {'pages': 0}
+    assert native.publisher_objects('local', 'teacher@finder', 50, 2, progress) == {'123': replay()}
+    assert calls.call_count == 2 and calls.call_args_list[0] == calls.call_args_list[1]
+    assert progress['retries'] == 1 and waits == [3]
+    calls.reset_mock(); calls.side_effect = CaptureError('access_protection')
+    with pytest.raises(CaptureError, match='access_protection'):
+        native.publisher_objects('local', 'teacher@finder', 50, 2, {'pages': 0})
+    assert calls.call_count == 1
+
+
+def test_cycle_accounts_for_deactivated_publishers_without_calling_them_empty(tmp_path, monkeypatch):
+    with capture.database(tmp_path) as db:
+        seed(db)
+        db.execute("INSERT INTO publishers VALUES('z@finder','[]',NULL)"); db.commit()
+    monkeypatch.setattr(capture, 'request', lambda *a: {'enabled': True, 'engine': 'gopeed', 'channels_available': True})
+    waits = []
+    monkeypatch.setattr(capture, 'sleep', waits.append)
+    def objects(api, username, *args):
+        if username == 'z@finder': raise CaptureError('publisher_deactivated')
+        return {'123': replay()}
+    monkeypatch.setattr(capture, 'publisher_objects', objects)
+    result = capture.cycle(tmp_path, create=False)
+    assert result['status'] == 'scanned' and result['covered'] == 1
+    assert waits == [2]
+    assert result['assessed'] == 2 and len(result['deactivated']) == 1 and result['errors'] == []
+    with capture.database(tmp_path) as db:
+        assert db.execute("SELECT state FROM publisher_checks WHERE publisher='z@finder'").fetchone()[0] == 'deactivated'
+        assert db.execute('SELECT count(*) FROM publishers').fetchone()[0] == 2
+
+
+def test_preserved_backend_still_waits_for_owned_artifacts_and_dispatches_asr(tmp_path, monkeypatch):
+    from xiaocao.yangsheng import asr
+    enabled = tmp_path / 'enabled'; enabled.touch()
+    monkeypatch.setattr(runtime, 'ENABLED', enabled)
+    calls = []
+    def wait(root, api, **kwargs):
+        calls.append(('wait', kwargs))
+        with pytest.raises(CaptureError, match='lifecycle_busy'):
+            with capture.lifecycle_lease(root, closing=True): pass
+        return {'accepted': [{'replay_id': '123'}], 'waiting': [], 'failures': []}
+    monkeypatch.setattr(artifacts, 'wait_for_artifacts', wait)
+    monkeypatch.setattr(asr, 'start_worker', lambda root: calls.append(('asr', {})) or {'status': 'dispatched'})
+    monkeypatch.setattr(runtime, 'native_lease', lambda: pytest.fail('no native lease or input'))
+    monkeypatch.setattr(runtime, 'request', lambda *a: pytest.fail('no backend shutdown probe'))
+    result = runtime.finish(tmp_path, preserve_backend=True)
+    assert result['code'] == 'xiaocao_continuation_preserved'
+    assert result['artifacts']['accepted'] == [{'replay_id': '123'}]
+    assert [v[0] for v in calls] == ['wait', 'asr']
+
+
+def test_owned_drain_does_not_wait_for_foreign_download(tmp_path, monkeypatch):
+    monkeypatch.setattr(artifacts, 'reconcile_artifacts', lambda *a: {'accepted': [], 'waiting': [], 'failures': []})
+    monkeypatch.setattr(artifacts, 'tasks', lambda *a: pytest.fail('foreign work is preserved'))
+    monkeypatch.setattr(artifacts, 'request', lambda *a: pytest.fail('reconciler owns post-processing proof'))
+    assert artifacts.wait_for_artifacts(tmp_path, timeout=0)['waiting'] == []
+
+
+def test_owned_drain_failure_still_wakes_already_accepted_asr(tmp_path, monkeypatch):
+    from xiaocao.yangsheng import asr
+    enabled = tmp_path / 'enabled'; enabled.touch()
+    monkeypatch.setattr(runtime, 'ENABLED', enabled)
+    monkeypatch.setattr(artifacts, 'wait_for_artifacts', Mock(side_effect=CaptureError('shared_owned_task_paused')))
+    worker = Mock(return_value={'status': 'dispatched'}); monkeypatch.setattr(asr, 'start_worker', worker)
+    with pytest.raises(CaptureError, match='owned_task_paused'):
+        runtime.finish(tmp_path, preserve_backend=True)
+    worker.assert_called_once_with(tmp_path)
+
+
+@pytest.mark.parametrize('processing', [None, {}, 'unknown'])
+def test_missing_postprocessing_proof_cannot_accept_owned_media(tmp_path, monkeypatch, processing):
+    monkeypatch.setattr(artifacts, 'request', lambda *a: {'enabled': True, 'post_processing_active': processing})
+    with pytest.raises(CaptureError, match='post_processing_status_unverified'):
+        artifacts.reconcile_artifacts(tmp_path)
+
+
+def test_foreign_postprocessing_does_not_block_owned_artifact_acceptance(tmp_path, monkeypatch):
+    monkeypatch.setattr(artifacts, 'request', lambda *a: {'enabled': True, 'post_processing_active': ['foreign'], 'download_dir': str(tmp_path)})
+    monkeypatch.setattr(artifacts, 'find_task', lambda *a: {'id': 'owned', 'status': 'done'})
+    monkeypatch.setattr(artifacts, 'verify_task', lambda *a: {'path': str(tmp_path / 'media'), 'size': 10, 'sha256': 'a'*64})
+    with capture.database(tmp_path) as db:
+        with db:
+            db.execute("INSERT INTO jobs VALUES('teacher@finder','123','spec','owned','running',1)")
+            db.execute("INSERT INTO replays VALUES('teacher@finder','123',1,2,'{}','pending',1,1)")
+    result = artifacts.reconcile_artifacts(tmp_path)
+    assert result['accepted'][0]['task_id'] == 'owned'
+    assert result['waiting'] == []
+
+
+def test_retained_page_gets_reconnect_grace_before_native_input(monkeypatch):
+    initial = {'pid': 100, 'enabled': True, 'engine': 'gopeed', 'channels_available': False}
+    clock = [0.0]; waits = []
+    monkeypatch.setattr(runtime, 'monotonic', lambda: clock[0])
+    def wait(seconds):
+        waits.append(seconds); clock[0] += seconds
+    monkeypatch.setattr(runtime, 'sleep', wait)
+    read = Mock(side_effect=[initial, {**initial, 'channels_available': True}]); monkeypatch.setattr(runtime, 'request', read)
+    assert runtime.wait_for_native_connection('local', initial)['channels_available']
+    assert waits == [1, 1]
+    assert all(c.args[1] == '/api/shared-capture/status' and c.kwargs['timeout'] <= 1 for c in read.call_args_list)
+    read.reset_mock(); waits.clear()
+    assert runtime.wait_for_native_connection('local', {**initial, 'channels_available': True})['channels_available']
+    read.assert_not_called(); assert waits == []
+
+
+def test_reconnect_grace_preserves_missing_page_as_missing(monkeypatch):
+    initial = {'pid': 100, 'enabled': True, 'engine': 'gopeed', 'channels_available': False}
+    clock = [0.0]
+    monkeypatch.setattr(runtime, 'monotonic', lambda: clock[0])
+    monkeypatch.setattr(runtime, 'sleep', lambda seconds: clock.__setitem__(0, clock[0] + seconds))
+    monkeypatch.setattr(runtime, 'request', lambda *a, **k: initial)
+    assert runtime.wait_for_native_connection('local', initial, timeout=3)['channels_available'] is False
+    assert clock[0] == 3

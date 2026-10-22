@@ -20,3 +20,70 @@ pause/resume, same SHA, AV/duration/full packet and full ASR/idempotence accepte
 The compatible task uses retained accepted native media, not fresh discovery.
 Native automatic reconnection and a complete shared Local Capture remain pending;
 production binary/config/Automation were not switched.
+
+## Native reconnection and publisher scan fixes (2026-10-22)
+
+Baseline 791fe990bda45d4bca94db8ee0a862032ed7e26e; scope is the seven
+Liuguan native/scan/SOP/test files. Independent Spec and Standards reviewers
+reported no substantive defects, including follow-up review of the legacy
+null/zero duration compatibility. 55 focused shared-capture/ASR tests pass;
+the unknown-duration regression reproduced the real binding failure before
+the fix. Existing positive-duration and publication-time changes still fail.
+
+Real native search opened the verified publisher replay without Wu navigation.
+Private bootstrap connected the SDK and restored PAC. Full scan attempted all
+33 publishers: 28 successful, four empty provider errors and one timeout;
+275 catalogue rows, degraded coverage retained. A fresh SDK media download
+Q1cKzYN5z7ydpB-OQDQPc hit a network deadline with 1160683093 bytes retained.
+Resuming that same task accepted 1161776599 bytes with AV, duration, complete
+packet read and SHA 698b85ea3f48cf240d7d315de507bae8b5fbcd5d7d5f91e2f64a6632a9992a91.
+Full ASR of this fresh file is in progress. Production cutover is still pending.
+
+## Minimal native reconnection (baseline fe64eda)
+
+Independent Spec review found a 90-second handshake versus 60-second PAC
+guardian conflict and unbounded partial-line input. Both were fixed: the complete
+line has a 30-second monotonic deadline and 64-byte bound. Standards and follow-up
+Spec reviews have no remaining blocking findings. Slow system calls can still
+fail bootstrap safely; no claim of guaranteed connection. 67 focused tests pass,
+including a real pipe partial-input deadline, PAC recovery on callback failure,
+lifecycle exclusion, CLI wiring and zero-input socket reuse.
+
+Production native connection was verified through one CUA File/Refresh of the
+retained replay tab and the existing network guardian; PAC restored. Subsequent
+CLI bootstrap returned reused=true/proxy_changed=false with no native action.
+Original 139 tasks,1729 candidate identities and capture ledger survived the
+reviewed guarded binary/config cutover unchanged. Original 180-second hourly
+companion input expired during investigation; source_busy skipped Xiaocao and
+cleanup preserved the backend. The narrow companion continuation ran, but stopped
+on a native API error after six successful publishers, so the whole shared
+activity and full latest coverage are not accepted. Do not rerun the hour gate.
+
+## Connection reliability review — 2026-10-22
+Baselines e3e6b0f (Xiaocao) / d816d888 (compatible downloader). Independent Spec
+and Standards found that a backend timeout could release the lock before the
+native SDK Promise settled; fixed with page-lifetime in-flight state, including
+socket reconnection. Tests also changed from global no-op sleep to local recorded
+waits. Both reviewers closed these findings. Local deployment health probes now
+use a one-second read timeout and twenty-second total deadline. Production
+acceptance is still separate from this static review.
+Validation: 70 Python checks, Channels race tests and API/interceptor checks;
+three Node behavior tests including pending SDK call through reconnect.
+
+## Post-download continuation and reconnect grace — baseline bb61e12
+
+Independent Spec review caught a lost ASR wake while an older worker held its
+snapshot; automatic workers now wait up to4h, then read fresh accepted courses.
+Standards caught missing post-processing status validation in owned-only drain;
+reconciliation now requires an explicit list before acceptance. Both re-reviewed
+and closed the findings. The20min timeout is explicitly a polling deadline;
+individual media validators retain their separate subprocess deadlines.
+Local-only reconnect grace35s avoids demanding UI while the page backs off;
+health probes are <=1s and preserve PID/engine/enabled identity. Both reviewers
+accepted the final diff;80 focused tests pass. No UI used by reviewers.
+Actual production evidence: all33 assessed (29 lists/4 exact deactivations),
+2 new full downloads and ASR;5 total completed receipts; backend restart with
+zero native input/zero proxy changes followed by real replay read, all141 task
+identities and source ledger/config preserved. Original Xiaocao native repair
+still open; no whole-backlog completion claim. Backend commit e55fdc26 is local
+only: upstream push was denied to this account; production binary is installed.

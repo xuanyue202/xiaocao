@@ -1,9 +1,10 @@
 # Liuguan in the shared Local Capture activity
 
-Implementation is opt-in and **not deployed**. The production downloader binary,
-private configuration and Automation have not been switched. Accepted Liuguan
-artifacts now feed the existing local ASR engine; Xiaocao upload/handoff behavior
-is unchanged. No second schedule is introduced.
+The reviewed compatible binary/configuration and opt-in descriptor are installed
+locally. The original 139 task IDs/statuses,1729 candidate identities and capture
+ledger matched after restart; PAC stayed detached. The existing Automation prompt
+has not yet been changed. Complete shared-activity acceptance remains pending.
+No second schedule is introduced.
 
 The fixed 33 publishers are the primary sweep. Authenticated native replay lists
 provide IDs, publication times and finite durations. Wu's exact cached Moments
@@ -57,22 +58,52 @@ A Local Capture invocation and successful final cleanup wake the worker without
 a new schedule. A native scan failure still wakes already accepted courses after
 the writer lock has unwound. ASR does not hold the system PAC or capture lease.
 
-## Validation and remaining acceptance
+## Current production acceptance — October 22, 22:00 activity
 
-403 scoped Python regressions pass; API/interceptor/proxy Go tests pass. Both
-independent Spec and Standards reviews have no remaining blockers.
+Compatible Gopeed connection build e55fdc26 is installed. Guarded replacement
+preserved all original 139 tasks,1729 candidate identities and capture ledger.
+The retained native feed was refreshed once to load the new socket client; the
+subsequent full sweep used no native input. Latest real cycle assessed all 33:
+29 available replay lists,4 exact-ID platform-reported deactivated accounts,
+0 errors and0 retries. The catalogue has276 recordings. All33 registry entries
+and their histories remain; deactivated accounts are not counted as valid lists.
 
-The independent upstream path accepted three recordings. All three now have
-complete ASR and idempotent transcript readback. A compatible private Gopeed
-candidate also downloaded replay 15037310283662367768 as task
-kULIgOK7CV-IAtk6VYAAC (533314434 bytes), paused/resumed that same task,
-matched the accepted original SHA and passed AV/duration/full-packet checks.
-That new file separately completed full ASR and idempotent readback.
+Two freshly discovered production tasks GTwP0TxKldSmzQzQZNxH2 and
+iAXPHFl5DOODIfr8TgtoA captured replays15038056360896105945 and
+15038027932828375101 (298293485 and336541195 bytes). Both passed AV/duration,
+full packet and SHA checks and complete source-bound ASR. Five accepted courses
+now have complete ASR; no failures. Prior real network interruption recovered
+on the same Q1cKzYN5z7ydpB-OQDQPc task and passed full ASR/idempotence.
 
-This real compatible transfer used the retained accepted native task's media;
-`fresh_native_discovery_verified=false`. It does not prove native reconnection.
-The prior native feed window is gone. The user confirms normal WeChat login;
-main-window screenshot/AX unreadability does not establish a login failure.
-Native automatic reconnection and the complete shared Local Capture remain
-unaccepted. Do not activate production from retained media, independent files,
-API availability or offline tests alone.
+A guarded production restart then proved local socket reconnection with zero
+native input and zero proxy changes; a real replay-list call succeeded afterward.
+All141 tasks and the original retained capture ledger/configuration matched.
+`ensure_backend` gives the retained page up to35s for its <=30s backoff before
+requesting UI, using only local status reads with <=1s request deadlines.
+A closed page or invalid session still requires explicit bounded initialization;
+this does not claim that any missing native session can be rebuilt without UI.
+
+The real Local Capture also checked Xiaocao messages and official accounts.
+The existing Xiaocao item kol-wechat-751536a24e273e39767a8185 retains its original
+native_playback_state_unresolved repair and awaiting_capture job. No false repair
+closure, replacement capture, upload or Handoff was emitted. Therefore this
+accepts Liuguan's shared integration, not completion of Xiaocao's old video backlog.
+System HTTP/HTTPS/SOCKS/PAC flags are all off; the shared backend is retained for
+the original source continuation. Another source's repair now still drains only
+Liuguan's own downloads and dispatches accepted ASR, without proxy/native/process
+operations. The20min polling deadline excludes separately bounded media checks.
+An automatic ASR wake waits up to4h for the prior worker, then takes a fresh
+accepted snapshot; expiry remains an error and never a completion receipt.
+
+Evidence under private production root: current-courses-progress.json,
+current-courses-asr.json, socket-reconnect-acceptance.json,
+preserved-source-finish.json and catalogue publisher_checks/cycles. No signed
+URLs, credentials or raw backend logs belong in public documentation.
+Validation:80 scoped Python checks, prior Channels race/API/interceptor checks
+and3 JS socket behavior tests; independent Spec and Standards reviews closed
+all findings. Code and tests are separate from the above actual readbacks.
+
+When the socket is healthy, do not interact with WeChat. When it needs reconnect,
+`bootstrap --visible-refresh` uses the existing leases/guardian and a 30-second
+whole-line handshake for one freshly verified native File/Refresh action. A
+late/partial acknowledgement restores PAC; it never authorizes blind re-refresh.

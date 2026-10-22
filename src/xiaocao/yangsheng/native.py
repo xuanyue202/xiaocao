@@ -3,6 +3,7 @@
 No media endpoints, cookies or decoding keys are persisted by evidence().
 """
 import hashlib, json, math, os, re, time, urllib.error, urllib.parse, urllib.request
+from time import sleep
 from xiaocao.kol.enrichment_types import EnrichmentError
 PROTECTION_WORDS = ('captcha', '验证码', '频繁', '登录', 'login', 'protect', '风控')
 class CaptureError(EnrichmentError):
@@ -16,15 +17,20 @@ def check_error(code, message, category):
     if code != 0:
         if any(word in text for word in PROTECTION_WORDS):
             raise CaptureError('access_protection')
-        if 'timed out' in text or 'timeout' in text:
+        if str(message) == 'native_sdk_request_busy':
+            raise CaptureError('sdk_request_busy')
+        if code == -70003 and str(message) == 'JSAPI_JSONPARSE_FAILED':
+            raise CaptureError('sdk_decode_failed')
+        if 'timed out' in text or 'timeout' in text or '请求超时' in text:
             raise CaptureError('request_timeout')
         raise CaptureError(category)
 
-def request(api, route, payload=None):
+def request(api, route, payload=None, *, timeout=None):
     body = None if payload is None else json.dumps(payload, ensure_ascii=False).encode()
     req = urllib.request.Request(api + route, data=body, headers={'Content-Type': 'application/json'})
     try:
-        with urllib.request.urlopen(req, timeout=25) as response:
+        deadline = timeout if timeout is not None else 40 if route.startswith('/api/channels/live/replay/list?') else 25
+        with urllib.request.urlopen(req, timeout=deadline) as response:
             result = json.load(response)
     except urllib.error.HTTPError as error:
         if error.code in (401, 403, 429):
@@ -53,11 +59,16 @@ def evidence(obj):
         raise CaptureError('invalid_replay_identity_time')
     media = (obj.get('objectDesc') or {}).get('media') or []
     first = media[0] if media else {}
+    # The typed SDK serializes an absent duration as zero. Both mean unknown,
+    # never a finite replay or an accepted change to a known duration.
+    duration = first.get('videoPlayLen')
+    if duration == 0:
+        duration = None
     return {
         'replay_id': replay_id, 'publisher_sha256': digest(obj.get('username') or ''),
         'created_at': created,
         'title': re.sub(r'https?://\S+', '[link]', (obj.get('objectDesc') or {}).get('description') or '')[:200],
-        'duration_seconds': first.get('videoPlayLen'), 'native_source_size': first.get('fileSize'),
+        'duration_seconds': duration, 'native_source_size': first.get('fileSize'),
         'width': first.get('width'), 'height': first.get('height'),
         'variant_specs': [{k: s.get(k) for k in ('fileFormat', 'fileSize', 'width', 'height', 'bitRate') if k in s}
                           for s in first.get('spec') or []],
@@ -69,7 +80,28 @@ def replay_page(api, username, marker):
     check_error(reply.get('errCode'), reply.get('errMsg'), 'native_api_error')
     data = reply.get('data') or {}
     base = data.get('BaseResponse') or {}
-    check_error(base.get('Ret', 0), base.get('ErrMsg'), 'native_base_error')
+    message = base.get('ErrMsg')
+    if isinstance(message, dict):
+        message = message.get('String', '')
+    # A publisher can fail independently; retain an explicit coverage gap.
+    # Any protection text or other error still uses the global stop boundary.
+    if base.get('Ret') == -1 and not str(message or '').strip():
+        # Ret=-1 alone is not no-update or deletion. Confirm the exact account
+        # through its native profile; this remains one API read, never UI input.
+        profile = request(api, '/api/channels/contact/feed/list?' + urllib.parse.urlencode({'username': username, 'next_marker': ''}))
+        check_error(profile.get('errCode'), profile.get('errMsg'), 'native_api_error')
+        pd = profile.get('data') or {}; pc = pd.get('contact') or {}; pb = pd.get('BaseResponse') or {}
+        if pc.get('username') and pc['username'] != username:
+            raise CaptureError('publisher_contact_mismatch')
+        pm = pb.get('ErrMsg') or {}
+        pm = pm.get('String', '') if isinstance(pm, dict) else pm
+        if any(word in str(pm).lower() for word in PROTECTION_WORDS):
+            raise CaptureError('access_protection')
+        if (pc.get('username') == username and pc.get('nickname') == '账号已注销'
+                and pb.get('Ret') == -5900 and not str(pm or '').strip()):
+            raise CaptureError('publisher_deactivated')
+        raise CaptureError('publisher_unavailable')
+    check_error(base.get('Ret', 0), message, 'native_base_error')
     contact = (data.get('contact') or {}).get('username')
     if contact and contact != username:
         raise CaptureError('publisher_contact_mismatch')
@@ -82,7 +114,15 @@ def replay_page(api, username, marker):
 def publisher_objects(api, username, max_pages, interval, progress):
     marker = ''; seen = set(); objects = {}
     for _ in range(max_pages):
-        data = replay_page(api, username, marker)
+        for attempt in range(2):
+            try:
+                data = replay_page(api, username, marker)
+                break
+            except CaptureError as error:
+                if attempt or str(error) not in ('request_timeout', 'sdk_decode_failed', 'sdk_request_busy'):
+                    raise
+                progress['retries'] = progress.get('retries', 0) + 1
+                sleep(max(3, interval))
         rows = data.get('object') or []
         for obj in rows:
             replay_id = str(obj['id'])
@@ -97,7 +137,7 @@ def publisher_objects(api, username, max_pages, interval, progress):
         marker = data.get('lastBuffer') or ''
         if not marker or digest(marker) in seen:
             raise CaptureError('pagination_stalled')
-        seen.add(digest(marker)); time.sleep(interval)
+        seen.add(digest(marker)); sleep(interval)
     raise CaptureError('pagination_limit')
 
 def fetch_selected(api, username, record, max_pages, interval):

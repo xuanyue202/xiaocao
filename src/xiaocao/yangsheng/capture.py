@@ -11,6 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlsplit, parse_qsl
 from zoneinfo import ZoneInfo
+from time import sleep
 from .native import CaptureError, digest, evidence, finite_duration, publisher_objects, request
 
 DEFAULT_ROOT = Path.home() / '.codex/yangsheng-capture/production'
@@ -49,6 +50,7 @@ def database(root: Path):
             task_id TEXT,state TEXT NOT NULL,updated REAL NOT NULL,PRIMARY KEY(publisher,replay));
           CREATE TABLE IF NOT EXISTS artifacts(publisher TEXT NOT NULL,replay TEXT NOT NULL,path TEXT NOT NULL,
             size INTEGER NOT NULL,sha256 TEXT NOT NULL,proof TEXT NOT NULL,PRIMARY KEY(publisher,replay));
+          CREATE TABLE IF NOT EXISTS publisher_checks(publisher TEXT PRIMARY KEY,state TEXT NOT NULL,observed_at REAL NOT NULL,evidence TEXT NOT NULL);
           CREATE TABLE IF NOT EXISTS moments(id TEXT PRIMARY KEY,content_hash TEXT NOT NULL,metadata TEXT NOT NULL);
           CREATE TABLE IF NOT EXISTS cycles(id INTEGER PRIMARY KEY,started REAL NOT NULL,finished REAL,
             covered INTEGER NOT NULL DEFAULT 0,total INTEGER NOT NULL,errors TEXT NOT NULL DEFAULT '[]');
@@ -123,7 +125,7 @@ def record_replays(db, publisher, objects, now):
         record = evidence(obj)
         existing = db.execute('SELECT * FROM replays WHERE publisher=? AND id=?', (publisher, record['replay_id'])).fetchone()
         if existing:
-            if existing['created'] != record['created_at'] or existing['duration'] != record['duration_seconds']:
+            if existing['created'] != record['created_at'] or (existing['duration'] or None) != record['duration_seconds']:
                 raise CaptureError('retained_replay_binding_changed')
             db.execute('UPDATE replays SET metadata=?,last_seen=? WHERE publisher=? AND id=?', (json.dumps(record, ensure_ascii=False), now, publisher, record['replay_id']))
         else:
@@ -212,14 +214,16 @@ def cycle(root=DEFAULT_ROOT, api='http://127.0.0.1:2022', *, moments_snapshot=No
         with db:
             cursor = db.execute('INSERT INTO cycles(started,total) VALUES(?,?)', (started, len(publishers)))
             cycle_id = cursor.lastrowid
-        covered = 0; errors = []; created = []
-        for username in publishers:
+        covered = 0; errors = []; created = []; deactivated = []; retries = 0
+        for index, username in enumerate(publishers):
+            if index: sleep(2)
             progress = {'pages': 0}
             try:
-                objects = publisher_objects(api, username, 50, 0.4, progress)
+                objects = publisher_objects(api, username, 50, 2, progress)
                 with db:
                     record_replays(db, username, objects, time.time())
                     db.execute('UPDATE publishers SET verified_at=? WHERE username=?', (time.time(), username))
+                    db.execute('INSERT OR REPLACE INTO publisher_checks VALUES(?,?,?,?)', (username, 'available', time.time(), '{}'))
                 covered += 1
                 if create:
                     for obj in sorted(objects.values(), key=lambda x: x['createtime']):
@@ -228,9 +232,18 @@ def cycle(root=DEFAULT_ROOT, api='http://127.0.0.1:2022', *, moments_snapshot=No
                             task = create_task(db, api, username, obj)
                             created.append({'replay_id': str(obj['id']), 'task_id': task['id'], 'status': task['status']})
             except CaptureError as error:
+                if str(error) == 'publisher_deactivated':
+                    proof = {'publisher_sha256': digest(username), 'provider_nickname': '账号已注销', 'provider_code': -5900, 'identity_verified': True}
+                    deactivated.append(proof)
+                    with db:
+                        db.execute('INSERT OR REPLACE INTO publisher_checks VALUES(?,?,?,?)', (username, 'deactivated', time.time(), json.dumps(proof, ensure_ascii=False)))
+                    continue
                 errors.append({'publisher_sha256': digest(username), 'code': str(error)})
-                if str(error) not in ('request_timeout', 'replay_media_not_ready'): break
+                if str(error) not in ('request_timeout', 'sdk_decode_failed', 'sdk_request_busy', 'replay_media_not_ready', 'publisher_unavailable'): break
+            finally:
+                retries += progress.get('retries', 0)
         with db: db.execute('UPDATE cycles SET finished=?,covered=?,errors=? WHERE id=?', (time.time(), covered, json.dumps(errors), cycle_id))
-        return {'status': 'scanned' if covered == len(publishers) and not errors else 'degraded', 'cycle_id': cycle_id,
-                'publisher_count': len(publishers), 'covered': covered, 'catalog_count': db.execute('SELECT count(*) FROM replays').fetchone()[0],
+        return {'status': 'scanned' if covered + len(deactivated) == len(publishers) and not errors else 'degraded', 'cycle_id': cycle_id,
+                'publisher_count': len(publishers), 'covered': covered, 'assessed': covered + len(deactivated),
+                'deactivated': deactivated, 'retries': retries, 'catalog_count': db.execute('SELECT count(*) FROM replays').fetchone()[0],
                 'moments_changed': moments_changed, 'tasks': created, 'errors': errors}

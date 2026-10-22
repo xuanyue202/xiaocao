@@ -1554,6 +1554,50 @@ def test_start_emits_one_prompt_after_health_and_baseline(tmp_path):
     ]) == 1
 
 
+@pytest.mark.parametrize("stable", [True, False])
+def test_start_rebinds_existing_healthy_shared_process_without_new_capture(tmp_path, monkeypatch, stable):
+    binary = tmp_path / "wx_video_download_macos_arm64"
+    binary.write_bytes(b"binary")
+    pid = [1234]
+
+    class Sniffer:
+        def status(self):
+            return {"version": "test", "running": True}
+
+        def candidates(self):
+            return [{"live_id": "original-baseline"}]
+
+    def runner(command, **kwargs):
+        assert command[0] == "ps"
+        return SimpleNamespace(stdout=f"{pid[0]} {binary}\n")
+
+    def no_spawn(*args, **kwargs):
+        raise AssertionError("must reuse the verified shared process")
+
+    service = XiaocaoLiveService(tmp_path / "live", capture_ledger=tmp_path / "capture.jsonl",
+        sniffer_binary=binary, sniffer_client=Sniffer(), runner=runner, popen=no_spawn)
+    first = service.start()
+    pid[0] = 5678
+    if not stable:
+        monkeypatch.setattr(service, "_confirm_sniffer_stable", lambda **kwargs: None)
+        with pytest.raises(EnrichmentError, match="shared sniffer did not remain healthy"):
+            service.start()
+        assert not any(row["event"] == "sniffer_resumed" for row in service.events())
+        assert len([row for row in service.events() if row["event"] == "capture_armed"]) == 1
+        return
+    resumed = service.start()
+    again = service.start()
+    assert resumed["capture_job_id"] == first["capture_job_id"] == again["capture_job_id"]
+    assert resumed["baseline_sha256"] == first["baseline_sha256"]
+    assert resumed["process_pid"] == 5678 and resumed["prompt"] is None
+    events = service.events()
+    rebound = [row for row in events if row["event"] == "sniffer_resumed"]
+    assert len(rebound) == 1 and rebound[0]["process_pid"] == 5678
+    assert rebound[0]["capture_job_id"] == first["capture_job_id"]
+    assert rebound[0]["process_reused"] is True
+    assert len([row for row in events if row["event"] == "capture_armed"]) == 1
+
+
 def test_start_rejects_api_that_dies_before_proxy_is_stable(tmp_path):
     binary = tmp_path / "wx_video_download_macos_arm64"
     binary.write_bytes(b"binary")

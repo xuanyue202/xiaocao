@@ -130,6 +130,13 @@ credential values, hidden app state and guessed component APIs out of this path.
    that denied action without another-tool bypass. Both retain the original
    item for diagnosis, rather than claiming a provider replay wait.
 
+A generic `微信 (窗口)` may be an embedded video-channel window, not the chat
+or course window. Its blank body is neither authentication failure nor proof
+that the saved Browser target is wrong. Ordinary scheduled activation does not
+require a readable main chat: after exact Browser target and same-capture
+readiness, use the one issued entry and let B0 verify the actual bridge. Never
+repeat a consumed entry or ignore current explicit login/protection text.
+
 ## Obtain the fresh provider-issued entry
 
 The observed first-party transport is

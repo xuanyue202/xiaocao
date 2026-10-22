@@ -1,49 +1,119 @@
-# Liuguan local metadata companion
+# Liuguan in Local Capture
 
-This is the user-authorized Liuguan/养生自行车 source addition, not an investment
-source or a remote KOL writer. Read it when the local Automation asks to discover
-吴老师的朋友圈直播. Leave the ordinary Xiaocao capture lifecycle intact.
+Use the fixed 33 verified video-channel publishers as the primary source. Read
+Wu's exact cached Moments database only to discover missed/new publishers. The
+human refreshes Moments; never make opening Wu's chat, profile or Moments UI a
+prerequisite. A cache miss never proves server absence.
 
-After the single hourly gate returns `hour_acquired`, while retaining the same
-PTY, execute once from the local Xiaocao checkout:
+`capture-local` runs this companion inside the existing hourly activity when
+`~/.codex/yangsheng-capture/production/shared-enabled.json` matches the installed
+shared Gopeed binary. Without that descriptor it stays disabled. Do not create a
+second schedule or execute a second hour gate. The retained PTY owns the run.
+Run Xiaocao's retained capture, local articles and same-item cloud/Handoff
+continuation first, then Liuguan. A Liuguan native-connection request must not
+delay Xiaocao. Outside-window invocations do not start the companion.
+Xiaocao upload, handoff and remote investment processing keep their own semantics.
+Liuguan accepted media feeds the local ASR adapter and never enters those routes.
 
-```bash
-PYTHONPATH=src .venv/bin/python scripts/kol_yangsheng.py discover
-```
+## Native connection request
 
-This reads cached messages and Moments through the installed local WeChat reader.
-It never starts the sniffer, changes PAC, opens WeChat/browser pages, downloads
-media, runs ASR, writes investment data, sends messages or claims a handoff.
-`hour_busy` still ends the invocation immediately; do not run this companion then.
+On `daily_yangsheng_native_input_required`, establish one native replay-page
+connection, then return the actual result to the same PTY. The SDK scans all
+publishers and obtains replay IDs, publication times and finite durations; do
+not navigate 33 homepages or sort screenshot positions as dates.
 
-The adapter lives under the existing Vault `_system/yangsheng-capture/`; the
-private queue lives under `~/.codex/yangsheng-capture/`. A missing adapter, failed
-read or malformed record is `source_failed/source_unavailable`, never `no_update`.
-Cache discovery does not prove fresh server discovery or complete Moments
-coverage. Preserve pending cards and report that limit.
+1. First check `/api/shared-capture/status`: if `channels_available=true`, reuse it
+   without any WeChat input or PAC change. The runner first allows up to35s for
+   the retained page to reconnect its local socket (no UI or provider calls). Otherwise read the last successful `native-entry.json`
+   as a hint only. Freshly verify the WeChat PID/window and actual replay page.
+   Reuse an existing native feed page when available. Do not assume that a missing
+   standalone browser means no page exists: WeChat can embed it beside the main
+   window, and its separate rendering surface can appear blank.
+2. If the page was closed, use the freshly visible native search entry to open
+   the verified publisher **六观小院-町原**, select its **直播回放** tab and an
+   actual finite replay. The observed native toolbar can detach that page into
+   an independent window. No Wu navigation, user click or message sending is
+   needed. Use current controls and frames, never historical coordinates.
+3. Keep a compatible `native_lease()` around each bounded input/readback. The
+   repository helper `scripts/kol_liuguan_window.swift` checks PID/window/frame
+   and composited visibility. White screenshots alone do not establish logout.
+   Wait for a readable target control; do not click through an unreadable page.
+4. On a freshly verified existing native replay tab, prefer the bounded visible
+   refresh handshake in a separate retained PTY:
 
-The exact contact is `wxid_02jgv2ozgk3r12`. Recent cards identify the channel
-六观小院-町原 and contain independent `finderLiveID` values. Preserve the original
-Moment ID/hash and publisher/live/object IDs; repeated shares of one live ID
-remain one candidate. Unknown publishers remain `author_verification_required`.
-Cached `liveStatus=1` is not present-tense live/replay readiness. The historical
-wxwork_live recordings are a different source route, not current replay proof.
+   ```bash
+   PYTHONPATH=src .venv/bin/python scripts/kol_yangsheng.py bootstrap --visible-refresh
+   ```
 
-Current acceptance boundary: metadata discovery is implemented; actual current
-recording capture, cross-source native/PAC serialization and scheduled media/ASR
-are NOT accepted or enabled. Keep candidates at `awaiting_replay_metadata`; do not
-fabricate a media URL, bind an unrelated historical capture, create an upload,
-send a mailbox message or report a transcript/course as complete.
+   An already connected socket returns immediately with zero native input. Only
+   after `liuguan_visible_refresh_required`, use CUA's freshly observed native
+   File → Refresh menu exactly once on that verified replay tab, then send
+   `refreshed` to this bootstrap PTY. It holds the compatible lease and a guarded
+   narrow PAC, checks the actual socket, and restores PAC even if the 30-second
+   refresh deadline expires. Do not resend the page refresh to fill a missing
+   acknowledgement. If the existing capture-local input's separate 180-second
+   deadline has elapsed, reconcile that returned run; after successful bootstrap
+   use `kol_yangsheng.py capture` for only this companion, never another hour gate.
 
-The current diagnostic observed a Browser site-safety denial for
-`channels.weixin.qq.com`; it did not offer an approval prompt. Never use another
-browser, raw browser commands, a proxy or another surface to circumvent a denial.
-A future real-media stage requires an actually granted, supported access path
-and independent source/media/finite-duration acceptance before activation.
+   The system-script alternative is available when fresh CG/AX identity agrees:
 
-For the known main-chat white screenshot, use actual target-window readback.
-The Oct21 diagnostic selected an already-existing independent mini-program
-through the fresh native Window menu and read its real content successfully.
-This proves the main-chat white image is not a global screen-capture failure or
-logout; it does not prove the cause of the blank Qt window or authorize blind
-main-chat clicks. Do not repeatedly ask the user to unlock a normal, unlocked Mac.
+   ```bash
+   PYTHONPATH=src .venv/bin/python scripts/kol_yangsheng.py bootstrap --window-id <verified-id> --pid <verified-pid>
+   ```
+
+   This uses the existing shared downloader, bounded exact-domain PAC and
+   restoration guardian, refreshes that page and verifies the SDK connection.
+   An existing foreign proxy is preserved. Never navigate the previously denied
+   browser `/web/pages/home`, bypass a denied resource, change permissions or
+   dismiss security/login protection. Native replay access is a separately
+   verified route, not a blanket exception to a denial.
+5. Only after the command reports `connected`, reply to the retained PTY with
+   `{"operation":"initialize_liuguan_native_replay","status":"connected"}`.
+   The runner rechecks the actual socket and scans. A failed initialization stays
+   waiting with its specific evidence; continue safe diagnosis, not blind input.
+
+The normal sweep calls authenticated replay-list APIs for the fixed account IDs;
+none of the 33 publishers needs separate homepage navigation. Never respond to
+a failed account read with repeated UI clicks or assumed protection causes.
+
+A saved native window is a hint, never authority to refresh a different tab.
+Keep the page available for the next activity; reopening it need not repeat a
+publisher scan in the UI. Do not ask the human to perform routine navigation.
+
+## Scan, download, ASR and cleanup
+
+The catalogue keeps publisher/replay identities, actual publication timestamps,
+coverage gaps, download intent and exact task IDs. An individual unavailability
+or timeout leaves the cycle degraded and does not starve later publishers. A
+login/protection or identity error stops the scan. The four provider-reported
+deactivated accounts remain in the registry and history: only a matching native
+profile with Ret=-5900 plus nickname 账号已注销 confirms that state. Report
+available lists, deactivated accounts and unresolved gaps separately; assessed
+accounts are not the same as successful replay lists. Known timeout/SDK JSON
+decode/busy reads retry once with spacing; no UI retry is implied. Never claim global latest
+coverage when a publisher failed. Never infer original livestream time/ID from
+replay publication time or from a Moments share.
+
+Downloads are reconciled before creating; an uncertain POST is never repeated
+blindly. Preserve the original task through interruption. Acceptance requires
+actual complete bytes, audio/video, finite duration, whole-file packet validation
+and SHA. Only accepted artifacts enter the serial ASR worker, whose receipts bind
+source proof, media hash, original timeline and complete transcript hash.
+
+One Local Capture activity owns the shared lifecycle. A source finishing first
+must not shut down a downloader still needed by the other. Page users hold the
+shared lifecycle lease; cleanup takes its exclusive counterpart and waits for
+active downloads, post-processing and artifact acceptance. PAC restoration and
+process termination are separate checks: temporary page capture can restore its
+prior PAC once its connection is initialized; background direct downloads do not
+need that PAC. Preserve another source's active PAC and all retained tasks/claims.
+When Xiaocao retains a repair, the finish stage still waits for Liuguan-owned
+media and wakes ASR; it preserves the other source's backend/PAC. The20min
+polling deadline does not include separately bounded file-validation calls.
+Automatic ASR wakeups wait up to4h behind the current worker and then read the
+fresh accepted catalogue; timeout remains a failure. Verify actual receipts.
+ASR does not hold the proxy or native-input lease.
+
+Current activation/acceptance truth is in `docs/development/liuguan-shared-capture.md`
+and the private current receipts. Code/tests, a connected socket, an old accepted
+file or a partial scan alone do not prove the whole shared activity passed.
