@@ -2056,6 +2056,13 @@ class XiaocaoLiveService:
         return {**existing, "idempotent_replay": True, "cleanup_readback": readback}
 
     def cleanup_sniffer(self, *, capture_job_id: str) -> dict[str, Any]:
+        from xiaocao.yangsheng.runtime import shared_shutdown_lease
+        with shared_shutdown_lease(
+            getattr(self.sniffer, "base_url", "http://127.0.0.1:2022"),
+        ):
+            return self._cleanup_shared_sniffer(capture_job_id=capture_job_id)
+
+    def _cleanup_shared_sniffer(self, *, capture_job_id: str) -> dict[str, Any]:
         capture = self.capture_store.latest(capture_job_id) or {}
         revision = (capture.get("media_repair") or {}).get("revision")
         existing = self._event(
@@ -2084,6 +2091,8 @@ class XiaocaoLiveService:
         if len(pids) > 1:
             raise EnrichmentError("multiple exact sniffer processes block cleanup")
         self._disable_owned_capture_pac()
+        from xiaocao.yangsheng.runtime import drain_for_xiaocao_cleanup
+        drain_for_xiaocao_cleanup(getattr(self.sniffer, "base_url", "http://127.0.0.1:2022"))
         if pids:
             os.kill(pids[0], signal.SIGINT)
             for _ in range(100):
@@ -2106,6 +2115,13 @@ class XiaocaoLiveService:
         )
 
     def cancel_capture_wait(self, capture_job_id: str) -> dict[str, Any]:
+        from xiaocao.yangsheng.runtime import shared_shutdown_lease
+        with shared_shutdown_lease(
+            getattr(self.sniffer, "base_url", "http://127.0.0.1:2022"),
+        ):
+            return self._cancel_shared_capture_wait(capture_job_id)
+
+    def _cancel_shared_capture_wait(self, capture_job_id: str) -> dict[str, Any]:
         """Stop an idle capture wait without claiming completed-media cleanup."""
         capture = self.capture_store.latest(capture_job_id)
         if capture is None:
@@ -2137,6 +2153,8 @@ class XiaocaoLiveService:
         if len(pids) > 1:
             raise EnrichmentError("multiple exact sniffer processes block cleanup")
         self._disable_owned_capture_pac()
+        from xiaocao.yangsheng.runtime import drain_for_xiaocao_cleanup
+        drain_for_xiaocao_cleanup(getattr(self.sniffer, "base_url", "http://127.0.0.1:2022"))
         if pids:
             os.kill(pids[0], signal.SIGINT)
             for _ in range(100):

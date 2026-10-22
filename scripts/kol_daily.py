@@ -693,6 +693,8 @@ def _read_agent_line(request: dict[str, Any]) -> str:
         termios.tcsetattr(descriptor, termios.TCSANOW, response_attributes)
     try:
         print(json.dumps(request, ensure_ascii=False, sort_keys=True), flush=True)
+        if request.get("action") == "initialize_liuguan_native_replay":
+            return _read_native_agent_line(sys.stdin.fileno(), timeout=180)
         if request.get("action") in {
             "activate_xiaoetong_mini_program", "resolve_xiaoetong_page",
         }:
@@ -1262,6 +1264,37 @@ def _persisted_video_analysis_request(
         **request,
         "analysis_request_path": str(request_path),
     }
+
+
+def _run_liuguan_local_companion() -> dict[str, Any]:
+    # A separate non-investment catalogue; no source_event/report/handoff effects.
+    from xiaocao.yangsheng.native import CaptureError
+    from xiaocao.yangsheng.runtime import ENABLED, run_local
+    if not ENABLED.is_file(): return {"status": "disabled"}
+    try:
+        value = run_local()
+        if value.get("code") == "liuguan_native_connection_required":
+            reply = _read_agent_json({"event": "daily_yangsheng_native_input_required",
+                "action": "initialize_liuguan_native_replay", "api": "http://127.0.0.1:2022",
+                "reference": "liuguan-local-discovery.md", "scope": "liuguan_only"})
+            # The reply is only a wakeup; actual native socket/identity is re-read.
+            if reply.get("operation") == "initialize_liuguan_native_replay" and reply.get("status") == "connected":
+                value = run_local()
+            else: value = {"status": "waiting", "code": "liuguan_native_connection_required"}
+        return value
+    except CaptureError as error: return {"status": "degraded", "code": str(error)}
+    except Exception:
+        return {"status": "degraded", "code": "liuguan_local_companion_failed"}
+
+
+def _finish_liuguan_local_companion(result: dict[str, Any]) -> dict[str, Any]:
+    from xiaocao.yangsheng.native import CaptureError
+    from xiaocao.yangsheng.runtime import finish
+    if result.get("health") in {"waiting", "degraded"}:
+        return {"status": "waiting", "code": "xiaocao_continuation_preserved"}
+    try: return finish()
+    except (CaptureError, OSError, ValueError) as error:
+        return {"status": "waiting", "code": str(error) if isinstance(error, CaptureError) else "shared_cleanup_failed"}
 
 
 def _read_agent_json(request: dict[str, Any]) -> dict[str, Any]:
@@ -5418,6 +5451,10 @@ def main() -> int:
     if args.command == "capture-local":
         runtime = DailyRuntime.__new__(DailyRuntime)
         runtime.args = args
+        if datetime.now(timezone(timedelta(hours=8))).hour in range(7, 24):
+            companion = _run_liuguan_local_companion()
+            if companion.get("status") != "disabled":
+                _print({"yangsheng_capture": companion})
         mailbox_reconciliation = runtime.reconcile_local_mailbox()
         if mailbox_reconciliation:
             _print({"mailbox_reconciliation": mailbox_reconciliation})
@@ -5474,6 +5511,10 @@ def main() -> int:
         follow_result = _follow_cloud_handoff(runtime, result, coordinator=service)
         if follow_result is not None:
             _print(follow_result)
+        if result.get("status") != "outside_window":
+            cleanup = _finish_liuguan_local_companion(result)
+            if cleanup.get("status") != "disabled":
+                _print({"shared_capture_cleanup": cleanup})
         return 0
     if args.command == "capture-xiaocao-item":
         if not args.source_identity:

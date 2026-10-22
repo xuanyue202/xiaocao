@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Local metadata companion for Liuguan; owns no native or downloader actions."""
+"""Liuguan metadata discovery and opt-in shared local capture."""
 from __future__ import annotations
 
 import argparse
@@ -13,8 +13,28 @@ import sys
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=('discover',))
+    parser.add_argument('command', choices=('discover', 'capture', 'finish', 'bootstrap', 'status'))
+    parser.add_argument('--window-id', type=int); parser.add_argument('--pid', type=int)
+    parser.add_argument('--api', default='http://127.0.0.1:2022')
     args = parser.parse_args()
+    if args.command != 'discover':
+        from xiaocao.yangsheng.capture import CaptureError, DEFAULT_ROOT, database, initialize
+        from xiaocao.yangsheng.runtime import run_local, finish, bootstrap
+        try:
+            if args.command == 'capture': value = run_local(api=args.api)
+            elif args.command == 'finish': value = finish(api=args.api)
+            elif args.command == 'bootstrap':
+                if not args.window_id or not args.pid: parser.error('fresh verified window ID and PID required')
+                value = bootstrap(args.window_id, args.pid, api=args.api)
+            else:
+                with database(DEFAULT_ROOT) as db:
+                    initialize(db)
+                    value = {'status': 'inventory', 'publisher_count': db.execute('SELECT count(*) FROM publishers').fetchone()[0],
+                        'replay_count': db.execute('SELECT count(*) FROM replays').fetchone()[0],
+                        'verified_count': db.execute('SELECT count(*) FROM artifacts').fetchone()[0],
+                        'states': dict(db.execute('SELECT state,count(*) FROM replays GROUP BY state').fetchall())}
+        except CaptureError as error: value = {'status': 'degraded', 'code': str(error)}
+        print(json.dumps(value, ensure_ascii=False)); return 0 if value['status'] not in ('degraded',) else 1
     vault = Path(os.environ.get('YANGSHENG_VAULT_ROOT', str(Path.home() / 'Documents/xuanyue notebook')))
     entry = vault / '_system/yangsheng-capture/capture.py'
     if not entry.is_file():
