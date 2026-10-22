@@ -368,6 +368,16 @@ the audited cell geometry. Existing tokens are retained; recovered tokens must
 remain inside that cell and meet the unchanged confidence floor. This is
 read-only capture repair, not status or side inference from previous orders.
 
+A non-empty low-confidence `成交数量` cell is reread at both 3x and 4x within
+that same audited cell. Both reads must meet the original confidence floor and
+prove the same nonnegative exact integer; a strict original integer must also
+agree. Only the observed digits-plus-trailing-dot form is eligible when the
+original is malformed; other formats, including locale quantities, stay unproved.
+Missing, conflicting, fractional or malformed enlarged reads
+leave the original token unproved. Never strip punctuation from `500.` or infer
+the quantity from order status; the normal Python quantity and trade checks
+still apply.
+
 
 Calendar midnight alone does not prove an APP order-session rollover. Follow
 Operating Contract §4 for clock-bound current-session cancel recovery and

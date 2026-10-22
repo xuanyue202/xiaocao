@@ -261,6 +261,14 @@ the full native broker probe before `supports_submit=true`.
 
 ## Local acceptance, 2026-08-30 through 2026-08-31
 
+2026-10-22 的收盘后只读验收发现：当日委托的非零成交数量 `500` 偶尔被
+Vision 读为低置信度 `500.`。原严格整数和置信度门正确阻断了完整账户读回，
+独立 BUY 预检不依赖该无关单元格。修复在已审计的原单元格内分别放大 3x/4x
+重读；两份高置信度读数必须为同一个非负整数，且与严格整数形式的原数值一致。
+原文格式异常时仅处理本次已观察的数字加末尾小数点；逗号等其他格式保持缺证。
+缺一份、冲突或小数都保留原缺证；不删标点猜数，不以已成状态推导数量，
+不改变 Python 的数量、账户或成交对账约束。
+
 - In-session Keychain unlock reached the same account-bound full-query surface.
 - Positions parsed 5 rows. Their `最新市值` sum equaled the displayed
   `股票市值`.

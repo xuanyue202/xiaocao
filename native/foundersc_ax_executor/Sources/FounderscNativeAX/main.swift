@@ -494,6 +494,30 @@ private func uniqueOrderPriceCandidateIndex(_ readings: [String?]) -> Int? {
     return selected?.index
 }
 
+private func strictGridQuantity(_ raw: String) -> Decimal? {
+    let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard text.range(of: #"^[0-9]+(?:\.0+)?$"#, options: .regularExpression) != nil else { return nil }
+    return Decimal(string: text, locale: Locale(identifier: "en_US_POSIX"))
+}
+
+private func agreedQuantityCandidateIndex(original: String, readings: [String?]) -> Int? {
+    // Two enlarged reads must independently prove the same exact integer.
+    // A valid original value must agree too; punctuation is never stripped.
+    guard readings.count == 2, let first = readings[0], let second = readings[1],
+          let left = strictGridQuantity(first), let right = strictGridQuantity(second),
+          left == right else { return nil }
+    if let old = strictGridQuantity(original) {
+        if old != left { return nil }
+    } else if original.trimmingCharacters(in: .whitespacesAndNewlines)
+        .range(of: #"^[0-9]+\.$"#, options: .regularExpression) == nil {
+        // Preserve other original formats, including locale quantities which
+        // Python may validly interpret. Only the observed trailing-dot defect
+        // is eligible for this malformed-original recovery.
+        return nil
+    }
+    return 0
+}
+
 private func recoverMissingTableText(
     image: CGImage, screenBounds: Bounds, shapes: [TableShape], initialTokens: [OCRToken]
 ) -> [OCRToken] {
@@ -503,7 +527,7 @@ private func recoverMissingTableText(
           rows.count == shapes[0].rowCount,
           screenBounds.width > 0, screenBounds.height > 0 else { return tokens }
     let positionNumbers: Set<String> = ["当前价", "证券数量", "可卖数量"]
-    let required: Set<String> = ["证券代码", "买卖标志", "状态说明", "委托价格", "委托数量", "委托编号", "成交编号", "当前价", "证券数量", "可卖数量"]
+    let required: Set<String> = ["证券代码", "买卖标志", "状态说明", "委托价格", "委托数量", "委托编号", "成交编号", "成交数量", "当前价", "证券数量", "可卖数量"]
     for row in rows {
         for column in columns where required.contains(column.title) {
             guard let bounds = column.bounds else { continue }
@@ -515,6 +539,9 @@ private func recoverMissingTableText(
                     && y >= cell.y && y <= cell.y + cell.height
             }
             let existing = tokens.filter(inside).sorted { $0.bounds.x < $1.bounds.x }
+            // Preserve the old empty-quantity behavior. This recovery applies
+            // only to an observed nonempty low-confidence filled quantity.
+            if column.title == "成交数量" && existing.isEmpty { continue }
             // A low-confidence holding value needs an independent cell crop
             // that agrees numerically; already-proven values remain untouched.
             let recheckPosition = positionNumbers.contains(column.title)
@@ -522,7 +549,9 @@ private func recoverMissingTableText(
             let malformedOrderPrice = column.title == "委托价格"
                 && !existing.isEmpty
                 && strictGridOrderPrice(existing.map(\.text).joined()) == nil
-            guard existing.isEmpty || recheckPosition || malformedOrderPrice else { continue }
+            let recheckFilledQuantity = column.title == "成交数量" && !existing.isEmpty
+                && existing.contains { $0.confidence < minimumCriticalOCRConfidence }
+            guard existing.isEmpty || recheckPosition || malformedOrderPrice || recheckFilledQuantity else { continue }
             let rect = CGRect(x: (cell.x - screenBounds.x) * Double(image.width) / screenBounds.width,
                 y: (cell.y - screenBounds.y) * Double(image.height) / screenBounds.height,
                 width: cell.width * Double(image.width) / screenBounds.width,
@@ -541,7 +570,7 @@ private func recoverMissingTableText(
                 guard let enlarged = context.makeImage() else { return nil }
                 return recognizeText(image: enlarged, screenBounds: cell, smallCell: true)
             }
-            if malformedOrderPrice {
+            if malformedOrderPrice || recheckFilledQuantity {
                 let captures = [recapture(scale: 3), recapture(scale: 4)]
                 let readings: [String?] = captures.map { recovered in
                     guard let recovered, !recovered.isEmpty,
@@ -549,7 +578,10 @@ private func recoverMissingTableText(
                     else { return nil }
                     return recovered.sorted { $0.bounds.x < $1.bounds.x }.map(\.text).joined()
                 }
-                guard let selected = uniqueOrderPriceCandidateIndex(readings),
+                let selected = recheckFilledQuantity
+                    ? agreedQuantityCandidateIndex(original: existing.map(\.text).joined(), readings: readings)
+                    : uniqueOrderPriceCandidateIndex(readings)
+                guard let selected,
                       let recovered = captures[selected] else { continue }
                 tokens.removeAll(where: inside)
                 tokens.append(contentsOf: recovered)
