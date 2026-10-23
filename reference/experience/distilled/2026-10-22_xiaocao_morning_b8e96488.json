@@ -1,0 +1,339 @@
+{
+  "schema_version": 1,
+  "knowledge_status": "reusable_knowledge",
+  "authority": 0,
+  "date": "2026-10-22",
+  "kind": "xiaocao_live_method_and_regime_observation",
+  "author": "小草",
+  "source": "2026年10月22日大师班直播（文本覆盖盘前至约09:46的盘中混合时段）",
+  "summary": "可复用部分是弱市中的仓位与模式治理：环境由纯空仓向局部轮动演变时仍只使用轮动级轻仓，以多模式组合分散单一模式风险；当日开盘型机会只在最初几分钟评估，09:35后不再低吸或追单；高分若主要来自ST、新股或高开标的，不把分数直接当买点。来源中的个股涨跌与模式盈亏只是当日口述盘中例子，不是系统实绩，也不能跨日重放。",
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_netdisk_enrichment/artifacts/kol-netdisk-2d614ff0d48d6e10/20261022 盘前大师班直播10月22日-compressed.txt",
+      "sha256": "b8e964889103d0bd5e6259f491562b78c002510cf4389a29184d8be1637b8c01",
+      "size": 13143,
+      "role": "完整来源证据"
+    },
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261023_01a165f5/xiaocao_market_evidence.json",
+      "sha256": "b3120625ff9e7075cd5ce69f452235347198b144b880a2472773880d7a447b4f",
+      "size": 7479,
+      "role": "系统行情事实；只核对2026-10-22收盘"
+    },
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/recommend_2026-10-22.md",
+      "sha256": "a1de009b88e3cb52166341bd46dd883f90ac25a1c2117303b589d2973370a79d",
+      "size": 9013,
+      "role": "冻结推荐审计；只证明本地冻结批次的候选与状态"
+    },
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/morning_bundles/2026-10-22/40aba23b9e5f011047fe2319b04f75c0fa71b2f0f8c33cb6b10f49238ae17613/original/snapshot.jsonl",
+      "sha256": "1b82a2affe91ff6b06d8cef955980c1a884e92061c297e981ac5ed7f71aabc35",
+      "size": 33308,
+      "role": "10月22日不可变九行候选快照"
+    }
+  ],
+  "posture": {
+    "regime": "2026-10-22来源日由接近空仓向局部轮动演变，但大盘仍弱；不应用为10月23日当前姿态",
+    "dominant_style": "弱市中优先观察低位、超跌与低开条件，回避无承接的高位追涨",
+    "risk": "只用轮动级轻仓，避免单一模式或单票连续加仓；所有当日时钟信号已过期",
+    "style_ranking": ["下跌超跌的当日早段观察", "低开或绿盘的N半当日候选", "开得不高的红盘起爆当日候选", "紫薇或其他高位追涨模式在该弱市环境中回避"],
+    "source_day_initial": "接近空仓，开始出现轮动迹象",
+    "source_day_revised": "从纯空仓环境修正为一部分开始轮动，但A股仍下跌，市场仍很差",
+    "position_implication": "只允许轮动级轻仓，不重仓，不在单一模式或单只股票上连续加仓",
+    "posture_update": "not_applied",
+    "reason": "该来源在10月23日才完成语义处理，内容又横跨盘前和10月22日盘中；现有posture_current截至2026-07-03的旧窗口，不能把迟到的一日盘中观察直接合成为10月23日姿态。仅保留推理和候选假设。"
+  },
+  "regime_call": {
+    "label": "弱市中的局部轮动，尚非见底确认",
+    "confidence": "medium",
+    "horizon": "仅限2026-10-22盘中观察，不延伸到2026-10-23",
+    "evidence": [
+      "作者先称仍是空仓环境、略有轮动，随后明确修正为部分进入轮动。",
+      "作者同时反复称大盘仍跌、行情很差，并把放量大跌视为可能止跌的必要条件。",
+      "系统收盘事实显示上证指数跌1.48%、创业板指跌4.37%，支持当日弱市描述，但不验证10月23日状态。"
+    ],
+    "what_would_falsify": [
+      "后续交易日量价修复并形成持续主线，说明该弱轮动状态已过期。",
+      "后续再度普跌且轮动消失，说明局部轮动也未能维持。"
+    ],
+    "falsifiers": ["后续量价修复并形成持续主线", "后续再度普跌且轮动消失"]
+  },
+  "directions": [
+    {
+      "name": "下跌超跌/下跌低吸",
+      "stance": "作者在当日弱市优先观察下跌超跌；09:35后不再做这类当日开盘低吸",
+      "conditions": ["2026-10-22当日低位或超跌语境", "开盘最初约五分钟内评估"],
+      "risks": ["没有放量时未必见底", "ST、新股、高开与高位过滤来自不同盘中段和模式，不能合并成这一模式的统一硬门", "当日口述案例不能当作次日信号"]
+    },
+    {
+      "name": "N半/N字模式",
+      "stance": "绿盘低开时可纳入组合观察；个股音译未确认",
+      "conditions": ["来源当日为低开或绿盘语境", "与其他模式分组组合"],
+      "risks": ["原文所说第一个候选是主板仅是当日特征，不是所有N半的准入条件", "近期表现容易诱发追涨和加仓上头", "持有期统计需按模式分开"]
+    },
+    {
+      "name": "红盘起爆",
+      "stance": "因近期表现尚可而保留，但只选开得不高的候选",
+      "conditions": ["开盘涨幅不高", "仍在开盘早段"],
+      "risks": ["开九个点或十二个点应放弃", "高开不等于安全"]
+    },
+    {
+      "name": "紫薇/高位追涨模式",
+      "stance": "在本次弱市中主动回避；不包括因近期表现较好而继续观察的红盘起爆例外",
+      "conditions": ["仅作监控，不据高分追入"],
+      "risks": ["熊市中高位模式的第五日统计容易恶化", "盘中大涨属于事后观察"]
+    }
+  ],
+  "stocks": [
+    {
+      "surface_form": "冰山冷热",
+      "official_name": "冰山冷热",
+      "ticker": "000530.XSHE",
+      "role": "当日开得不高的红盘起爆例子",
+      "source_claim": "作者盘中称其接近或已经涨停",
+      "system_check": "2026-10-22收盘9.49元，涨9.97%",
+      "decision_use": "仅用于核对当日例子，不跨日追入"
+    },
+    {
+      "surface_form": "莱美/蓝美",
+      "official_name": "莱美药业",
+      "ticker": "300006.XSHE",
+      "role": "前一日持仓不及预期的退出例子",
+      "source_claim": "有持仓者应早走，或利用反抽退出",
+      "system_check": "2026-10-22收盘8.12元，跌12.69%",
+      "decision_use": "保留不及预期时的退出纪律，不推断任何实际成交"
+    },
+    {
+      "surface_form": "宁波东力",
+      "official_name": null,
+      "ticker": null,
+      "role": "09:33至09:34高分盘中例子",
+      "source_claim": "作者口述1000至1200分及随后上涨",
+      "system_check": "本批系统行情证据未核对该资产",
+      "decision_use": "只作当日事后监控案例"
+    },
+    {
+      "surface_form": "俊雅/重雅科技/均亚",
+      "official_name": null,
+      "ticker": null,
+      "role": "N半模式音译候选",
+      "source_claim": "作者口述为第一候选及盘中上涨",
+      "system_check": "音译冲突，缺少代码，不能据行情列表猜成骏亚科技",
+      "decision_use": "排除资产级行动"
+    },
+    {
+      "surface_form": "文峰光电、永达、新雅、杭州、华池、防脱、汇丰/回封",
+      "official_name": null,
+      "ticker": null,
+      "role": "盘中高分、涨跌或含混口述例子",
+      "source_claim": "包含ST、新股、高分、涨停或情绪化观察",
+      "system_check": "名称或身份不足，未完成资产解析",
+      "decision_use": "全部排除资产级行动，不猜股票"
+    }
+  ],
+  "method_principles": [
+    {
+      "principle": "环境从空仓向轮动变化时，仓位升级应慢于标签变化。",
+      "application": "先维持轮动级轻仓；只有后续量价与持续主线确认后才重新评估。",
+      "failure_condition": "把一两个盘中涨停当成全面见底，会导致仓位过快放大。"
+    },
+    {
+      "principle": "多个短线模式分组组合，避免单一模式或单票连续加仓。",
+      "application": "单个模式有赚有亏时，以总风险预算和相关性约束组合，而不是追求每个模式全红。",
+      "failure_condition": "模式相关性在弱市同时升高，组合仍可能一起回撤。"
+    },
+    {
+      "principle": "开盘信号有严格时钟边界。",
+      "application": "最初约五分钟内完成判断；09:35以后不低吸、不补单、不追当天已经走出的案例。",
+      "failure_condition": "新的独立盘中证据形成另一套明确时窗时，需另行评估，不能沿用本场旧信号。"
+    },
+    {
+      "principle": "分数必须和资产类型、开盘位置及市场环境一起解释。",
+      "application": "ST、新股、九至十二点高开或高位追涨候选即使高分也可跳过。",
+      "failure_condition": "未来样本若显示这些过滤条件持续损失有效机会，才进入正式研究，而不是直接调参。"
+    },
+    {
+      "principle": "持有期不能跨模式一刀切。",
+      "application": "下跌低吸可研究第二至第五日开盘/收盘退出；高位模式在熊市不应机械持到第五日。",
+      "failure_condition": "必须用分模式、分环境样本验证，单日口述不足以形成参数。"
+    }
+  ],
+  "exit_lessons": [
+    {
+      "lesson": "前一日候选次日明显不及预期时优先退出。",
+      "example": "作者以莱美为例，给出早走或等反抽走的两种处理。",
+      "boundary": "这是来源纪律和当日例子，不证明家庭或系统有该持仓。"
+    },
+    {
+      "lesson": "高位模式的退出统计不能直接套用低吸模式。",
+      "example": "作者认为下跌低吸统计到第五日可能更合适，而熊市高位模式不宜统计第五日。",
+      "boundary": "需要历史样本验证后才能影响策略参数。"
+    }
+  ],
+  "decision_trace": [
+    "开播时同时观察到美股前夜上涨与A股未跟随高开；他开头认为这也可能是好事、后段称其神奇，不把这项差异单独定向。空仓和弱市判断来自其对A股本地环境的其他表述。",
+    "进入盘中后优先查看下跌超跌，并强调开盘最初约五分钟和09:35截止线。",
+    "盘中个别模式和个股走强，但高分主要落在ST、新股或高位候选；作者拒绝紫薇等高位追涨，同时因红盘起爆近期表现尚可而继续观察这一例外。",
+    "临近结束时把环境从纯空仓修正为局部轮动，同时维持大盘仍弱、仓位仍是轮动仓位的判断。",
+    "最后提出组合分散、单票不连续加仓及分模式研究第二至第五日退出的可复用方法。"
+  ],
+  "judgment_heuristics": [
+    "没有放量的大跌或其他量价确认，不把盘中反抽视为见底。",
+    "一日口述的模式收益只用于理解老师当时的决策过程，不写成系统收益。",
+    "资产名存在音译冲突时保留原表述并停止解析，不用相似证券名补全。",
+    "冻结推荐未命中来源个股，只说明两套候选没有同名交集，不证明老师模式无效，也不证明系统漏买。"
+  ],
+  "timing_notes": [
+    "标题虽含盘前，但文本已经进入盘中并延续至约09:46，应视为盘前至盘中的混合直播。",
+    "作者所说最初五分钟和09:35以后不吸，绑定2026-10-22当日开盘；该窗口已过期。",
+    "10月23日处理时只能核对10月22日收盘，不能把10月22日盘中窗口延长到10月23日。"
+  ],
+  "typo_corrections": [
+    {
+      "raw": "来美/蓝美",
+      "normalized": "莱美药业",
+      "basis": "来源上下文与系统行情证据一致",
+      "confidence": "high"
+    },
+    {
+      "raw": "冰山/冰箱/冰山的热",
+      "normalized": "冰山冷热",
+      "basis": "来源反复出现完整名称且系统行情证据有同名资产",
+      "confidence": "high"
+    },
+    {
+      "raw": "俊雅/重雅科技/均亚",
+      "normalized": null,
+      "basis": "多个音译互相冲突且原文没有代码",
+      "confidence": "unresolved"
+    },
+    {
+      "raw": "华池、文峰光电、永达、新雅、杭州、防脱、汇丰/回封",
+      "normalized": null,
+      "basis": "名称不完整、可能是ASR音译或缺少市场代码",
+      "confidence": "unresolved"
+    }
+  ],
+  "hypotheses": [
+    {
+      "claim": "在固定总风险下组合多个短线模式，可能降低单一模式波动并提高执行一致性。",
+      "implied_rule": "复用XH-276；本场新增语境是环境刚由纯空仓转为局部轮动时仍维持低总风险，并禁止在单一模式或单票连续加仓。",
+      "falsifiable_test": "按市场环境切片，对相同总风险下的单模式与多模式组合比较最大回撤、胜率、相关性和滑点。",
+      "expected_effect": "降低最大回撤与单票集中风险",
+      "category": "position_and_portfolio",
+      "status": "candidate_only",
+      "promotion_gate": "须经research_run和人工门禁，不自动调参。"
+    },
+    {
+      "claim": "下跌低吸与高位模式需要不同的第二至第五日退出曲线。",
+      "implied_rule": "退出研究按模式和环境分层，不能共用一个第五日持有参数。",
+      "falsifiable_test": "分别比较各模式第二至第五日开盘卖与收盘卖的累计收益和回撤，并加入牛熊环境交互项。",
+      "expected_effect": "减少高位模式在熊市中持有过久的尾部损失",
+      "category": "exit_timing",
+      "status": "candidate_only",
+      "promotion_gate": "单场直播不构成参数证据。"
+    }
+  ],
+  "existing_hypothesis_feedback": [
+    {
+      "hypothesis_id": "XH-235",
+      "relation": "partial_support_not_ingested",
+      "summary": "来源只明确10月22日当日开盘低吸应尽量早、09:35后不再吸；XH-235泛指盘中高分信号的普遍时效，范围更宽，因此只记录部分支持，不作为本次可摄入复现。"
+    },
+    {
+      "hypothesis_id": "XH-271",
+      "relation": "supporting_observation",
+      "summary": "来源在弱市优先下跌超跌，并回避高位追涨，方向上与弱市模式分层一致；仍只是单日观察。"
+    },
+    {
+      "hypothesis_id": "XH-274",
+      "relation": "supporting_observation",
+      "summary": "盘中提到大跌幅高分标的随后修复，但属于事后监控例子，不能直接当成可执行收益。"
+    },
+    {
+      "hypothesis_id": "XH-276",
+      "relation": "supporting_observation",
+      "summary": "作者明确主张多个模式组合以提升相对稳定性。"
+    },
+    {
+      "hypothesis_id": "XH-277",
+      "relation": "supporting_observation",
+      "summary": "作者明确跳过开九个点或十二个点的候选，支持高开风险过滤的研究方向。"
+    },
+    {
+      "hypothesis_id": "XH-283",
+      "relation": "partial_overlap_not_merged",
+      "summary": "本来源支持最初五分钟和09:35边界，但没有XH-283中的开盘跌破或09:38等细条件，因此不整条合并。"
+    },
+    {
+      "hypothesis_id": "feedback_backlog_291",
+      "relation": "not_addressed",
+      "summary": "本次反馈扫描无calibration flagged；其余历史反馈未被本来源直接处理。7月26日关于早盘弱轮动不可外推全天的旧校准与本来源无直接证据关系，不强行合并。"
+    }
+  ],
+  "strategy_hit_audit": {
+    "frozen_recommendation": {
+      "date": "2026-10-22",
+      "executable_star_e": "NONE",
+      "mode_state": "标杆短线起爆为COLD",
+      "rows": ["鸿富诚", "江龙船艇", "瑞丰高材", "澳弘电子", "联特科技", "昂瑞微", "春秋电子", "金石亚药", "欣旺达"],
+      "overlap_with_source_named_assets": [],
+      "interpretation": "只证明冻结批次没有来源中的同名个股；不能据此否定老师其他模式、盘中样本，也不代表系统漏买。"
+    },
+    "source_examples": [
+      {
+        "asset": "冰山冷热",
+        "status": "not_emitted_by_frozen_snapshot",
+        "note": "来源盘中称涨停，系统收盘核对为涨9.97%；这不是本地推荐命中或成交。"
+      },
+      {
+        "asset": "莱美药业",
+        "status": "not_emitted_by_frozen_snapshot",
+        "note": "来源是退出纪律例子，系统收盘核对跌12.69%；没有本地买入证明。"
+      },
+      {
+        "asset": "俊雅/重雅科技/均亚、文峰光电、永达、新雅、宁波东力、华池等",
+        "status": "no_reliable_identity_or_local_evidence",
+        "note": "音译或身份不充分，不做代码映射，不判断命中。"
+      }
+    ],
+    "paper_ledger": {
+      "same_day_rows": [
+        "09:35 东方嘉盛 HARD_STOP卖出",
+        "09:45 果麦文化 HARD_STOP卖出"
+      ],
+      "interpretation": "两条均为无关既有仓位卖出，不是来源案例的买入或收益证明。"
+    }
+  },
+  "reality_check": {
+    "trade_date": "2026-10-22",
+    "verified_closes": [
+      "上证指数3658.0256，跌1.48%",
+      "创业板指2576.901，跌4.37%",
+      "冰山冷热9.49元，涨9.97%",
+      "莱美药业8.12元，跌12.69%"
+    ],
+    "unverified_source_facts": [
+      "纳斯达克前夜涨一个多点",
+      "盘中各模式加六、加三、亏三至四点等口述结果",
+      "未解析音译资产的分数、涨幅和涨停状态"
+    ],
+    "boundary": "行情事实只能支持10月22日当日收盘核对，不能证明盘中成交、系统实绩或10月23日延续。"
+  },
+  "action_summary": {
+    "posture_update": "not_applied：现有姿态窗口停在2026-07-03，本来源是10月22日迟到的盘前至盘中混合材料，不更新10月23日姿态。",
+    "playbook_update": "no_change：仅保留弱市轻仓、组合分散、当日开盘低吸时钟和分模式退出的authority=0研究候选。",
+    "hypothesis_update": "deduplicated：仅XH-276属于精确复现；XH-235只记partial_support_not_ingested，不放入hypotheses；分模式第二至第五日退出保留为唯一新候选，不自动调参。",
+    "audit_evidence": "已核对完整36段、10月22日系统收盘、冻结推荐九行与同日纸账；来源案例没有本地同名推荐或买入证明。",
+    "instrumentation_todo": "no_issue_created：后续研究若获授权，再按模式、分钟与环境分层采样；本次不改系统。",
+    "routing": ["authority_zero_knowledge", "research_candidate_only", "no_posture_apply", "no_book_execution", "no_strategy_tuning"]
+  },
+  "limitations": [
+    "原始文本含明显ASR错字，多个证券名无法可靠解析。",
+    "来源没有可验证的成交回报；所有模式涨跌只按作者口述案例保留。",
+    "系统行情只有日线收盘快照，不能验证09:33至09:46的逐分钟路径。",
+    "冻结推荐与来源模式口径不同，零同名交集不是策略优劣结论。",
+    "家庭持仓和本来源具名资产没有可靠重合证明，不能据此生成家庭个股交易。"
+  ]
+}
