@@ -606,7 +606,7 @@ class XiaocaoLiveCaptureDriver:
             and not any(capture.get(key) for key in (
                 "candidate_id", "task_id", "source_job_id", "expected_source",
                 "native_unbound_media", "candidate", "download_task_id",
-                "download_idempotency_key", "media_path",
+                "download_idempotency_key", "media_path", "retained_live_observation",
             ))
         )
 
@@ -649,25 +649,50 @@ class XiaocaoLiveCaptureDriver:
             and not any(capture.get(key) for key in (
                 "expected_source", "source_job_id", "download_task_id", "task_id",
                 "native_unbound_media", "native_media_lineage", "netdisk_job_id",
+                "download_idempotency_key", "media_path", "handoff_id",
             ))
         ):
             manifest_path = self.output_dir / "manifest.json"
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             item = manifest.get("items", {}).get(identity, {})
+            candidate = capture.get("candidate") or {}
+            live_wait = (
+                isinstance(candidate, dict)
+                and item.get("media_request_observed") is True
+                and item.get("observed_page_state") == "live"
+                and item.get("activated") is False
+                and item.get("playback_window_closed") is True
+                and candidate.get("host") == "liveplay-mp.xiaoeknow.com"
+                and candidate.get("media_type") in {"m3u8", "flv"}
+                and bool(candidate.get("id"))
+                and bool(candidate.get("live_id"))
+                and capture.get("candidate_key") == f"live:{candidate['live_id']}"
+            )
             if (
                 item.get("capture_job_id") == capture_job_id
                 and item.get("entry_kind") == "wechat_mini_program"
                 and item.get("status") == "awaiting_playback"
                 and not item.get("source_identity")
-                and item.get("media_request_observed") is False
+                and not any(item.get(key) for key in ("candidate_id", "task_id", "handoff_id"))
+                and (item.get("media_request_observed") is False or live_wait)
             ):
-                # Preserve the rejected observation and original baseline/ID.
-                # Global detection is not the original share's native lineage.
+                # Preserve observations and the original baseline/ID. Neither
+                # a global candidate nor a live stream is accepted finite media.
+                observation = ({"retained_live_observation": {
+                    "candidate": candidate,
+                    "candidate_key": capture.get("candidate_key"),
+                    "observed_page_state": "live",
+                    "media_request_observed": True,
+                    "playback_window_closed": True,
+                    "source_accepted": False,
+                }} if live_wait else {
+                    "rejected_global_candidate": candidate,
+                    "rejected_global_candidate_key": capture.get("candidate_key"),
+                })
                 capture = service.capture_store.transition(
-                    capture, "unaccepted_global_observation_reconciled",
+                    capture, "live_observation_wait_reconciled" if live_wait else "unaccepted_global_observation_reconciled",
                     status="awaiting_capture",
-                    rejected_global_candidate=capture.get("candidate"),
-                    rejected_global_candidate_key=capture.get("candidate_key"),
+                    **observation,
                     candidate=None, candidate_key=None,
                 )
         if capture is None or capture.get("status") != "awaiting_capture":
