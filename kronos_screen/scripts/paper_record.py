@@ -118,7 +118,7 @@ def _now_iso() -> str:
     return datetime.now().isoformat(timespec="seconds")
 
 
-def _paper_support_context(account: dict, positions: list[dict], client=None) -> tuple[dict, dict]:
+def _paper_support_context(account: dict, positions: list[dict], client=None, *, policy_fence=None) -> tuple[dict, dict]:
     try:
         has_open_b = any(isinstance(row, dict) and row.get("book") == "B"
                          and row.get("exit_date") is None and row.get("exit_price") is None
@@ -130,7 +130,7 @@ def _paper_support_context(account: dict, positions: list[dict], client=None) ->
     risk = paper_support.evaluate_paper_risk(
         ROOT, account, positions, now=now, mark_provider=lambda code: marks.get(code, {}),
     )
-    decision = kol_policy.load_decision(ROOT / "output/live/kol_policy/decisions", book="B", runtime="paper", now=now)
+    decision = kol_policy.load_decision(ROOT / "output/live/kol_policy/decisions", book="B", runtime="paper", now=now, **(policy_fence or {}))
     return risk, decision
 
 
@@ -915,6 +915,7 @@ def _parse_args():
     ap = argparse.ArgumentParser()
     ap.add_argument("--date", default=datetime.now().strftime("%Y-%m-%d"))
     ap.add_argument("--morning-freeze-receipt", type=Path)
+    ap.add_argument("--kol-review-receipt", type=Path)
     ap.add_argument("--allow-legacy-snapshots", action="store_true",
                     help="explicit isolated experiment only; forbidden in formal morning automation")
     ap.add_argument(
@@ -1045,11 +1046,12 @@ def _main_locked(a=None):
 
     strategy_adjudication = None
     experiment_capture = None
+    policy_fence = {}
 
     def no_buy_support(reason: str, *, context=None) -> None:
         if a.pick != "mode_exec_star":
             return
-        risk, decision = context or _paper_support_context(account, paper_positions)
+        risk, decision = context or _paper_support_context(account, paper_positions, policy_fence=policy_fence)
         _paper_support_claim(a, risk, decision, [], [], reason=reason, snapshot_sha256=snapshot_sha256,
                              strategy_adjudication=strategy_adjudication,
                              experiment_capture=experiment_capture)
@@ -1084,12 +1086,6 @@ def _main_locked(a=None):
             # Legacy/test fallback: derive ★E only when the immutable dated
             # producer artifact is unavailable.
             latest_rows = select_executable_candidates(latest_rows, top_n=3)
-        decision_for_selection = kol_policy.load_decision(
-            ROOT / "output/live/kol_policy/decisions",
-            book="B",
-            runtime="paper",
-            now=datetime.now(A_SHARE_TZ),
-        )
         # Existing consumption.snapshot_sha256 is the raw file digest. The
         # shared explanation must use the producer's canonical digest instead.
         from xiaocao.live.trading_runner import frozen_rows_digest
@@ -1097,8 +1093,21 @@ def _main_locked(a=None):
             "market_date": a.date, "snapshot_sha256": frozen_rows_digest(latest_rows),
             "snapshot_raw_sha256": snapshot_sha256, "snapshot_row_count": len(latest_rows),
         }
+        support_receipt = None
+        if getattr(a, "kol_review_receipt", None):
+            from xiaocao.live.paper_morning_kol import read_support
+            try:
+                support_receipt = read_support(a.kol_review_receipt, a.date, explanation_freeze,
+                                              Path(os.environ["XIAOCAO_DAILY_RUN_DIR"]))
+            except (OSError, ValueError, KeyError, TypeError):
+                support_receipt = {"status": "deferred", "reason": "PAPER_KOL_SUPPORT_RECEIPT_UNPROVEN"}
+        policy_fence = kol_policy.review_publication_fence(support_receipt)
+        decision_for_selection = kol_policy.load_decision(
+            ROOT / "output/live/kol_policy/decisions", book="B", runtime="paper",
+            now=datetime.now(A_SHARE_TZ), **policy_fence,
+        )
         adjudication = adjudicate_book_b(latest_rows, decision_for_selection,
-                                        freeze=explanation_freeze, runtime="paper")
+            freeze=explanation_freeze, runtime="paper", support_receipt=support_receipt)
         try:
             experiment_capture = record_selection_experiments(ROOT, a.date, snaps, adjudication.receipt)
         except (OSError, ValueError, KeyError, TypeError) as exc:
@@ -1221,7 +1230,7 @@ def _main_locked(a=None):
         raise SystemExit("--deploy-ratio must be in (0, 1]")
     ks_factor, ks_reason = _kill_switch_factor()
     print(f"{a.date}: kill-switch — {ks_reason} (deploy factor {ks_factor:.1f})")
-    policy_context = _paper_support_context(account, paper_positions, client) if a.pick == "mode_exec_star" else None
+    policy_context = _paper_support_context(account, paper_positions, client, policy_fence=policy_fence) if a.pick == "mode_exec_star" else None
     if policy_context and policy_context[0]["status"] == "BLOCKED":
         no_buy_support("PAPER_RISK_BLOCKED", context=policy_context)
         return
@@ -1311,7 +1320,7 @@ def _main_locked(a=None):
         baseline = eligible_buyable
         risk, decision = policy_context
         decision = kol_policy.load_decision(ROOT / "output/live/kol_policy/decisions",
-                                            book="B", runtime="paper", now=datetime.now(A_SHARE_TZ))
+                                            book="B", runtime="paper", now=datetime.now(A_SHARE_TZ), **policy_fence)
         if any(row.get("kol_mode_override") for row in baseline) and (
             decision.get("status") != "validated"
             or decision.get("decision_id") != decision_for_selection.get("decision_id")

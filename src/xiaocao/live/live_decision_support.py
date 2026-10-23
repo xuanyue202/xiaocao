@@ -382,10 +382,10 @@ def _evaluate_live_risk_locked(state_dir: Path, *, now: datetime,
                        {"PREVIOUS_RECEIPT_INVALID", str(exc) or type(exc).__name__})))
 
 
-def read_policy(root: Path | None, now: datetime) -> dict:
+def read_policy(root: Path | None, now: datetime, **publication_fence) -> dict:
     if root is None:
         return {"status": "neutral", "book": "B", "runtime": "live", "reason": "POLICY_NOT_CONFIGURED"}
-    return load_decision(root, book="B", runtime="live", now=now)
+    return load_decision(root, book="B", runtime="live", now=now, **publication_fence)
 
 
 def buy_cap(decision: dict, risk: AccountRiskReceipt, code: str, base_factor: float) -> dict:

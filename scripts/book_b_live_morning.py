@@ -295,23 +295,8 @@ def _review_rendezvous(request: dict, *, now=None, sleep=None, monotonic=None,
     sleep = sleep or time.sleep
     monotonic = monotonic or time.monotonic
     started = monotonic()
-    payload = dict(request)
-    # K/P are optional supporting scores. Legacy frozen rows may represent
-    # their missing values as NaN; expose null in the review copy only and
-    # retain an explicit conversion record plus the original freeze digest.
-    # Never normalize execution fields or infinities into valid evidence.
-    candidates = [dict(row) for row in payload.get("candidates", [])]
-    missing_values = []
-    for index, row in enumerate(candidates):
-        for field in ("k_score", "p_score"):
-            value = row.get(field)
-            if isinstance(value, float) and math.isnan(value):
-                row[field] = None
-                missing_values.append({"candidate_index": index, "code": row.get("code"),
-                                       "field": field, "source_value": "NaN"})
-    if missing_values:
-        payload["candidates"] = candidates
-        payload["candidate_missing_values"] = missing_values
+    from xiaocao.kol.opening_preparation import normalized_review_facts
+    payload = normalized_review_facts(request)
     requested = datetime.fromisoformat(payload["requested_at"])
     entry_deadline = datetime.fromisoformat(payload["entry_deadline"])
     if requested.utcoffset() is None or entry_deadline.utcoffset() is None:
@@ -773,15 +758,21 @@ def _run(args, notices):
             changed = kol_inputs is None or fresh["source_fingerprint"] != kol_inputs["source_fingerprint"]
             loaded_evidence = loaded.get("evidence") or {}
             prepared = loaded["status"] == "passed" and bool(loaded_evidence.get("worker_id"))
-            warm = (prepared and not changed and loaded_evidence.get("source_fingerprint") == fresh["source_fingerprint"]
-                and loaded_evidence.get("viewpoint_ids_sha256") == fresh["viewpoint_ids_sha256"]
-                and loaded_evidence.get("rules_sha256") == fresh["rules_sha256"])
-            if not warm:
-                record_checklist("kol_inputs_loaded", "degraded", reason="SOURCE_FINGERPRINT_CHANGED" if changed else "INPUT_COVERAGE_NOT_CURRENT")
+            from xiaocao.kol.opening_preparation import opening_packet, write_artifact
+            packet = opening_packet(Path(loaded_evidence["preparation_path"]),
+                Path(fresh["input_path"]), request, now=datetime.now(ZoneInfo("Asia/Shanghai"))) if prepared else None
+            if packet is not None and packet["preparation_sha256"] != loaded_evidence.get("preparation_sha256"):
+                raise ValueError("MORNING_KOL_PREPARATION_BINDING_MISMATCH")
+            packet_path = write_artifact(checklist.path.parent, packet, ".kol-packet.json") if packet else None
+            warm = prepared and not any(packet["delta"][k] for k in ("added", "changed", "removed"))
             kol_inputs = fresh
             record_checklist("kol_fingerprint", "passed", evidence={**fresh, "source_changed": changed})
             request = {**request, "kol_inputs": {**fresh, "source_changed": changed,
-                "warm_worker": loaded_evidence.get("worker_id") if prepared else None, "input_loading_current": warm}}
+                "warm_worker": loaded_evidence.get("worker_id") if prepared else None, "input_loading_current": warm,
+                "preparation_path": loaded_evidence.get("preparation_path"),
+                "packet_path": str(packet_path) if packet_path else None,
+                "packet_sha256": packet["packet_sha256"] if packet else None,
+                "delta_counts": {k: len(packet["delta"][k]) for k in ("added", "changed", "removed")} if packet else None}}
         except (OSError, ValueError, RuntimeError, KeyError, TypeError) as exc:
             record_checklist("kol_fingerprint", "degraded", reason=type(exc).__name__)
             record_checklist("kol_decision", "degraded", reason="KOL_INPUT_REFRESH_FAILED")

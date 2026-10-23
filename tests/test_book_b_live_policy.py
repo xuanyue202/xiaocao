@@ -32,7 +32,7 @@ MORNING = datetime(2026, 8, 24, 1, 30, tzinfo=timezone.utc)
 
 
 def _publish(root, now, *, scale=1.0, skips=(), exits=(), identifier="d1", runtime="live", lifetime=3600,
-             mode_overrides=()):
+             mode_overrides=(), request_sha=None):
     stamp = now.isoformat()
     decision = {
         "schema_version": "kol-trading-decision.v2" if mode_overrides else "kol-trading-decision.v1",
@@ -49,10 +49,14 @@ def _publish(root, now, *, scale=1.0, skips=(), exits=(), identifier="d1", runti
     }
     if mode_overrides:
         decision["xiaocao_mode_overrides"] = list(mode_overrides)
+    if request_sha:
+        decision.update(morning_request_sha256=request_sha, mode_mappings=[])
     review = {"status": "approved", "decision_sha256": decision_sha256(decision),
               "reviewer_agent_id": "reviewer", "reviewed_at": stamp,
               "coverage_complete": True, "source_fidelity": True,
               "applicability_checked": True, "counterevidence_checked": True}
+    if request_sha:
+        review.update(morning_request_sha256=request_sha, mode_mapping_reviewed=True)
     return publish_decision(root, decision, review, now)
 
 
@@ -896,6 +900,26 @@ def test_review_timeout_preserves_still_valid_prior_decision_and_fresh_skip(tmp_
     assert not seen
 
 
+def test_timed_out_original_request_late_policy_cannot_widen_app_buy(tmp_path):
+    config = _morning(tmp_path)
+    clock = [MORNING]
+    _publish(config.policy_root, MORNING-timedelta(seconds=1), scale=0, identifier="prior")
+    def review(request):
+        cutoff = clock[0]+timedelta(seconds=5)
+        value = {"status":"timed_out", "request_sha256":"f"*64,
+            "requested_at":clock[0].isoformat(), "entry_deadline":cutoff.isoformat(),
+            "max_wait_seconds":5, "completed_at":cutoff.isoformat()}
+        value["receipt_sha256"] = decision_sha256(value)
+        clock[0] = cutoff+timedelta(seconds=1)
+        _publish(config.policy_root, clock[0], scale=1, identifier="late", request_sha="f"*64)
+        return value
+    seen = []
+    receipt = run_book_b_live_morning(config, now=lambda:clock[0], risk_provider=_risk,
+        execute=_execute_capture(seen), review_rendezvous=review)
+    assert not seen
+    assert receipt.status == "no_action"
+
+
 def test_entry_deadline_after_rendezvous_creates_no_intent(tmp_path):
     config = _morning(tmp_path)
     clock = [MORNING.replace(hour=3, minute=29)]
@@ -938,11 +962,15 @@ def test_production_morning_cli_passes_real_rendezvous_callback(tmp_path, monkey
     monkeypatch.setattr(cli, "write_book_b_live_morning_receipt", lambda *args: None)
     seen = []
     fresh = {"source_fingerprint": "fixture-source", "viewpoint_ids_sha256": "a" * 64,
-             "rules_sha256": "b" * 64, "quality": "ready"}
+             "rules_sha256": "b" * 64, "quality": "ready", "input_path": str(tmp_path / "input.json")}
     def prepared_inputs(checklist, **kwargs):
-        checklist.record("kol_inputs_loaded", "passed", evidence={**fresh, "worker_id": "fixture-worker"})
+        checklist.record("kol_inputs_loaded", "passed", evidence={**fresh, "worker_id": "fixture-worker",
+            "preparation_path": str(tmp_path / "prepared.json"), "preparation_sha256": "d" * 64})
         return fresh
     monkeypatch.setattr(cli, "prepare_inputs", prepared_inputs)
+    monkeypatch.setattr("xiaocao.kol.opening_preparation.opening_packet", lambda *a, **kw: {
+        "preparation_sha256": "d" * 64, "packet_sha256": "e" * 64,
+        "delta": {"added": [], "changed": [], "removed": []}})
 
     def rendezvous(request, **kwargs):
         seen.append((request, kwargs))

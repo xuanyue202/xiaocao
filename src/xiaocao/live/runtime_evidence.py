@@ -72,7 +72,9 @@ def write_json(path: Path, value: dict[str, Any]) -> None:
 def source_manifest(root: Path) -> dict[str, str]:
     """Hash source/config names only; private/runtime files and env are excluded."""
     paths = {root / 'scripts/auto_daily.sh', root / 'pyproject.toml',
-             root / 'docs/OPERATING_CONTRACT.md'}
+             root / 'docs/OPERATING_CONTRACT.md',
+             root / '.codex/skills/xiaocao-trading/references/kol-trading-judgment.md',
+             root / '.codex/skills/xiaocao-trading/references/kol-opening-preparation.md'}
     for name in ('scripts', 'src/xiaocao', 'kronos_screen/scripts', 'native', 'Kronos'):
         folder = root / name
         if folder.exists():
@@ -223,7 +225,7 @@ def recovery_event_line(line: str) -> str | None:
     except ValueError:
         return None
     if not isinstance(row, dict) or not isinstance(row.get('event'), str) or row['event'] not in {
-            'market_dependency_recovery_wait', 'morning_bundle_repair_required'}:
+            'market_dependency_recovery_wait', 'morning_bundle_repair_required', 'paper_kol_review_requested'}:
         return None
     fields = ('event', 'trade_date', 'status', 'reason', 'failure_category',
               'request_path', 'request_sha256', 'recovery_command', 'recovery_kind',

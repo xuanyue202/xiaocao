@@ -164,12 +164,17 @@ def test_pipeline_does_not_promote_late_bundle_to_app_success(tmp_path, monkeypa
     monkeypatch.setenv('CODEX_AUTOMATION_ID','xiaocao-daily-morning')
     monkeypatch.setenv('CODEX_THREAD_ID','producer')
     publish_captured_batch(tmp_path,day,snapshot=b'',strategy_sha='a'*40,source_readiness=readiness(),timing={})
-    put('book_b_live_execution/runs/checklists/one.json',{'binding':{'automation_id':'xiaocao-book-b-live-morning',
+    put('book_b_live_execution/runs/checklists/one.json',{'schema_version':1,'items':{'identity_calendar':{},'kol_projection':{},'orders':{}},'binding':{'automation_id':'xiaocao-book-b-live-morning',
         'trade_date':day,'owner_thread_id':'app-owner','runner_pid':123,'preparation_deadline':day+'T09:35:00+08:00'}})
     put(f'book_b_live_execution/runs/history/{day}-one.json',{'trade_date':day,'run_id':day+'-one',
         'runner_identity':{'automation_id':'xiaocao-book-b-live-morning','owner_thread_id':'app-owner','runner_pid':123},
         'status':'blocked','reason':'DATED_FREEZE_NOT_PROVEN'})
+    # Input/packet artifacts carry the same owner binding but are not owners.
+    checklist = json.loads((tmp_path/'book_b_live_execution/runs/checklists/one.json').read_text())
+    put('book_b_live_execution/runs/checklists/input.kol-inputs.json', {'schema_version':1,'binding':checklist['binding']})
+    put('book_b_live_execution/runs/checklists/duplicate.json', checklist)
     result=pipeline_status(tmp_path,day)
+    assert len(result['app']) == 1
     assert result['bundle']['status']=='ready'
     assert result['app'][0]['terminal_receipts'][0]['status']=='blocked'
     assert result['app'][0]['preparation_deadline']==day+'T09:35:00+08:00'

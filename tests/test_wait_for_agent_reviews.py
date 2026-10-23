@@ -99,3 +99,31 @@ def test_wrong_date_queue_cannot_release_current_review(tmp_path, monkeypatch, c
     result, elapsed = _run_wait(tmp_path, monkeypatch, capsys, lambda _: pytest.fail("invalid queue must not wait"))
     assert result["status"] == "queue_invalid"
     assert elapsed == 0
+
+
+def test_completed_intelligence_still_waits_for_original_kol_support(tmp_path, monkeypatch, capsys):
+    import sys
+    from scripts import wait_for_agent_reviews as script
+    from xiaocao.live import paper_morning_kol, morning_bundle
+    queue = {"market_date":"2026-10-23","status":"empty","items":[],
+             "freeze_binding":{"snapshot_sha256":"a"*64,"strategy_sha":"b"*40}}
+    _write(tmp_path / "intelligence_review_queue_2026-10-23.json", queue)
+    _write(tmp_path / "freeze.json", {})
+    monkeypatch.setattr(morning_bundle,"resolve_receipt",lambda *a,**kw: queue["freeze_binding"])
+    clock = [0.0]
+    monkeypatch.setattr(script.time,"monotonic",lambda:clock[0])
+    monkeypatch.setattr(script.time,"sleep",lambda seconds:clock.__setitem__(0,clock[0]+seconds))
+    class Support:
+        path = tmp_path / "support.json"
+        receipt = {"status":"validated"}
+        def __init__(self,*a,**kw): pass
+        def tick(self): return clock[0] >= 2
+        def defer(self,reason): pass
+    monkeypatch.setattr(paper_morning_kol,"PaperKolReview",Support)
+    monkeypatch.setenv("XIAOCAO_DAILY_RUN_DIR",str(tmp_path))
+    monkeypatch.setenv("XIAOCAO_ROOT",str(tmp_path))
+    monkeypatch.setattr(sys,"argv",["wait_for_agent_reviews.py","--date","2026-10-23","--live-dir",str(tmp_path),
+        "--timeout-sec","3","--poll-sec","1","--morning-freeze-receipt",str(tmp_path/"freeze.json"),"--kol-preparation"])
+    script.main()
+    assert clock[0] == 2
+    assert json.loads(capsys.readouterr().out)["kol_support"]["status"] == "validated"

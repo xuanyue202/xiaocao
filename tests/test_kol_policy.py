@@ -99,6 +99,41 @@ def test_publish_load_and_exact_adjustments(tmp_path: Path) -> None:
     assert sorted(path.name for path in tmp_path.iterdir()) == [".lock", "decision-1.json"]
 
 
+@pytest.mark.parametrize("runtime", ["paper", "live"])
+@pytest.mark.parametrize("offset,expected", [(-1, "opening"), (0, "prior"), (1, "prior")])
+def test_original_opening_publication_cutoff_keeps_real_expiry(tmp_path, runtime, offset, expected):
+    cutoff = NOW + timedelta(seconds=60)
+    publish(tmp_path, make_decision("prior", runtime=runtime, scale=0.25))
+    current = make_decision("opening", runtime=runtime, as_of=NOW+timedelta(seconds=30), scale=1)
+    current.update(morning_request_sha256="f"*64, mode_mappings=[])
+    review = make_review(current, morning_request_sha256="f"*64, mode_mapping_reviewed=True)
+    policy.publish_decision(tmp_path, current, review, cutoff+timedelta(seconds=offset))
+    fence = {"publication_deadline":cutoff, "morning_request_sha256":"f"*64}
+    snapshot = policy.load_decision(tmp_path, "B", runtime, cutoff+timedelta(seconds=5), **fence)
+    assert snapshot["decision_id"] == expected
+    assert snapshot["buy_scale"] == (1 if expected == "opening" else 0.25)
+    expired = policy.load_decision(tmp_path, "B", runtime, NOW+timedelta(hours=3), **fence)
+    assert expired["status"] == "expired"  # cutoff cannot extend validity
+    stop = make_decision("independent-stop", runtime=runtime, as_of=cutoff+timedelta(seconds=2), scale=0)
+    publish(tmp_path, stop, now=cutoff+timedelta(seconds=2))
+    assert policy.load_decision(tmp_path, "B", runtime, cutoff+timedelta(seconds=5), **fence)["buy_scale"] == 0
+    (tmp_path / "corrupt.json").write_text("{}")
+    assert policy.load_decision(tmp_path, "B", runtime, cutoff+timedelta(seconds=5), **fence)["status"] == "blocked"
+
+
+@pytest.mark.parametrize("offset", [0, 8])
+def test_original_receipt_fence_keeps_shorter_budget_and_hash(tmp_path, offset):
+    local = NOW.astimezone(timezone(timedelta(hours=offset)))
+    receipt = {"request_sha256":"f"*64, "requested_at":local.isoformat(),
+        "entry_deadline":(local+timedelta(minutes=10)).isoformat(), "max_wait_seconds":5,
+        "status":"timed_out"}
+    receipt["receipt_sha256"] = policy.decision_sha256(receipt)
+    assert policy.review_publication_fence(receipt)["publication_deadline"] == NOW+timedelta(seconds=5)
+    receipt["max_wait_seconds"] = 120
+    with pytest.raises(ValueError, match="MORNING_RECEIPT_HASH_MISMATCH"):
+        policy.review_publication_fence(receipt)
+
+
 @pytest.mark.parametrize("scale", [0, 0.1, 0.5, 1])
 def test_scale_never_enlarges_an_eligible_buy(tmp_path: Path, scale: float) -> None:
     publish(tmp_path, make_decision(scale=scale))

@@ -335,7 +335,8 @@ def _persist(root: Path, record: dict) -> None:
     pending.unlink()
 
 
-def publish_decision(root: Path, decision: dict, review: dict, now: datetime) -> dict:
+def publish_decision(root: Path, decision: dict, review: dict, now: datetime, *,
+                     publication_deadline: datetime | None = None, clock=None) -> dict:
     """Validate and durably append; exact retries return the original receipt.
 
     Failures raise KolPolicyError. A leftover .pending-* is an audit failure
@@ -356,6 +357,13 @@ def publish_decision(root: Path, decision: dict, review: dict, now: datetime) ->
                              and _canonical(existing["review"]) == _canonical(review), "DECISION_ID_CONFLICT")
                     _require(_time(existing["receipt"]["published_at"]) <= now, "FUTURE_PUBLICATION")
                     return existing["receipt"]
+            if publication_deadline is not None:
+                # Admission after acquiring the store lock uses actual time,
+                # not the earlier remote-verification completion timestamp.
+                admission = _clock(clock() if clock is not None else datetime.now(timezone.utc))
+                _require(admission >= now, "PUBLICATION_CLOCK_REGRESSED")
+                now = admission
+                _require(now < _clock(publication_deadline), "MORNING_PUBLICATION_DEADLINE")
             _require(now < until, "EXPIRED_DECISION")
             receipt = {
                 "status": "published", "decision_id": decision["decision_id"],
@@ -394,16 +402,42 @@ def _snapshot(record: dict, book: str, runtime: str, now: datetime) -> dict:
     return result
 
 
-def load_decision(root: Path, book: str, runtime: str, now: datetime) -> dict:
+def review_publication_fence(receipt: dict | None) -> dict:
+    """Use the original sealed rendezvous's time, including a shorter budget."""
+    if not receipt or not receipt.get("request_sha256") or not receipt.get("receipt_sha256"):
+        return {}
+    body = {key: value for key, value in receipt.items() if key != "receipt_sha256"}
+    _require(receipt.get("receipt_sha256") == decision_sha256(body), "MORNING_RECEIPT_HASH_MISMATCH")
+    budget = float(receipt["max_wait_seconds"])
+    _require(math.isfinite(budget) and 0 <= budget <= 120, "MORNING_RECEIPT_BUDGET_INVALID")
+    # Runner receipts use China wall-clock offsets; policy documents themselves
+    # retain their separate UTC-only format contract.
+    requested = _clock(datetime.fromisoformat(receipt["requested_at"].replace("Z", "+00:00")))
+    deadline = _clock(datetime.fromisoformat(receipt["entry_deadline"].replace("Z", "+00:00")))
+    return {"morning_request_sha256": receipt["request_sha256"], "publication_deadline": min(
+        deadline, requested + timedelta(seconds=budget))}
+
+
+def load_decision(root: Path, book: str, runtime: str, now: datetime, *,
+                  morning_request_sha256: str | None = None,
+                  publication_deadline: datetime | None = None) -> dict:
     """Read a scoped point-in-time snapshot. Any corrupt store entry blocks buys.
 
     An untrusted file cannot reliably identify its book, so store corruption is
     conservatively store-wide. Valid judgments remain isolated by book/runtime.
     A query must name one runtime (live or paper), never both.
+    The optional original-request fence excludes its late publications only.
+    Independent newer policies still supersede older ones; expiry always uses
+    actual ``now``, never the supporting review's deadline.
     """
     try:
         now = _clock(now)
         _scope(book, runtime)
+        if morning_request_sha256 is not None or publication_deadline is not None:
+            _require(isinstance(morning_request_sha256, str)
+                     and re.fullmatch(r"[0-9a-f]{64}", morning_request_sha256) is not None,
+                     "MORNING_REQUEST_HASH_REQUIRED")
+            publication_deadline = _clock(publication_deadline)
         root = Path(root)
         if not root.exists() and not root.is_symlink():
             return _state("no_decision", book, runtime, "KOL_POLICY_NO_DECISION")
@@ -414,7 +448,10 @@ def load_decision(root: Path, book: str, runtime: str, now: datetime) -> dict:
         candidates = [record for record in records if record["decision"]["book"] == book
                       and record["decision"]["runtime"] in (runtime, "both")
                       and _time(record["decision"]["as_of"]) <= now
-                      and _time(record["receipt"]["published_at"]) <= now]
+                      and _time(record["receipt"]["published_at"]) <= now
+                      and not (publication_deadline is not None
+                          and _time(record["receipt"]["published_at"]) >= publication_deadline
+                          and record["decision"].get("morning_request_sha256") == morning_request_sha256)]
         if not candidates:
             return _state("no_decision", book, runtime, "KOL_POLICY_NO_DECISION")
         latest = max(candidates, key=lambda record: (

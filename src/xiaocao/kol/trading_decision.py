@@ -23,12 +23,14 @@ from __future__ import annotations
 import fcntl
 import hashlib
 import json
+import math
 import os
 import re
 import tempfile
 from collections import Counter
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from typing import Callable, Iterator, Sequence
 
@@ -303,8 +305,34 @@ def _publish_receipt(receipt: dict, verification: dict) -> dict:
             "verification_sha256": verification["record_sha256"]}
 
 
+def _morning_deadline(decision: dict, review: dict, request: dict | None) -> datetime | None:
+    sha = decision.get("morning_request_sha256")
+    if sha is None:
+        _require(request is None, "unexpected_morning_request")
+        return None
+    _require(isinstance(request, dict) and request.get("request_sha256") == sha
+             and review.get("morning_request_sha256") == sha, "original_morning_request_required")
+    unsigned = {key: value for key, value in request.items() if key not in {"request_id", "request_sha256"}}
+    _require(kol_policy.decision_sha256(unsigned) == sha, "morning_request_hash_mismatch")
+    _require(request.get("runtime") == decision["runtime"] and request.get("book", "B") == decision["book"],
+             "morning_request_scope_mismatch")
+    requested = _time(request["requested_at"])
+    _require(requested.astimezone(ZoneInfo("Asia/Shanghai")).date().isoformat() == request["trade_date"],
+             "morning_request_date_mismatch")
+    budget = float(request["max_wait_seconds"])
+    _require(math.isfinite(budget) and 0 <= budget <= 120, "morning_request_budget_invalid")
+    deadline = min(_time(request["entry_deadline"]), requested + timedelta(seconds=budget))
+    if request.get("review_wait_until"):
+        deadline = min(deadline, _time(request["review_wait_until"]))
+    local_requested = requested.astimezone(ZoneInfo("Asia/Shanghai"))
+    if (local_requested.hour, local_requested.minute) < (9, 30):
+        deadline = min(deadline, _time(request["trade_date"] + "T09:27:00+08:00"))
+    return deadline
+
+
 def publish_trading_decision(root: Path, decision: dict, review: dict, context: dict, *,
-                             client=None, clock: Callable[[], datetime] = utc_now) -> dict:
+                             client=None, clock: Callable[[], datetime] = utc_now,
+                             morning_request: dict | None = None) -> dict:
     """Read referenced current remote manifests, durably verify, then publish.
 
     Exact completed retries reconcile the original two receipts without remote
@@ -318,6 +346,7 @@ def publish_trading_decision(root: Path, decision: dict, review: dict, context: 
         # for its decision/review hashes (RFC 8785 would normalize 1.0 to 1).
         decision, review, context = json.loads(json.dumps([decision, review, context], allow_nan=False))
         selected = _validate_inputs(decision, review, context, now, fresh=False)
+        deadline = _morning_deadline(decision, review, morning_request)
         directory = Path(root).absolute() / POLICY_PATH
         identifier = decision["decision_id"]
         binding = {"schema_version": "kol-source-verification.v1", "decision_id": identifier,
@@ -338,8 +367,12 @@ def publish_trading_decision(root: Path, decision: dict, review: dict, context: 
                          "verification_receipt_time_mismatch")
                 return _publish_receipt(prior["receipt"], proof)
             _validate_inputs(decision, review, context, now, fresh=True)
+            now = _time(clock()) if deadline is not None else now
+            _require(deadline is None or now < deadline, "morning_publication_deadline")
             per_source_timeout_seconds = 10
             total_timeout_seconds = max(60, per_source_timeout_seconds * (len(selected) + 1))
+            if deadline is not None:
+                total_timeout_seconds = min(total_timeout_seconds, (deadline-now).total_seconds())
             transport = trading_context.ReadOnlyPublicationTransport(client,
                 timeout_seconds=per_source_timeout_seconds, retries=0, max_read_calls=256,
                 total_timeout_seconds=total_timeout_seconds)
@@ -356,9 +389,11 @@ def publish_trading_decision(root: Path, decision: dict, review: dict, context: 
                          "remote_publication_not_observed_as_of")
             finished = _time(clock())
             _require(finished >= now, "clock_regressed")
+            _require(deadline is None or finished < deadline, "morning_publication_deadline")
             _validate_inputs(decision, review, context, finished, fresh=True)
             proof = _append(directory / "source_verifications", identifier, binding, finished)
-            receipt = kol_policy.publish_decision(directory / "decisions", decision, review, finished)
+            receipt = kol_policy.publish_decision(directory / "decisions", decision, review, finished,
+                **({"publication_deadline":deadline, "clock":clock} if deadline is not None else {}))
             return _publish_receipt(receipt, proof)
     except TradingDecisionError:
         raise

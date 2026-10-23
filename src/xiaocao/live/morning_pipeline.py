@@ -40,15 +40,24 @@ def pipeline_status(live_dir: Path, date: str) -> dict:
             "thread_id": manifest["thread_id"], "run_id": manifest["run_id"], "manifest": ref,
             "status": terminal.get("deterministic_status", "unproved") if bound else "terminal_unproved",
             "receipt": terminal_ref})
+    app_owners = set()
     for path in sorted((live_dir / "book_b_live_execution/runs/checklists").glob("*.json")):
         checklist, ref = _evidence(path)
-        binding = (checklist or {}).get("binding")
+        if (not checklist or checklist.get("schema_version") != 1
+                or not isinstance(checklist.get("items"), dict)
+                or not {"identity_calendar", "kol_projection", "orders"} <= checklist["items"].keys()):
+            continue
+        binding = checklist.get("binding")
         binding = binding if isinstance(binding, dict) else {}
         if binding.get("trade_date") != date or binding.get("automation_id") != "xiaocao-book-b-live-morning":
             continue
         if (not isinstance(binding.get("owner_thread_id"), str) or not binding["owner_thread_id"]
                 or type(binding.get("runner_pid")) is not int or binding["runner_pid"] <= 0):
             continue
+        owner = (binding["owner_thread_id"], binding["runner_pid"])
+        if owner in app_owners:
+            continue
+        app_owners.add(owner)
         deadline = binding.get("preparation_deadline")
         try:
             parsed = datetime.fromisoformat(deadline)

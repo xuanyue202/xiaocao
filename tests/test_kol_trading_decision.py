@@ -147,6 +147,79 @@ def test_publish_remote_readback_and_distinct_hashes(tmp_path, bundle):
     assert td.decision_status(tmp_path, book="B", runtime="paper", clock=lambda: NOW)["status"] == "no_decision"
 
 
+def morning_bundle(bundle):
+    decision, review, context, reader = bundle
+    local = NOW.astimezone(timezone(timedelta(hours=8)))
+    request = {"book":"B", "runtime":"live", "trade_date":local.date().isoformat(),
+        "requested_at":local.isoformat(), "entry_deadline":(local+timedelta(seconds=5)).isoformat(),
+        "review_wait_until":(local+timedelta(seconds=5)).isoformat(), "max_wait_seconds":5}
+    request["request_sha256"] = kol_policy.decision_sha256(request)
+    decision.update(morning_request_sha256=request["request_sha256"], mode_mappings=[])
+    review = review_for(decision, context)
+    review.update(morning_request_sha256=request["request_sha256"], mode_mapping_reviewed=True)
+    return decision, review, context, reader, request
+
+
+@pytest.mark.parametrize("late", ["before", "during", "store_admission", "on_time"])
+def test_morning_publication_keeps_original_budget_through_store_admission(tmp_path, bundle, monkeypatch, late):
+    decision, review, context, reader, request = morning_bundle(bundle)
+    current = [NOW+timedelta(seconds=6) if late == "before" else NOW]
+    original_read = reader.call_tool
+    def read(*args):
+        result = original_read(*args)
+        if late == "during": current[0] = NOW+timedelta(seconds=5)
+        return result
+    reader.call_tool = read
+    original_persist = td._append
+    def append(*args):
+        result = original_persist(*args)
+        if late == "store_admission": current[0] = NOW+timedelta(seconds=5)
+        return result
+    monkeypatch.setattr(td, "_append", append)
+    def run():
+        return td.publish_trading_decision(tmp_path, decision, review, context, client=reader,
+                                          clock=lambda:current[0], morning_request=request)
+    if late == "on_time":
+        first = run()
+        current[0] = NOW+timedelta(minutes=5)
+        assert run() == first  # exact completed readback remains possible
+        assert len(reader.calls) == 2
+    else:
+        with pytest.raises(td.TradingDecisionError): run()
+        assert not list((tmp_path/td.POLICY_PATH/"decisions").glob("*.json"))
+        if late == "before": assert not reader.calls
+
+
+@pytest.mark.parametrize("change", ["missing", "tamper", "scope"])
+def test_morning_publication_requires_original_exact_request(tmp_path, bundle, change):
+    decision, review, context, reader, request = morning_bundle(bundle)
+    if change == "missing": request = None
+    elif change == "tamper": request["max_wait_seconds"] = 120
+    else: request["runtime"] = "paper"
+    with pytest.raises(td.TradingDecisionError):
+        td.publish_trading_decision(tmp_path, decision, review, context, client=reader,
+                                   clock=lambda:NOW, morning_request=request)
+    assert not reader.calls
+
+
+def test_morning_cli_passes_exact_request_and_golden_cutoff_is_absolute(tmp_path, bundle):
+    decision, review, context, reader, request = morning_bundle(bundle)
+    write_files(tmp_path, (decision, review, context, reader))
+    (tmp_path/"original.request.json").write_text(json.dumps(request))
+    assert command().main(["publish", "--root", str(tmp_path), "--decision", "decision.json",
+        "--review", "review.json", "--context", "context.json", "--morning-request", "original.request.json"],
+        client=reader, clock=lambda:NOW) == 0
+    request.update(requested_at="2026-09-06T09:26:00+08:00", entry_deadline="2026-09-06T11:30:00+08:00",
+                   review_wait_until="2026-09-06T09:28:00+08:00", max_wait_seconds=120)
+    request["request_sha256"] = kol_policy.decision_sha256({k:v for k,v in request.items() if k != "request_sha256"})
+    decision["morning_request_sha256"] = review["morning_request_sha256"] = request["request_sha256"]
+    assert td._morning_deadline(decision, review, request).astimezone(timezone.utc).isoformat() == "2026-09-06T01:27:00+00:00"
+    request.update(requested_at="2026-09-06T09:31:00+08:00", review_wait_until="2026-09-06T11:30:00+08:00")
+    request["request_sha256"] = kol_policy.decision_sha256({k:v for k,v in request.items() if k != "request_sha256"})
+    decision["morning_request_sha256"] = review["morning_request_sha256"] = request["request_sha256"]
+    assert td._morning_deadline(decision, review, request).astimezone(timezone.utc).isoformat() == "2026-09-06T01:33:00+00:00"
+
+
 def test_publish_accepts_dated_current_checks_until_explicit_valid_until(tmp_path, bundle):
     decision, review, _, _ = bundle
     decision["current_checks"][0]["observed_at"] = iso(NOW - timedelta(hours=8))

@@ -30,6 +30,7 @@ PACKAGE_DIR_NAME = "xiaocao-trading"
 SKILL_REFERENCE_FILES = [
     "automation-morning.md",
     "kol-source-preparation.md",
+    "kol-opening-preparation.md",
     "book-b-live-repair.md",
     "automation-intraday.md",
     "automation-eod.md",
@@ -96,6 +97,11 @@ def refresh_runtime(skill_dir: Path) -> Path:
     for item in RUNTIME_ITEMS:
         _copy_item(ROOT / item, runtime_dir / item)
 
+    # Opening input hashes bind these rules even when the bundled runtime is
+    # selected outside a checkout. Copy references only, never nested assets.
+    shutil.copytree(skill_dir / "references",
+                   runtime_dir / ".codex/skills/xiaocao-trading/references")
+
     for rel in ("output/live", "reports/premarket", "reports/afterclose"):
         (runtime_dir / rel).mkdir(parents=True, exist_ok=True)
 
@@ -139,6 +145,8 @@ def validate_skill(skill_dir: Path) -> None:
         runtime / "scripts" / "morning_preflight_alert.py",
         runtime / "scripts" / "configure_market_data_auth.py",
         runtime / "scripts" / "kol_trading_preparation.py",
+        runtime / "scripts" / "kol_trading_prepare.py",
+        runtime / "src" / "xiaocao" / "kol" / "opening_preparation.py",
         runtime / "scripts" / "kol_trading_context.py",
         runtime / "scripts" / "kol_trading_decision.py",
         runtime / "scripts" / "kol_trading_tick.py",

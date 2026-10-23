@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import time
 from pathlib import Path
 from typing import Any
@@ -75,6 +76,7 @@ def main() -> None:
     parser.add_argument("--poll-sec", type=float, default=2.0)
     parser.add_argument("--min-reviews", type=int, default=0, help="0 means wait for every selected item")
     parser.add_argument("--morning-freeze-receipt", type=Path)
+    parser.add_argument("--kol-preparation", action="store_true", help="Original paper owner KOL support; requires original freeze")
     args = parser.parse_args()
     live = Path(args.live_dir)
     queue = live / f"intelligence_review_queue_{args.date[:10]}.json"
@@ -84,17 +86,30 @@ def main() -> None:
     if args.morning_freeze_receipt:
         from xiaocao.live.morning_bundle import resolve_receipt
         binding = resolve_receipt(json.loads(args.morning_freeze_receipt.read_bytes()), args.date[:10], live_dir=live)
+    kol = None
+    if args.kol_preparation:
+        if binding is None:
+            parser.error("--kol-preparation requires --morning-freeze-receipt")
+        from xiaocao.live.paper_morning_kol import PaperKolReview
+        kol = PaperKolReview(Path(os.environ["XIAOCAO_ROOT"]), Path(os.environ["XIAOCAO_DAILY_RUN_DIR"]),
+                             args.date, binding, budget_seconds=max(0.0, deadline-time.monotonic()))
     progress = review_progress(queue, history, expected_date=args.date, expected_binding=binding)
     while time.monotonic() < deadline:
         if progress.get("status") == "queue_invalid":
+            if kol is not None:
+                kol.defer("PAPER_INTELLIGENCE_QUEUE_INVALID")
             break
         target = args.min_reviews if args.min_reviews > 0 else progress["selected"]
-        if not progress.get("status") and progress["reviewed"] >= target:
+        kol_done = kol is None or kol.tick()
+        if not progress.get("status") and progress["reviewed"] >= target and kol_done:
             break
         time.sleep(min(max(0.05, args.poll_sec), max(0.0, deadline - time.monotonic())))
         progress = review_progress(queue, history, expected_date=args.date, expected_binding=binding)
     target = args.min_reviews if args.min_reviews > 0 else progress["selected"]
     progress.setdefault("status", "reviewed" if progress["reviewed"] >= target else "fallback_timeout")
+    if kol is not None:
+        kol.defer("PAPER_ORIGINAL_RENDEZVOUS_EXHAUSTED")
+        progress["kol_support"] = {"status": kol.receipt["status"], "receipt_path": str(kol.path)}
     progress["authority"] = "shadow_only"
     print(json.dumps(progress, ensure_ascii=False, sort_keys=True))
 

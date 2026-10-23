@@ -6,7 +6,7 @@ Read this file only when creating, changing or auditing Xiaocao schedules.
 
 - Morning prerecommendation: wake 09:18 weekdays; capture gate 09:25:01.
 - Book-B Founder live morning: wake 08:53 weekdays; formal preparation gate 09:00, independently of paper execution.
-- Morning execution: wake 09:18 weekdays; consumption gate 09:25:01.
+- Morning execution: wake 09:10 weekdays; calendar proof and KOL preparation before 09:20, consumption gate 09:25:01.
 - Opening dense: 09:35, 09:45, 09:55.
 - Sparse monitor: 10:25, 10:55, 13:25, 13:55 only. On the `/Users/xuanyue202`
   remote host, the remote writer is the sole KOL write ingress; cross-machine

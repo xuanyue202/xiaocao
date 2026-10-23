@@ -56,10 +56,10 @@ run_book_b_morning() {
     return "$FREEZE_EXIT"
   fi
   log "bounded agent-review rendezvous (structured review only; timeout falls back to base picks)"
-  REVIEW_RENDEZVOUS="$(run_python scripts/wait_for_agent_reviews.py --date "$TODAY" --morning-freeze-receipt "$FREEZE_RECEIPT" --timeout-sec "${XIAOCAO_AGENT_REVIEW_TIMEOUT_SEC:-180}" 2>&1)" || true
+  REVIEW_RENDEZVOUS="$(run_python scripts/wait_for_agent_reviews.py --kol-preparation --date "$TODAY" --morning-freeze-receipt "$FREEZE_RECEIPT" --timeout-sec "${XIAOCAO_AGENT_REVIEW_TIMEOUT_SEC:-180}" 2>&1)" || true
   log "agent-review rendezvous result: $REVIEW_RENDEZVOUS"
   log "paper-record ★E mode-qualified picks"
-  if ! run_python kronos_screen/scripts/paper_record.py --date "$TODAY" --pick mode_exec_star --morning-freeze-receipt "$FREEZE_RECEIPT" --initial-capital 100000 --fee-rate 0.0001 --deploy-ratio 0.5 --max-total-exposure-ratio 1.0 --quality-governor shadow --intelligence-trade shadow >>"$LOG" 2>&1; then
+  if ! run_python kronos_screen/scripts/paper_record.py --date "$TODAY" --pick mode_exec_star --kol-review-receipt "$XIAOCAO_DAILY_RUN_DIR/paper-kol-review.receipt.json" --morning-freeze-receipt "$FREEZE_RECEIPT" --initial-capital 100000 --fee-rate 0.0001 --deploy-ratio 0.5 --max-total-exposure-ratio 1.0 --quality-governor shadow --intelligence-trade shadow >>"$LOG" 2>&1; then
     log "morning execute FAILED: Book B paper-record failed"
     return 1
   fi

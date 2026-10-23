@@ -1814,7 +1814,8 @@ def run_book_b_live_morning(
         }
 
     def policy() -> dict:
-        return read_policy(config.policy_root, now())
+        from .kol_policy import review_publication_fence
+        return read_policy(config.policy_root, now(), **review_publication_fence(review_receipt))
 
     def support() -> tuple[dict, AccountRiskReceipt]:
         clock = now()

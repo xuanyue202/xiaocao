@@ -40,7 +40,7 @@ def test_checklist_never_marks_passed_without_evidence(tmp_path):
         checklist(tmp_path).record("app_ready", "passed")
 
 
-def test_warm_inputs_reject_partial_or_changed_coverage(tmp_path):
+def test_warm_inputs_reject_partial_or_changed_coverage(tmp_path, monkeypatch):
     check = checklist(tmp_path)
     path = tmp_path / "inputs.json"
     payload = {"binding": check.binding, "viewpoint_ids": ["a", "b"], "source_fingerprint": "fp", "rules": []}
@@ -52,9 +52,12 @@ def test_warm_inputs_reject_partial_or_changed_coverage(tmp_path):
         "binding": check.binding, "input_sha256": _hash(payload),
         "tool_arguments": {"model": "gpt-6-sol", "reasoning_effort": "xhigh", "fork_turns": "none"},
         "tool_result": {"task_name": "worker"}}))
+    monkeypatch.setattr("xiaocao.kol.opening_preparation.read_preparation", lambda path, now: {
+        "input_sha256": _hash(payload), "worker_id": "worker", "dispatch": json.loads(dispatch_path.read_text()),
+        "preparation_sha256": "a" * 64, "accepted_at": "2026-10-14T09:10:00+08:00"})
     loaded_path = tmp_path / "loaded.json"
     loaded_path.write_text(json.dumps({"worker_id": "worker", "loaded_viewpoint_ids": ["b", "a"],
-                                       "dispatch_path": str(dispatch_path)}))
+                                       "dispatch_path": str(dispatch_path), "preparation_path": str(tmp_path / "prepared.json")}))
     with pytest.raises(ValueError, match="COVERAGE_MISMATCH"):
         acknowledge_inputs(check, path, worker_id="worker", loaded_ids=["a"], loaded_receipt_path=loaded_path)
     assert acknowledge_inputs(check, path, worker_id="worker", loaded_ids=["b", "a"], loaded_receipt_path=loaded_path)["loaded_count"] == 2

@@ -102,7 +102,7 @@ evidence; it does not start another funded experiment or replay a terminal day.
 
 ## Execute
 
-Scheduler wakes are preparation only: producer and paper wake at 09:18; APP
+Scheduler wakes are preparation only: producer wakes at 09:18, paper at 09:10; APP
 wakes at 08:53. Start the original entrypoint promptly. Python waits until
 09:25:01 before capture/paper consumption, and until 09:00 before fresh APP
 preflight notices and its 2100-second preparation budget. Continuations retain
@@ -542,31 +542,22 @@ under this Automation/Thread; choose recovered/degraded/blocked accurately.
 Record delivery and post-business accounting/history separately. A saved operator
 attestation is labelled as such; do not infer current API/account proof from it.
 
-On `book_b_kol_inputs_prepared`, use the runner's exact input/projection paths:
-do not run a second projection build. Before 09:20 dispatch one §2a Sol xhigh
-worker to load every eligible viewpoint and the hash-bound rules only. No source
-summary, conditional opening draft or early current-applicability judgment.
-Persist the actual accepted routing/worker ID plus `loaded_viewpoint_ids` under
-`output/live/kol_policy/analysis/`; then acknowledge full coverage with
-`CODEX_AUTOMATION_ID=xiaocao-book-b-live-morning PYTHONPATH=src .venv/bin/python
-scripts/morning_checklist.py --checklist <path> --input <exact input_path>
---loaded <worker coverage JSON>`. Do not attest before the worker has loaded.
-Worker JSON contains `worker_id`, `loaded_viewpoint_ids` and `dispatch_path`.
-The dispatch JSON records the actually accepted `worker_id`, `accepted=true`,
-`model=gpt-6-sol`, `reasoning_effort=xhigh`, aware `dispatched_at`, exact input
-`input_sha256` and capsule `binding`; save the actual accepted tool arguments
-and return in `tool_arguments` / `tool_result` alongside it (`fork_turns=none`, returned `task_name` equals worker_id). The acknowledgement binds both receipt paths/hashes. Keep the same worker
-available for the original frozen review. Late/missing load immediately defers new model work; reuse only an already independently valid published policy under existing gates, otherwise baseline.
+On `book_b_kol_inputs_prepared`, consume the original input/projection and follow
+[kol-opening-preparation.md](kol-opening-preparation.md). Before 09:20 retain
+actual worker routing, full eligible viewpoint coverage, conditional implications,
+exact cited-source context and independent parent acceptance. Acknowledge only
+the sealed preparation; the worker loading receipt includes `preparation_path`.
+Do not build another APP projection or source summary. Paper uses the same
+interface during its earlier 09:10 prewake after calendar proof.
 
-The frozen review request includes one fresh cache-only projection/fingerprint
-check, changed-source flag, valid coverage/rules binding and warm worker ID.
-Read its brief immediately and dispatch the exact request to that worker before
-other supporting reads. If inputs changed, reload the new complete compact
-projection; do not re-analyse source semantics. Save dispatch time/arguments and
-actual remaining seconds. `dispatch_budget` includes model, citation verification,
-independent parent review and publication together; it is not model-only time.
-Stop support waits at the existing cutoff, do not extend freshness/backdate or
-publish a late draft. Source quality gaps and unavailable routing use baseline.
+The frozen request carries `kol_inputs.packet_path/packet_sha256`. Read brief
+and packet and immediately dispatch to the same warm worker. The packet binds
+relevant prepared implications, global risks/counterevidence, all changed/added/
+removed viewpoints and the original request facts. Review the complete delta;
+unchanged source bodies and viewpoints need no repeat model scan. Rules changes
+or incomplete preparation defer new work. Record actual dispatch arguments/time
+and remaining total model + verification + parent review + publication budget.
+Keep 09:27 cutoff, account-risk no-buy bypass and all existing publication gates.
 The runner records successful boundary heartbeat observations independently.
 
 The 09:24 native session recheck and 09:25 account/quote/market guards remain
@@ -587,8 +578,8 @@ unclassified and inoperable viewpoints remain counts, not context. It contains
 no report bodies. Never open a `classification_backfill` manifest in the morning
 or infer classifications from keywords, holdings or asset names. Missing or structurally degraded
 projection evidence falls back to the deterministic baseline and remains a
-remote-writer quality issue. One current-applicability worker receives this
-projection plus the exact freeze and runtime facts. The parent independently
+remote-writer quality issue. The preparation worker covers this complete projection before opening; the
+current-applicability worker receives the prepared packet and exact runtime facts. The parent independently
 reviews the mapping and counterevidence. Reuse a still-valid published decision.
 
 During 09:25–09:30, unexpected AX/code errors or missing KOL material are urgent
@@ -604,8 +595,9 @@ Preserve selected observation evidence and final-attempt status; never rerun
 the producer after freezing. Stage timings remain in receipts for later
 performance diagnosis, not as extra approval gates.
 
-At formal decision publication, load only the exact cited report IDs into a
-full hashed context and perform the existing remote readback. This verification
+Before preparation acceptance, load only the exact cited report IDs into a
+full hashed context. At formal publication, reuse unchanged cited context and
+perform the existing exact remote readback; new cited versions need exact context. This verification
 step does not authorize general historical rereading. At 09:00 also run
 `market_data_preflight.py --date today --scope authentication`; a successful
 empty response proves reachability only. Leave the APP untouched after initial
@@ -674,7 +666,8 @@ new morning orders. Recovery keeps its established prepare/reconcile route.
 Full order/trade/account reconciliation follows the submission pass.
 
 Before 09:20 retain the immutable viewpoint projection path/hash and its quality
-summary; no source notes or conditional opening draft exists. After 09:24 react
+summary and the reviewed conditional preparation under §1d; source semantics
+remain the published LiangHui records. After 09:24 react
 to runner stage events. Read `brief_path` first, fetch missing fields from
 `request_path` only as needed, and select fields from the terminal artifact.
 Never print full candidate arrays, account tables, report-id arrays or source

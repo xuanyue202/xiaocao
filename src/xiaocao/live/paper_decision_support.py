@@ -290,9 +290,11 @@ def _read_bound(path: Path) -> dict:
 
 
 def evaluate_paper_risk(root: Path, account: dict, positions: list[dict], *, now: datetime,
-                        mark_provider: Callable[[str], dict]) -> dict:
+                        mark_provider: Callable[[str], dict], persist: bool = True) -> dict:
     """Persist and return a hash-bound paper:B AccountRiskReceipt plus valuation.
 
+    With persist=False, compute an authority-zero preview against the same
+    prior risk head; do not advance peaks, pause or risk archives.
     The receipt contains status/deploy_factor/high_water_mark/pause_latched,
     history_basis='since_activation', valuation, and receipt_sha256. Invalid
     evidence blocks new buys. A corrupt prior head is preserved for repair;
@@ -345,6 +347,10 @@ def evaluate_paper_risk(root: Path, account: dict, positions: list[dict], *, now
         result = risk.as_dict()
         result.update(schema_version="paper-risk.v1", book="B", runtime="paper",
                       valuation=valuation, previous_receipt_sha256=prior.get("receipt_sha256") if prior else None)
+        if not persist:
+            result["authority"] = "preview_only"
+            result["receipt_sha256"] = _digest(result)
+            return result
         result["receipt_sha256"] = _digest(result)
         valid_head = ("PREVIOUS_RECEIPT_INVALID" not in result["reasons"]
                       and result["asof"] and result["initial_capital"] is not None)

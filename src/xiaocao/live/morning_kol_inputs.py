@@ -1,7 +1,6 @@
 """Cache-only opening inputs, with full coverage and no decision authority."""
 from __future__ import annotations
 
-import hashlib
 import json
 from datetime import datetime
 from pathlib import Path
@@ -16,20 +15,9 @@ def prepare_inputs(checklist: MorningChecklist, *, repo_root: Path) -> dict:
         read_report_ids=[], include_report_bodies=False, repo_root=repo_root,
         history_fresh_through=checklist.binding["trade_date"] + "T11:30:00+08:00"),
         repo_root=repo_root)
+    from xiaocao.kol.opening_preparation import input_payload
+    payload = input_payload(summary, binding=checklist.binding, repo_root=repo_root)
     projection_path = Path(summary["projection_path"])
-    projection = json.loads(projection_path.read_text())
-    # The projection hash uses the shared canonical encoder, not runner hashes.
-    from xiaocao.kol.trading_context import canonical_sha256
-    if canonical_sha256({k: v for k, v in projection.items() if k != "projection_sha256"}) != summary["projection_sha256"]:
-        raise ValueError("MORNING_KOL_PROJECTION_HASH_MISMATCH")
-    payload = {"schema_version": 1, "authority": 0, "binding": checklist.binding,
-        "projection": summary, "source_fingerprint": projection["source_fingerprint"],
-        "viewpoint_ids": [row["record_id"] for row in projection["active_viewpoints"]],
-        "quality": projection["quality"]["status"],
-        "rules": [{"path": str(repo_root / relative),
-                   "sha256": hashlib.sha256((repo_root / relative).read_bytes()).hexdigest()}
-                  for relative in ("docs/OPERATING_CONTRACT.md", ".codex/skills/xiaocao-trading/references/kol-trading-judgment.md")],
-        "instruction": "Load every eligible viewpoint and rules only; no source summary, opening draft or trade judgment."}
     path = checklist.path.with_name(_hash(payload) + ".kol-inputs.json")
     if path.exists():
         if path.is_symlink() or json.loads(path.read_text()) != payload:
@@ -77,6 +65,15 @@ def acknowledge_inputs(checklist: MorningChecklist, input_path: Path, *, worker_
                 "input_path": str(input_path.resolve()), "input_sha256": _hash(payload),
                 "loaded_count": len(loaded_ids), "viewpoint_ids_sha256": _hash(payload["viewpoint_ids"]),
                 "rules_sha256": _hash(payload["rules"]), "authority": 0}
+    from xiaocao.kol.opening_preparation import read_preparation
+    preparation_path = Path(loaded["preparation_path"])
+    prepared = read_preparation(preparation_path, now=datetime.now(deadline.tzinfo))
+    if (prepared["input_sha256"] != _hash(payload) or prepared["worker_id"] != worker_id
+            or prepared["dispatch"] != dispatch):
+        raise ValueError("MORNING_KOL_PREPARATION_BINDING_MISMATCH")
+    evidence.update(preparation_path=str(preparation_path.resolve()),
+                    preparation_sha256=prepared["preparation_sha256"],
+                    preparation_accepted_at=prepared["accepted_at"])
     late = dispatched >= deadline or datetime.now(deadline.tzinfo) >= deadline
     checklist.record("kol_inputs_loaded", "degraded" if late else "passed",
                      evidence=evidence, reason="INPUT_LOADING_LATE" if late else None)

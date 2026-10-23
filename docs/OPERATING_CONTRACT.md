@@ -1,6 +1,6 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：4.48
+**版本**：4.49
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
 **关联实现**：`src/xiaocao/live/{safety,capital_keychain,foundersc_native_ax,foundersc_native_broker,trading_execution,book_b_live_lifecycle,book_b_live_intraday}.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`native/foundersc_ax_executor/`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{book_b_live_morning,book_b_live_intraday,live_monitor,research_mode_switch_replay}.py`
@@ -69,7 +69,7 @@ claim 与精确副作用证据判断是否可重放。完整复盘和充分回�
 
 晨间任务先调用小草 `/stock/trade_cal`，核验今日是否交易日；最近交易日不同于今日则直接 `NON_TRADING_DAY` 结束，不进入 APP/KOL 预检、冻结等待、历史对账或企微交易告警。日历缺失或失败停在 APP 前，不以工作日调度推断交易日。
 
-调度只负责预唤醒：APP 08:53、推荐及纸面 09:18；脚本以北京时间绝对门等待，APP 09:00 才开始预检，推荐和纸面 09:25:01 才消费集合竞价数据。推荐所需来源、排序覆盖及全部 active 定价未就绪时每2秒重试原调用，不按超时丢弃候选或把缺数据记作 NONE。09:00立即启动一次原APP进程（默认冻结等待2100秒）并行检查行情认证、会话及来源准备；初次确认APP就绪后静默等待至09:24，此前不重复APP保活或冻结文件轮询；09:24恢复会话检查及必要解锁，再恢复30秒心跳，09:24:50起主动等待09:25冻结。等待分段校时并受原超时约束；晚启动立即检查，不额外等待。行情预检只证明接口可达/认证，不证明来源齐全。
+调度只负责预唤醒：APP 08:53、推荐 09:18、纸面 09:10（先做日历核验与 KOL 准备）；脚本以北京时间绝对门等待，APP 09:00 才开始预检，推荐和纸面 09:25:01 才消费集合竞价数据。推荐所需来源、排序覆盖及全部 active 定价未就绪时每2秒重试原调用，不按超时丢弃候选或把缺数据记作 NONE。09:00立即启动一次原APP进程（默认冻结等待2100秒）并行检查行情认证、会话及来源准备；初次确认APP就绪后静默等待至09:24，此前不重复APP保活或冻结文件轮询；09:24恢复会话检查及必要解锁，再恢复30秒心跳，09:24:50起主动等待09:25冻结。等待分段校时并受原超时约束；晚启动立即检查，不额外等待。行情预检只证明接口可达/认证，不证明来源齐全。
 
 **2026-10-19 用户批准的证券范围解析**：当天推荐先通过成功、非空且结构有效的专有
 `stock_info` 新鲜读取解析原始股票池/方向名单。目录之外的代码自动剔除，保留原名单
@@ -97,7 +97,7 @@ hash、目录 hash/观察时间、剔除代码及 `NOT_IN_SECURITY_DIRECTORY` �
 
 09:00是故障恢复余量，不是策略选股时点：行情使用`market_data_preflight.py --scope authentication`的一次认证读取，不要求当天尚未发布的核心指标；来源检查用`--history-fresh-through <today>T11:30:00+08:00`补验即将在开盘窗口失效的历史清单，保持24小时有效期及真实as-of不变。完成后sleep，不重复完整分析；09:22核验最新来源增量；来源就绪后立即预热 Sol 判断与独立主审，不能等到冻结才启动语义分析。冻结后以同一次请求提供当前账户、风险回执、候选及行情适用条件，预算从完整输入就绪开始。09:24之前允许APP自然锁定，09:24通过既有会话恢复流程重新确认；恢复失败沿原失败路径处理。09:24之后的保活仍有AX查询和必要解锁成本，提交窗口及执行前的新鲜账户/行情门保持不变。
 
-remote writer 对新报告只做一次完整语义工作：同一经校验的 semantic bundle 原子发布灰常亮报告、`viewpoint`、初始 `viewpoint_evaluation`，后续维护只追加当前性评估与观点关系。LiangHui 的这些记录是交易消费者唯一的来源语义 SSOT；不得再派生 `kol-source-preparation` 笔记、逐对象准备包或晨间 opening draft。每条可能影响 Book B 判断的观点应在 writer 端保留期限、触发、证伪、不确定性、证据及显式当前性。缺失这些字段是 writer 质量降级，不由交易任务重读正文补做。
+remote writer 对新报告只做一次完整语义工作：同一经校验的 semantic bundle 原子发布灰常亮报告、`viewpoint`、初始 `viewpoint_evaluation`，后续维护只追加当前性评估与观点关系。LiangHui 的这些记录是交易消费者唯一的来源语义 SSOT；不得再派生 `kol-source-preparation` 笔记或逐对象来源语义包；§1d 的晨间条件准备只消费这些已发布语义，不能成为新的来源 SSOT。每条可能影响 Book B 判断的观点应在 writer 端保留期限、触发、证伪、不确定性、证据及显式当前性。缺失这些字段是 writer 质量降级，不由交易任务重读正文补做。
 
 09:00、09:25和稀疏盘中任务只构建无报告正文的 hash-bound 紧凑投影。进入模型正文的不是全部 `current/uncertain`，而是最新 `current` evaluation 已显式标注 `book_b_short_term`、仍在 `valid_until` 内且具备 triggers/falsifiers/uncertainties 的短线子集；`uncertain`、未分类、非短线或条件不完整的观点只计数，不进入正文。投影原子写入后，下游用其 `path/hash/counts` 做一次有界 runtime 当前适用性判断，并结合各自冻结候选、账户、风险和实时事实；正式决策发布时只为被引用观点精确加载对应报告并完成现有远端验证。投影缺失或质量降级时回确定性基线。它本身 `authority=0`，不能预认开盘条件、扩大资本权限或替代§2a正式判断与独立复核。
 
@@ -163,7 +163,7 @@ LiangHui 语义投影质量、来源读回时效、当前正式决策是三个�
 
 短线投影没有固定条数或 latest-N 上限：每条观点独立通过同一显式标准后即进入，最终数量是标准的结果。标准要求最新状态为 `current`、writer 明确标注 `book_b_short_term`、仍在 `valid_until` 内，并具备 triggers、falsifiers 与 uncertainties；utility、priority 和评估时间只用于稳定排序，不得改变集合成员。不得使用持仓、资产名或关键词代替语义分类。历史 evaluation 缺少分类时生成只含精确 viewpoint/evaluation ID 的 hash-bound backfill manifest，由 remote writer 逐对象追加评估；早盘不得打开该清单或全量观点自行补做。
 
-09:20前原子保存紧凑投影的path/projection_sha256/source_fingerprint/counts和质量结论；不再另造条件草稿。projection_sha256绑定含审计时点的单份文件，只有稳定source_fingerprint变化才表示来源语义变化。若已有足够事实可形成适用正式判断，可提前发布并按真实条件选择valid_until；不能续命、回填时间或强制中性。确需开盘事实的部分留待同一份投影的最终适配；09:25只核对source_fingerprint变化与当前条件。新/变更来源仍只由remote writer完整读取并独立复核。
+09:20前原子保存紧凑投影的path/projection_sha256/source_fingerprint/counts和质量结论，并按§1d封存独立复核的条件准备；不重做来源语义。projection_sha256绑定含审计时点的单份文件，只有稳定source_fingerprint变化才表示来源语义变化。若已有足够事实可形成适用正式判断，可提前发布并按真实条件选择valid_until；不能续命、回填时间或强制中性。确需开盘事实的部分留待同一份投影的最终适配；09:25只核对source_fingerprint变化与当前条件。新/变更来源仍只由remote writer完整读取并独立复核。
 
 完整request、候选、回执保存文件，stdout默认只给紧凑通知、路径、hash及实际deadline；brief保留候选的决策相关字段，其他细节按需从原件读取。09:20前保存恢复检查点（原进程ID、投影路径/hash、仍缺事实、下一动作），09:24起只按runner事件读取紧凑状态，禁止模型盲轮询。自动压缩时点由客户端决定；通过减少输入和提前checkpoint避免在开盘依赖满上下文。FILLED/CANCELLED与策略SKIPPED混合也是终态，UNKNOWN仍单独未决。延迟和支持层降级独立报告。
 
@@ -178,14 +178,24 @@ KOL 正式决策、委托成交以及事后会计/历史/通知分别可见。�
 回执单独保存，不能用 09:00 证据冒充。会话恢复先证普通同账户交易就绪，再 claim finish；
 仅待导航的只读结果保留原 claim，绝不重放密码、Login 或 restart。
 
-KOL 提前输入阶段仅加载已发布紧凑投影的全部合格观点与契约，不做来源摘要、条件开盘
-草稿或交易判断。原 runner 发输入准备事件，主任务在 09:20 前派一个 §2a 指定路由 worker，
-保存全量 ID 覆盖与实际 dispatch 证明。冻结评审前一次 cache-only fingerprint/有效集合复验，
-来源变化或覆盖/规则变化使旧加载证明失效。收到原评审请求立即给同一 warm worker 原冻结、
-账户、风险和当前事实；预算展示模型、引用核验、独立主审和发布的共同剩余秒数。保留
-09:27 支持等待边界和 09:28 理想/09:30 最迟收单目标，超时或质量不足回确定性基线；
-缺失/迟到模型准备立即跳过新模型等待，仅可按原验证门复用已有仍有效正式决策，否则基线；
-不阻断安全合格的基线 BUY，账户风险禁止 BUY 时不进入支持等待。
+KOL 提前准备（2026-10-23 用户批准）在09:20前由§2a指定路由worker完整读取所有合格
+已发布观点、评价、关系和规则一次，产出有来源原话、适用条件、失效条件及反证的仓位姿态、
+模式关注和个股风险准备。每条观点映射到准备结论或有理由的背景/不适用处置；独立主审绑定
+精确输入、实际dispatch、引用正文context和草稿hash后才封存，固定authority=0。提前准备
+不是最终政策；“轻仓”不能机械造数，“重点看”不能自动恢复COLD，UNKNOWN及原资金门不变。
+
+原冻结请求只组装相关准备结论、全局风险/反证、全部新增/改变/移除观点，以及当时冻结、
+账户和风险事实；用分析者显式scope匹配，不按关键词/latest-N。评价变化使对应结论失效，
+关系历史变化保守重审；规则变化或准备缺失/迟到则跳过新模型等待。原warm worker只复核
+这些条件与变化，不对每笔订单重读完整旧投影。完整覆盖和来源证据仍保存在原准备回执。
+盘前备好引用正文和输出结构；正式发布仍须当前来源核验、独立主审与原请求绑定。
+APP和paper共用opening_preparation接口、各自保留owner与账户证据。操作见
+[晨间KOL准备](../.codex/skills/xiaocao-trading/references/kol-opening-preparation.md)。
+
+实际dispatch立即发生并记录时刻；预算包含模型、引用核验、独立审核和发布，保留09:27
+支持截止及09:28理想/09:30最迟收单目标，不延时或追认迟到草稿。准备通过、正式发布与
+原consumer采用分别留证；超时不称完成中性判断，仅复用独立有效政策或明确回基线。
+安全合格的基线BUY不受支持降级阻断；账户风险禁止BUY时不进入支持等待。
 
 完整串行收单后释放批次 APP/账户 lease，原意图、预留和订单 claim 保留；原 owner 保持
 awaiting_fill，09:30 前链条确定的排队 ACK 不反复查成交，09:30 后仅对已 claim 原计划
@@ -740,6 +750,7 @@ no-KOL三项纸盘挑战，共同风险与B退出，仅前向独立账本。原�
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| 4.49 | 2026-10-23 | 用户批准KOL盘前条件准备与开盘增量复核：完整覆盖/独立接受、引用预备和相关性组装；保留原政策发布、COLD及所有交易门，paper预唤醒提前至09:10。 |
 | 4.48 | 2026-10-22 | 用户批准统一APP B落地：共同最终计划/分配、独立sellable_only与原owner有界SELL终态回读；前向资金控制和三个挑战、APP生命周期/费用/资金报告，保留E/COLD/B退出及晋级门。 |
 | 4.47 | 2026-10-22 | 用户要求 APP 短线沉淀统一操作流程；共同裁决解释、模式映射与本请求完成证明，独立 paper 选择研究与周复盘。保留 COLD/账户/执行门及独立账本，不将选择记录冒充资金收益。 |
 | 4.46 | 2026-10-21 | 用户批准修复盘后旧单确认无收口、回执身份导致重复告警及首错遮盖。证据完备的后续独立清仓关闭经济核对任务，保留原UNKNOWN/同代码BUY/费用现金门；每次新快照重新评估，汇总全部待核，静默未变化历史与会计缺口，仅对当前风险或具体用户动作通知。 |

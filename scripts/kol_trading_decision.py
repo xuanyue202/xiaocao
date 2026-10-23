@@ -16,6 +16,7 @@ def main(argv: list[str] | None = None, *, client=None, clock=decisions.utc_now)
     parser.add_argument("--decision", type=Path)
     parser.add_argument("--review", type=Path)
     parser.add_argument("--context", type=Path)
+    parser.add_argument("--morning-request", type=Path, help="Exact original request for a morning-bound publication")
     parser.add_argument("--book", choices=("B", "T", "KOL-US"), default="B")
     parser.add_argument("--runtime", choices=("live", "paper"), default="paper")
     parser.add_argument("--phase")
@@ -34,7 +35,8 @@ def main(argv: list[str] | None = None, *, client=None, clock=decisions.utc_now)
                 raise decisions.TradingDecisionError("publish_files_required")
             result = decisions.publish_trading_decision(args.root,
                 decisions.read_json(path(args.decision)), decisions.read_json(path(args.review)),
-                decisions.read_json(path(args.context)), client=client, clock=clock)
+                decisions.read_json(path(args.context)), client=client, clock=clock,
+                morning_request=decisions.read_json(path(args.morning_request)) if args.morning_request else None)
         elif args.command == "request":
             if not all((args.context, args.decision_context, args.phase)):
                 raise decisions.TradingDecisionError("request_files_and_phase_required")

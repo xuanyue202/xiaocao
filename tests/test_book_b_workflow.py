@@ -207,7 +207,7 @@ def test_actual_paper_no_buy_binds_canonical_batch_and_does_not_replay(tmp_path,
     (runs / "checklists").mkdir(parents=True)
     (runs / "history").mkdir()
     identity = {"automation_id": "xiaocao-book-b-live-morning", "owner_thread_id": "fixture-app", "runner_pid": 123}
-    (runs / "checklists/fixture.json").write_text(json.dumps({"binding": {**identity,
+    (runs / "checklists/fixture.json").write_text(json.dumps({"schema_version": 1, "items": {"identity_calendar": {}, "kol_projection": {}, "orders": {}}, "binding": {**identity,
         "trade_date": day, "preparation_deadline": day + "T09:35:00+08:00"}}))
     app_receipt = {"trade_date": day, "run_id": day + "-fixture", "runner_identity": identity,
                    "status": "no_action", "strategy_adjudication": app_explanation}

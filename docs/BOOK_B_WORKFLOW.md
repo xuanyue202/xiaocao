@@ -121,3 +121,11 @@ APP 撮合规律仍须实际原单和 contemporaneous quote 验证，不能从�
 工程验收区分代码/离线隔离测试、真实 APP 只读端口验证、未来原单自然终态、未来资金收益。
 后两项不能由测试或说明替代。回滚定向 revert 源码 commit，保留原订单、协议、输入、研究
 账户和会计历史；已有模型账户协议不兼容时拒绝继续，另行登记新实验而非覆盖旧状态。
+
+## 晨间 KOL 准备与生效链
+
+按 Operating Contract §1d 和 [准备操作](../.codex/skills/xiaocao-trading/references/kol-opening-preparation.md)，
+APP/Paper分别在原owner下完成一次全观点条件准备；冻结后只复核相关结论、全部变化和当前
+账户事实。准备authority=0，正式source/独立复核/发布及COLD默认门保持。
+回执分别记录准备接受、实际最终dispatch、增量、正式政策及原consumer采用；模式/仓位
+影响须能追溯到来源、条件和当时事实。准备完成不算决策采用，也不能证明收益提升。

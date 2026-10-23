@@ -285,3 +285,17 @@ def test_storage_failure_never_returns_an_allow(tmp_path, monkeypatch):
     monkeypatch.setattr(support, "_atomic_json", fail)
     with pytest.raises(OSError, match="persistence failure"):
         evaluate(tmp_path)
+
+
+def test_preview_uses_prior_risk_without_advancing_head_or_archives(tmp_path):
+    evaluate(tmp_path)
+    directory = support.risk_directory(tmp_path)
+    before = {str(p):p.read_bytes() for p in directory.rglob("*") if p.is_file()}
+    preview = support.evaluate_paper_risk(tmp_path, account(120000), [], now=NOW+timedelta(minutes=1),
+        mark_provider=lambda code: {}, persist=False)
+    assert preview["authority"] == "preview_only" and preview["high_water_mark"] == 120000
+    assert {str(p):p.read_bytes() for p in directory.rglob("*") if p.is_file()} == before
+    blocked = support.evaluate_paper_risk(tmp_path, account(70000), [], now=NOW+timedelta(minutes=2),
+        mark_provider=lambda code: {}, persist=False)
+    assert blocked["deploy_factor"] == 0
+    assert {str(p):p.read_bytes() for p in directory.rglob("*") if p.is_file()} == before

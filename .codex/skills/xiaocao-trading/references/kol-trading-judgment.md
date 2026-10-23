@@ -119,6 +119,12 @@ PYTHONPATH=src .venv/bin/python scripts/kol_trading_decision.py status --book B 
 PYTHONPATH=src .venv/bin/python scripts/kol_trading_decision.py status --book B --runtime paper
 ```
 
+For a policy bound by `morning_request_sha256`, also pass
+`--morning-request <exact original request_path>`. The publisher verifies its
+hash/scope, bounds source readback to the remaining absolute budget, and checks
+the deadline under the final policy-store lock. Late drafts cannot enter the
+policy store; completed exact retries retain their original receipts.
+
 Publish verifies source hashes against current remote manifests and writes only
 the dedicated `output/live/kol_policy/decisions` store. Keep source caches,
 requests, risk evidence and analysis outside that directory. Reconcile an exact
@@ -230,16 +236,16 @@ removed ID, and retains full current coverage. It is not an AI summary or a
 substitute for reading the base. A new worker must receive both the base and
 delta. Source publication continues to use the full current `context_path`.
 
-## Morning input loading and final dispatch
+## Morning preparation and final dispatch
 
-Apply Contract §1d: original runner emits a cache-only, hash-bound all-eligible
-input capsule. Before 09:20 one explicitly routed Sol xhigh worker loads that
-projection and rules; record full viewpoint-ID coverage and actual accepted
-dispatch. This stage has authority=0 and performs no source summary, opening
-draft or trading judgment. At the exact frozen review request, immediately reuse
-the warm worker; the runner's fingerprint/coverage/rules check invalidates stale
-loading. Changed inputs require complete fresh compact loading, no keyword or
-latest-N truncation. Budget is total remaining model + source verification +
-independent parent acceptance + formal publication time, capped by the original
-support deadline. All §2a verification/publication gates still apply. Missing
-quality/loading/routing or late unpublished drafts degrade explicitly to baseline.
+Apply Contract §1d and [kol-opening-preparation.md](kol-opening-preparation.md).
+Before 09:20 the routed worker covers every eligible published viewpoint once,
+prepares conditional posture/mode/risk implications, and obtains independent
+parent acceptance with exact input, dispatch and source-context hashes. This is
+authority=0 preparation, not source re-authoring or a published policy.
+At the original freeze, dispatch the relevant prepared implications, complete
+source delta and current account/freeze/risk facts immediately to that warm
+worker. Final citation verification, independent review and publication all fit
+inside the original 09:27 cutoff. Reuse unchanged prepared work across the batch;
+per-order policy gates do not spawn another full semantic review. Missing or
+late preparation/publication degrades explicitly under existing baseline rules.

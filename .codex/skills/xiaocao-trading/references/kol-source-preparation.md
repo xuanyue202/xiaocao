@@ -16,5 +16,7 @@ PYTHONPATH=src .venv/bin/python scripts/kol_trading_context.py projection --cach
 
 They consume the returned immutable path/hash/counts, then perform one bounded
 runtime current-applicability review. They do not reopen unchanged report bodies
-or create a second source-notes/opening-draft artifact. Formal decision
+or create a second source-semantic artifact. Current conditional preparation
+uses [kol-opening-preparation.md](kol-opening-preparation.md) and the published
+viewpoints; it never revives this legacy source-authoring route. Formal decision
 publication still loads and verifies only the exact cited reports.
