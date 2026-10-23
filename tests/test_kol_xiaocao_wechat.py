@@ -1423,6 +1423,50 @@ def test_native_playback_reconciles_only_unaccepted_global_observation(tmp_path,
         assert restored["rejected_global_candidate"] == captured["candidate"]
 
 
+@pytest.mark.parametrize("blocker", [None, "source_job_id", "download_idempotency_key", "netdisk_job_id", "media_path", "manifest_task", "open_window", "unknown_state", "vod_host", "different_key"])
+def test_native_playback_preserves_unbound_live_wait_without_accepting_media(tmp_path, blocker):
+    store = CaptureJobStore(tmp_path / "capture.jsonl")
+    original = store.arm([{"id": "baseline"}])
+    candidate = {"id": "live-stream", "live_id": "l_original",
+                 "host": "liveplay-mp.xiaoeknow.com", "media_type": "m3u8"}
+    if blocker == "vod_host":
+        candidate["host"] = "encrypt-k-vod.xet.tech"
+    captured = store.transition(original, "capture_detected", status="captured",
+        candidate=candidate, candidate_key="live:l_other" if blocker == "different_key" else "live:l_original",
+        **({blocker: "existing-claim"} if blocker in {
+            "source_job_id", "download_idempotency_key", "netdisk_job_id", "media_path"} else {}))
+    item = {"entry_kind": "wechat_mini_program", "status": "awaiting_playback",
+            "capture_job_id": original["job_id"], "media_request_observed": True,
+            "observed_page_state": "unknown" if blocker == "unknown_state" else "live",
+            "activated": False, "playback_window_closed": blocker != "open_window"}
+    if blocker == "manifest_task":
+        item["task_id"] = "existing-task"
+    (tmp_path / "manifest.json").write_text(json.dumps({"items": {"item": item}}))
+    starts = []
+    def start():
+        starts.append(True)
+        return {"capture_job_id": original["job_id"], "status": store.latest()["status"]}
+    service = SimpleNamespace(capture_store=store, start=start)
+    driver = XiaocaoLiveCaptureDriver(tmp_path, service_factory=lambda *a, **kw: service)
+    if blocker:
+        with pytest.raises(EnrichmentError, match="existing awaiting capture"):
+            driver.prepare_playback("item", original["job_id"])
+        assert store.latest() == captured
+        assert starts == []
+        return
+    assert driver.prepare_playback("item", original["job_id"])["status"] == "awaiting_capture"
+    restored = store.latest()
+    assert restored["baseline_candidate_keys"] == original["baseline_candidate_keys"]
+    assert restored["retained_live_observation"]["candidate"] == candidate
+    assert restored["retained_live_observation"]["source_accepted"] is False
+    assert restored["candidate"] is None
+    assert not driver.can_expire_wait("item", original["job_id"])
+    assert driver.advance_capture("item", original["job_id"])["status"] == "awaiting_capture"
+    assert store.latest() == restored
+    driver.prepare_playback("item", original["job_id"])
+    assert store.latest() == restored
+
+
 def test_wechat_mini_program_route_rejects_a_different_live_id(tmp_path):
     page_url = (
         "https://app6ums63as6516.h5.xiaoeknow.com/v2/course/alive/"

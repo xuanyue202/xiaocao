@@ -951,6 +951,8 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
             "start_with_recorded_video_page_arms_file_bound_capture_without_source_job or "
             "start_rejects_recorded_video_without_media_file_binding or "
             "start_classifies_sniffer_candidate_baseline_failure or "
+            "native_playback_preserves_unbound_live_wait_without_accepting_media or "
+            "native_playback_reconciles_only_unaccepted_global_observation or "
             "recorded_video_page_arms_bound_capture or "
             "existing_recorded_video_page_resolves_media_file_before_arming or "
             "runtime_initialization_defers_lianghui_config or "

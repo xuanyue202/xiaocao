@@ -827,6 +827,16 @@ def test_source_cli_narrow_runner_supports_xiaocao_wechat_live():
     ]
 
 
+@pytest.mark.parametrize("surface", ["source", "kol-wechat-explicit"])
+def test_source_cli_narrow_runner_supports_xiaocao_wechat_live_exact_repair(surface):
+    runtime = DailyRuntime.__new__(DailyRuntime)
+    runtime.args = SimpleNamespace(source_identity="kol-wechat-original")
+    calls = []
+    runtime.xiaocao_wechat = lambda **kwargs: calls.append(kwargs) or {"status": "waiting"}
+    runtime.xiaocao_wechat_narrow_resume("xiaocao_wechat_live:" + surface)
+    assert calls == [{"only_identity": "kol-wechat-original" if surface == "source" else surface}]
+
+
 def test_runtime_initialization_defers_lianghui_config(monkeypatch, tmp_path):
     monkeypatch.setattr(
         kol_daily_script.LiangHuiMcpClient,

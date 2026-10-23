@@ -40,6 +40,13 @@ source/media/download claim, `prepare_playback` reconciles only the matching
 `awaiting_playback` manifest item back to the same awaiting capture. It preserves
 the original baseline and rejected observation; every bound claim fails closed.
 Do not reset the ledger manually or create a replacement capture.
+The same guard also reconciles a closed native `live` wait accidentally marked
+`capture_detected`: only an unbound `liveplay-mp.xiaoeknow.com` stream with
+matching candidate/live key, false activation and true media/closure evidence
+qualifies. It appends `retained_live_observation` with `source_accepted=false`,
+preserves the original observation/baseline and prevents idle expiry. Continue
+the same original share through fresh finite-source verification; the retained
+live stream grants no download claim or accepted replay identity.
 For a live ID already present in the original baseline, a newly observed native
 v2 replay may pass media validation only with a new candidate ID, post-arm time,
 exact task capture/live labels and the accepted same-app/live merchant response
