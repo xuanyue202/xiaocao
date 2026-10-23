@@ -16,7 +16,11 @@ from xiaocao.live import foundersc_native_ax as native
 @pytest.mark.parametrize('clock,allowed', [
     ('2026-09-14T08:59:59+08:00', True),
     ('2026-09-14T09:00:00+08:00', False),
-    ('2026-09-14T12:00:00+08:00', False),
+    ('2026-09-14T11:29:59+08:00', False),
+    ('2026-09-14T11:30:00+08:00', True),
+    ('2026-09-14T12:00:00+08:00', True),
+    ('2026-09-14T12:59:59+08:00', True),
+    ('2026-09-14T13:00:00+08:00', False),
     ('2026-09-14T14:59:59+08:00', False),
     ('2026-09-14T15:00:00+08:00', True),
     ('2026-09-18T09:30:00+08:00', False),
@@ -24,6 +28,8 @@ from xiaocao.live import foundersc_native_ax as native
     ('2026-09-20T14:30:00+08:00', True),
     ('2026-09-14T01:00:00+00:00', False),
     ('2026-09-14T07:00:00+00:00', True),
+    ('2026-09-14T03:30:00+00:00', True),
+    ('2026-09-14T05:00:00+00:00', False),
 ])
 def test_china_wall_clock_boundaries(clock, allowed):
     assert window.app_tests_allowed(datetime.fromisoformat(clock)) is allowed
@@ -59,13 +65,18 @@ def make_client(tmp_path, monkeypatch):
     return native.FounderscNativeAXClient(helper_path=helper, runner=runner), calls
 
 
-def test_waiting_test_cannot_dispatch_after_0900(tmp_path, monkeypatch):
+@pytest.mark.parametrize('before,after', [
+    ('2026-09-14T08:59:59+08:00', '2026-09-14T09:00:00+08:00'),
+    ('2026-09-14T12:59:59+08:00', '2026-09-14T13:00:00+08:00'),
+])
+def test_waiting_test_cannot_dispatch_after_cutoff(tmp_path, monkeypatch, before, after):
     client, calls = make_client(tmp_path, monkeypatch)
-    allowed = [True]
-    monkeypatch.setattr(window, 'app_tests_allowed', lambda: allowed[0])
+    current = [datetime.fromisoformat(before)]
+    allowed = window.app_tests_allowed
+    monkeypatch.setattr(window, 'app_tests_allowed', lambda: allowed(current[0]))
     @contextmanager
     def delayed_lock():
-        allowed[0] = False
+        current[0] = datetime.fromisoformat(after)
         yield 0
     monkeypatch.setattr(native, 'app_session', delayed_lock)
     with pytest.raises(window.AppTestWindowClosed):

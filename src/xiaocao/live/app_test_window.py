@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 
 _active = ContextVar("app_simulation_test", default=False)
 TEST_CONTEXT_ENV = "XIAOCAO_APP_SIMULATION_TEST"
-WINDOW_DESCRIPTION = "Asia/Shanghai: weekends, or weekdays before 09:00 / from 15:00"
+WINDOW_DESCRIPTION = "Asia/Shanghai: weekends, or weekdays before 09:00 / 11:30 <= time < 13:00 / from 15:00"
 
 
 class AppTestWindowClosed(RuntimeError):
@@ -21,7 +21,8 @@ def app_tests_allowed(now: datetime | None = None) -> bool:
     if current.tzinfo is None:
         raise ValueError("APP test clock must have a timezone")
     current = current.astimezone(ZoneInfo("Asia/Shanghai"))
-    return current.weekday() >= 5 or current.time() < time(9) or current.time() >= time(15)
+    return (current.weekday() >= 5 or current.time() < time(9)
+            or time(11, 30) <= current.time() < time(13) or current.time() >= time(15))
 
 
 def require_app_test_window() -> None:

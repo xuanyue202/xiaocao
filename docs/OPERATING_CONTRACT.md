@@ -1,6 +1,6 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：4.49
+**版本**：4.50
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
 **关联实现**：`src/xiaocao/live/{safety,capital_keychain,foundersc_native_ax,foundersc_native_broker,trading_execution,book_b_live_lifecycle,book_b_live_intraday}.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`native/foundersc_ax_executor/`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{book_b_live_morning,book_b_live_intraday,live_monitor,research_mode_switch_replay}.py`
@@ -65,7 +65,7 @@ T+1、流动性、账户隔离和精确一次规则。知晓仿真不改变候�
 恢复所需原子能力。只读、导航和提交前动作可有界重试；委托提交按 durable
 claim 与精确副作用证据判断是否可重放。完整复盘和充分回归放在盘后。
 
-方正 APP 工程模拟测试（自动化专项回归、端到端试单和手动压力测试）只在北京时间周六日或工作日 09:00 前、15:00 起运行；工作日 09:00–15:00 含午休禁止。入口及等待锁后均须检查，不能借正式交易入口绕过；未结试单保留原回执并在允许时段恢复。正式交易及必要的生产故障修复按下述原流程执行。实施细则见 `docs/FOUNDER_NATIVE_AX.md` 测试时段说明。
+方正 APP 工程模拟测试（自动化专项回归、端到端试单和手动压力测试）只在北京时间周六日或工作日 09:00 前、11:30（含）–13:00（不含）、15:00 起运行；工作日 09:00–11:30、13:00–15:00 禁止。入口及等待锁后均须检查，不能借正式交易入口绕过；未结试单保留原回执并在允许时段恢复。正式交易及必要的生产故障修复按下述原流程执行。实施细则见 `docs/FOUNDER_NATIVE_AX.md` 测试时段说明。
 
 晨间任务先调用小草 `/stock/trade_cal`，核验今日是否交易日；最近交易日不同于今日则直接 `NON_TRADING_DAY` 结束，不进入 APP/KOL 预检、冻结等待、历史对账或企微交易告警。日历缺失或失败停在 APP 前，不以工作日调度推断交易日。
 
@@ -750,6 +750,7 @@ no-KOL三项纸盘挑战，共同风险与B退出，仅前向独立账本。原�
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| 4.50 | 2026-10-23 | 用户允许午休APP工程测试：北京时间工作日11:30（含）至13:00（不含）开放；13:00起停止新测试操作，保留原锁、逐次检查和同批次收尾。 |
 | 4.49 | 2026-10-23 | 用户批准KOL盘前条件准备与开盘增量复核：完整覆盖/独立接受、引用预备和相关性组装；保留原政策发布、COLD及所有交易门，paper预唤醒提前至09:10。 |
 | 4.48 | 2026-10-22 | 用户批准统一APP B落地：共同最终计划/分配、独立sellable_only与原owner有界SELL终态回读；前向资金控制和三个挑战、APP生命周期/费用/资金报告，保留E/COLD/B退出及晋级门。 |
 | 4.47 | 2026-10-22 | 用户要求 APP 短线沉淀统一操作流程；共同裁决解释、模式映射与本请求完成证明，独立 paper 选择研究与周复盘。保留 COLD/账户/执行门及独立账本，不将选择记录冒充资金收益。 |

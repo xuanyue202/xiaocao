@@ -20,7 +20,7 @@ def _automation(name: str) -> dict:
 def test_market_schedules_keep_distinct_ids_and_china_wall_clock() -> None:
     expected = {
         "xiaocao-daily-morning": ("9", "18"),
-        "xiaocao-daily-morning-execution": ("9", "18"),
+        "xiaocao-daily-morning-execution": ("9", "10"),
         "xiaocao-book-b-live-morning": ("8", "53"),
         "xiaocao-intraday-monitor": ("9", "35,45,55"),
         "xiaocao-intraday-monitor-05": ("10,13", "25,55"),

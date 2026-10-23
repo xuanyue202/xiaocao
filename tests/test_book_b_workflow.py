@@ -184,7 +184,7 @@ def test_actual_paper_no_buy_binds_canonical_batch_and_does_not_replay(tmp_path,
     monkeypatch.setattr(paper, "SNAP", live / "signal_snapshots.jsonl")
     monkeypatch.setattr(paper, "_load_account", lambda *_: {})
     policy = kol_policy.load_decision(tmp_path / "none", "B", "paper", NOW)
-    monkeypatch.setattr(paper, "_paper_support_context", lambda *_: ({"status": "NORMAL"}, policy))
+    monkeypatch.setattr(paper, "_paper_support_context", lambda *_, **kwargs: ({"status": "NORMAL"}, policy))
     monkeypatch.setattr(sys, "argv", ["paper_record.py", "--date", day, "--pick", "mode_exec_star", "--intelligence-trade", "off"])
     args = paper._parse_args()
     paper._main_locked(args)

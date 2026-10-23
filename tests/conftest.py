@@ -35,7 +35,7 @@ def pytest_collection_modifyitems(items):
 @pytest.hookimpl(tryfirst=True)
 def pytest_runtest_setup(item):
     # Check before fixtures, including direct pytest calls and a suite that
-    # started before 09:00. Future APP tests can use the same explicit marker.
+    # started before 09:00 or 13:00. Future APP tests can use the same explicit marker.
     if (item.get_closest_marker("app_simulation") and not app_test_window.app_tests_allowed()
             and not (item.get_closest_marker("app_authentication") and authentication_test_mode())):
         pytest.skip("APP_TEST_TIME_BLOCKED: " + app_test_window.WINDOW_DESCRIPTION)

@@ -14,6 +14,13 @@ def identity(monkeypatch):
     monkeypatch.setenv("CODEX_THREAD_ID", "first-owner")
 
 
+@pytest.fixture
+def business_time_ready(monkeypatch):
+    from xiaocao.utils import business_clock
+    # These cases test durable slot ownership, not the wall-clock wait.
+    monkeypatch.setattr(business_clock, "wait_for_business_time", lambda *_: 0.0)
+
+
 def test_slot_survives_owner_exit_and_branches_are_independent(tmp_path, monkeypatch, identity):
     from xiaocao.live.eod_automation_gate import claim_eod_slot, EodGateRejected
     first = claim_eod_slot(tmp_path, "paper", "2026-10-06")
@@ -36,7 +43,7 @@ def test_identity_rejects_before_any_claim(tmp_path, monkeypatch, automation_id,
     assert list(tmp_path.iterdir()) == []
 
 
-def test_paper_duplicate_cannot_spawn_or_overwrite_latest(tmp_path, monkeypatch, identity):
+def test_paper_duplicate_cannot_spawn_or_overwrite_latest(tmp_path, monkeypatch, identity, business_time_ready):
     from xiaocao.live import runtime_evidence
     script = tmp_path / "daily.sh"
     script.write_text("echo noop\n")
@@ -79,7 +86,7 @@ def test_app_holiday_owner_and_duplicate_before_client(tmp_path, monkeypatch, ca
 
 
 @pytest.mark.app_simulation
-def test_app_wrong_identity_never_reaches_client(tmp_path, monkeypatch, capsys):
+def test_app_wrong_identity_never_reaches_client(tmp_path, monkeypatch, capsys, business_time_ready):
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "scripts"))
     cli = importlib.import_module("scripts.book_b_live_intraday")
     monkeypatch.setenv("CODEX_AUTOMATION_ID", "another-task")
@@ -118,7 +125,7 @@ def test_damaged_claim_is_not_reclaimed(tmp_path, identity):
     assert claim.read_text() == "broken"
 
 
-def test_failed_paper_shell_keeps_claim_and_cannot_be_restarted(tmp_path, monkeypatch, identity):
+def test_failed_paper_shell_keeps_claim_and_cannot_be_restarted(tmp_path, monkeypatch, identity, business_time_ready):
     from xiaocao.live import runtime_evidence
     script = tmp_path / "daily.sh"
     script.write_text("exit 7\n")

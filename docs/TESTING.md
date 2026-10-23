@@ -16,7 +16,7 @@ PYTHONPATH=src .venv/bin/python -m pytest -q -m 'not e2e' -n 2 --dist loadfile
 
 单项调试使用普通串行 pytest。专项覆盖率使用 `PYTHONPATH=src .venv/bin/python scripts/test_foundersc_reliability.py`，仍保持串行；不要给 `coverage run -m pytest` 直接追加 `-n 2`，否则只采到控制进程，不能代表工作进程的覆盖率。
 
-行情 API e2e 继续单独串行运行 `PYTHONPATH=src .venv/bin/python -m pytest tests/e2e -q`，保持接口限流。APP 专项回归、实际 APP 仿真和手动压力测试的时间窗口保持不变，见 [APP 测试时段](FOUNDER_NATIVE_AX.md#测试时段2026-09-13)。若出现时段跳过或缺依赖跳过，必须如实报告，不能算完整通过。实际 APP 测试不加入两个进程的离线回归。
+行情 API e2e 继续单独串行运行 `PYTHONPATH=src .venv/bin/python -m pytest tests/e2e -q`，保持接口限流。APP 专项回归、实际 APP 仿真和手动压力测试遵循 [APP 测试时段](FOUNDER_NATIVE_AX.md#测试时段2026-09-13)。若出现时段跳过或缺依赖跳过，必须如实报告，不能算完整通过。实际 APP 测试不加入两个进程的离线回归。
 
 行情认证验收须区分核心接口探测与完整推荐流程。登录、Keychain、一次失效恢复及隔离推荐的证据和复验边界见 [行情认证验收](MARKET_API_AUTH_ACCEPTANCE.md)。
 
