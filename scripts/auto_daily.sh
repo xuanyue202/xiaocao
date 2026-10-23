@@ -317,7 +317,11 @@ case "$STEP" in
       log "weekly supporting_health=degraded: shortline comparison unavailable; no return improvement inferred"
     fi
     log "weekly deep review: build fixed-input plan"
-    run_python scripts/weekly_deep_review.py --plan --date "$TODAY" >>"$LOG" 2>&1
+    run_python scripts/weekly_deep_review.py --plan --date "$TODAY" >>"$LOG" 2>&1 || {
+      WEEKLY_PLAN_EXIT=$?
+      log "weekly plan FAILED: fixed-input plan unavailable; inspect original command evidence"
+      exit "$WEEKLY_PLAN_EXIT"
+    }
     log "weekly plan ready -> output/live/weekly_plan_${TODAY}.json; Codex should apply evidence-backed changes, validate, then finalize/commit"
     ;;
   *)

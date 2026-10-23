@@ -93,6 +93,44 @@ def test_failed_checkpoint_archives_error_and_preserves_running_owner(entry, mon
 
 
 @pytest.mark.app_simulation
+@pytest.mark.parametrize("write_failure", [False, True])
+def test_failed_checkpoint_retains_native_cells_without_snapshot_authority(entry, monkeypatch, capsys, write_failure):
+    import hashlib
+    from xiaocao.live.foundersc_native_ax import FounderscNativeAXError
+
+    cli, calls, root = entry
+    failed = {"native_read_error": "NATIVE_QUERY_ORDER_FILLED_QUANTITY_MALFORMED",
+              "failed_native_readbacks": {"today-orders": {"observed_at": "2026-09-11T07:10:00Z"}},
+              "failed_native_rows": [{"query_kind": "today-orders", "成交数量": "bad-cell"}]}
+    broker = SimpleNamespace(last_query_readbacks={"today-orders": {}},
+                             _failed_read_evidence=lambda exc: failed)
+    monkeypatch.setattr(cli, "build_foundersc_native_execution", lambda *a, **k: (object(), broker))
+    def fail(**kwargs):
+        raise FounderscNativeAXError(failed["native_read_error"])
+    monkeypatch.setattr(cli, "run_book_b_live_intraday", fail)
+    original_write = cli._write_json_atomic
+    def write(path, payload):
+        if write_failure and path.parent.name == "read_failures":
+            raise OSError("fixture disk failure")
+        original_write(path, payload)
+    monkeypatch.setattr(cli, "_write_json_atomic", write)
+    assert cli.main(["--phase", "opening", "--state-dir", str(root)]) == 2
+    output = capsys.readouterr().err
+    payload = json.loads(output)
+    assert payload["reason"] == failed["native_read_error"]
+    assert "bad-cell" not in output and "broker_snapshot" not in payload
+    assert calls == []
+    if write_failure:
+        assert payload["native_readback_evidence_error"] == "OSError"
+    else:
+        ref = payload["native_readback_evidence"]
+        raw = Path(ref["path"]).read_bytes()
+        assert hashlib.sha256(raw).hexdigest() == ref["sha256"]
+        assert json.loads(raw)["evidence"] == failed
+        assert Path(ref["path"]).parent.name == "read_failures"
+
+
+@pytest.mark.app_simulation
 @pytest.mark.parametrize("phase", ["opening", "sparse", "precheck", "closing", "eod"])
 @pytest.mark.parametrize("requested_date", ["today", "2026-09-30"])
 def test_holiday_stops_before_secrets_app_and_pending_order_recovery(entry, monkeypatch, capsys, phase, requested_date):

@@ -178,6 +178,12 @@ validation, commit/push the coherent repair for the collaborating writer.
 
 ## Read-only recovery boundary
 
+On a blocked checkpoint, verify `native_readback_evidence.path/sha256` and read
+the retained redacted cells under `runs/intraday/read_failures`. This artifact
+is diagnostic evidence, not a validated account snapshot or trading permission.
+`native_readback_evidence_error` identifies a separate storage gap; preserve the
+original business error and do not recreate expired observations with new reads.
+
 Positions, orders, trades, account-summary, and allocation queries may repeat
 as a bounded whole-snapshot read when parsing, freshness evidence, or a strict
 cross-field invariant is transiently unproven. BUY/NAV/EOD keep those proofs.
@@ -268,9 +274,10 @@ port. An unrecognized result stays `UNKNOWN/reconcile_only`, never a blind
 second click. Record each order's acceptance and fill separately.
 For a closing SELL, inspect the order's `filled_shares`, `remaining_shares`,
 `state`, current bid and time before calling the checkpoint complete. An
-`ACKNOWLEDGED` or `PARTIAL` receipt is still an open exit. The current native
-adapter has no automatic SELL replacement or within-window fill controller:
-keep the task owner on exact readback/repair and record the unsold amount and
+`ACKNOWLEDGED` or `PARTIAL` receipt is still an open exit. The original intraday
+owner now observes claimed orders within its persisted 120-second budget and
+the 14:57 boundary; automatic SELL replacement remains disabled.
+Keep that owner on exact readback/repair and record the unsold amount and
 next-session capacity impact. Any new same-day order for that unsold amount
 needs a durable cancel-terminal/fill proof and a separate plan/claim; a raw
 second native click cannot supply that proof. Implement and validate the

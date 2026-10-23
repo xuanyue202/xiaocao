@@ -48,7 +48,7 @@ def eod_identity(monkeypatch):
     monkeypatch.setenv("XIAOCAO_BOOK_T_V2_REHEARSAL_DATE", "2026-09-30")
 
 
-def isolated_daily(tmp_path: Path, *, mutate: bool = False, tail: str = '', context_exit: int = 0, fail_program: str = ''):
+def isolated_daily(tmp_path: Path, *, mutate: bool = False, tail: str = '', context_exit: int = 0, fail_program: str = '', step: str = 'eod'):
     (tmp_path / 'scripts').mkdir()
     script = tmp_path / 'scripts/auto_daily.sh'
     script.write_text((REPO / 'scripts/auto_daily.sh').read_text() + tail)
@@ -74,10 +74,18 @@ exit 0
     stub.chmod(0o755)
     env = {**os.environ, 'XIAOCAO_ROOT': str(tmp_path), 'PYTHONPATH': str(REPO / 'src'),
            'MUTATE_SOURCE': str(int(mutate)), 'PYTHONDONTWRITEBYTECODE': '1'}
-    completed = subprocess.run(['bash', str(script), 'eod'], cwd=tmp_path,
+    completed = subprocess.run(['bash', str(script), step], cwd=tmp_path,
                                env=env, capture_output=True, text=True, timeout=20)
     receipts = list((tmp_path / 'output/live/auto/runs').glob('*/terminal.json'))
     return completed, [json.loads(path.read_text()) for path in receipts]
+
+
+def test_weekly_plan_failure_has_nonzero_exit_and_no_ready_message(tmp_path: Path) -> None:
+    completed, receipts = isolated_daily(tmp_path, step='weekly', fail_program='scripts/weekly_deep_review.py')
+    assert completed.returncode != 0
+    assert 'weekly plan ready' not in completed.stdout
+    assert receipts[0]['status'] == 'failed'
+    assert receipts[0]['process_exit_code'] != 0
 
 
 def test_running_shell_is_not_corrupted_by_source_mutation(tmp_path: Path) -> None:

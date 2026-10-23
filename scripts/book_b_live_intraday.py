@@ -10,6 +10,7 @@ still cannot submit without the pre-existing two-key real-capital runtime.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import subprocess
@@ -112,6 +113,7 @@ def main(argv: list[str] | None = None) -> int:
     run_dir = state_dir / "runs" / "intraday"
     run_path = run_dir / f"{trade_date}-{args.phase}.json"
     archive_path = run_dir / "archive" / f"{run_id}.json"
+    broker = None
     try:
         # A weekday schedule does not prove an exchange session. Stop before
         # secrets, native reads or old-order reconciliation on a holiday.
@@ -319,6 +321,25 @@ def main(argv: list[str] | None = None) -> int:
         }
         if identity is not None:
             payload["automation_identity"] = identity
+        # Failed table validation is not a snapshot. Keep its already-redacted
+        # cells separately so the next owner can reproduce the exact bad read.
+        failed_reader = getattr(broker, "_failed_read_evidence", None)
+        if callable(failed_reader) and getattr(broker, "last_query_readbacks", None):
+            try:
+                failed_path = run_dir / "read_failures" / f"{run_id}.json"
+                _write_json_atomic(failed_path, {
+                    "schema_version": "book-b-failed-native-read.v1", "run_id": run_id,
+                    "trade_date": trade_date, "phase": args.phase,
+                    "authority": "diagnostic_only", "evidence": failed_reader(exc),
+                })
+                payload["native_readback_evidence"] = {
+                    "path": str(failed_path),
+                    "sha256": hashlib.sha256(failed_path.read_bytes()).hexdigest(),
+                }
+            except Exception as evidence_exc:
+                # Disk/serialization faults must not replace the original
+                # business failure or grant any retry/settlement authority.
+                payload["native_readback_evidence_error"] = type(evidence_exc).__name__
         _write_json_atomic(archive_path, payload)
         if payload["reason"] != "LIVE_BOOK_B_CHECKPOINT_ALREADY_RUNNING":
             _write_json_atomic(run_path, payload)

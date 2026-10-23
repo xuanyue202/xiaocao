@@ -26,6 +26,14 @@ The gate holds only this automation's Beijing clock-hour lock across exec.
 Its acquired/busy evidence includes automation ID, task ID and PID; another
 automation in the same checkout or lock directory does not own its slot.
 
+Use the supervisor's actual command status and verify the plan exists. A failed
+original plan stays failed; never rerun the weekly shell to repair its output.
+Only saved immutable inputs can support a dated read-only review continuation;
+disclose missing intermediate values and retain proposal-only authority.
+Execution inventory distinguishes `.wait.json` budget sidecars from terminal
+receipts, retaining orphaned waits as missing-terminal incidents. Follow any
+failed-read evidence reference under the repair branch before diagnosing cells.
+
 This is a research/iteration workflow, not a trading workflow. It may run on a non-trading Friday and reviews the latest trading week.
 
 Before applying any change, read `docs/OPERATING_CONTRACT.md` completely, especially §10, plus `docs/STRATEGY_EVOLUTION_PROTOCOL.md` and `reference/experience/research_protocols.yaml`. Record pre-run `git status --porcelain`; never auto-edit a file that was already dirty.

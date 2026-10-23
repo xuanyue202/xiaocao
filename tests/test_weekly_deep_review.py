@@ -37,6 +37,32 @@ def _fake_flywheel():
     }
 
 
+def test_execution_watch_separates_wait_contract_from_terminal_receipt(tmp_path):
+    archive = tmp_path / "output/live/book_b_live_execution/runs/intraday/archive"
+    archive.mkdir(parents=True)
+    stem = "2026-10-23-closing-example"
+    (archive / (stem + ".wait.json")).write_text(json.dumps({
+        "run_id": stem, "mode": "claimed_orders_readback_only", "budget_seconds": 120,
+        "started_at": "2026-10-23T14:45:00+08:00",
+        "deadline": "2026-10-23T14:47:00+08:00",
+    }))
+    receipt = archive / (stem + ".json")
+    receipt.write_text(json.dumps({"trade_date": "2026-10-23", "phase": "closing",
+                                    "status": "blocked", "reason": "UNRESOLVED_ORDER"}))
+    watch = wdr.build_execution_repair_watch(tmp_path, as_of=dt.date(2026, 10, 23))
+    assert watch["checkpoint_count"] == 1
+    assert watch["blocked_checkpoints"][0]["reason"] == "UNRESOLVED_ORDER"
+    assert watch["missing_eod_dates"] == ["2026-10-23"]
+    receipt.unlink()
+    watch = wdr.build_execution_repair_watch(tmp_path, as_of=dt.date(2026, 10, 23))
+    assert watch["checkpoint_count"] == 0
+    assert watch["status"] == "review_required"
+    assert watch["blocked_checkpoints"][0]["reason"] == "CHECKPOINT_TERMINAL_RECEIPT_MISSING"
+    receipt.write_text(json.dumps({"trade_date": "2026-10-22", "phase": "closing"}))
+    with pytest.raises(ValueError, match="WEEKLY_EXECUTION_CHECKPOINT_INVALID"):
+        wdr.build_execution_repair_watch(tmp_path, as_of=dt.date(2026, 10, 23))
+
+
 @pytest.mark.parametrize("pre_staged_runtime", [False, True])
 def test_finalize_commits_exact_ignored_weekly_artifacts(tmp_path, monkeypatch, pre_staged_runtime):
     _patch_paths(monkeypatch, tmp_path)

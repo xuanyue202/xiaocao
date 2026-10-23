@@ -55,7 +55,7 @@ MODE_NONE = "NO_ACTION_REQUIRED"
 MODES = {MODE_AUTO, MODE_PROPOSAL, MODE_NONE}
 MODE_LABELS = {
     MODE_AUTO: "已按证据自动落地",
-    MODE_PROPOSAL: "只给提案，等你确认",
+    MODE_PROPOSAL: "保留提案，证据不足不晋级",
     MODE_NONE: "本周无需动作",
 }
 
@@ -112,6 +112,7 @@ def build_execution_repair_watch(root: Path, *, as_of: dt.date) -> dict:
     missing_eod_dates: list[str] = []
     non_trading_dates: list[str] = []
     rejected_settlements: list[dict] = []
+    incomplete_checkpoints: list[dict] = []
 
     def ref(path: Path) -> dict:
         row = {"path": path.relative_to(root).as_posix(),
@@ -128,6 +129,17 @@ def build_execution_repair_watch(root: Path, *, as_of: dt.date) -> dict:
         day_closings = []
         for phase in ("closing", "eod"):
             for path in sorted(archive.glob(f"{day}-{phase}-*.json")):
+                # The intraday owner stores its budget beside the terminal
+                # receipt. It is evidence of a started run, not its outcome.
+                if path.name.endswith(".wait.json"):
+                    wait_ref = ref(path)
+                    terminal_path = path.with_name(path.name.removesuffix(".wait.json") + ".json")
+                    if not terminal_path.is_file():
+                        incomplete_checkpoints.append({
+                            "date": day, "phase": phase, "status": "failed",
+                            "reason": "CHECKPOINT_TERMINAL_RECEIPT_MISSING", "evidence": wait_ref,
+                        })
+                    continue
                 data = json.loads(path.read_text(encoding="utf-8"))
                 if not isinstance(data, dict) or data.get("trade_date") != day or data.get("phase") != phase:
                     raise ValueError("WEEKLY_EXECUTION_CHECKPOINT_INVALID")
@@ -211,6 +223,7 @@ def build_execution_repair_watch(root: Path, *, as_of: dt.date) -> dict:
                                "event_sequence": event.get("sequence"),
                                "evidence": event_ref})
     blocked = [row for row in checkpoints if row["status"] in {"blocked", "failed"}]
+    blocked.extend(incomplete_checkpoints)
     return {"schema_version": 1, "authority": "review_only",
             "week_start": week_start.isoformat(), "week_end": as_of.isoformat(),
             "status": "review_required" if open_plans or blocked or missing_settlements or missing_daily_reviews or missing_eod_dates else
@@ -888,6 +901,8 @@ def _render_knowledge_changes(plan: dict) -> list[str]:
 
 def _human_proposal_line(p: dict) -> str:
     pid = str(p.get("id", "proposal"))
+    if p.get("requires_confirmation") is False:
+        return f"- **继续取证** `{pid}`：{_clip(p.get('title') or p.get('reason'), limit=180)}"
     if pid.startswith("pass-pending-"):
         pending_ids = re.findall(r"xh-\d+", pid, flags=re.IGNORECASE)
         pending = ", ".join(x.upper() for x in pending_ids) or pid.removeprefix("pass-pending-").upper()
@@ -1377,7 +1392,7 @@ def _render_report(plan: dict, *, mode: str, validation: list[str], created_issu
     knowledge = fw.get("knowledge", {})
     strategy = fw.get("strategy_flywheel", {})
     human_mode = MODE_LABELS.get(mode, mode)
-    decision_count = len(plan.get("proposals", []))
+    decision_count = sum(p.get("requires_confirmation") is not False for p in plan.get("proposals", []))
     reminder = "；另有 1 条本地工作区提醒" if blocked_dirty else ""
     lines = [
         f"# 小草每周深度复盘 {plan['date']}",
