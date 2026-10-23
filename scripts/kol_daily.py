@@ -661,9 +661,12 @@ def _latest_lv_video_goal(
     }
 
 
-def _read_native_agent_line(descriptor: int, *, timeout: float = 20 * 60) -> str:
+def _read_native_agent_line(
+    descriptor: int, *, timeout: float = 20 * 60, deadline: float | None = None,
+) -> str:
     """Bound the entire native reply, including an abandoned partial line."""
-    deadline = monotonic() + timeout
+    if deadline is None:
+        deadline = monotonic() + timeout
     chunks: list[bytes] = []
     while True:
         remaining = deadline - monotonic()
@@ -692,13 +695,22 @@ def _read_agent_line(request: dict[str, Any]) -> str:
         response_attributes[6][termios.VTIME] = 0
         termios.tcsetattr(descriptor, termios.TCSANOW, response_attributes)
     try:
-        print(json.dumps(request, ensure_ascii=False, sort_keys=True), flush=True)
-        if request.get("action") == "initialize_liuguan_native_replay":
-            return _read_native_agent_line(sys.stdin.fileno(), timeout=180)
-        if request.get("action") in {
-            "activate_xiaoetong_mini_program", "resolve_xiaoetong_page",
-        }:
-            return _read_native_agent_line(sys.stdin.fileno())
+        timeout = {
+            "initialize_liuguan_native_replay": 180,
+            "activate_xiaoetong_mini_program": 20 * 60,
+            "resolve_xiaoetong_page": 20 * 60,
+        }.get(request.get("action"))
+        emitted = dict(request)
+        deadline = None
+        if timeout is not None:
+            deadline = monotonic() + timeout
+            emitted.update(
+                input_timeout_seconds=timeout,
+                input_deadline_at=(datetime.now(timezone.utc) + timedelta(seconds=timeout)).isoformat(),
+            )
+        print(json.dumps(emitted, ensure_ascii=False, sort_keys=True), flush=True)
+        if deadline is not None:
+            return _read_native_agent_line(sys.stdin.fileno(), deadline=deadline)
         return sys.stdin.readline()
     finally:
         if descriptor is not None and original_attributes is not None:

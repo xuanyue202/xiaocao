@@ -81,6 +81,11 @@ replacement for the failed one. Existing native security, consent, source/media,
 cleanup and transfer gates still apply. Report a concrete blocker if they prevent
 capture; a saved inventory or offline code fix is not Handoff completion.
 
+Native requests emit `input_deadline_at` (timezone-aware) and
+`input_timeout_seconds`; the printed deadline and the actual monotonic input
+budget start together before output. Reconcile the retained PTY before that
+deadline; after timeout, reuse established same-item media/closure evidence in
+the narrow continuation rather than repeating native activation.
 Native identity/activation replies have a total 20-minute stdin deadline,
 including partial JSON. A timeout releases execution ownership when the source
 returns; it retains the original capture and claims and is Agent-owned repair,
