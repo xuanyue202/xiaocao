@@ -1,6 +1,6 @@
 # Retained Xiaocao capture and shared source priority
 
-Status: implementing
+Status: implemented; current AM/PM originals accepted; historical file gaps retained
 
 User request (2026-10-23): fix the two retained Local Capture runs, preserve
 original tasks, avoid duplicate downloads, finish the real pipeline, and run
@@ -18,8 +18,11 @@ Requirements:
 - Verify retained Oct22 AM/PM identities with real native capture and exact
   downstream receipts; preserve historical missing-file claims and report gaps.
 
-Evidence so far: the old capture stored PID 61386, while the verified shared
-binary/API used PID 32620. Four regression cases failed before the fix, five
-focused cases passed after it. The same AM capture opened its exact Oct22
-course, verified ended merchant lineage, closed the course, and started its
-original download. Download, cloud and Handoff acceptance remain in progress.
+Evidence: the old capture stored PID 61386, while the verified shared binary/API
+used PID 32620. Four regression cases failed before the fix;25 targeted CLI/start
+and45 shared-runtime checks passed after repair. Both original Oct22 courses
+completed native entry, finite download, validation, upload and exact mailbox
+readback. The native fingerprint was closed and narrowly resumed without another
+effect. Liuguan cycle9 then assessed all33 accounts with0 errors/0 new tasks;
+5 complete ASR results were reused. Final cleanup proved process/ports gone and
+all proxy flags off. Historical missing-byte claims remain explicit gaps.
