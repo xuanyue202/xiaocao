@@ -4454,6 +4454,9 @@ class DailyRuntime:
             surface,
         )
         if identity == "source":
+            exact = getattr(getattr(self, "args", None), "source_identity", None)
+            if exact:
+                return self.xiaocao_wechat(only_identity=exact)
             return self.xiaocao_wechat()
         return self.xiaocao_wechat(only_identity=identity)
 

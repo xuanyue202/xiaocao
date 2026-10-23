@@ -191,6 +191,11 @@ Then use the reviewed same-job upload recovery and
 A generic `xiaocao_wechat_live:source` resume can select an older replay: it is
 not a substitute for a known item's continuation. Never activate that unrelated
 replay to make the repair command appear successful.
+If the retained coordinator failure has only that legacy adapter-wide surface,
+pass `--source-identity <original manifest identity>` to `resume-source-repair`.
+It narrows that surface to the exact item without discovery; an already exact
+stored surface remains authoritative. Reuse current same-item native evidence
+without another activation when reconciling an unresolved native outcome.
 
 End a repaired local item only after media acceptance, exact cloud receipt,
 mailbox `created|already_present`, and authoritative same-ID/hash readback, or an
