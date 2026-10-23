@@ -2,9 +2,10 @@
 
 The reviewed compatible binary/configuration and opt-in descriptor are installed
 locally. The original 139 task IDs/statuses,1729 candidate identities and capture
-ledger matched after restart; PAC stayed detached. The existing Automation prompt
-has not yet been changed. Complete shared-activity acceptance remains pending.
-No second schedule is introduced.
+ledger matched after restart; PAC stayed detached. The existing Automation now
+includes the companion and runs Xiaocao capture/articles/Handoff before Liuguan.
+Its schedule is unchanged; no second schedule is introduced. Dated acceptance
+below distinguishes current originals from historical missing-file claims.
 
 The fixed 33 publishers are the primary sweep. Authenticated native replay lists
 provide IDs, publication times and finite durations. Wu's exact cached Moments
@@ -58,7 +59,10 @@ A Local Capture invocation and successful final cleanup wake the worker without
 a new schedule. A native scan failure still wakes already accepted courses after
 the writer lock has unwound. ASR does not hold the system PAC or capture lease.
 
-## Current production acceptance — October 22, 22:00 activity
+## October 22 acceptance snapshot — 22:00 activity
+
+This historical snapshot's retained Xiaocao repair/backend state is superseded
+by the October23 acceptance below.
 
 Compatible Gopeed connection build e55fdc26 is installed. Guarded replacement
 preserved all original 139 tasks,1729 candidate identities and capture ledger.
@@ -107,3 +111,43 @@ When the socket is healthy, do not interact with WeChat. When it needs reconnect
 `bootstrap --visible-refresh` uses the existing leases/guardian and a 30-second
 whole-line handshake for one freshly verified native File/Refresh action. A
 late/partial acknowledgement restores PAC; it never authorizes blind re-refresh.
+
+## Retained Xiaocao repair and source priority — October 23
+
+Repair a73b4bd verifies and records a healthy shared backend's current PID on
+the original capture before atomic native navigation. It preserves the original
+capture ID, baseline and download identity; it neither spawns a second backend
+nor repeats a prompt. A generic embedded blank WeChat window is not evidence
+of logout or of a mismatched saved Browser target. Normal activation verifies
+that target, same-capture readiness and the issued native bridge itself.
+
+The retained October 22 morning original and its evening original both passed
+real native entry, ended merchant/media identity, exact course-window closure,
+one download per original, complete file validation, Netdisk upload and mailbox
+creation/readback. Their durations are 2574.886598 and 3629.917808 seconds, within
+0.05 seconds of the finite playlists; files are 99811909 and217854928 bytes.
+Both exact capture acceptance checks passed. Mailbox status at readback was
+pending: local Handoff is complete, remote processing is not yet acknowledged.
+The original native repair fingerprint was validated against the pushed repair
+and narrowly resumed as already_completed with no new external effect.
+The previously handed-off article 泥沙俱下 now has an exact hash-bound remote ACK.
+
+Only after those two Xiaocao continuations finished, Liuguan cycle9 assessed all
+33 publishers:29 available lists,4 verified deactivated accounts,0 errors,
+0 new downloads and276 catalogue entries. The retained page reconnected without
+native input; all5 existing ASR results were revalidated and reused. Final
+cleanup at08:27:57 and fresh readback at08:28:45 proved process gone, both ports
+closed and HTTP/HTTPS/SOCKS/PAC disabled. This was manual narrow continuation,
+not a second hourly gate or proof that all historical backlog is resolved.
+
+Two historical uploads still lack their original validated local bytes and
+have no exact target-folder cloud match. The older October8 rejected/incomplete
+artifact is also absent. Claims/hashes/history remain; no duplicate download or
+upload was created. Browser policy denied a separate global historical-file
+lookup; that lookup was not retried through another transport.
+
+Private evidence: output/live/kol_native_atomic/20261023-manual-repair/
+acceptance-summary.json, two-capture-acceptance.json and the same-item mailbox,
+native trace and cleanup receipts; evening evidence uses the sibling -pm folder.
+The source-order change and references are deployed in the existing Automation,
+with its original cadence preserved and API readback completed.
