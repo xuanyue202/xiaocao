@@ -7,7 +7,7 @@ import os
 import sys
 import termios
 from subprocess import CompletedProcess
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -1289,6 +1289,37 @@ def test_native_input_timeout_restores_tty(monkeypatch):
     with pytest.raises(DailyError):
         kol_daily_script._read_agent_line({"action": "activate_xiaoetong_mini_program"})
     assert applied[-1] == original
+
+
+@pytest.mark.parametrize("action,seconds", [
+    ("activate_xiaoetong_mini_program", 1200),
+    ("resolve_xiaoetong_page", 1200),
+    ("initialize_liuguan_native_replay", 180),
+])
+def test_native_input_timeout_advertises_same_deadline_before_output(
+    monkeypatch, action, seconds,
+):
+    request = {"action": action, "subscription_id": "original"}
+    ticks = [100.0]
+    emitted = []
+    class Input(io.StringIO):
+        def fileno(self):
+            return 42
+    monkeypatch.setattr(sys, "stdin", Input())
+    monkeypatch.setattr(kol_daily_script, "monotonic", lambda: ticks[0])
+    def slow_output(raw, **kwargs):
+        emitted.append(json.loads(raw))
+        ticks[0] += seconds + 1
+    monkeypatch.setattr("builtins.print", slow_output)
+    before = datetime.now(timezone.utc)
+    # Output/dispatch delay must consume the original budget, not renew it.
+    with pytest.raises(EnrichmentDiagnosticError):
+        kol_daily_script._read_agent_line(request)
+    after = datetime.now(timezone.utc)
+    assert emitted[0]["input_timeout_seconds"] == seconds
+    advertised = datetime.fromisoformat(emitted[0]["input_deadline_at"])
+    assert before <= advertised - timedelta(seconds=seconds) <= after
+    assert request == {"action": action, "subscription_id": "original"}
 
 
 def _canonical_sha256(value: dict) -> str:
