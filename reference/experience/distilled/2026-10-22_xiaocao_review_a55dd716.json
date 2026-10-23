@@ -1,0 +1,492 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-22",
+  "kind": "晚间大师班复盘",
+  "author": "小草",
+  "source": "小草直播",
+  "authority": 0,
+  "summary": "源日普跌、成交量不足且科技回撤加深时，小草要求等待放量风险释放；求稳者空仓，仍参与者把固定总仓拆为两至三份，反抽先退出，不追高开，不用杠杆。两至四周机会以出清完成为前提；35%至40%统一强平线与公开规则冲突。",
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_netdisk_enrichment/artifacts/kol-netdisk-a3f5851e06e0f58c/20261022 抽平板电脑｜大师班回馈专场-compressed.txt",
+      "sha256": "a55dd71651ad133c5f008f3b9ba586dc21589c772a9822300064e5516d52c177",
+      "size": 45994
+    },
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261023_01a1669c/market_evidence.json",
+      "sha256": "a2998a0807de6a8c21986ca98f14f0c7d77dea015d1bc0b45e0ce222952e8cf5",
+      "size": 16729
+    },
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261023_01a1669c/current_quotes.json",
+      "sha256": "c63e61dda1e3e31e461903ef13d1a65ad6d524693bee7a8752bd6b2be0ca8ba0",
+      "size": 10488
+    },
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261023_01a165f5/xiaocao_current_quotes.json",
+      "sha256": "e9df6d450c3d57e77ca239420d23c5be2914e2ae4755d8de1de7f9fa69d01a02",
+      "size": 7457
+    },
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/morning_bundles/2026-10-22/40aba23b9e5f011047fe2319b04f75c0fa71b2f0f8c33cb6b10f49238ae17613/original/snapshot.jsonl",
+      "sha256": "1b82a2affe91ff6b06d8cef955980c1a884e92061c297e981ac5ed7f71aabc35",
+      "size": 33308
+    }
+  ],
+  "system_fact_validation": {
+    "as_of": "2026-10-23T02:41:30.708501Z",
+    "scope": "以下均为独立系统事实核对，不是KOL原话，也不证明作者成交或本系统买入。",
+    "facts": [
+      {
+        "fact": "2026-10-22收盘，上证指数-1.48%、创业板指-4.37%；冰山冷热开盘+2.43%、收盘+9.97%，骏亚科技收盘-3.30%，莱美药业收盘-12.69%。",
+        "label": "system_verified_source_day_market",
+        "source": "源日五标的收盘行情文件，经parent market evidence转录核对。",
+        "evidence_paths": [
+          "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261023_01a165f5/xiaocao_current_quotes.json",
+          "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261023_01a1669c/market_evidence.json"
+        ],
+        "limitation": "静态收盘行情不证明冰山冷热约1.5%至1.6%的作者口述挂单成交，也不核验14:10至14:39的分时回封。"
+      },
+      {
+        "fact": "截至2026-10-23约10:40，上证指数-1.30%、创业板指-2.18%，新易盛-7.43%、中际旭创-5.10%、骏亚科技-10.02%、冰山冷热-7.38%、莱美药业-8.62%。",
+        "label": "system_verified_intraday_market",
+        "source": "本次七标的实时行情文件，经parent market evidence转录核对。",
+        "evidence_paths": [
+          "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261023_01a1669c/current_quotes.json",
+          "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261023_01a1669c/market_evidence.json"
+        ],
+        "limitation": "10:40只是盘中快照，不是当日收盘，不能证明最终走势。"
+      },
+      {
+        "fact": "证监会公开说明不支持把单只股票下跌35%至40%写成统一强平线；最低维持担保比例由券商与客户依条件约定。",
+        "label": "system_verified_public_rule",
+        "source": "中国证券监督管理委员会公开规则说明。",
+        "source_url": "https://www.csrc.gov.cn/csrc/c100028/c1000931/content.shtml",
+        "evidence_paths": [
+          "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261023_01a1669c/market_evidence.json"
+        ],
+        "limitation": "没有具体账户融资比例、担保品和券商合同，不能判断任何私人账户的强平点。"
+      },
+      {
+        "fact": "2026-10-22冻结快照共九行，全部mode_trade_eligible=false且目标权重为零；确认解析的老师点名资产未出现在九行中。",
+        "label": "system_verified_strategy_hit_audit",
+        "source": "源日冻结snapshot.jsonl逐行只读核对。",
+        "evidence_paths": [
+          "/Users/xuanyue202/Documents/project/xiaocao/output/live/morning_bundles/2026-10-22/40aba23b9e5f011047fe2319b04f75c0fa71b2f0f8c33cb6b10f49238ae17613/original/snapshot.jsonl"
+        ],
+        "limitation": "华池/华瓷和中国中免相关ASR身份未唯一解析，归为no_evidence并排除确认漏出统计；未重跑recommendation或strategy。"
+      }
+    ],
+    "limitations": [
+      "市场证据仅核验所列指数与个股，不补足全市场广度、总成交额或融资账户分布。",
+      "作者关于未来三日放量下跌和随后两至四周机会仍是待证预测。",
+      "第三方破产、账户受限和私人杠杆口述没有独立证据，不能作为公开事实。"
+    ]
+  },
+  "posture": {
+    "regime": "源日普跌且量能不足，作者判断处于可能继续去杠杆的主跌临界区。",
+    "dominant_style": "求稳者空仓；仍参与者固定总风险、轻仓组合下跌低吸、红盘起爆与N半，反抽先退。",
+    "risk": "科技回撤、广泛承压、高开追价、杠杆和把短线拖成长线。",
+    "style_ranking": [
+      "空仓等待放量出清",
+      "轻仓多模式组合",
+      "2%至4%附近较低开盘候选",
+      "9%至12%高开候选与杠杆工具置后"
+    ]
+  },
+  "regime_call": {
+    "call": "短线防守等待；放量风险释放与后续承接同时出现后，才研究新的参与窗口。",
+    "horizon": "未来约三个交易日；出清后两至四周仅作条件性展望。",
+    "what_would_falsify": [
+      "市场不经放量下跌即持续放量上涨",
+      "科技、广度与承接同步修复",
+      "出清后模式收益仍持续恶化"
+    ]
+  },
+  "directions": [
+    {
+      "name": "市场姿态",
+      "stance": "求稳者空仓，参与者固定总风险轻仓组合",
+      "conditions": [
+        "量能仍不足",
+        "科技与广度仍弱",
+        "本地系统没有可交易资格"
+      ],
+      "boundary": "不能把两类人合成统一清仓或统一参战。"
+    },
+    {
+      "name": "退出",
+      "stance": "不及预期、下午炸板或反抽时减亏离场",
+      "conditions": [
+        "模式转弱",
+        "市场仍可能放量下跌"
+      ],
+      "boundary": "不等待回本，不把短线仓拖成长线。"
+    },
+    {
+      "name": "模式组合",
+      "stance": "下跌低吸、红盘起爆、N半可分两至三份观察",
+      "conditions": [
+        "固定总风险",
+        "轻仓",
+        "候选实际合格"
+      ],
+      "boundary": "老师点名与本地eligible是两套证据。"
+    },
+    {
+      "name": "长期AI",
+      "stance": "长期渗透与早期泡沫清洗可并存",
+      "conditions": [
+        "产业采用兑现",
+        "企业淘汰与集中度可观察"
+      ],
+      "boundary": "不构成任何具体AI股票建议。"
+    }
+  ],
+  "stocks": [
+    {
+      "surface_form": "冰山冷热",
+      "role": "红盘起爆第一名与次日退出案例",
+      "lesson": "1.5%至1.6%是作者挂单经验，静态涨停不证明成交；次日该走就走。",
+      "resolution": "市场证据确认000530.XSHE；源日开盘+2.43%、收盘+9.97%，次日10:40 -7.38%。"
+    },
+    {
+      "surface_form": "莱美药业",
+      "role": "不及预期早退案例",
+      "lesson": "反抽用于退出，不等回本。",
+      "resolution": "市场证据确认300006.XSHE；源日开盘-5.70%、收盘-12.69%。"
+    },
+    {
+      "surface_form": "骏亚科技",
+      "role": "N半冲高回落案例",
+      "lesson": "弱市中盘中浮盈可快速回吐。",
+      "resolution": "市场证据确认603386.XSHG；源日最高相对前收约+9%、收盘-3.30%。"
+    },
+    {
+      "surface_form": "中际旭创、新易盛",
+      "role": "科技回撤和融资风险推演",
+      "lesson": "价格大跌不能直接证明统一强平线。",
+      "resolution": "市场证据确认300308.XSHE与300502.XSHE；账户级融资分布未知。"
+    },
+    {
+      "surface_form": "闽东电力、绿盟科技、华池/华瓷、上海智能",
+      "role": "组合、高开回避与历史案例",
+      "lesson": "均不构成当前推荐。",
+      "resolution": "华池/华瓷与上海智能身份不确定；其余未绑定本次行情。"
+    },
+    {
+      "surface_form": "宁德时代、中国中免、隆基股份、茅台",
+      "role": "白马与长期被套历史类比",
+      "lesson": "业绩好不保证短期价格止跌，轶事不能替代研究。",
+      "resolution": "中国中免相关ASR多次冲突；第三方持仓传闻未核验。"
+    }
+  ],
+  "method_principles": [
+    "固定总风险后再组合多个短线模式，不能借组合名义扩大总仓。",
+    "源日收盘空仓与胆大者轻仓组合是分人群边界。",
+    "反抽、不及预期和下午炸板优先用于退出，不能等待回本。",
+    "弱市回避9%至12%高开候选，2%至4%偏好仍需样本外验证。",
+    "放量出清必须结合广度、承接与后续路径，不能只看单日跌幅。",
+    "禁用期权、融资等杠杆放大；第三方破产传闻不作为证据。",
+    "昨天和今天的交易身份分开，防止短线持有期漂移。"
+  ],
+  "exit_lessons": [
+    "开盘不及预期时，反抽减亏优于等待成本价。",
+    "下午炸板比上午炸板更偏退出。",
+    "模式已经停做时，旧仓反弹不等于模式恢复。",
+    "亏损50%需要上涨100%回本，成本价不能成为唯一决策锚。"
+  ],
+  "hypotheses": [
+    {
+      "registry_id": "XH-276",
+      "relationship": "exact_recurrence",
+      "claim": "在固定总风险下组合多个短线模式，可能降低单一模式波动并提高执行一致性。",
+      "implied_rule": "复用既有claim；冻结模式间风险权重、相关性、收益、回撤与成本。",
+      "falsifiable_test": "与单一模式和随机跨模式组合比较风险调整收益；未降回撤或收益稀释过多则否决。",
+      "expected_effect": "降低单一短线模式波动。",
+      "category": "portfolio_construction",
+      "authority": 0
+    },
+    {
+      "registry_id": "XH-285",
+      "relationship": "exact_recurrence",
+      "claim": "作者认为主跌期的放量下跌可能清出恐慌盘与割肉盘，从而带来止跌机会；放量大阳也可能止跌，但更难。当前事实没有证明出清已经发生。",
+      "implied_rule": "复用既有claim；同时冻结量价、广度、承接、套牢抛压和反弹持续性。",
+      "falsifiable_test": "比较放量风险释放后1/3/5日收益、最大回撤与再创新低率。",
+      "expected_effect": "获得后续确认的放量事件应降低再创新低率。",
+      "category": "capitulation_confirmation",
+      "authority": 0
+    },
+    {
+      "registry_id": "XH-289",
+      "relationship": "exact_recurrence",
+      "claim": "模式已切换停做后，旧仓盘中反弹时减亏退出，可能比等待回本降低机会成本和继续下跌风险。",
+      "implied_rule": "复用既有claim；冻结模式停止点、反弹可成交窗口和回本等待对照。",
+      "falsifiable_test": "比较反弹减亏退、等待成本价和固定收盘退的净收益、尾损与回本时间。",
+      "expected_effect": "减少模式失效后的持有期漂移。",
+      "category": "stopped_mode_exit",
+      "authority": 0
+    }
+  ],
+  "registry_comparisons": [
+    {
+      "registry_id": "XH-286",
+      "relationship": "partial_support_only",
+      "existing_claim": "在红盘起爆模式内，主板竞价高开约五个百分点以上、创业板约六个百分点以上的候选，可能比各自更低高开组有更差的风险调整结果。",
+      "source_support": "本场只明确回避约9%至12%高开，并偏好2%至4%；没有重现主板5%、创业板6%的完整阈值。",
+      "boundary": "部分支持不进入hypotheses，不写成完全复现或改参。"
+    },
+    {
+      "registry_id": "XH-042",
+      "relationship": "partial_support_only",
+      "existing_claim": "融资盘循环杀跌阶段，低位放量比触及中长期均线更能识别短线风险释放完成。",
+      "source_support": "本场再次把放量风险释放置于止跌确认之前，但35%至40%统一强平线被公开规则纠偏。",
+      "boundary": "部分支持不进入hypotheses，只支持放量确认框架，不支持统一强平阈值。"
+    }
+  ],
+  "timing_notes": [
+    "来源指向2026年10月22日晚间；“明天”对应10月23日。",
+    "作者预计三日内放量下跌，具体日点从周五延伸到周一、周二，后文也提到周三附近，存在不确定。",
+    "两至四周机会仅在放量风险释放完成后生效。",
+    "10月23日行情只到10:40，不是收盘。"
+  ],
+  "typo_corrections": [
+    {
+      "raw": "下跌地息、下跌利息",
+      "corrected": "下跌低吸",
+      "basis": "全场模式语境一致。"
+    },
+    {
+      "raw": "红盘举报、红盘警报",
+      "corrected": "红盘起爆",
+      "basis": "相邻段模式名称与组合语境一致。"
+    },
+    {
+      "raw": "俊雅",
+      "corrected": "骏亚科技",
+      "basis": "绑定行情与上下文确认。"
+    },
+    {
+      "raw": "中继续创",
+      "corrected": "中际旭创",
+      "basis": "价格920至590与绑定资产一致。"
+    },
+    {
+      "raw": "新一盛、新医生",
+      "corrected": "新易盛",
+      "basis": "绑定行情与价格上下文一致。"
+    },
+    {
+      "raw": "华池股份、华驰股份",
+      "corrected": "疑似华瓷股份",
+      "basis": "ASR不足以唯一确认，保持未解析。"
+    }
+  ],
+  "decision_trace": [
+    {
+      "observation": "源日普跌、量能不足，10月23日盘中仍弱。",
+      "inference": "风险释放和承接尚未确认。",
+      "action": "等待，不追老师点名票。",
+      "why": "防止在可能的去杠杆窗口扩大突破风险。",
+      "evidence_claim_ids": [
+        "c-market-source-day",
+        "c-capitulation-volume",
+        "c-margin-chain"
+      ]
+    },
+    {
+      "observation": "作者同时给出空仓与轻仓组合两类人群。",
+      "inference": "仓位边界取决于风险承受，但总风险不能扩大。",
+      "action": "方法研究只记录纸面触发，不据此扩张风险预算。",
+      "why": "来源要求固定总风险，并未授权增加总仓。",
+      "evidence_claim_ids": [
+        "c-participation-split",
+        "c-mode-menu"
+      ]
+    },
+    {
+      "observation": "不及预期、炸板与反抽均被用于退出。",
+      "inference": "短线持有期不能因亏损漂移。",
+      "action": "复用XH-289原claim。",
+      "why": "保留可证伪的退出研究。",
+      "evidence_claim_ids": [
+        "c-exit-discipline",
+        "c-trapped-position"
+      ]
+    }
+  ],
+  "judgment_heuristics": [
+    "先判断风险释放和仓位权限，再看模式与个股。",
+    "作者点名、价格上涨、本地emitted、本地eligible和真实成交必须分开。",
+    "私人口述和第三方账户传闻不进入事实层。",
+    "现行全局姿态过期时，一篇新转写也不能未经跨源确认直接替换。"
+  ],
+  "strategy_hit_audit": {
+    "status": "completed_no_hit",
+    "source_day": "2026-10-22",
+    "snapshot_path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/morning_bundles/2026-10-22/40aba23b9e5f011047fe2319b04f75c0fa71b2f0f8c33cb6b10f49238ae17613/original/snapshot.jsonl",
+    "snapshot_sha256": "1b82a2affe91ff6b06d8cef955980c1a884e92061c297e981ac5ed7f71aabc35",
+    "capture_count": 9,
+    "eligible_count": 0,
+    "local_emitted_rows": [
+      {
+        "code": "301716.XSHE",
+        "name": "鸿富诚",
+        "kp_star": true,
+        "mode_star": false,
+        "mode_state": "COLD",
+        "mode_trade_eligible": false,
+        "mode_exec_target_weight": 0,
+        "mode_exec_star": false
+      },
+      {
+        "code": "300589.XSHE",
+        "name": "江龙船艇",
+        "kp_star": true,
+        "mode_star": true,
+        "mode_state": "COLD",
+        "mode_trade_eligible": false,
+        "mode_exec_target_weight": 0,
+        "mode_exec_star": false
+      },
+      {
+        "code": "300243.XSHE",
+        "name": "瑞丰高材",
+        "kp_star": true,
+        "mode_star": false,
+        "mode_state": "COLD",
+        "mode_trade_eligible": false,
+        "mode_exec_target_weight": 0,
+        "mode_exec_star": false
+      },
+      {
+        "code": "605058.XSHG",
+        "name": "澳弘电子",
+        "kp_star": false,
+        "mode_star": true,
+        "mode_state": "COLD",
+        "mode_trade_eligible": false,
+        "mode_exec_target_weight": 0,
+        "mode_exec_star": false
+      },
+      {
+        "code": "301205.XSHE",
+        "name": "联特科技",
+        "kp_star": false,
+        "mode_star": false,
+        "mode_state": "COLD",
+        "mode_trade_eligible": false,
+        "mode_exec_target_weight": 0,
+        "mode_exec_star": false
+      },
+      {
+        "code": "688790.XSHG",
+        "name": "昂瑞微",
+        "kp_star": false,
+        "mode_star": false,
+        "mode_state": "COLD",
+        "mode_trade_eligible": false,
+        "mode_exec_target_weight": 0,
+        "mode_exec_star": false
+      },
+      {
+        "code": "603890.XSHG",
+        "name": "春秋电子",
+        "kp_star": false,
+        "mode_star": false,
+        "mode_state": "COLD",
+        "mode_trade_eligible": false,
+        "mode_exec_target_weight": 0,
+        "mode_exec_star": false
+      },
+      {
+        "code": "300434.XSHE",
+        "name": "金石亚药",
+        "kp_star": false,
+        "mode_star": false,
+        "mode_state": "COLD",
+        "mode_trade_eligible": false,
+        "mode_exec_target_weight": 0,
+        "mode_exec_star": false
+      },
+      {
+        "code": "300207.XSHE",
+        "name": "欣旺达",
+        "kp_star": false,
+        "mode_star": false,
+        "mode_state": "COLD",
+        "mode_trade_eligible": false,
+        "mode_exec_target_weight": 0,
+        "mode_exec_star": false
+      }
+    ],
+    "teacher_named_assets": [
+      {
+        "surface_form": "冰山冷热",
+        "local_status": "not_emitted"
+      },
+      {
+        "surface_form": "莱美药业",
+        "local_status": "not_emitted"
+      },
+      {
+        "surface_form": "骏亚科技",
+        "local_status": "not_emitted"
+      },
+      {
+        "surface_form": "闽东电力",
+        "local_status": "not_emitted"
+      },
+      {
+        "surface_form": "华池/华瓷（身份不确定）",
+        "local_status": "no_evidence",
+        "reason": "ASR未能唯一解析为具体证券，不能判断是否漏出。"
+      },
+      {
+        "surface_form": "绿盟科技",
+        "local_status": "not_emitted"
+      },
+      {
+        "surface_form": "中际旭创",
+        "local_status": "not_emitted"
+      },
+      {
+        "surface_form": "新易盛",
+        "local_status": "not_emitted"
+      },
+      {
+        "surface_form": "宁德时代",
+        "local_status": "not_emitted"
+      },
+      {
+        "surface_form": "中国中免（较可能映射）",
+        "local_status": "no_evidence",
+        "reason": "ASR存在中国中免、中国中北、中国中冶、中国中缅等冲突，较可能映射不足以确认身份。"
+      },
+      {
+        "surface_form": "隆基股份/隆基绿能",
+        "local_status": "not_emitted"
+      },
+      {
+        "surface_form": "茅台/贵州茅台",
+        "local_status": "not_emitted"
+      }
+    ],
+    "local_strategy_benchmark_hits": [],
+    "boundary": "九行全部mode_state=COLD、mode_trade_eligible=false、mode_exec_target_weight=0、mode_exec_star=false；kp_star或mode_star、源日涨停、老师案例均不构成本系统买入。仅对身份已确认的老师点名证券判断not_emitted；华池/华瓷与中国中免相关冲突口述标为no_evidence，排除确认漏出统计。未重跑recommendation或strategy。"
+  },
+  "action_summary": {
+    "posture_update": "no_update：reference/experience/posture_current.json已于2026-07-03过期；单篇转写不足以替换全局姿态。",
+    "playbook_update": "proposal_only：组合、退出、追高和去杠杆框架仍需研究与人审。",
+    "hypothesis_update": "reuse_exact_XH-276_XH-285_XH-289；XH-286与XH-042仅部分支持，不强并。",
+    "audit_evidence": "116个稳定段双遍覆盖；源日九行冻结逐行只读核对，eligible_count=0。",
+    "instrumentation_todo": "补齐全市场广度、总成交额、融资余额与账户分布、源日分时、模式候选池和可成交回放。",
+    "routing": [
+      "research_candidate_only",
+      "no_auto_tune",
+      "no_posture_replacement",
+      "no_book_write",
+      "human_gate_required"
+    ]
+  }
+}
