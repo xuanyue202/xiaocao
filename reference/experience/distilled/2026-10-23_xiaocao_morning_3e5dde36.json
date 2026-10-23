@@ -1,0 +1,275 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-23",
+  "kind": "大师班直播（竞价前至约10点）",
+  "author": "小草",
+  "source": "小草直播",
+  "authority": 0,
+  "summary": "极端低开后的反抽若没有量能和承接，只能视为弱修复而不是风险解除；弱市里应把仓位控制放在模式选择之前，仍参与也只能轻仓组合，个股冲高或反抽优先退出。科技拥挤与融资盘风险是作者推演，现有事实只支持科技偏弱，不能确认强平已经发生。",
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_netdisk_enrichment/artifacts/kol-netdisk-93c7b950d10402d0/20261023 盘前大师班直播10月23日-compressed.txt",
+      "sha256": "3e5dde36f6ed705efe647572e58d3699195862c32a68be8307726c88b39689f0",
+      "size": 9011
+    },
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261023_01a1669c/second_market_evidence.json",
+      "sha256": "1998c4bfe05565c2716d3f305698377c95d43a6f53727d23d99623a1d0539e20",
+      "size": 13555,
+      "as_of": "2026-10-23T03:42:45.664228Z"
+    }
+  ],
+  "registry_comparison_source": {
+    "path": "/Users/xuanyue202/Documents/project/xiaocao/reference/experience/xiaocao_hypotheses.jsonl",
+    "sha256": "32f62c58206909172143511ff68e8c88575afaa1d08f0eecaf683e0deb4a8587",
+    "size": 361202,
+    "read_at": "2026-10-23T03:47:34Z"
+  },
+  "system_fact_validation": {
+    "as_of": "2026-10-23T03:42:45.664228Z",
+    "scope": "以下是独立系统事实核对，不是小草原话，也不证明任何个人成交、融资强平或模式资格。",
+    "facts": [
+      {
+        "fact": "10月23日11:30，上证指数报3614.1231，较前收盘下跌1.20%；创业板指报2521.769，下跌2.14%。",
+        "label": "system_verified_midday_indices",
+        "source": "绑定的10月23日午间行情证据。",
+        "evidence_paths": [
+          "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261023_01a1669c/second_market_evidence.json"
+        ],
+        "limitation": "午间指数支持市场偏弱，但不能核验作者口述的4200至4900家下跌、全市场成交额或收盘路径。"
+      },
+      {
+        "fact": "同一午间证据显示新易盛下跌7.82%、中际旭创下跌5.76%，支持科技方向仍弱。",
+        "label": "system_verified_technology_weakness",
+        "source": "绑定的10月23日午间行情证据。",
+        "evidence_paths": [
+          "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261023_01a1669c/second_market_evidence.json"
+        ],
+        "limitation": "来源正文没有点名这两只股票；它们只能补充板块背景，不能证明融资盘分布或强制卖出过程。"
+      },
+      {
+        "fact": "冰山冷热午间下跌5.37%，闽东电力下跌8.78%；这与作者把反抽当作退出窗口的风险背景一致。",
+        "label": "system_verified_named_exit_examples",
+        "source": "绑定的10月23日午间行情证据。",
+        "evidence_paths": [
+          "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261023_01a1669c/second_market_evidence.json"
+        ],
+        "limitation": "静态午间价格不证明高抛信号、任何个人持仓或成交，也不能替代作者所说的个股自行判断。"
+      },
+      {
+        "fact": "纳斯达克官方页面支持10月22日综合指数下跌方向。",
+        "label": "system_verified_us_market_direction",
+        "source": "绑定市场证据中的纳斯达克官方页面记录。",
+        "evidence_paths": [
+          "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261023_01a1669c/second_market_evidence.json"
+        ],
+        "limitation": "页面百分比与前收字段有冲突，只支持下跌方向，不能据此引用精确跌幅或外推全部美股。"
+      }
+    ],
+    "limitations": [
+      "缺全市场广度、总成交额和融资账户分布，不能确认作者所说的风险释放是否在当天完成。",
+      "来源中的百洋没有代码且可对应百洋股份或百洋医药，不能确定具体证券。",
+      "冻结候选与作者模式不是同一证据层，不能从本地候选反推作者口述资产或评分。"
+    ]
+  },
+  "posture": {
+    "regime": "竞价极弱，开盘后一度反抽但量能与承接不足，作者仍把当天视为空仓或极轻仓环境。",
+    "dominant_style": "先控仓位；若坚持参与，只在N半与红盘起爆等模式内轻仓组合，下跌低吸负分时暂不做。",
+    "risk": "科技拥挤、潜在融资去杠杆、无量反抽、追高开盘和把短线亏损拖成等待解套。",
+    "style_ranking": [
+      "空仓等待",
+      "固定风险下的轻仓模式组合",
+      "低开且评分合格的候选",
+      "负分下跌低吸、高开追价和单票解套置后"
+    ]
+  },
+  "regime_call": {
+    "call": "无量弱修复不改变防守姿态；只有量能和承接同步改善，才能把反抽升级为风险缓解。",
+    "horizon": "2026年10月23日早盘至收盘，后续只保留为待验证框架。",
+    "what_would_falsify": [
+      "全市场成交与广度同步持续改善，科技形成稳定承接并收复早盘跌幅。",
+      "后续证据显示融资风险没有扩散，且轻仓模式在完整候选上恢复稳定可交易性。",
+      "反抽在放量条件下延续，而不是冲高后重新走弱。"
+    ]
+  },
+  "directions": [
+    {
+      "name": "仓位",
+      "stance": "空仓优先；仍参与也只能轻仓组合。",
+      "conditions": [
+        "市场修复弱",
+        "量能未跟上",
+        "科技和融资风险未解除"
+      ],
+      "boundary": "组合不能被解释成扩大总风险，单场口述也不授权账户调整。"
+    },
+    {
+      "name": "退出",
+      "stance": "反抽、冲高或高抛信号出现时早点退出。",
+      "conditions": [
+        "整体仍是弱市",
+        "个股没有独立强度或量能确认"
+      ],
+      "boundary": "冰山冷热和闽东电力只是来源点名的退出例子，静态行情不证明成交。"
+    },
+    {
+      "name": "模式",
+      "stance": "N半与红盘起爆可轻仓观察；下跌低吸负分时暂不做。",
+      "conditions": [
+        "尊重当时模式评分",
+        "开盘涨幅不过高",
+        "候选身份和条件可核实"
+      ],
+      "boundary": "作者同时说下跌低吸理论上并非绝对不能做，因此负分结论是当时的克制选择，不是永久禁用。"
+    }
+  ],
+  "stocks": [
+    {
+      "surface_form": "冰山",
+      "role": "已有高抛信号的退出例子",
+      "lesson": "弱市反抽用于退出，不能把前一日表现延伸成追买。",
+      "resolution": "绑定市场证据支持映射为冰山冷热（000530），午间下跌5.37%；不证明高抛成交。"
+    },
+    {
+      "surface_form": "闽东",
+      "role": "尚未出现高抛但冲高也应退出的例子",
+      "lesson": "没有高抛提示不等于等待解套；冲高仍是减风险窗口。",
+      "resolution": "绑定市场证据支持映射为闽东电力（000993），午间下跌8.78%；不证明个人持仓。"
+    },
+    {
+      "surface_form": "百洋",
+      "role": "被询问是否有涨停机会的候选",
+      "lesson": "没有代码和明确买入条件，不能转成可执行推荐。",
+      "resolution": "可对应百洋股份（002696）或百洋医药（301015），本轮保持未解析。"
+    }
+  ],
+  "method_principles": [
+    "先用仓位判断能否承受环境，再在模式内部选择候选。",
+    "竞价预测需要随开盘后的量能、承接和板块强弱更新；反抽出现不等于判断失效，也不等于风险解除。",
+    "模式评分为负时可以放弃理论上可做的交易，以执行一致性换取风险边界。",
+    "反抽、冲高和高抛信号是弱市里的退出窗口，不应被解释成等待解套或模式恢复。",
+    "具名证券身份不唯一时必须保留未解析状态，不能从持仓、候选池或同音名称反猜。"
+  ],
+  "exit_lessons": [
+    "弱修复且量能不足时，早点卖出优于等待反弹变强。",
+    "没有出现预期高抛提示时，冲高本身仍可作为减风险窗口。",
+    "不要围绕单一股票设计解套路径，仓位和组合边界优先于成本价。"
+  ],
+  "hypotheses": [
+    {
+      "registry_id": "XH-176",
+      "relationship": "exact_recurrence",
+      "claim": "按可观察的总体环境调节短线退出速度，可能比不区分环境的统一退出更能控制弱市左尾。",
+      "implied_rule": "复用既有claim；固定入场集合，按强、弱、轮动环境分别记录反抽退出、冲高退出和统一退出。",
+      "falsifiable_test": "在同一入场集合上比较环境分层退出与统一固定时点退出的净收益、回撤、卖飞率、滑点和执行违约。",
+      "expected_effect": "弱市反抽卖应降低左尾，代价可能是卖飞。",
+      "category": "退出纪律",
+      "authority": 0
+    }
+  ],
+  "registry_comparisons": [
+    {
+      "registry_id": "XH-276",
+      "relationship": "partial_support_only",
+      "existing_claim": "在固定总风险下组合多个短线模式，可能降低单一模式波动并提高执行一致性。",
+      "source_support": "本场再次要求N半与红盘起爆轻仓组合，但没有给出固定总风险的数值、模式相关性或对照收益。",
+      "boundary": "只作部分支持，不写入hypotheses，不据此扩仓或改权重。"
+    },
+    {
+      "registry_id": "XH-042",
+      "relationship": "partial_support_only",
+      "existing_claim": "融资盘循环杀跌阶段，低位放量比触及中长期均线更能识别短线风险释放完成。",
+      "source_support": "本场把无量反抽视为无效，并继续等待量能释放，但没有比较中长期均线，也没有证明放量后风险完成。",
+      "boundary": "只支持量能确认框架，不支持融资强平事实或入场规则。"
+    },
+    {
+      "registry_id": "XH-289",
+      "relationship": "partial_support_only",
+      "existing_claim": "模式已切换停做后，旧仓盘中反弹时减亏退出，可能比等待回本降低机会成本和继续下跌风险。",
+      "source_support": "本场明确说反抽、冲高时早点走并反对询问如何解套，但并非所有例子都明确处于模式切换停做状态。",
+      "boundary": "保留退出方向的部分支持，不强并成完全复现。"
+    }
+  ],
+  "timing_notes": [
+    "来源标题带有盘前字样，但正文从竞价前延续到09:37和约10点，不能把全部判断回填为盘前。",
+    "4200、4300、4900家下跌是作者在竞价附近的连续口述，未被本轮全市场广度证据独立核验。",
+    "作者先预期极端低开后可能修复，开盘后承认出现反抽，再因修复弱、量能不足而维持防守。",
+    "知识结论只保留可复验方法，盘中触发是否仍有效由当前决策分支单独判断。"
+  ],
+  "typo_corrections": [
+    {
+      "raw": "n棒",
+      "corrected": "N半",
+      "basis": "后文多次明确说N半；但n8与下跌一是否同票仍不确定，不能映射为系统N字策略。"
+    },
+    {
+      "raw": "下跌利息、下跌DC",
+      "corrected": "下跌低吸",
+      "basis": "相邻模式和负分语境一致。"
+    },
+    {
+      "raw": "红盘去报",
+      "corrected": "红盘起爆",
+      "basis": "与前后模式组合语境一致。"
+    },
+    {
+      "raw": "组合写清仓、组合且形成",
+      "corrected": "组合且轻仓",
+      "basis": "全场反复强调仓位轻、组合与空仓两种边界。"
+    }
+  ],
+  "decision_trace": [
+    {
+      "observation": "竞价时下跌家数快速增加，作者先预期极端低开后可能修复。",
+      "inference": "低开本身可能带来技术反抽，但不能提前把反抽当成趋势反转。",
+      "action": "等开盘，先不追高。",
+      "why": "需要用开盘后的承接、模式评分和量能重新判断。",
+      "evidence_claim_ids": [
+        "c-opening-repair-path",
+        "c-opening-price-limit"
+      ]
+    },
+    {
+      "observation": "开盘与09:37附近确有修复，但作者反复判断力量弱、成交量跟不上。",
+      "inference": "反抽没有改变弱市和潜在去杠杆风险。",
+      "action": "保持空仓或极轻仓，旧仓反抽、冲高时退出。",
+      "why": "无量修复难以吸收科技拥挤和融资盘压力。",
+      "evidence_claim_ids": [
+        "c-weak-repair-volume",
+        "c-tech-margin-risk",
+        "c-rebound-exit"
+      ]
+    },
+    {
+      "observation": "下跌低吸评分为负，N半与红盘起爆仍可观察。",
+      "inference": "模式并未全部关闭，但参与范围必须缩小并服从评分。",
+      "action": "仅保留轻仓组合观察，不把百洋或北交所第二候选转成无条件买入。",
+      "why": "候选身份、评分、开盘高度和量能仍有缺口。",
+      "evidence_claim_ids": [
+        "c-mode-score-discipline",
+        "c-mode-menu",
+        "c-baiyang-uncertain"
+      ]
+    }
+  ],
+  "judgment_heuristics": [
+    "竞价判断、开盘观察和约10点结论按时间顺序更新，不能把后验结论回填到盘前。",
+    "作者模式评分、系统候选资格、个股行情和真实成交是四层不同证据。",
+    "无量反抽只降低即时跌速，不自动消除融资和拥挤风险。",
+    "同音证券无法唯一映射时停止在未解析，不从家庭持仓或冻结候选猜测。"
+  ],
+  "action_summary": {
+    "posture_update": "proposal_only：本场支持10月23日短线防守与无量反抽不追，但语义草稿不直接改写全局姿态。",
+    "playbook_update": "proposal_only：保留弱市反抽退出、评分负分放弃和轻仓组合原则，需研究与人工门槛。",
+    "hypothesis_update": "reuse_exact_XH-176；XH-276、XH-042与XH-289仅部分支持，不强并。",
+    "audit_evidence": "25个稳定段双遍覆盖；来源、行情与registry文件均绑定SHA-256和大小。",
+    "instrumentation_todo": "补齐全市场竞价广度、分时总成交额、融资余额与账户分布、作者模式评分和候选身份。",
+    "routing": [
+      "research_candidate_only",
+      "no_auto_tune",
+      "no_book_write",
+      "no_household_private_data",
+      "human_gate_required"
+    ]
+  }
+}
