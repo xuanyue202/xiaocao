@@ -215,3 +215,44 @@ out other separately verified integrations.
 The remaining blocker is a supported, verifiable native feed cold-start route,
 then its authenticated socket handshake. The33-account scan and new media
 acceptance remain pending; old five-course receipts do not close this gap.
+
+## Current session diagnosis and upstream entry investigation
+
+At11:44 on October24 a fresh read of a non-minimized native window returned the
+exact account-security re-login message. The planned reply-bearing AppleEvent
+probe stopped before dispatch (zero events), so it does not establish whether
+WeChat implements that URL handler. Backend PID39765 and all144 task records
+remained unchanged. This is direct evidence of the current authentication
+blocker, not proof of which earlier action triggered protection.
+
+`kol_yangsheng.py session-status` now exposes a separate read-only check. Its
+Swift observer binds the installed vendor app and a visible CG/AX window, emits
+only fixed status/metadata, and requires both the exact security text and its
+acknowledgement button. Python rejects malformed, stale or unbound positives.
+It never reports authentication from a missing prompt, changes a hold, issues
+input or starts a service. The existing `connections` diagnostic remains entirely
+backend-only. Neither command imports or dispatches the ASR worker.
+
+Primary-source investigation found these different capabilities:
+
+- [wx_channel's current opener](https://github.com/nobiyou/wx_channel/blob/434bb4df364b9e9a69e10f42cfe94e63c5eee13d/internal/lifecycle/opener_windows.go)
+  uses Windows sidebar input after URI attempts failed. Its
+  [non-Windows implementation](https://github.com/nobiyou/wx_channel/blob/434bb4df364b9e9a69e10f42cfe94e63c5eee13d/internal/lifecycle/opener_stub.go)
+  explicitly rejects opening. Its earlier release note is not Mac validation.
+- [guocity/wechat-cli's native-opening investigation](https://github.com/guocity/wechat-cli/blob/8dbfae7bbfd713d883cca99c15698e5c2105d7dc/docs/channels-publishing-native-open.md)
+  does record opening the Channels publishing page via an internal native
+  function. The implementation requires an instrumented separate4.1.15/270135
+  client and an exact payload fingerprint. The installed4.2.0/270341 payload
+  differs; those offsets cannot be reused. No software was installed, native
+  function called, app re-signed or client replaced. Publishing validation is
+  not replay-list/SDK acceptance.
+- The browser direct-profile probe was denied by the tool at its
+  support.weixin.qq.com redirect. No permission prompt was offered; do not
+  repeat that resource through a different transport. This does not establish
+  a prohibition on all native WeChat actions.
+
+Private evidence: output/live/kol_native_atomic/20261024-url-handler/.
+The human reported re-login; fresh readback no longer sees the protection prompt.
+One non-activating GURL event returned a reply with error0 but still produced no
+verifiable feed window or socket; all144 task records remained unchanged.
+The direct native entry, socket handshake and fresh replay acceptance remain incomplete; no new capture or ASR result is claimed.

@@ -25,6 +25,16 @@ A connected socket permits trying the authenticated list API; successful identit
 coverage and media responses are still required. Connection status is not media
 or login acceptance.
 
+For an explicitly requested login diagnosis, run `kol_yangsheng.py session-status`.
+This separately reads the existing vendor app's Accessibility/visible-window
+metadata without launching, activating, clicking, taking screenshots or changing
+permissions. Only the exact security message plus its acknowledgement button in
+one currently visible window reports `reauthentication_required`. A missing or
+unreadable prompt reports `unknown`, never authenticated. Stop native dispatch
+when the fresh prompt is present and request the actual human re-login; do not
+dismiss the protection notice. Keep diagnosing offline while authentication is
+pending. Login recovery does not clear the automatic native-entry hold.
+
 The Channels list API is a bridge to the authenticated SDK in the retained native
 page. The page owns local reconnect; an empty server connection pool cannot be
 repaired by calling a list or reload endpoint. Do not synthesize an unauthenticated

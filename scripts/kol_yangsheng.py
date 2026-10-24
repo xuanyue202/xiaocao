@@ -34,13 +34,17 @@ def _visible_refresh(timeout=30):
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=('discover', 'capture', 'finish', 'bootstrap', 'status', 'connections', 'asr'))
+    parser.add_argument('command', choices=('discover', 'capture', 'finish', 'bootstrap', 'status', 'connections', 'session-status', 'asr'))
     parser.add_argument('--window-id', type=int); parser.add_argument('--pid', type=int)
     parser.add_argument('--visible-refresh', action='store_true', help='Retained PTY handshake for one freshly verified native File/Refresh action')
     parser.add_argument('--replay', help='One previously accepted replay for ASR')
     parser.add_argument('--api', default='http://127.0.0.1:2022')
     parser.add_argument('--reconnect-wait', type=float, default=0, help='Passive socket wait for connections only, 0..35 seconds')
     args = parser.parse_args()
+    if args.command == 'session-status':
+        from xiaocao.yangsheng.session import session_status
+        print(json.dumps(session_status(), ensure_ascii=False))
+        return 0
     if args.command != 'discover':
         from xiaocao.yangsheng.capture import CaptureError, DEFAULT_ROOT, database, initialize
         from xiaocao.yangsheng.runtime import run_local, finish, bootstrap, connection_status
