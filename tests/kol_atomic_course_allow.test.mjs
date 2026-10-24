@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import * as controller from '../scripts/kol_native_course_allow.mjs';
+import {validateInputWindow,createInputWindowGuard} from '../scripts/kol_native_course_runtime.mjs';
 import { runOpenAllow } from '../scripts/kol_native_course_allow.mjs';
 
 const line = (text, x, y, w=.3, h=.04) => ({text, confidence:.5,bounding_box:[x,y,w,h]});
@@ -120,4 +121,22 @@ test('stale confirmation preparation never masks read or tool-policy failures',a
   const h=harness([allow]);h.options.app.getAXStateAndScreenshot=async()=>{h.calls.push('read');throw Error('policy denied');};
   await assert.rejects(controller.prepareStaleConfirmationReset(h.options),/policy denied/);
   assert.deepEqual(h.calls,['read']);
+});
+
+
+test('off-current-screen input guard stops before B1 without enabling PAC',async()=>{
+  const h=harness();h.options.beforeInput=async()=>validateInputWindow({title:'草料二维码',match_count:1,window_id:123,on_current_screen:false,width:414,height:780},{title:'草料二维码',width:828,height:1560});
+  const r=await runOpenAllow(h.options);
+  assert.equal(r.reason,'bridge_window_not_on_current_screen');assert.deepEqual(h.calls,['read','read']);
+});
+
+
+test('the atomic controller never Allows a replacement same-title bridge window',async()=>{
+  const h=harness();let reads=0;
+  h.options.beforeInput=createInputWindowGuard(async()=>validateInputWindow({title:'草料二维码',match_count:1,
+    window_id:reads++?456:123,on_current_screen:true,width:414,height:780},
+    {title:'草料二维码',width:828,height:1560}));
+  const r=await runOpenAllow(h.options);
+  assert.equal(r.reason,'bridge_input_window_changed');
+  assert.deepEqual(h.calls,['read','read','click','read','pac','read']);
 });

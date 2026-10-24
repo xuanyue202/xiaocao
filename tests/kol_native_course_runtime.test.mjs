@@ -4,8 +4,9 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {EventEmitter} from 'node:events';
+import {createHash} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
-import {claimExecution,requireEndpointAbsent,validatePlan} from '../scripts/kol_native_course_runtime.mjs';
+import {claimExecution,requireEndpointAbsent,validatePlan,validateInputWindow} from '../scripts/kol_native_course_runtime.mjs';
 
 test('capture health checkpoint works without a global process in the CUA host',()=>{
   const script=String.raw`
@@ -120,8 +121,14 @@ test('prepared stale Cancel dispatch is claimed once, expires and preserves an u
     const {cancelPreparedStaleBridgeReset}=await import(path.join(root,'scripts/kol_native_course_runtime.mjs'));
     const claimPath=path.join(root,'output/live/kol_native_atomic/claims/kol-123456789abc.stale-confirmation-reset.json');
     await fs.mkdir(path.dirname(claimPath),{recursive:true});
+    const binary=path.join(root,'output/live/kol_native_atomic/window-'+'0'.repeat(16));
+    const presence={title:'草料二维码',match_count:1,window_id:123,on_current_screen:true,width:414,height:780};
+    await fs.writeFile(binary,"#!/bin/sh\nprintf '%s' '"+JSON.stringify(presence)+"'\n",{mode:0o700});
+    const planPath=path.join(root,'plan.json');
+    await fs.writeFile(planPath,JSON.stringify({repo_root:root,window_binary:binary,window_binary_sha256:createHash('sha256').update(await fs.readFile(binary)).digest('hex')}));
     const reset={prepared_at:new Date().toISOString(),identity:'original',capture_job_id:'kol-123456789abc',
-      frame_sha256:'a'.repeat(64),cancel_point:[100,200],claim_path:claimPath};
+      frame_sha256:'a'.repeat(64),cancel_point:[100,200],claim_path:claimPath,frame_width:828,frame_height:1560,window_id:123,
+      plan_path:planPath,plan_sha256:createHash('sha256').update(await fs.readFile(planPath)).digest('hex')};
     await fs.writeFile(claimPath,JSON.stringify(reset));let clicks=0;
     const app={click:async point=>{assert.deepEqual(point,[100,200]);clicks++;throw Error('timeoutReached');}};
     await assert.rejects(cancelPreparedStaleBridgeReset({app,reset:{...reset,cancel_point:[300,400]}}),/reset_claim_changed/);
@@ -137,4 +144,13 @@ test('prepared stale Cancel dispatch is claimed once, expires and preserves an u
     await assert.rejects(cancelPreparedStaleBridgeReset({app,reset}),{code:'EEXIST'});
     assert.equal(clicks,1);assert.equal(JSON.parse(await fs.readFile(claimPath,'utf8')).capture_job_id,'kol-123456789abc');
   }finally{await fs.rm(root,{recursive:true,force:true});}
+});
+
+
+test('readable off-screen, duplicated, resized or changed windows cannot receive input',()=>{
+  const options={title:'草料二维码',width:828,height:1560,windowId:123};
+  const proof={title:'草料二维码',match_count:1,window_id:123,on_current_screen:true,width:414,height:780};
+  assert.equal(validateInputWindow(proof,options).window_id,123);
+  for(const patch of [{on_current_screen:false},{match_count:2},{window_id:456},{width:500},{title:'微信'}])
+    assert.throws(()=>validateInputWindow({...proof,...patch},options));
 });

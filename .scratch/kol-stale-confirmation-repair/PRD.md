@@ -14,3 +14,21 @@ Requirements:
 - Validate real current evening continuation, historical outcomes and final shared cleanup. Offline tests do not establish a WeChat protection cause or E2E completion.
 
 Baseline: e9b2ebf. Scope: controller/runtime/preparer, native request and references, behavioral tests, this PRD and review. Three new preparation tests failed before implementation. Existing25Node+1Python checks passed after initial implementation; dispatch and boundary review pending.
+
+
+## Current-screen finding and follow-up
+
+Real controlled Cancel returned but the modal remained in two actual readbacks.
+The initial readback assessment was written before inspecting its returned image;
+`reset-readback-correction.json` explicitly invalidates that assessment. Target-only
+CG metadata proved bridge window12597 off the current screen. A documented Raise
+attempt returned invalid-element, not successful dispatch; the next fresh AX read
+explicitly showed security re-login. No fresh entry, Allow or PAC mutation occurred.
+Original item PTY72622 received truthful wechat_client_login_required and exited2.
+Human re-login is pending; no native inputs after that boundary.
+
+Add a read-only compiled/hash-bound current-screen window check before all
+B1/B2/Cancel coordinates. It must reject off-screen, duplicate, changed ID and
+geometry. The off-screen test failed before implementation;28 Node/21 Python now
+pass. Fresh actual helper read confirms off-screen false. This finding supports
+input-target diagnosis, not attribution of WeChat protection.

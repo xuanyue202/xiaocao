@@ -48,15 +48,15 @@ export async function prepareStaleConfirmationReset({app,recognize,record,now=()
     const cancel=unique(ocr,'取消');
     await record({schema_version:1,event:'stale_confirmation_observed',stage:'R0',at:now(),
       ax_sha256:hash(frame.state),image_sha256:hash(frame.screenshot),target_sha256:hash(JSON.stringify(cancel))});
-    return {cancel,geometry_sha256:hash(JSON.stringify([unique(ocr,'即将打开见势擒龙团小程序'),allow,cancel])),frame_sha256:hash(frame.screenshot)};
+    return {cancel,width:ocr.width,height:ocr.height,geometry_sha256:hash(JSON.stringify([unique(ocr,'即将打开见势擒龙团小程序'),allow,cancel])),frame_sha256:hash(frame.screenshot)};
   };
   const first=await observe(),second=await observe();
   if(first.geometry_sha256!==second.geometry_sha256)stop('confirmation_changed');
   return {status:'cancel_ready',cancel_point:second.cancel.point,frame_sha256:second.frame_sha256,
-    prepared_at:now(),media_accepted:false};
+    frame_width:second.width,frame_height:second.height,prepared_at:now(),media_accepted:false};
 }
 
-export async function runOpenAllow({app,recognize,record,beforeAllow,now=()=>new Date().toISOString()}) {
+export async function runOpenAllow({app,recognize,record,beforeAllow,beforeInput=async()=>{},now=()=>new Date().toISOString()}) {
   const started=performance.now();let stage='B0',current,postAllowReadRecovered=false,postAllowSent=false;
   const emit=async(event,fields={})=>record({schema_version:1,event,stage,at:now(),...fields});
   const observe=async()=>{
@@ -78,6 +78,7 @@ export async function runOpenAllow({app,recognize,record,beforeAllow,now=()=>new
     return {...frame,ocr};
   };
   const click=async(target)=>{
+    await beforeInput(current);
     await emit('dispatch_requested',{target_sha256:hash(JSON.stringify(target))});
     try{await app.click(target.point);}catch(error){
       const code=['timeoutReached','noWindowsAvailable','windowNotFoundAtPosition'].find(c=>String(error.message).includes(c))??'unclassified_input_error';

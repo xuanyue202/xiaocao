@@ -151,18 +151,29 @@ before issuing a new entry, this bounded recovery is part of capture repair:
   window/brand, ambiguous buttons or another source owner stop this recovery.
 - Prepare with `kol_prepare_native_atomic.py --prepare-stale-reset` and the
   original identity/capture plus fresh Browser/readiness proofs; no entry proof
-  is needed because no entry has been issued. Its emitted preparation reads two
+  is needed because no entry has been issued. The hash-bound local window checker
+  must first prove one exact bridge on the current screen with matching geometry;
+  a screenshot from another Space is not input eligibility. Its emitted preparation reads two
   current stable exact-brand confirmations through CUA and derives the unique
   Cancel target from those images. It sends no input or PAC change.
 - Within30seconds, call `cancelPreparedStaleBridgeReset({app:wechat,
   reset:kolResetResult})` in the labelled `R0_CANCEL` CUA call. A durable
   original-capture claim and one-dispatch file prevent repetition; an uncertain
-  result consumes the dispatch. Never click Allow or retry a failed Cancel.
+  result consumes the dispatch. The dispatcher rechecks that same on-screen
+  window ID and geometry. Never click Allow or retry a failed Cancel.
 - In the next separate `R0_READBACK` call, read the same app. Require the modal
   absent and the unique bridge/course button visible, with no security/login.
   Export the real call trace before further input. This is bridge reset proof,
   not course/media/closure proof. Only then refresh the saved-target proof and
   follow the normal one fresh entry → B0/B1/PAC/B2 route on the same capture.
+
+Oct24 controlled observation also proved the retained bridge was off the current
+Space. Cancel returned but did not dismiss it; an attempted Raise reported an
+invalid element before a fresh AX read exposed security re-login. Stop inputs
+on that boundary. These observations do not prove what triggered protection.
+The runtime now checks exact-title current-screen presence before B1/B2/Cancel,
+so a readable off-Space screenshot cannot authorize coordinate input. The helper
+reads only window metadata, never captures images or synthesizes input.
 
 The root of the repeated Oct23/24 block was a missing recovery edge in the
 workflow: successive invocations observed the same modal and stopped. It does

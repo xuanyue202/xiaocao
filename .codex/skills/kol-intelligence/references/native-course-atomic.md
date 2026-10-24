@@ -12,7 +12,10 @@ only the image bytes returned by CUA, deletes its temporary image, and derives
 coordinates from unique current text boxes. It never captures a window, sends
 native input, accesses mini-program DOM or uses historical coordinates. Strict
 text/geometry matching fails closed on low confidence, ambiguity, changed App,
-wrong brand, login/security, agreement, missing frame or rejected input.
+wrong brand, login/security, agreement, missing frame or rejected input. A separate read-only local window-metadata helper, compiled
+and hash-bound before launch, requires one matching current-screen window and
+screenshot geometry before each B1/B2 coordinate dispatch. It never captures or
+sends input. A readable off-Space screenshot is insufficient.
 
 After B1, the confirmation animation may take longer than the first screenshot.
 The same invocation may read the same bridge, at most 12 additional frames or

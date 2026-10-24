@@ -47,6 +47,12 @@ def main() -> None:
     if not binary.exists():
         subprocess.run(['swiftc', '-O', str(source), '-o', str(binary)], check=True,
                        capture_output=True, timeout=45)
+    window_source = root/'scripts/kol_native_window_presence.swift'
+    window_hash = hashlib.sha256(window_source.read_bytes()).hexdigest()
+    window_binary = binary.parent/f'window-{window_hash[:16]}'
+    if not window_binary.exists():
+        subprocess.run(['swiftc', '-O', str(window_source), '-o', str(window_binary)],
+                       check=True, capture_output=True, timeout=45)
     browser = json.loads(args.browser_proof.read_text())
     plan = dict(schema_version=1, mode=args.mode, repo_root=str(root),
         identity=args.identity, capture_job_id=args.capture_job_id,
@@ -54,6 +60,7 @@ def main() -> None:
         browser_proof_path=str(args.browser_proof.resolve()),
         entry_proof_path=str(args.entry_proof.resolve()) if args.entry_proof else None,
         readiness=json.loads(args.readiness_proof.read_text()),
+        window_binary=str(window_binary), window_binary_sha256=hashlib.sha256(window_binary.read_bytes()).hexdigest(),
         vision_binary=str(binary), vision_binary_sha256=hashlib.sha256(binary.read_bytes()).hexdigest(),
         prepared_at=datetime.now(timezone.utc).isoformat())
     if args.mode == 'diagnostic':
