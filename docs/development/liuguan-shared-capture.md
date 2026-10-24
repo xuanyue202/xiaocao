@@ -177,3 +177,41 @@ while held no longer emits the companion's native initialization request. Direct
 bootstrap checks the same hold before leases/PAC/input; malformed hold fails
 closed. This closes a demonstrated workflow gap, not the protection root cause.
 Private evidence: output/live/kol_native_atomic/20261024-connection-diagnosis/.
+
+## October24 direct-entry verification
+
+The human's two routes are exclusive: they refresh Wu's Moments and the local
+reader consumes the exact sender's cache; the capture side directly opens a
+verified Channels target and uses its authenticated SDK. Never open Moments,
+Wu's profile/chat or global search to recover a missing page. A prior manual
+Window/Moments fallback deviated from this design; the user reported another
+protection event. Its exact trigger was not established and must not be asserted.
+
+The historical success refreshed an already open native feed and later reused
+its page-resident socket. It did not validate opening a closed Channels page
+from the fixed publisher registry. The healthy backend alone cannot supply the
+page's authenticated SDK.
+
+On October24 one source-hash-bound native share URL was passed directly to the
+installed WeChat application through LaunchServices, under the nonblocking
+native lease. `open` returned0, but no new native feed window was verifiable and
+the socket stayed absent during the subsequent10s passive wait. Window/AX
+observation remained limited, so this is not proof that every Mac deep link is
+unsupported or that WeChat was logged out. No second dispatch, proxy change,
+backend restart, ASR, download or automatic-hold clearance was performed. All144
+backend task records had the same before/after hash. Private readback:
+`output/live/kol_native_atomic/20261024-direct-open/launchservices-readback.json`.
+
+The independent, unsaved Caoliao editor probe left Xiaocao's live QR code and
+original mini-program share unchanged. Its Channels component requires a public
+`sph...` channel ID and an `export/...` video ID; leaving video ID empty disables
+confirmation. The434 exact-sender cached posts/423 cards contain internal
+`v2_...@finder` identities, not these public fields. The share URL's `/sph/` token
+is another distinct identifier. The official sample was not saved or launched.
+The unsaved draft was closed. This rules out directly copying the inspected
+Xiaocao bridge configuration as a Channels homepage solution; it does not rule
+out other separately verified integrations.
+
+The remaining blocker is a supported, verifiable native feed cold-start route,
+then its authenticated socket handshake. The33-account scan and new media
+acceptance remain pending; old five-course receipts do not close this gap.

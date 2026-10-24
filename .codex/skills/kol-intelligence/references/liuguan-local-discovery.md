@@ -53,11 +53,14 @@ not navigate 33 homepages or sort screenshot positions as dates.
    Reuse an existing native feed page when available. Do not assume that a missing
    standalone browser means no page exists: WeChat can embed it beside the main
    window, and its separate rendering surface can appear blank.
-2. If the page was closed, use the freshly visible native search entry to open
-   the verified publisher **六观小院-町原**, select its **直播回放** tab and an
-   actual finite replay. The observed native toolbar can detach that page into
-   an independent window. No Wu navigation, user click or message sending is
-   needed. Use current controls and frames, never historical coordinates.
+2. If no verified native feed page remains, preserve the missing-connection
+   state. The earlier successful toolbar search required an already open native
+   browser; it is not a verified cold-start command. Do not open the Moments,
+   profile, chat or global-search UI as a fallback. Direct homepage opening
+   needs a separately verified, source-bound route. On October24 one bounded
+   `open -a /Applications/WeChat.app <observed-share-url>` returned0 but produced
+   no verifiable new feed window or socket; do not automate or repeat it as a
+   working route. No new replay was captured by that probe.
 3. Keep a compatible `native_lease()` around each bounded input/readback. The
    repository helper `scripts/kol_liuguan_window.swift` checks PID/window/frame
    and composited visibility. White screenshots alone do not establish logout.
@@ -103,6 +106,14 @@ a failed account read with repeated UI clicks or assumed protection causes.
 A saved native window is a hint, never authority to refresh a different tab.
 Keep the page available for the next activity; reopening it need not repeat a
 publisher scan in the UI. Do not ask the human to perform routine navigation.
+
+Xiaocao's existing Caoliao mini-program bridge is not evidence that Channels
+homepage opening works. The inspected Caoliao Channels component requires both
+the public `sph...` channel ID and `export/...` video ID; its confirmation stays
+disabled with an empty video ID. Internal `v2_...@finder` publisher identities and
+`weixin.qq.com/sph/` share tokens are different identifiers. Never interchange
+them, publish the official sample as a target, or edit Xiaocao's live bridge to
+test Liuguan. This component has not established a Channels cold-start route.
 
 ## Scan, download, ASR and cleanup
 

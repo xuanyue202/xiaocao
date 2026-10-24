@@ -25,3 +25,21 @@ candidates contain0 observations since its publication. The catalogue remains
 33publishers/276replays/5verified artifacts. No new download/upload/ASR/UI/PAC
 work was performed. Native hold remains active; protection cause and real capture
 remain unresolved. No unrelated old recording is substituted.
+
+## October24 direct-entry follow-up
+
+Baseline8511466; independent Spec and Standards reviewed the scoped diff in
+liuguan-local-discovery.md and liuguan-shared-capture.md, plus private direct-open
+readback. Both reported no blockers. Only documentation/instructions changed;
+scoped diff whitespace checks passed, no implementation-mirroring tests added.
+
+The bounded LaunchServices probe dispatched once and returned0 without a
+verifiable new feed window or socket.144 task records had the same before/after
+hash. Limited window/AX observation leaves internal navigation unknown. An
+initial read-only baseline used an incorrect task API path and returned404;
+it stopped before any native dispatch, then used the existing tasks() reader.
+The independent Caoliao draft was not saved/published; its Channels component
+requires public channel/video fields not present in the exact cached cards.
+These findings neither establish a cold-start route nor resolve protection.
+The corrected instructions prohibit Moments/profile/chat/global-search fallback
+and distinguish retained-page recovery from an unverified direct homepage open.
