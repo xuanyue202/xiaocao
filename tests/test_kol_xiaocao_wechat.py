@@ -2678,3 +2678,32 @@ def test_native_input_timeout_user_skip_rejects_unreconciled_work(tmp_path,inval
     manifest['items'][item['identity']]=item;sub._save(manifest)
     with pytest.raises(EnrichmentError):sub.exclude_expired_backfill(item['identity'],user_skip_authorized=invalid!='no_authorization')
     assert not sub._load()['items'][item['identity']].get('manual_backfill_excluded')
+
+
+@pytest.mark.parametrize("config,code", [
+    ({"activation_hold": {"active": True}}, "native_entry_suspended"),
+    ("malformed", "native_entry_configuration_unreadable"),
+    ({"activation_hold": "invalid"}, "native_entry_configuration_unreadable"),
+    ({"activation_hold": None}, "native_entry_configuration_unreadable"),
+    ({"activation_hold": []}, "native_entry_configuration_unreadable"),
+    ({"activation_hold": {"active": "false"}}, "native_entry_configuration_unreadable"),
+])
+def test_native_hold_prevents_browser_and_readiness_without_mutating_original(tmp_path, config, code):
+    driver = _CaptureDriver()
+    requests = []
+    subscription = XiaocaoWechatLiveSubscription(tmp_path / "wechat",
+        history_reader=lambda: {}, browser_exchange=lambda request: requests.append(request),
+        capture_driver=driver)
+    manifest = subscription._load()
+    item = parse_xiaocao_live_messages(_history("[2026-10-24 10:00] 小花: #小程序://见势擒龙团/WDUa9A1nxlXZoSz"))[0]
+    item.update(capture_job_id="kol-original", status="awaiting_playback")
+    manifest["items"][item["identity"]] = item
+    subscription._save(manifest)
+    before = (tmp_path / "wechat" / "manifest.json").read_bytes()
+    (tmp_path / "native_share_bridge.json").write_text(json.dumps(config) if isinstance(config, dict) else config)
+    with pytest.raises(EnrichmentDiagnosticError) as error:
+        subscription._check_mini_program_playback(manifest, item, reason="awaiting_playback")
+    assert error.value.diagnostic_code == code
+    assert requests == []
+    assert driver.playback_preparations == []
+    assert (tmp_path / "wechat" / "manifest.json").read_bytes() == before

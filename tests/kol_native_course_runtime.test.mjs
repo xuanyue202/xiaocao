@@ -17,6 +17,7 @@ test('capture health checkpoint works without a global process in the CUA host',
     const source=await fs.readFile('scripts/kol_native_course_runtime.mjs','utf8');
     let livenessChecks=0;
     let listenerPid=123;
+    let held=false;
     const child={execFile:()=>{}};
     child.execFile[promisify.custom]=async(file,args)=>{
       if(file==='/usr/sbin/lsof'){assert.equal(args[3],'123');livenessChecks++;}
@@ -37,7 +38,12 @@ test('capture health checkpoint works without a global process in the CUA host',
     await module.link(async name=>{
       if(modules.has(name))return modules.get(name);
       assert.notEqual(name,'node:process');
-      const exports=name==='node:child_process'?child:await import(name);
+      let exports=name==='node:child_process'?child:await import(name);
+      if(name==='node:fs/promises'){
+        const readFile=async(file,...args)=>String(file).endsWith('/native_share_bridge.json')
+          ? JSON.stringify({activation_hold:{active:held}}) : fs.readFile(file,...args);
+        exports={...exports,default:{...exports.default,readFile},readFile};
+      }
       const linked=new vm.SyntheticModule(Object.keys(exports),function(){for(const [key,value] of Object.entries(exports))this.setExport(key,value);},{context});
       modules.set(name,linked);return linked;
     });
@@ -46,6 +52,9 @@ test('capture health checkpoint works without a global process in the CUA host',
     assert.equal(result.verified,true);assert.equal(livenessChecks,2);
     listenerPid=456;
     await assert.rejects(module.namespace.networkProof({mode:'capture',readiness:{network_service:'Wi-Fi',same_pid:123}}),/capture_listener_process_mismatch/);
+    const checksBeforeHold=livenessChecks;held=true;
+    await assert.rejects(module.namespace.networkProof({mode:'capture',readiness:{network_service:'Wi-Fi',same_pid:123}}),/native_entry_suspended/);
+    assert.equal(livenessChecks,checksBeforeHold);
   `;
   const result=spawnSync(process.execPath,['--experimental-vm-modules','--input-type=module','-e',script],{cwd:new URL('..',import.meta.url),encoding:'utf8'});
   assert.equal(result.status,0,result.stderr);
@@ -121,6 +130,9 @@ test('prepared stale Cancel dispatch is claimed once, expires and preserves an u
     const {cancelPreparedStaleBridgeReset}=await import(path.join(root,'scripts/kol_native_course_runtime.mjs'));
     const claimPath=path.join(root,'output/live/kol_native_atomic/claims/kol-123456789abc.stale-confirmation-reset.json');
     await fs.mkdir(path.dirname(claimPath),{recursive:true});
+    const configPath=path.join(root,'output/live/kol_xiaocao_live/native_share_bridge.json');
+    await fs.mkdir(path.dirname(configPath),{recursive:true});
+    await fs.writeFile(configPath,JSON.stringify({activation_hold:{active:false}}));
     const binary=path.join(root,'output/live/kol_native_atomic/window-'+'0'.repeat(16));
     const presence={title:'草料二维码',match_count:1,window_id:123,on_current_screen:true,width:414,height:780};
     await fs.writeFile(binary,"#!/bin/sh\nprintf '%s' '"+JSON.stringify(presence)+"'\n",{mode:0o700});
@@ -140,6 +152,16 @@ test('prepared stale Cancel dispatch is claimed once, expires and preserves an u
     await assert.rejects(cancelPreparedStaleBridgeReset({app,reset:{...reset,claim_path:copy}}),/reset_claim_path_invalid/);
     await assert.rejects(cancelPreparedStaleBridgeReset({app,reset:{...reset,prepared_at:new Date(Date.now()-1000).toISOString()}}),/reset_claim_changed/);
     assert.equal(clicks,0);
+    await fs.writeFile(configPath,JSON.stringify({activation_hold:{active:true}}));
+    // A prepared claim cannot outlive a newly activated hold. Remove the checker
+    // temporarily so a window-check attempt would fail with ENOENT instead.
+    await fs.rename(binary,binary+'.held');
+    await assert.rejects(cancelPreparedStaleBridgeReset({app,reset}),/native_entry_suspended/);
+    assert.equal(clicks,0);
+    await assert.rejects(fs.stat(claimPath+'.dispatch'),{code:'ENOENT'});
+    assert.deepEqual(JSON.parse(await fs.readFile(claimPath,'utf8')),reset);
+    await fs.rename(binary+'.held',binary);
+    await fs.writeFile(configPath,JSON.stringify({activation_hold:{active:false}}));
     await assert.rejects(cancelPreparedStaleBridgeReset({app,reset}),/timeoutReached/);
     await assert.rejects(cancelPreparedStaleBridgeReset({app,reset}),{code:'EEXIST'});
     assert.equal(clicks,1);assert.equal(JSON.parse(await fs.readFile(claimPath,'utf8')).capture_job_id,'kol-123456789abc');
@@ -153,4 +175,18 @@ test('readable off-screen, duplicated, resized or changed windows cannot receive
   assert.equal(validateInputWindow(proof,options).window_id,123);
   for(const patch of [{on_current_screen:false},{match_count:2},{window_id:456},{width:500},{title:'微信'}])
     assert.throws(()=>validateInputWindow({...proof,...patch},options));
+});
+
+
+test('an activation hold rejects an otherwise bound plan before Browser, network or UI',async()=>{
+  const root=await fs.mkdtemp(path.join(os.tmpdir(),'kol-held-plan-'));
+  try{
+    const identity='kol-wechat-'+'a'.repeat(24),capture='kol-'+'b'.repeat(12),message='c'.repeat(64);
+    const dir=path.join(root,'output/live/kol_xiaocao_live');await fs.mkdir(path.join(dir,'wechat_subscription'),{recursive:true});
+    await fs.writeFile(path.join(dir,'wechat_subscription/manifest.json'),JSON.stringify({items:{[identity]:{capture_job_id:capture,message_sha256:message}}}));
+    await fs.writeFile(path.join(dir,'native_share_bridge.json'),JSON.stringify({activation_hold:{active:true}}));
+    await assert.rejects(validatePlan({schema_version:1,mode:'capture',prepared_at:new Date().toISOString(),repo_root:root,
+      identity,capture_job_id:capture,message_sha256:message,readiness:{identity,capture_job_id:capture,
+        observed_at:new Date().toISOString(),singleton_healthy:true,same_pid:123}}),/native_entry_suspended/);
+  }finally{await fs.rm(root,{recursive:true,force:true});}
 });

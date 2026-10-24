@@ -20,6 +20,20 @@ const recent=(t,maxAgeMs=180000)=>Number.isFinite(Date.parse(t))&&Date.now()-Dat
 // deadline; plan, Browser and readiness proofs still require fresh three-minute reads.
 const recentEntry=t=>recent(t,20*60*1000);
 
+async function requireNativeEntryEnabled(root) {
+  let config;
+  try {
+    config=await json(path.join(root,'output/live/kol_xiaocao_live/native_share_bridge.json'));
+  } catch {
+    requireThat(false,'native_entry_configuration_unreadable');
+  }
+  requireThat(config!==null&&!Array.isArray(config)&&typeof config==='object','native_entry_configuration_unreadable');
+  const hold=config.activation_hold;
+  requireThat(hold===undefined||(hold!==null&&!Array.isArray(hold)&&typeof hold==='object'&&typeof hold.active==='boolean'),'native_entry_configuration_unreadable');
+  requireThat(hold?.active!==true,'native_entry_suspended');
+  return config;
+}
+
 export async function requireEndpointAbsent(port,connect=net.createConnection) {
   await new Promise((resolve,reject)=>{
     const socket=connect({host:'127.0.0.1',port});
@@ -40,6 +54,7 @@ export function visionRecognizer(binary) {
   };
 }
 async function networkProof(plan,enable=false) {
+  await requireNativeEntryEnabled(runtimeRepoRoot);
   const service=plan.readiness.network_service;
   requireThat(typeof service==='string'&&service.length>0&&!service.startsWith('-'),'network_service_invalid');
   const route=(await exec('/sbin/route',['-n','get','default'])).stdout;
@@ -91,6 +106,7 @@ export function createInputWindowGuard(readWindow) {
   };
 }
 async function requireInputWindow(plan,frame,windowId) {
+  await requireNativeEntryEnabled(runtimeRepoRoot);
   const binary=path.resolve(plan.window_binary??'');
   requireThat(path.dirname(binary)===path.join(plan.repo_root,'output/live/kol_native_atomic')&&/^window-[a-f0-9]{16}$/.test(path.basename(binary)),'window_checker_path_invalid');
   requireThat(sha(await fs.readFile(binary))===plan.window_binary_sha256,'window_checker_changed');
@@ -110,7 +126,7 @@ export async function validatePlan(plan,{requireEntry=true}={}) {
   const root=path.resolve(plan.repo_root), sub=path.join(root,'output/live/kol_xiaocao_live/wechat_subscription');
   const manifest=await json(path.join(sub,'manifest.json')), item=manifest.items[plan.identity];
   requireThat(item?.capture_job_id===plan.capture_job_id&&item.message_sha256===plan.message_sha256,'original_binding_changed');
-  const config=await json(path.join(root,'output/live/kol_xiaocao_live/native_share_bridge.json'));
+  const config=await requireNativeEntryEnabled(root);
   requireThat(config.last_configured_subscription_id===plan.identity&&config.last_configured_message_sha256===plan.message_sha256,'bridge_binding_changed');
   const proof=await json(plan.browser_proof_path);
   requireThat(recent(proof.observed_at)&&proof.component_reopened===true&&proof.identity===plan.identity&&proof.capture_job_id===plan.capture_job_id&&proof.saved_target===plan.saved_target,'browser_proof_invalid');
@@ -194,6 +210,7 @@ export async function prepareStaleBridgeReset({app,planPath,emit=()=>{}}) {
 
 /** Dispatch exactly the prepared Cancel. The caller reads back in its next CUA call. */
 export async function cancelPreparedStaleBridgeReset({app,reset}) {
+  await requireNativeEntryEnabled(runtimeRepoRoot);
   requireThat(/^kol-[a-f0-9]{12}$/.test(reset?.capture_job_id),'reset_capture_invalid');
   const claimPath=path.join(runtimeRepoRoot,'output/live/kol_native_atomic/claims',reset.capture_job_id+'.stale-confirmation-reset.json');
   requireThat(path.resolve(reset.claim_path)===claimPath,'reset_claim_path_invalid');

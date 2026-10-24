@@ -27,3 +27,25 @@ The runtime preserves specific safe guard reasons. No test proves the protection
 trigger. Human login remains the current native boundary; historical three
 missing-file claims remain unresolved, with exact-folder zero-match readbacks
 and incomplete historical uploader queues. Original claims are preserved.
+
+
+## Native-entry hold after the human correction
+
+Baseline296f0d8. Independent Spec and Standards each found two concrete holes:
+a prepared Cancel bypassed the new hold, and explicit JSON null failed open in
+Python. Fixed through a shared runtime guard before Cancel/window/network checks,
+and presence-aware Python validation. Both axes re-reviewed and closed findings.
+209 subscription tests and30 Node controller/runtime tests pass. VM network tests
+use an isolated configuration replacement; no live native/network probe was used.
+A passive call on the actual original manifest returned native_entry_suspended
+before all external handlers, with the manifest hash unchanged. Private evidence:
+20261024-postlogin-repair/hold-acceptance.json. Original claim/job retained.
+
+Human login was restored; one provider entry was launched, then the human reported
+protection recurrence. WeChat operations are now held in private configuration and
+the existing Automation prompt; its API view and mirror retain schedule/model/
+notification policy. Login restoration does not clear the hold. No course click,
+PAC mutation, new capture/download/upload or ASR execution occurred this turn.
+The protection trigger, original evening capture and three historical gaps remain
+unresolved. The earlier login-pending status above is a historical snapshot only;
+do not ask for another login or reissue the same native entry to diagnose it.

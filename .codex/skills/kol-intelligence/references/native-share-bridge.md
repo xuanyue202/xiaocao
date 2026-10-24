@@ -33,6 +33,20 @@ same-source repair, fresh File → `关闭全部标签页` (`performClose:`) clo
 actual brand course; the Window menu then proved absence. Prefer that semantic
 close below. This repairs the workflow, not the underlying input service.
 
+## Respect a native-entry hold before any interaction
+
+Read the private bridge config's `activation_hold` before native binding,
+screenshots, provider-entry issuance/open, PAC mutation or native input. An
+active hold stops those interventions across original items; preserve the exact
+jobs/claims and diagnose offline. A fresh login or another hourly invocation
+never clears it. The subscription blocks before readiness/browser requests,
+and the atomic runtime independently rejects held plans; malformed hold state
+fails closed. Pure discovery, existing downloads and exact receipt reconciliation
+continue. A healthy Liuguan socket remains usable with zero native interaction.
+A future probe requires a concrete changed route and applicable human authority;
+do not clear a hold just to retry the same entry chain. Provider `open` and
+`getApp` activation are interventions even when there are zero button clicks.
+
 ## Reuse the configured code and bind the original share
 
 Browser first: before any native WeChat read or input, verify the configured

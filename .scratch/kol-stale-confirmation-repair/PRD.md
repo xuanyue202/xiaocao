@@ -32,3 +32,27 @@ B1/B2/Cancel coordinates. It must reject off-screen, duplicate, changed ID and
 geometry. The off-screen test failed before implementation;28 Node/21 Python now
 pass. Fresh actual helper read confirms off-screen false. This finding supports
 input-target diagnosis, not attribution of WeChat protection.
+
+
+## User minimal-intervention correction after login
+
+The human restored login. The original evening source resumed in PTY35909;
+Browser target matched; one getApp binding and one provider-issued `open`
+followed. The first B0 screenshot timed out, with durable zero-dispatch events.
+One passive current readback showed WeChat4.2.0 release notes. The human then
+reported protection recurrence and insisted on minimal WeChat clicks. No course,
+Allow, keyboard/menu action, PAC change, download or upload occurred this turn.
+The trigger remains unproven. Native interaction stopped; truthful input failure
+ended the retained PTY while preserving the original capture.
+
+Requirements for this follow-up: an active private activation_hold must block
+before subscription readiness or Browser/native request, and independently before
+atomic UI/network access. Corrupt hold state fails closed. It is independent of
+login restoration and retains all originals/claims; discovery and already-bound
+background/receipt work remain eligible. Do not probe native entry for acceptance
+of this guard. Use direct passive method/held-plan checks only.
+
+Baseline296f0d8; scope source/runtime, two behavioral test files, bridge reference,
+this PRD and review. New hold tests failed before repair; then209 Python/30 Node
+checks passed. Private config and existing Automation hold handling updated,
+original schedule/model/priority preserved. Real capture remains unfinished.
