@@ -71,10 +71,14 @@ def test_observer_failure_does_not_retry_launch_or_click(monkeypatch, failure):
     assert runner.call_count == 1
 
 
-def test_same_geometry_on_multiple_ax_or_cg_windows_is_ambiguous(monkeypatch):
+@pytest.mark.parametrize('offset', [0, 1.5])
+def test_same_geometry_on_multiple_ax_or_cg_windows_is_ambiguous(monkeypatch, offset):
     for side in ('ax_windows', 'visible_windows'):
         value = observation()
         duplicate = dict(value[side][0])
+        duplicate['bounds'] = list(duplicate['bounds'])
+        value[side][0]['bounds'][0] -= offset
+        duplicate['bounds'][0] += offset
         if side == 'visible_windows':
             duplicate['id'] += 1
         value[side].append(duplicate)

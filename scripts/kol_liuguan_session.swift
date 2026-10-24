@@ -27,6 +27,11 @@ func visibleWindows(_ pid: pid_t) -> [[String: Any]] {
     }
 }
 
+func sameRectangle(_ left: CGRect, _ right: CGRect) -> Bool {
+    abs(left.minX - right.minX) < 2 && abs(left.minY - right.minY) < 2 &&
+    abs(left.width - right.width) < 2 && abs(left.height - right.height) < 2
+}
+
 func inspect() -> [String: Any] {
     var result: [String: Any] = [
         "read_only": true, "state": "unknown", "reason": "no_visible_security_prompt",
@@ -61,19 +66,35 @@ func inspect() -> [String: Any] {
         guard let rect = frame(window), let minimized = attribute(window, kAXMinimizedAttribute) as? Bool else {
             result["reason"] = "ax_unavailable"; return result
         }
-        var queue = [window]
+        let matchingCG = visible.filter { candidate in
+            guard let bounds = candidate[kCGWindowBounds as String] as? NSDictionary,
+                  let actual = CGRect(dictionaryRepresentation: bounds) else { return false }
+            return sameRectangle(rect, actual)
+        }
+        let uniqueCG = matchingCG.count == 1 ? matchingCG[0][kCGWindowBounds as String] as? NSDictionary : nil
+        let matchingAX = windows.filter { candidate in
+            guard let bounds = uniqueCG, let cgRect = CGRect(dictionaryRepresentation: bounds),
+                  let actual = frame(candidate) else { return false }
+            return sameRectangle(cgRect, actual)
+        }
+        // Inspect labels only after a unique visible binding; skip common chat-body containers.
+        var queue: [(AXUIElement, Int)] = !minimized && matchingCG.count == 1 && matchingAX.count == 1 ? [(window, 0)] : []
         var index = 0
         var protection = false
         var acknowledgement = false
         while index < queue.count && index < 2000 {
-            let element = queue[index]; index += 1
+            let (element, depth) = queue[index]; index += 1
             let role = attribute(element, kAXRoleAttribute) as? String ?? ""
-            let strings = [kAXValueAttribute, kAXTitleAttribute, kAXDescriptionAttribute].compactMap {
+            if [kAXScrollAreaRole, kAXTableRole, kAXOutlineRole, kAXListRole,
+                kAXTextAreaRole, kAXTextFieldRole, kAXRowRole].contains(role) { continue }
+            let strings = (role == kAXStaticTextRole || role == kAXButtonRole) ? [kAXValueAttribute, kAXTitleAttribute, kAXDescriptionAttribute].compactMap {
                 attribute(element, $0) as? String
-            }
+            } : []
             if role == kAXStaticTextRole && strings.contains("为了你的账号安全，请重新登录。") { protection = true }
             if role == kAXButtonRole && strings.contains("我知道了") { acknowledgement = true }
-            queue += attribute(element, kAXChildrenAttribute) as? [AXUIElement] ?? []
+            if depth < 5 {
+                queue += (attribute(element, kAXChildrenAttribute) as? [AXUIElement] ?? []).map { ($0, depth + 1) }
+            }
         }
         axRows.append(["bounds": [rect.minX, rect.minY, rect.width, rect.height], "minimized": minimized,
                        "security_text": protection, "acknowledgement": acknowledgement])
