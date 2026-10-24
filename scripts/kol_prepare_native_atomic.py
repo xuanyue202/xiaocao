@@ -20,12 +20,17 @@ def main() -> None:
     parser.add_argument('--identity', required=True)
     parser.add_argument('--capture-job-id', required=True)
     parser.add_argument('--browser-proof', type=Path, required=True)
-    parser.add_argument('--entry-proof', type=Path, required=True)
+    parser.add_argument('--entry-proof', type=Path)
+    parser.add_argument('--prepare-stale-reset', action='store_true')
     parser.add_argument('--readiness-proof', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--mode', choices=('capture', 'diagnostic'), default='capture')
     parser.add_argument('--diagnostic-authorization-sha256')
     args = parser.parse_args()
+    if not args.entry_proof and not args.prepare_stale_reset:
+        parser.error('--entry-proof is required for Open/Allow')
+    if args.prepare_stale_reset and args.mode != 'capture':
+        parser.error('stale reset requires an original capture')
     root = Path(__file__).resolve().parents[1]
     manifest = json.loads((root/'output/live/kol_xiaocao_live/wechat_subscription/manifest.json').read_text())
     item = manifest['items'][args.identity]
@@ -47,7 +52,7 @@ def main() -> None:
         identity=args.identity, capture_job_id=args.capture_job_id,
         message_sha256=item['message_sha256'], saved_target=browser['saved_target'],
         browser_proof_path=str(args.browser_proof.resolve()),
-        entry_proof_path=str(args.entry_proof.resolve()),
+        entry_proof_path=str(args.entry_proof.resolve()) if args.entry_proof else None,
         readiness=json.loads(args.readiness_proof.read_text()),
         vision_binary=str(binary), vision_binary_sha256=hashlib.sha256(binary.read_bytes()).hexdigest(),
         prepared_at=datetime.now(timezone.utc).isoformat())
@@ -63,6 +68,11 @@ def main() -> None:
         f'var kolAtomicModule = await import({json.dumps(versioned_runtime_url(runtime, controller))});\n'
         f'var kolAtomicResult = await kolAtomicModule.runAtomicCourseAllow({{app:wechat,planPath:{json.dumps(str(args.output.resolve()))},emit:row=>nodeRepl.write(row)}});\n'
         'nodeRepl.write(kolAtomicResult);')
+    if args.prepare_stale_reset:
+        snippet = ('// KOL_ACTION:R0_PREPARE_CANCEL\n'
+            f'var kolResetModule = await import({json.dumps(versioned_runtime_url(runtime, controller))});\n'
+            f'var kolResetResult = await kolResetModule.prepareStaleBridgeReset({{app:wechat,planPath:{json.dumps(str(args.output.resolve()))},emit:row=>nodeRepl.write(row)}});\n'
+            'nodeRepl.write(kolResetResult);')
     print(json.dumps({'plan_path': str(args.output.resolve()), 'cua_snippet': snippet}, ensure_ascii=False))
 
 

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import * as controller from '../scripts/kol_native_course_allow.mjs';
 import { runOpenAllow } from '../scripts/kol_native_course_allow.mjs';
 
 const line = (text, x, y, w=.3, h=.04) => ({text, confidence:.5,bounding_box:[x,y,w,h]});
@@ -89,4 +90,34 @@ test('policy denial on a post-Allow observation does not retry',async()=>{
   const h=harness();const original=h.options.app.getAXStateAndScreenshot;let reads=0;
   h.options.app.getAXStateAndScreenshot=async()=>{reads++;if(reads===5)throw Error('policy denied');return original();};
   assert.equal((await runOpenAllow(h.options)).reason,'native_bridge_policy_denied');assert.equal(reads,5);
+});
+
+
+test('preexisting unbound confirmation can be prepared for cancellation without Allow or PAC',async()=>{
+  const h=harness([allow,allow]);
+  const result=await controller.prepareStaleConfirmationReset(h.options);
+  assert.equal(result.status,'cancel_ready');
+  assert.deepEqual(result.cancel_point,[.25*828,.63*1560]);
+  assert.deepEqual(h.calls,['read','read']);
+  assert.equal(h.records.filter(r=>r.event==='dispatch_requested').length,0);
+});
+test('stale confirmation reset rejects wrong brand, security, ambiguity and moving controls',async()=>{
+  for(const mutate of [
+    r=>{r.lines[0].text='即将打开“其他程序”小程序';},
+    r=>r.lines.push(line('为了你的账号安全，请重新登录',.1,.1)),
+    r=>r.lines.push(line('取消',.1,.1)),
+  ]){
+    const h=harness([allow,allow],mutate);
+    await assert.rejects(controller.prepareStaleConfirmationReset(h.options));
+    assert(!h.calls.includes('click'));assert(!h.calls.includes('pac'));
+  }
+  const h=harness([allow,allow]);let n=0;
+  const original=h.options.recognize;h.options.recognize=async bytes=>{const r=await original(bytes);if(n++)r.lines[1].bounding_box[0]+=.05;return r;};
+  await assert.rejects(controller.prepareStaleConfirmationReset(h.options),/confirmation_changed/);
+  assert.deepEqual(h.calls,['read','read']);
+});
+test('stale confirmation preparation never masks read or tool-policy failures',async()=>{
+  const h=harness([allow]);h.options.app.getAXStateAndScreenshot=async()=>{h.calls.push('read');throw Error('policy denied');};
+  await assert.rejects(controller.prepareStaleConfirmationReset(h.options),/policy denied/);
+  assert.deepEqual(h.calls,['read']);
 });

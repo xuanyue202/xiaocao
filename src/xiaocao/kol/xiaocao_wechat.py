@@ -1756,7 +1756,8 @@ class XiaocaoWechatLiveSubscription:
                 "草料网页编辑优先用 Browser 已绑定的精确编辑器标签页，不用原生"
                 "Computer Use 操作网页；每次操作前核验当前编辑器 URL 和码 ID，"
                 "保存后重开编辑器组件读回原分享目标，再取得一次新鲜提供方入口。"
-                "浏览器核验完成后检查同一抓取服务/PAC，再签发并唤起一次；"
+                "浏览器核验完成后检查同一抓取服务/PAC。既有来源不明的品牌允许弹窗，"
+                "先按桥接R0一次取消并读回桥页，不点允许、不换原任务；再签发并唤起一次；"
                 "此后才读取微信并执行必要的 B0–B4。仅本任务已有精确课程读回时复用。"
                 "明确策略拒绝不得换工具绕过。微信原生窗口按 B0–B4 操作。"
                 "B1/B2 跳转未确认时，禁止追加窗口菜单探测或选择窗口；只做一次"
@@ -1885,6 +1886,16 @@ class XiaocaoWechatLiveSubscription:
                         "input_lookup_errors": ["noWindowsAvailable", "windowNotFoundAtPosition"],
                         "fullscreen_cause_requires_current_evidence": True,
                         "surface": "reviewed_cua_only",
+                        "stale_confirmation_reset": {
+                            "preparer": "scripts/kol_prepare_native_atomic.py --prepare-stale-reset",
+                            "runtime": "scripts/kol_native_course_runtime.mjs",
+                            "requires_verified_browser_target": True,
+                            "requires_unbound_original_capture": True,
+                            "requires_pac_off": True,
+                            "max_cancel_inputs": 1,
+                            "allow_input_permitted": False,
+                            "readback_before_fresh_entry": True,
+                        },
                         "bridge_reconstruction": {
                             "max_attempts": 1,
                             "requires_fresh_visible_caoliao_bridge": True,

@@ -6,11 +6,13 @@ import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import {createHash} from 'node:crypto';
 import net from 'node:net';
+import {fileURLToPath} from 'node:url';
+const runtimeRepoRoot=fileURLToPath(new URL('../',import.meta.url));
 const execute=promisify(execFile);
 const exec=(file,args,options={})=>execute(file,args,{timeout:3000,maxBuffer:1024*1024,...options});
 const sha=b=>createHash('sha256').update(b).digest('hex');
 const controllerUrl=new URL('./kol_native_course_allow.mjs',import.meta.url);
-const {runOpenAllow}=await import(controllerUrl.href+'?source='+sha(await fs.readFile(controllerUrl)));
+const {runOpenAllow,prepareStaleConfirmationReset}=await import(controllerUrl.href+'?source='+sha(await fs.readFile(controllerUrl)));
 const json=async p=>JSON.parse(await fs.readFile(p,'utf8'));
 const requireThat=(ok,reason)=>{if(!ok)throw Error(reason);};
 const recent=(t,maxAgeMs=180000)=>Number.isFinite(Date.parse(t))&&Date.now()-Date.parse(t)>=0&&Date.now()-Date.parse(t)<maxAgeMs;
@@ -71,7 +73,7 @@ async function networkProof(plan,enable=false) {
   return {verified:true,mode:plan.mode,network_service:service,pac_sha256:sha(pac)};
 }
 
-export async function validatePlan(plan) {
+export async function validatePlan(plan,{requireEntry=true}={}) {
   requireThat(plan.schema_version===1&&['capture','diagnostic'].includes(plan.mode),'plan_schema_invalid');
   requireThat(recent(plan.prepared_at),'plan_expired');
   requireThat(/^kol-wechat-[a-f0-9]{24}$/.test(plan.identity)&&/^kol-[a-f0-9]{12}$/.test(plan.capture_job_id),'plan_identity_invalid');
@@ -83,10 +85,13 @@ export async function validatePlan(plan) {
   requireThat(item?.capture_job_id===plan.capture_job_id&&item.message_sha256===plan.message_sha256,'original_binding_changed');
   const config=await json(path.join(root,'output/live/kol_xiaocao_live/native_share_bridge.json'));
   requireThat(config.last_configured_subscription_id===plan.identity&&config.last_configured_message_sha256===plan.message_sha256,'bridge_binding_changed');
-  const proof=await json(plan.browser_proof_path),entry=await json(plan.entry_proof_path);
+  const proof=await json(plan.browser_proof_path);
   requireThat(recent(proof.observed_at)&&proof.component_reopened===true&&proof.identity===plan.identity&&proof.capture_job_id===plan.capture_job_id&&proof.saved_target===plan.saved_target,'browser_proof_invalid');
   requireThat(proof.editor_url===config.editor_url&&plan.saved_target===`#小程序://见势擒龙团/${item.mini_program_token}`,'saved_target_changed');
-  requireThat(entry.identity===plan.identity&&entry.capture_job_id===plan.capture_job_id&&entry.status==='entry_launched_once'&&recentEntry(entry.launched_at),'entry_proof_invalid');
+  if(requireEntry){
+    const entry=await json(plan.entry_proof_path);
+    requireThat(entry.identity===plan.identity&&entry.capture_job_id===plan.capture_job_id&&entry.status==='entry_launched_once'&&recentEntry(entry.launched_at),'entry_proof_invalid');
+  }else requireThat(plan.mode==='capture','reset_requires_original_capture');
   if(plan.mode==='diagnostic')requireThat(/^[a-f0-9]{64}$/.test(plan.explicit_ui_diagnostic_authorization_sha256),'diagnostic_authorization_missing');
   else {
     const lines=(await fs.readFile(path.join(sub,'items',plan.identity,'capture_jobs.jsonl'),'utf8')).trim().split('\n');
@@ -137,4 +142,39 @@ export async function runAtomicCourseAllow({app,planPath,emit=()=>{},resumePrein
   };
   const result=await runOpenAllow({app,recognize:visionRecognizer(plan.vision_binary),record,beforeAllow:()=>networkProof(plan,true)});
   return {...result,identity:plan.identity,capture_job_id:plan.capture_job_id,audit_sha256:sha(await fs.readFile(audit)),audit_path:audit};
+}
+
+/** Before issuing an entry, prepare one exact visible Cancel on the original job. */
+export async function prepareStaleBridgeReset({app,planPath,emit=()=>{}}) {
+  const plan=await json(planPath);await validatePlan(plan,{requireEntry:false});await networkProof(plan);
+  const audit=path.resolve(planPath)+'.reset-events.jsonl';
+  const record=async event=>{
+    const row={...event,identity:plan.identity,capture_job_id:plan.capture_job_id};
+    const file=await fs.open(audit,'a',0o600);
+    try{await file.writeFile(JSON.stringify(row)+'\n');await file.sync();}finally{await file.close();}
+    emit('KOL_RESET_EVENT '+JSON.stringify(row)+'\n');
+  };
+  const prepared=await prepareStaleConfirmationReset({app,recognize:visionRecognizer(plan.vision_binary),record});
+  const dir=path.join(plan.repo_root,'output/live/kol_native_atomic/claims');await fs.mkdir(dir,{recursive:true,mode:0o700});
+  const claimPath=path.join(dir,plan.capture_job_id+'.stale-confirmation-reset.json');
+  const claim=await fs.open(claimPath,'wx',0o600);
+  try{await claim.writeFile(JSON.stringify({...prepared,identity:plan.identity,capture_job_id:plan.capture_job_id,
+    plan_sha256:sha(await fs.readFile(planPath))})+'\n');await claim.sync();}finally{await claim.close();}
+  return {...prepared,identity:plan.identity,capture_job_id:plan.capture_job_id,claim_path:claimPath};
+}
+
+/** Dispatch exactly the prepared Cancel. The caller reads back in its next CUA call. */
+export async function cancelPreparedStaleBridgeReset({app,reset}) {
+  requireThat(/^kol-[a-f0-9]{12}$/.test(reset?.capture_job_id),'reset_capture_invalid');
+  const claimPath=path.join(runtimeRepoRoot,'output/live/kol_native_atomic/claims',reset.capture_job_id+'.stale-confirmation-reset.json');
+  requireThat(path.resolve(reset.claim_path)===claimPath,'reset_claim_path_invalid');
+  const claim=await json(claimPath);
+  requireThat(recent(claim.prepared_at,30000),'reset_preparation_expired');
+  requireThat(claim.prepared_at===reset.prepared_at&&JSON.stringify(claim.cancel_point)===JSON.stringify(reset.cancel_point)
+    &&claim.identity===reset.identity&&claim.capture_job_id===reset.capture_job_id
+    &&claim.frame_sha256===reset.frame_sha256,'reset_claim_changed');
+  const dispatch=await fs.open(claimPath+'.dispatch','wx',0o600);
+  try{await dispatch.writeFile(JSON.stringify({claimed_at:new Date().toISOString(),claim_sha256:sha(await fs.readFile(claimPath))})+'\n');await dispatch.sync();}finally{await dispatch.close();}
+  await app.click(claim.cancel_point);
+  return {status:'cancel_dispatched',identity:claim.identity,capture_job_id:claim.capture_job_id,media_accepted:false};
 }

@@ -38,6 +38,24 @@ function allowTarget(frame) {
   return allow;
 }
 
+/** Prepare one Cancel, never consume an unbound Allow or dispatch any input. */
+export async function prepareStaleConfirmationReset({app,recognize,record,now=()=>new Date().toISOString()}) {
+  const observe=async()=>{
+    const frame=await app.getAXStateAndScreenshot({emit:false,disableDiffing:true});
+    if(typeof frame.state!=='string'||!frame.screenshot?.length)stop('missing_current_frame');
+    const ocr=await recognize(frame.screenshot);inspect(ocr,frame.state);
+    const current={...frame,ocr};const allow=allowTarget(current);
+    const cancel=unique(ocr,'取消');
+    await record({schema_version:1,event:'stale_confirmation_observed',stage:'R0',at:now(),
+      ax_sha256:hash(frame.state),image_sha256:hash(frame.screenshot),target_sha256:hash(JSON.stringify(cancel))});
+    return {cancel,geometry_sha256:hash(JSON.stringify([unique(ocr,'即将打开见势擒龙团小程序'),allow,cancel])),frame_sha256:hash(frame.screenshot)};
+  };
+  const first=await observe(),second=await observe();
+  if(first.geometry_sha256!==second.geometry_sha256)stop('confirmation_changed');
+  return {status:'cancel_ready',cancel_point:second.cancel.point,frame_sha256:second.frame_sha256,
+    prepared_at:now(),media_accepted:false};
+}
+
 export async function runOpenAllow({app,recognize,record,beforeAllow,now=()=>new Date().toISOString()}) {
   const started=performance.now();let stage='B0',current,postAllowReadRecovered=false,postAllowSent=false;
   const emit=async(event,fields={})=>record({schema_version:1,event,stage,at:now(),...fields});

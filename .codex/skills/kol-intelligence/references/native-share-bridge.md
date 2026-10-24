@@ -137,6 +137,38 @@ require a readable main chat: after exact Browser target and same-capture
 readiness, use the one issued entry and let B0 verify the actual bridge. Never
 repeat a consumed entry or ignore current explicit login/protection text.
 
+## R0: reset a preexisting unbound brand confirmation
+
+An exact-brand Allow prompt may survive an interrupted earlier activity. Its
+heading proves the brand, not the original course or a fresh B1. Do not consume
+that Allow, declare the already verified Browser target wrong, or leave the same
+modal for each hourly run. After Browser verification and same-capture readiness,
+before issuing a new entry, this bounded recovery is part of capture repair:
+
+- Retain the exact original source-slot/PTy, capture, baseline and healthy PID.
+  Require an unbound `awaiting_capture`, no accepted candidate/download/upload/
+  Handoff and current PAC off. Security/login, consent, policy denial, another
+  window/brand, ambiguous buttons or another source owner stop this recovery.
+- Prepare with `kol_prepare_native_atomic.py --prepare-stale-reset` and the
+  original identity/capture plus fresh Browser/readiness proofs; no entry proof
+  is needed because no entry has been issued. Its emitted preparation reads two
+  current stable exact-brand confirmations through CUA and derives the unique
+  Cancel target from those images. It sends no input or PAC change.
+- Within30seconds, call `cancelPreparedStaleBridgeReset({app:wechat,
+  reset:kolResetResult})` in the labelled `R0_CANCEL` CUA call. A durable
+  original-capture claim and one-dispatch file prevent repetition; an uncertain
+  result consumes the dispatch. Never click Allow or retry a failed Cancel.
+- In the next separate `R0_READBACK` call, read the same app. Require the modal
+  absent and the unique bridge/course button visible, with no security/login.
+  Export the real call trace before further input. This is bridge reset proof,
+  not course/media/closure proof. Only then refresh the saved-target proof and
+  follow the normal one fresh entry → B0/B1/PAC/B2 route on the same capture.
+
+The root of the repeated Oct23/24 block was a missing recovery edge in the
+workflow: successive invocations observed the same modal and stopped. It does
+not establish why the original invocation left the modal or a protection cause.
+The AUTH_BASELINE no-dismissal rule excludes this explicitly guarded R0 Cancel.
+
 ## Obtain the fresh provider-issued entry
 
 The observed first-party transport is

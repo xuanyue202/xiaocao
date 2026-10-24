@@ -110,3 +110,31 @@ test('preinput repair retains history, allows only a single zero-dispatch resume
     assert.equal(await fs.readFile(audit,'utf8'),good);
   }finally{await fs.rm(root,{recursive:true,force:true});}
 });
+
+
+test('prepared stale Cancel dispatch is claimed once, expires and preserves an uncertain effect',async()=>{
+  const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'kol-reset-dispatch-')));
+  try{
+    await fs.mkdir(path.join(root,'scripts'));
+    for(const name of ['kol_native_course_runtime.mjs','kol_native_course_allow.mjs'])await fs.copyFile(new URL('../scripts/'+name,import.meta.url),path.join(root,'scripts',name));
+    const {cancelPreparedStaleBridgeReset}=await import(path.join(root,'scripts/kol_native_course_runtime.mjs'));
+    const claimPath=path.join(root,'output/live/kol_native_atomic/claims/kol-123456789abc.stale-confirmation-reset.json');
+    await fs.mkdir(path.dirname(claimPath),{recursive:true});
+    const reset={prepared_at:new Date().toISOString(),identity:'original',capture_job_id:'kol-123456789abc',
+      frame_sha256:'a'.repeat(64),cancel_point:[100,200],claim_path:claimPath};
+    await fs.writeFile(claimPath,JSON.stringify(reset));let clicks=0;
+    const app={click:async point=>{assert.deepEqual(point,[100,200]);clicks++;throw Error('timeoutReached');}};
+    await assert.rejects(cancelPreparedStaleBridgeReset({app,reset:{...reset,cancel_point:[300,400]}}),/reset_claim_changed/);
+    const old={...reset,prepared_at:new Date(Date.now()-31000).toISOString()};
+    await fs.writeFile(claimPath,JSON.stringify(old));
+    await assert.rejects(cancelPreparedStaleBridgeReset({app,reset}),/reset_preparation_expired/);
+    await fs.writeFile(claimPath,JSON.stringify(reset));
+    const copy=path.join(root,'copy.json');await fs.copyFile(claimPath,copy);
+    await assert.rejects(cancelPreparedStaleBridgeReset({app,reset:{...reset,claim_path:copy}}),/reset_claim_path_invalid/);
+    await assert.rejects(cancelPreparedStaleBridgeReset({app,reset:{...reset,prepared_at:new Date(Date.now()-1000).toISOString()}}),/reset_claim_changed/);
+    assert.equal(clicks,0);
+    await assert.rejects(cancelPreparedStaleBridgeReset({app,reset}),/timeoutReached/);
+    await assert.rejects(cancelPreparedStaleBridgeReset({app,reset}),{code:'EEXIST'});
+    assert.equal(clicks,1);assert.equal(JSON.parse(await fs.readFile(claimPath,'utf8')).capture_job_id,'kol-123456789abc');
+  }finally{await fs.rm(root,{recursive:true,force:true});}
+});
