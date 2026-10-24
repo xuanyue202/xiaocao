@@ -61,6 +61,21 @@ def test_bootstrap_visible_route_wires_same_guarded_runtime(monkeypatch, capsys)
     assert json.loads(capsys.readouterr().out)['reused'] is True
 
 
+def test_connections_wires_passive_diagnostic_without_capture_or_asr(monkeypatch, capsys):
+    from xiaocao.yangsheng import runtime
+    calls = []
+    def probe(api, **kwargs):
+        calls.append((api, kwargs))
+        return {'status': 'waiting', 'code': 'channels_connection_missing'}
+    monkeypatch.setattr(runtime, 'connection_status', probe)
+    monkeypatch.setattr(runtime, 'run_local', lambda **k: pytest.fail('no scan/download/ASR'))
+    monkeypatch.setattr(runtime, 'bootstrap', lambda *a, **k: pytest.fail('no native refresh'))
+    monkeypatch.setattr(module.sys, 'argv', ['kol_yangsheng.py', 'connections', '--reconnect-wait', '35'])
+    assert module.main() == 0
+    assert calls == [('http://127.0.0.1:2022', {'reconnect_wait': 35})]
+    assert json.loads(capsys.readouterr().out)['code'] == 'channels_connection_missing'
+
+
 def test_partial_refresh_reply_cannot_hold_lease_past_deadline(monkeypatch):
     import os
     from time import monotonic

@@ -151,3 +151,29 @@ acceptance-summary.json, two-capture-acceptance.json and the same-item mailbox,
 native trace and cleanup receipts; evening evidence uses the sibling -pm folder.
 The source-order change and references are deployed in the existing Automation,
 with its original cadence preserved and API readback completed.
+
+
+## October 24 connection diagnosis and native hold
+
+The existing39765 backend is healthy and matches the deployed binary hash, but
+its Channels socket remained absent through35s passive polling. The actual
+Channels status checks the registered websocket pool, not API-port liveness.
+Reconnect code lives in the retained page; no connected page means the standalone
+server cannot execute its authenticated SDK or manufacture a replacement session.
+Existing reconnect/exception/SDK-exclusive regressions and Go client tests pass.
+This establishes the present interface dependency, not why WeChat logged out.
+
+The exact October23 evening original has no bound source/media/task and no new
+candidate observations since publication among1766 current candidates. It cannot
+reuse an unrelated historical recording. All144 backend tasks remain130done/
+14paused. The33-publisher catalogue still contains276 replays and5 verified files.
+No backend replacement, new download/upload, ASR execution, PAC or WeChat input
+was performed for this diagnosis.
+
+`kol_yangsheng.py connections [--reconnect-wait 0..35]` is a passive diagnostic
+that never starts services or uses the UI. A healthy retained socket continues
+normal list/media work even while the native-entry hold is active. Missing socket
+while held no longer emits the companion's native initialization request. Direct
+bootstrap checks the same hold before leases/PAC/input; malformed hold fails
+closed. This closes a demonstrated workflow gap, not the protection root cause.
+Private evidence: output/live/kol_native_atomic/20261024-connection-diagnosis/.

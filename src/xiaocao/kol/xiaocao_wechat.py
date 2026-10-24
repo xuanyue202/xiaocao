@@ -1698,28 +1698,8 @@ class XiaocaoWechatLiveSubscription:
         job later proves the same ``live_id`` before creating a download task.
         No signed media URL is accepted from this structured input.
         """
-        bridge_config = self.output_dir.parent / "native_share_bridge.json"
-        if bridge_config.exists():
-            try:
-                bridge = json.loads(bridge_config.read_text(encoding="utf-8"))
-                if not isinstance(bridge, dict):
-                    raise ValueError("bridge config must be an object")
-                hold = bridge.get("activation_hold")
-                if "activation_hold" in bridge and (not isinstance(hold, dict) or type(hold.get("active")) is not bool):
-                    raise ValueError("activation hold must have an explicit boolean state")
-                held = "activation_hold" in bridge and hold["active"] is True
-            except (OSError, ValueError, AttributeError) as exc:
-                raise EnrichmentDiagnosticError(
-                    "native entry configuration cannot be read safely",
-                    category="input_error", code="native_entry_configuration_unreadable",
-                    stage="native_playback_input",
-                ) from exc
-            if held:
-                raise EnrichmentDiagnosticError(
-                    "native entry is suspended; preserve the original job and diagnose offline",
-                    category="input_error", code="native_entry_suspended",
-                    stage="native_playback_input",
-                )
+        from .native_entry import require_native_entry
+        require_native_entry(self.output_dir.parent / "native_share_bridge.json")
         expected_source_identity = str(item.get("source_identity") or "")
         expected_live_id = (
             expected_source_identity.rsplit(":", 1)[-1]

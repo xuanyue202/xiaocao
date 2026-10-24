@@ -21,6 +21,51 @@ ROOT = Path(__file__).resolve().parents[3]
 BACKEND = ROOT.parent / 'wx_channels_download' / 'wx_video_download_macos_arm64'
 ENABLED = DEFAULT_ROOT / 'shared-enabled.json'
 SOURCE = ROOT / 'output/live/kol_daily'
+NATIVE_ENTRY_CONFIG = ROOT / 'output/live/kol_xiaocao_live/native_share_bridge.json'
+
+
+def native_intervention_held():
+    from xiaocao.kol.native_entry import native_entry_held
+    from xiaocao.kol.enrichment_types import EnrichmentDiagnosticError
+    try:
+        return native_entry_held(NATIVE_ENTRY_CONFIG)
+    except EnrichmentDiagnosticError as error:
+        raise CaptureError(error.diagnostic_code) from None
+
+
+def connection_status(api='http://127.0.0.1:2022', *, reconnect_wait=0):
+    """Inspect the existing service only; never start/refresh it or its page."""
+    if api != 'http://127.0.0.1:2022' or not 0 <= reconnect_wait <= 35:
+        raise CaptureError('invalid_connection_diagnostic')
+    held = native_intervention_held()
+    if not ENABLED.is_file():
+        return {'status': 'disabled', 'code': 'shared_capture_not_deployed', 'native_entry_held': held}
+    try:
+        descriptor = json.loads(ENABLED.read_text())
+        binary_path = Path(descriptor['binary']).resolve()
+        expected_hash = descriptor['sha256']
+    except (OSError, ValueError, TypeError, KeyError):
+        raise CaptureError('shared_backend_descriptor_invalid') from None
+    if binary_path != BACKEND.resolve() or sha_file(BACKEND) != expected_hash:
+        raise CaptureError('shared_backend_binary_changed')
+    try:
+        health = request(api, '/api/shared-capture/status', timeout=1)
+    except CaptureError as error:
+        return {'status': 'waiting', 'code': str(error), 'native_entry_held': held, 'backend_started': False}
+    if (health.get('enabled') is not True or health.get('engine') != 'gopeed'
+            or type(health.get('channels_available')) is not bool
+            or type(health.get('pid')) is not int or health['pid'] <= 1
+            or executable(health['pid']) != BACKEND.resolve()):
+        raise CaptureError('shared_backend_identity_unverified')
+    health = wait_for_native_connection(api, health, timeout=reconnect_wait)
+    if type(health.get('channels_available')) is not bool:
+        raise CaptureError('shared_backend_identity_unverified')
+    connected = health['channels_available']
+    return {'status': 'connected' if connected else 'waiting',
+            'code': 'existing_channels_connection_reusable' if connected else 'channels_connection_missing',
+            'backend_pid': health['pid'], 'native_entry_held': held,
+            'channels_api_reusable': connected, 'backend_started': False,
+            'native_operations': 0, 'proxy_changes': 0}
 
 
 @contextmanager
@@ -135,6 +180,8 @@ def bootstrap(window_id, pid, api='http://127.0.0.1:2022', root=DEFAULT_ROOT, *,
     if health.get('enabled') is not True: raise CaptureError('shared_backend_not_enabled')
     if health.get('channels_available') is True:
         return {'status': 'connected', 'api': api, 'reused': True, 'proxy_changed': False}
+    if native_intervention_held():
+        raise CaptureError('native_entry_suspended')
     with lifecycle_lease(root), native_lease():
         before = network.snapshot()
         if any('Enabled: No' not in value for value in before.values()): raise CaptureError('existing_active_proxy_preserved')

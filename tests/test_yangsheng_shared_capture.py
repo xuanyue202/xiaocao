@@ -9,6 +9,11 @@ from xiaocao.yangsheng import artifacts, capture, native, network, runtime
 from xiaocao.yangsheng.native import CaptureError
 
 
+@pytest.fixture(autouse=True)
+def isolated_native_hold(tmp_path, monkeypatch):
+    monkeypatch.setattr(runtime, 'NATIVE_ENTRY_CONFIG', tmp_path / 'unused-bridge.json')
+
+
 def replay(replay_id='123', created=200, username='teacher@finder'):
     return {'id': replay_id, 'username': username, 'createtime': created,
             'objectDesc': {'description': '课程', 'media': [{'videoPlayLen': 600, 'url': 'https://a.video.qq.com/media?ticket=a%2Bb%20c',
@@ -456,3 +461,96 @@ def test_reconnect_grace_preserves_missing_page_as_missing(monkeypatch):
     monkeypatch.setattr(runtime, 'request', lambda *a, **k: initial)
     assert runtime.wait_for_native_connection('local', initial, timeout=3)['channels_available'] is False
     assert clock[0] == 3
+
+
+def test_held_missing_connection_never_requests_native_input(tmp_path, monkeypatch):
+    from scripts import kol_daily
+    config = tmp_path / 'native_share_bridge.json'
+    config.write_text(json.dumps({'activation_hold': {'active': True}}))
+    monkeypatch.setattr(runtime, 'NATIVE_ENTRY_CONFIG', config, raising=False)
+    deployed = tmp_path / 'enabled.json'; deployed.write_text('{}')
+    monkeypatch.setattr(runtime, 'ENABLED', deployed)
+    value = {'status': 'waiting', 'code': 'liuguan_native_connection_required',
+             'artifacts': {'accepted': [{'task_id': 'retained'}]}}
+    run = Mock(return_value=value); monkeypatch.setattr(runtime, 'run_local', run)
+    prompt = Mock(side_effect=AssertionError('must not request native input'))
+    monkeypatch.setattr(kol_daily, '_read_agent_json', prompt)
+    result = kol_daily._run_liuguan_local_companion()
+    assert result['code'] == 'liuguan_connection_unavailable_native_entry_held'
+    assert result['artifacts'] == value['artifacts']
+    run.assert_called_once(); prompt.assert_not_called()
+
+
+def test_malformed_hold_preserves_companion_artifacts_without_native_prompt(tmp_path, monkeypatch):
+    from scripts import kol_daily
+    config = tmp_path / 'bridge.json'; config.write_text('{"activation_hold":null}')
+    monkeypatch.setattr(runtime, 'NATIVE_ENTRY_CONFIG', config)
+    deployed = tmp_path / 'enabled.json'; deployed.write_text('{}')
+    monkeypatch.setattr(runtime, 'ENABLED', deployed)
+    value = {'status': 'waiting', 'code': 'liuguan_native_connection_required', 'artifacts': {'accepted': ['retained']}}
+    monkeypatch.setattr(runtime, 'run_local', Mock(return_value=value))
+    monkeypatch.setattr(kol_daily, '_read_agent_json', lambda *a: pytest.fail('no native prompt'))
+    result = kol_daily._run_liuguan_local_companion()
+    assert result['code'] == 'native_entry_configuration_unreadable'
+    assert result['artifacts'] == value['artifacts']
+
+
+def test_held_bootstrap_stops_before_lease_proxy_or_input(tmp_path, monkeypatch):
+    config = tmp_path / 'bridge.json'
+    config.write_text(json.dumps({'activation_hold': {'active': True}}))
+    monkeypatch.setattr(runtime, 'NATIVE_ENTRY_CONFIG', config, raising=False)
+    monkeypatch.setattr(runtime, 'request', lambda *a: {'enabled': True, 'channels_available': False})
+    monkeypatch.setattr(runtime, 'native_lease', lambda: pytest.fail('must not acquire native lease'))
+    monkeypatch.setattr(network, 'snapshot', lambda: pytest.fail('must not read/mutate proxy'))
+    refresh = Mock()
+    with pytest.raises(CaptureError, match='^native_entry_suspended$'):
+        runtime.bootstrap(None, None, root=tmp_path, refresh=refresh)
+    refresh.assert_not_called()
+
+
+def test_held_healthy_companion_keeps_api_work_without_native_request(tmp_path, monkeypatch):
+    from scripts import kol_daily
+    config = tmp_path / 'bridge.json'
+    config.write_text(json.dumps({'activation_hold': {'active': True}}))
+    monkeypatch.setattr(runtime, 'NATIVE_ENTRY_CONFIG', config)
+    deployed = tmp_path / 'enabled.json'; deployed.write_text('{}')
+    monkeypatch.setattr(runtime, 'ENABLED', deployed)
+    value = {'status': 'scanned', 'available': 29, 'deactivated': 4}
+    monkeypatch.setattr(runtime, 'run_local', Mock(return_value=value))
+    monkeypatch.setattr(kol_daily, '_read_agent_json', lambda *a: pytest.fail('no native request'))
+    assert kol_daily._run_liuguan_local_companion() == value
+
+
+@pytest.mark.parametrize('connected', [False, True])
+def test_connection_diagnostic_only_reads_existing_backend(tmp_path, monkeypatch, connected):
+    binary = tmp_path / 'backend'; binary.write_bytes(b'fixture')
+    descriptor = tmp_path / 'enabled.json'
+    descriptor.write_text(json.dumps({'binary': str(binary), 'sha256': capture.sha_file(binary)}))
+    config = tmp_path / 'bridge.json'
+    config.write_text(json.dumps({'activation_hold': {'active': True}}))
+    monkeypatch.setattr(runtime, 'NATIVE_ENTRY_CONFIG', config)
+    monkeypatch.setattr(runtime, 'BACKEND', binary)
+    monkeypatch.setattr(runtime, 'ENABLED', descriptor)
+    monkeypatch.setattr(runtime, 'executable', lambda pid: binary)
+    read = Mock(return_value={'pid': 123, 'enabled': True, 'engine': 'gopeed', 'channels_available': connected})
+    monkeypatch.setattr(runtime, 'request', read)
+    monkeypatch.setattr(runtime.subprocess, 'Popen', lambda *a, **k: pytest.fail('no service/app start'))
+    monkeypatch.setattr(runtime, 'native_lease', lambda: pytest.fail('no native lease'))
+    monkeypatch.setattr(network, 'snapshot', lambda: pytest.fail('no proxy reads/mutations'))
+    result = runtime.connection_status()
+    assert result['channels_api_reusable'] is connected
+    assert result['native_entry_held'] is True
+    assert result['native_operations'] == result['proxy_changes'] == 0
+    read.assert_called_once_with('http://127.0.0.1:2022', '/api/shared-capture/status', timeout=1)
+    assert not (tmp_path / 'catalog.sqlite').exists()
+
+
+def test_connection_diagnostic_never_starts_missing_backend(tmp_path, monkeypatch):
+    binary = tmp_path / 'backend'; binary.write_bytes(b'fixture')
+    descriptor = tmp_path / 'enabled.json'
+    descriptor.write_text(json.dumps({'binary': str(binary), 'sha256': capture.sha_file(binary)}))
+    monkeypatch.setattr(runtime, 'BACKEND', binary)
+    monkeypatch.setattr(runtime, 'ENABLED', descriptor)
+    monkeypatch.setattr(runtime, 'request', Mock(side_effect=CaptureError('transport_error')))
+    monkeypatch.setattr(runtime.subprocess, 'Popen', lambda *a, **k: pytest.fail('no backend fallback'))
+    assert runtime.connection_status()['backend_started'] is False

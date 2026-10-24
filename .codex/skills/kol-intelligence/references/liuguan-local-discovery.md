@@ -15,6 +15,30 @@ delay Xiaocao. Outside-window invocations do not start the companion.
 Xiaocao upload, handoff and remote investment processing keep their own semantics.
 Liuguan accepted media feeds the local ASR adapter and never enters those routes.
 
+## Check and reuse the existing connection first
+
+For diagnosis, run `PYTHONPATH=src .venv/bin/python scripts/kol_yangsheng.py connections`.
+Optional `--reconnect-wait 35` only polls the retained local socket. This command
+never starts a backend, reads/operates WeChat, changes PAC, scans publishers,
+creates tasks or runs ASR. It checks the deployed binary/current service identity.
+A connected socket permits trying the authenticated list API; successful identity,
+coverage and media responses are still required. Connection status is not media
+or login acceptance.
+
+The Channels list API is a bridge to the authenticated SDK in the retained native
+page. The page owns local reconnect; an empty server connection pool cannot be
+repaired by calling a list or reload endpoint. Do not synthesize an unauthenticated
+replacement socket. Xiaoetong uses passive mini-program response/media capture;
+this Channels SDK cannot open or resolve a branded Xiaoetong share.
+
+Read the private `native_share_bridge.json` activation hold before any missing-
+connection fallback. A live existing socket remains usable while held, with no
+UI/PAC action. A missing socket must return held/missing state without a native
+initialization prompt or stdin wait. Direct bootstrap is also held before leases,
+PAC or refresh. Login restoration does not clear the hold. Continue offline
+connection/source diagnosis and existing downloads/receipts; do not relaunch or
+refresh WeChat merely to make this diagnostic green.
+
 ## Native connection request
 
 On `daily_yangsheng_native_input_required`, establish one native replay-page
