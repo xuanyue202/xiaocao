@@ -138,6 +138,15 @@ orchestration defects follow the daily review repair loop below.
 
 ## Verify decisive artifacts
 
+The WeCom status digest leads with APP-simulation Book B profit, then separately
+labels paper B/A/T. It reads only the latest verified saved SQLite observation,
+with its China observation clock; the paper shell sends it before APP EOD, so it
+must not claim a fresh APP EOD read or formal settlement. Missing/stale/invalid
+evidence shows pending data. Cash or actual-fee gaps keep final profit unknown;
+realized/floating accounting estimates are explicitly provisional (accepted
+fees at actual amounts, missing fees at the plan rate). Never
+replay a delivered digest to apply a presentation change.
+
 - `output/live/run_flow_<date>_eod.json`
 - `output/live/auto/<date>_eod.log`
 - `output/live/eod_features.jsonl`

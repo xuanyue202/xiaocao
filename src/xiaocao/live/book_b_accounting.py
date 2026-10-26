@@ -559,7 +559,12 @@ def latest_observation(root: Path) -> dict | None:
         return None
     with sqlite3.connect(path.as_uri() + "?mode=ro", uri=True) as db:
         row = db.execute("SELECT body FROM observations ORDER BY observed_at DESC,rowid DESC LIMIT 1").fetchone()
-    return verify_observation(root, json.loads(row[0])) if row else None
+    if row is None:
+        return None
+    report = json.loads(row[0])
+    if not isinstance(report, dict):
+        raise ValueError("BOOK_B_ACCOUNTING_OBSERVATION_INVALID")
+    return verify_observation(root, report)
 
 
 def cash_adjustment(root: Path, *, through: str | None = None, as_of: str | None = None) -> Decimal:

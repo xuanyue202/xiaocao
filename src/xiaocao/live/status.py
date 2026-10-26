@@ -1,22 +1,50 @@
 """Situational-awareness status digest — one snapshot consumed by the agent,
 the human, and WeCom.
 
-Assembles the live state (book B vs the validated book A, today's deterministic
-decisions, open holdings) from the standard output/live/* files into a single
-structured digest, so a waking agent or a daily push doesn't re-scrape seven
-files. The book A vs book B realized spread is the headline: it answers "is the
-live stop layer helping or hurting vs the validated next-close policy?" — the
-exact divergence iteration-7 was built to surface. See OPERATING_CONTRACT §3-4.
+APP-simulation Book B leads the digest using a verified saved accounting
+observation. Paper A/B/T, today's decisions and holdings remain separate.
+Reading this digest never queries the APP, posts accounting or settles a book.
 """
 from __future__ import annotations
 
 import json
+import sqlite3
 from datetime import date, datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from xiaocao.live import journal
 from xiaocao.live.ab_attribution import paired_exit_attribution
+from xiaocao.live.book_b_accounting import latest_observation, verify_observation
+
+
+_CHINA = ZoneInfo("Asia/Shanghai")
+
+
+def _app_book_b(live_dir: Path, market_date: str, now: datetime) -> dict[str, Any]:
+    root = live_dir / "book_b_live_execution"
+    try:
+        report = latest_observation(root)
+        if report is None:
+            return {"valuation_status": "missing"}
+        verify_observation(root, report, current=True)
+        observed = datetime.fromisoformat(report["observed_at"])
+        if observed.tzinfo is None:
+            raise ValueError("APP_ACCOUNTING_CLOCK_UNPROVEN")
+        current = now.replace(tzinfo=_CHINA) if now.tzinfo is None else now
+        if observed > current or observed.astimezone(_CHINA).date().isoformat() > market_date:
+            raise ValueError("APP_ACCOUNTING_OBSERVATION_FROM_FUTURE")
+        same_day = observed.astimezone(_CHINA).date().isoformat() == market_date
+        result = dict(report)
+        result["valuation_status"] = "dated_observation" if same_day else "stale"
+        result["valuation_as_of"] = observed.astimezone(_CHINA).isoformat(timespec="seconds")
+        if report.get("fee_status") != "actual_fees_complete" or report.get("status") != "reconciled":
+            result["cumulative_pnl"] = None
+        return result
+    except (OSError, sqlite3.Error, ValueError, KeyError, TypeError) as exc:
+        return {"valuation_status": "unavailable", "reason": str(exc)}
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -180,6 +208,7 @@ def build_digest(
     return {
         "market_date": market_date,
         "generated_at": (now or datetime.now()).isoformat(timespec="seconds"),
+        "book_b_app": _app_book_b(live_dir, market_date, now or datetime.now().astimezone()),
         "book_b": book_b,
         "book_a": book_a,
         "book_a_present": book_a_present,
@@ -255,6 +284,52 @@ def _format_ab_summary(digest: dict[str, Any]) -> str:
     return f"{accounting}\n- {comparison}"
 
 
+def _app_money(value: Any, *, signed: bool = False) -> str:
+    if value is None:
+        return "N/A"
+    sign = "+" if signed else ""
+    return f"{Decimal(str(value)):{sign},.2f}"
+
+
+def _format_app_book_b(app: dict[str, Any]) -> list[str]:
+    lines = ["APP 模拟 Book B"]
+    if app.get("valuation_status") != "dated_observation":
+        clock = app.get("valuation_as_of")
+        lines.append("- 盈亏与估值待更新。" + (f"最近观测：{clock}。" if clock else ""))
+        return lines
+    lines.append(f"- 数据截至 {app['valuation_as_of']}（最近账务观测）。")
+    confirmed = app.get("cumulative_pnl")
+    lines.append(f"- 累计净盈亏：{_app_money(confirmed, signed=True)} 元" +
+                 ("（待核）。" if confirmed is None else "。"))
+    if confirmed is None:
+        lines.append(
+            f"- 账务暂估：已实现 {_app_money(app.get('provisional_realized_pnl'), signed=True)} 元，"
+            f"浮动 {_app_money(app.get('provisional_unrealized_pnl'), signed=True)} 元；非最终收益。"
+        )
+        if app.get("fee_status") != "actual_fees_complete":
+            lines.append("- 已核费用按实际计入，缺失费用按计划费率暂估。")
+    else:
+        lines.append(
+            f"- 已实现 {_app_money(app.get('realized_pnl'), signed=True)} 元，"
+            f"浮动 {_app_money(app.get('unrealized_pnl'), signed=True)} 元。"
+        )
+    lines.append(
+        f"- 策略标记净值 {_app_money(app.get('marked_nav'))} 元，"
+        f"净投入 {_app_money(app.get('net_contributed_capital'))} 元，"
+        f"策略现金 {_app_money(app.get('cash'))} 元，自有持仓 {len(app.get('lots') or [])} 只。"
+    )
+    gaps = []
+    if app.get("status") != "reconciled":
+        difference = app.get("cash_difference")
+        gaps.append("现金归属待核" + (f"（差额 {_app_money(difference, signed=True)} 元）"
+                                  if difference is not None else ""))
+    if app.get("fee_status") != "actual_fees_complete":
+        gaps.append(f"{len(app.get('pending_fee_orders') or [])} 笔实际费用待核")
+    if gaps:
+        lines.append("- " + "；".join(gaps) + "。")
+    return lines
+
+
 def format_digest_body(d: dict[str, Any]) -> str:
     """Human-oriented message body for phone pushes and CLI output.
 
@@ -263,9 +338,10 @@ def format_digest_body(d: dict[str, Any]) -> str:
     a daily account note instead of a raw table dump.
     """
     b, a = d["book_b"], d["book_a"]
-    lines = [
-        "结论",
-        f"- book B 实盘止损账本：总权益 {_money(b['equity'])}，现金 {_money(b['cash'])}，"
+    lines = _format_app_book_b(d.get("book_b_app") or {}) + [
+        "",
+        "纸面账本结论",
+        f"- book B 纸面止损账本：总权益 {_money(b['equity'])}，现金 {_money(b['cash'])}，"
         f"持仓 {b['open_positions']} 只。",
         f"- 已实现 {_money(b['realized_pnl'], signed=True)}，未实现 "
         f"{_money(b['unrealized_pnl'], signed=True)}。",
