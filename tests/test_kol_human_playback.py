@@ -21,15 +21,18 @@ def test_human_backoff_caps_at_five_minutes_and_rejects_naive_state():
         human.next_human_poll(NOW, -1)
 
 
-def test_notification_submission_is_local_once_even_if_submission_fails(tmp_path, monkeypatch):
-    calls = []
-    monkeypatch.setattr(human.sys, 'platform', 'darwin')
-    monkeypatch.setattr(human.subprocess, 'run', lambda args, **kw: calls.append(args) or SimpleNamespace(returncode=1))
+def test_native_action_question_is_exact_once_and_never_launches_local_popup(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(human.subprocess, 'run', lambda *a, **kw: pytest.fail('no custom notifier'))
+    monkeypatch.setattr(human.subprocess, 'Popen', lambda *a, **kw: pytest.fail('no custom popup'))
     receipt = tmp_path / 'notification.json'
-    human.notify_human_once(receipt, published_at='今天早场')
-    human.notify_human_once(receipt, published_at='今天早场')
-    assert len(calls) == 1 and calls[0][0] == '/usr/bin/osascript'
-    assert json.loads(receipt.read_text()) == {'state': 'submission_failed', 'display_verified': False}
+    for _ in range(2):
+        human.request_human_action_once(receipt, published_at='今天早场',
+                                        identity='original', capture_job_id='capture-original')
+    events = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert len(events) == 1
+    assert events[0]['event'] == 'daily_human_action_required'
+    assert events[0]['identity'] == 'original' and events[0]['capture_job_id'] == 'capture-original'
+    assert json.loads(receipt.read_text()) == {'state':'codex_question_requested','display_verified':False}
     assert receipt.stat().st_mode & 0o777 == 0o600
 
 

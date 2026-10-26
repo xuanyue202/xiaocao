@@ -13,3 +13,5 @@ Requirements:
 - Human-mode course-window closure is human-owned, never fabricated as verified; it does not authorize agent UI actions.
 - macOS-only action-needed notification, at most once per real course entry; no external messages. Notification submission is not proof it was displayed.
 - No Liuguan/ASR changes. No historical experiment scripts selected. Tests, independent Spec/Standards reviews, then one retained real-item run; no production activation claim until actual media proof.
+
+Human notification correction: use the normal Codex/ChatGPT question notification, not a custom persistent dialog. macOS controls Temporary/Persistent banner style; permission and style are separate. Emit one exact-course human-action event, ask asynchronously and keep HTTP polling. Do not claim notification display from a submitted event.

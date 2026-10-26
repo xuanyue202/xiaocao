@@ -2234,7 +2234,7 @@ class XiaocaoWechatLiveSubscription:
     def _check_human_playback(self, manifest: dict, item: dict, *, reason: str) -> dict:
         from .human_playback import (
             enable_capture_listener_pac, launch_verified_caoliao,
-            next_human_poll, notify_human_once,
+            next_human_poll, request_human_action_once,
         )
         from xiaocao.yangsheng.capture import lifecycle_lease
         # Closure is human-owned. Never claim it was verified or invoke native UI.
@@ -2291,7 +2291,8 @@ class XiaocaoWechatLiveSubscription:
                     observed_page_state="human_playback_pending", activated=False,
                     playback_window_closed=False, playback_window_cleanup_owner="human",
                     user_action_required=False)
-                notify_human_once(folder / f"human-notification-{nonce}.json", published_at=item["published_at"])
+                request_human_action_once(folder / f"human-notification-{nonce}.json",
+                    published_at=item["published_at"], identity=item["identity"], capture_job_id=item["capture_job_id"])
                 return item
         from urllib.error import URLError
         try:
@@ -2329,11 +2330,12 @@ class XiaocaoWechatLiveSubscription:
             if any(response.get(key) != request[key] for key in ("capture_job_id", "source_identity", "candidate_id")):
                 raise EnrichmentError("human source confirmation changed its exact binding")
             if response.get("human_confirmed") is True:
-                item = self._transition(manifest, item, item["status"],
+                return self._transition(manifest, item, item["status"],
+                    human_playback_next_poll_at=self._now(),
+                    human_playback_observation="confirmed_source_pending",
                     human_confirmed_source_identity=observation["source_identity"],
                     human_confirmed_candidate_id=observation["candidate_id"],
                     human_source_confirmed_at=self._now())
-                observation = {"observed": False, "reason": "confirmed_source_pending"}
             else:
                 item = self._transition(manifest, item, item["status"],
                     human_source_rejected_candidate=observation["candidate_id"])

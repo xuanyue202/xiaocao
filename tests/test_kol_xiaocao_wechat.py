@@ -2728,7 +2728,7 @@ def test_human_playback_restart_preserves_entry_and_backoff_and_never_uses_nativ
         assert request['action'] == 'prepare_xiaoetong_human_entry'
         return dict(action=request['action'], subscription_id=request['subscription_id'], browser_proof_path=str(tmp_path/'proof.json'))
     monkeypatch.setattr(human, 'enable_capture_listener_pac', lambda: None)
-    monkeypatch.setattr(human, 'notify_human_once', lambda *a, **kw: None)
+    monkeypatch.setattr(human, 'request_human_action_once', lambda *a, **kw: None)
     def launch(**kw):
         launches.append(kw['item']['identity'])
         result = dict(armed_at=now.isoformat(), identity=kw['item']['identity'], capture_job_id='kol-original', entry_launched=True)

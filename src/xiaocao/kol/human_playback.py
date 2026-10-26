@@ -47,25 +47,27 @@ def next_human_poll(now: datetime, attempt: int) -> datetime:
     return now + timedelta(seconds=min(300, 10 * 2 ** min(attempt, 5)))
 
 
-def notify_human_once(path: Path, *, published_at: str) -> None:
-    """Claim before submitting a local notification; never send a relay message."""
+def request_human_action_once(path: Path, *, published_at: str,
+                              identity: str, capture_job_id: str) -> None:
+    """Ask the owning Codex chat to use its native question notification.
+
+    This is an event, not proof that the chat/OS displayed a notification.
+    The asynchronous user question must not block downloader polling.
+    """
     try:
-        _claim_json(path, {"state": "submission_claimed"})
+        _claim_json(path, {"state": "request_claimed"})
     except FileExistsError:
         return
-    title = "小草课程：需要你操作"
-    body = f"{published_at} 的草料入口已唤起。请手动打开、允许并播放；后台正在监听。"
-    state = "unsupported_platform"
-    if sys.platform == "darwin":
-        script = ('on run argv\n display notification (item 2 of argv) '
-                  'with title (item 1 of argv) sound name "Glass"\nend run')
-        try:
-            result = subprocess.run(["/usr/bin/osascript", "-e", script, title, body],
-                                    capture_output=True, timeout=5)
-            state = "submitted" if result.returncode == 0 else "submission_failed"
-        except (OSError, subprocess.SubprocessError):
-            state = "submission_unverified"
-    path.write_text(json.dumps({"state": state, "display_verified": False}) + "\n")
+    print(json.dumps({
+        "event": "daily_human_action_required", "action": "manual_xiaoetong_playback",
+        "identity": identity, "capture_job_id": capture_job_id,
+        "published_at": published_at,
+        "instructions": "使用 request_user_input_async 向人类发起一次本课程操作问题，由Codex原生问题通知提醒。"
+            "请人类在已唤起草料手动打开、允许并播放本发布时间的原课，可在捕获请求后关闭。"
+            "不要使用AppleScript通知、独立弹窗或伪装ChatGPT发通知。问题保持待答，后台HTTP轮询继续。"
+            "直接人类回复已播放本课后，可据此处理后续同课程的精确来源确认；不要重复询问。",
+    }, ensure_ascii=False), flush=True)
+    path.write_text(json.dumps({"state": "codex_question_requested", "display_verified": False}) + "\n")
 
 
 def enable_capture_listener_pac() -> None:
