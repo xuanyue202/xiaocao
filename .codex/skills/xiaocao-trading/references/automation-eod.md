@@ -2,7 +2,7 @@
 
 ## Unified APP B lifecycle reporting (2026-10-22)
 
-After the original paper EOD, APP EOD and statement readback finish, run `PYTHONPATH=src .venv/bin/python scripts/research_book_b_forward.py --phase eod` once. This advances independent funded controls and refreshes their reports and the read-only APP lifecycle join. The paper shell does not run research acquisition before APP reconciliation; do not duplicate it with a second report call. Read [BOOK_B_WORKFLOW.md](../../../../docs/BOOK_B_WORKFLOW.md): model net returns, APP marked NAV, estimated profit and confirmed profit are distinct. Missing actual fees or unclassified cash keep confirmed profit unknown. A report never closes an order or grants settlement authority.
+After the original paper EOD, APP EOD and statement readback finish, run the original `scripts/research_book_b_forward.py --phase eod` once through `scripts/eod_post_business.py --step research` with the same identity. This advances independent funded controls and refreshes their reports and the read-only APP lifecycle join. The paper shell does not run research acquisition before APP reconciliation; do not duplicate it with a second report call. Read [BOOK_B_WORKFLOW.md](../../../../docs/BOOK_B_WORKFLOW.md): model net returns, APP marked NAV, estimated profit and confirmed profit are distinct. Missing actual fees or unclassified cash keep confirmed profit unknown. A report never closes an order or grants settlement authority.
 
 
 Read this file only for the daily post-close capture/evaluation branch.
@@ -18,6 +18,22 @@ replace historical postings. Budget/exit-fee estimates retain their existing
 scope. Paper A/B/T and historical settlements stay independent.
 
 ## Execute
+
+After the original paper and APP processes terminate, execute each prescribed statement/research/feedback child once through `scripts/eod_post_business.py --step <statement|research|feedback>` with the same identity. This captures its actual exit and separate stdout; do not also invoke the child directly. A persistent claim forbids replacement after failure/interruption.
+
+For post-business closeout, read [EOD_WEEKLY_FEEDBACK.md](../../../../docs/EOD_WEEKLY_FEEDBACK.md).
+The paper shell defers its final WeCom digest. After both original processes,
+the original statement/research/feedback and execution review are terminal,
+read `scripts/eod_closeout.py --context --date <date>`, follow up prior Weekly
+responses, and prepare the structured reviewed handoff described there.
+Run the identity-bound `scripts/eod_closeout.py --review <dated-review.json>
+--push-wecom` once. It verifies original ownership/terminal/hash/accounting
+bindings, freezes daily issues, experiments and registered design acceptance,
+then sends through the existing durable claim. Do not add business or report
+replays. Leave missing terminal/source proof explicit and do not manufacture
+a successful closeout. Verify delivery separately. An uncertain send is never
+recovered by invoking closeout or status again; use the exact durable claim.
+Weekly owns cross-day synthesis; EOD does receipt/hash audit only for KOL.
 
 The scheduler wakes at 15:03. Enter the retained command promptly; both paper
 and APP EOD entrypoints wait until 15:10 before their slot claims or business
@@ -103,7 +119,7 @@ review from the original account/snapshot and current unchanged journal heads,
 records economic task closures and all remaining blockers, and makes no APP,
 order, settlement, feedback or statement call. Keep the original archive intact.
 After the original business process terminates, run
-`PYTHONPATH=src .venv/bin/python scripts/book_b_accounting.py statement` once to
+the original `scripts/book_b_accounting.py statement` once through `scripts/eod_post_business.py --step statement` to
 export cumulative JSON/CSV. Retain its dated mark or missing/stale status even if
 an old unresolved order blocks settlement; this export makes no APP query.
 Transient structural, freshness-evidence, asset-equation, or cross-table
@@ -131,7 +147,7 @@ A non-trading-day skip is a normal terminal state. Otherwise completion requires
 - Build forward A/B/C/D/E/F labels and intelligence shadow evidence.
 - Monitor Book B and Book T, settle Book A, then settle Book T.
 - Produce PnL decomposition and Book-B-versus-four-index report.
-- Push the status digest, run Friday verdict recording when applicable, check flywheels, and update posture/exit calibration plus backlog sweep.
+- Defer the final status digest to post-business closeout; run Friday verdict recording when applicable, check flywheels, and update posture/exit calibration plus backlog sweep.
 
 Do not repair account state, settle or infer any of these by hand. Code and
 orchestration defects follow the daily review repair loop below.
@@ -140,8 +156,8 @@ orchestration defects follow the daily review repair loop below.
 
 The WeCom status digest leads with APP-simulation Book B profit, then separately
 labels paper B/A/T. It reads only the latest verified saved SQLite observation,
-with its China observation clock; the paper shell sends it before APP EOD, so it
-must not claim a fresh APP EOD read or formal settlement. Missing/stale/invalid
+with its China observation clock; closeout requires the same original APP EOD
+and statement observation before sending, without implying formal settlement. Missing/stale/invalid
 evidence shows pending data. Cash or actual-fee gaps keep final profit unknown;
 realized/floating accounting estimates are explicitly provisional (accepted
 fees at actual amounts, missing fees at the plan rate). Never

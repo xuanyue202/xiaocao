@@ -37,11 +37,12 @@ def _fake_flywheel():
     }
 
 
-def test_execution_watch_separates_wait_contract_from_terminal_receipt(tmp_path):
+@pytest.mark.parametrize("sidecar", [".wait.json", ".orders.json"])
+def test_execution_watch_separates_wait_contract_from_terminal_receipt(tmp_path, sidecar):
     archive = tmp_path / "output/live/book_b_live_execution/runs/intraday/archive"
     archive.mkdir(parents=True)
     stem = "2026-10-23-closing-example"
-    (archive / (stem + ".wait.json")).write_text(json.dumps({
+    (archive / (stem + sidecar)).write_text(json.dumps({
         "run_id": stem, "mode": "claimed_orders_readback_only", "budget_seconds": 120,
         "started_at": "2026-10-23T14:45:00+08:00",
         "deadline": "2026-10-23T14:47:00+08:00",

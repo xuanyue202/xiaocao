@@ -34,7 +34,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from xiaocao.live import flywheel  # noqa: E402
-from xiaocao.research import protocols, weekly_evidence  # noqa: E402
+from xiaocao.research import protocols, weekly_evidence, eod_feedback  # noqa: E402
 from xiaocao.kol import trading_decision  # noqa: E402
 from xiaocao.kol.publication import canonical_sha256  # noqa: E402
 from xiaocao.live import kol_policy  # noqa: E402
@@ -131,9 +131,10 @@ def build_execution_repair_watch(root: Path, *, as_of: dt.date) -> dict:
             for path in sorted(archive.glob(f"{day}-{phase}-*.json")):
                 # The intraday owner stores its budget beside the terminal
                 # receipt. It is evidence of a started run, not its outcome.
-                if path.name.endswith(".wait.json"):
+                suffix = next((s for s in (".wait.json", ".orders.json") if path.name.endswith(s)), None)
+                if suffix:
                     wait_ref = ref(path)
-                    terminal_path = path.with_name(path.name.removesuffix(".wait.json") + ".json")
+                    terminal_path = path.with_name(path.name.removesuffix(suffix) + ".json")
                     if not terminal_path.is_file():
                         incomplete_checkpoints.append({
                             "date": day, "phase": phase, "status": "failed",
@@ -1247,6 +1248,7 @@ def build_plan(*, as_of: dt.date | None = None, output: Path | None = None) -> d
         )
 
     plan = {
+        "eod_feedback_contract": 1,
         "date": as_of.isoformat(),
         "week_start": (as_of - dt.timedelta(days=6)).isoformat(),
         "week_end": as_of.isoformat(),
@@ -1256,6 +1258,7 @@ def build_plan(*, as_of: dt.date | None = None, output: Path | None = None) -> d
         "kol_system_review": build_kol_system_review(ROOT, as_of=as_of),
         "execution_repair_watch": build_execution_repair_watch(ROOT, as_of=as_of),
         "data_evidence_review": data_review,
+        "eod_feedback_responses": [],
         "pre_existing_dirty": pre_dirty,
         "flywheel": fw,
         "sweep": sweep,
@@ -1405,6 +1408,9 @@ def _render_report(plan: dict, *, mode: str, validation: list[str], created_issu
         f"- 需要你确认的事项：{decision_count} 个{reminder}，见下一节。",
     ]
     lines.extend(_render_execution_repair_watch(plan))
+    lines.extend(eod_feedback.render_feedback(
+        plan.get("data_evidence_review", {}).get("eod_feedback", {}),
+        plan.get("eod_feedback_responses", [])))
     incident = plan.get("execution_repair_review") or {}
     if incident:
         lines += [f"- 执行事故复核：{incident['conclusion']}",
@@ -1540,6 +1546,9 @@ def _append_ledger(plan: dict, *, mode: str, report_path: str, validation: list[
         rec["kol_review_state"] = kol_state
     if plan.get("execution_repair_review"):
         rec["execution_repair_review"] = plan["execution_repair_review"]
+    feedback_state = eod_feedback.weekly_response_state(plan)
+    if feedback_state is not None:
+        rec["eod_feedback_state"] = feedback_state
     with CHANGE_LEDGER.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(rec, ensure_ascii=False, sort_keys=True) + "\n")
 
@@ -1598,6 +1607,7 @@ def finalize_plan(*, plan_path: Path, mode: str | None, validation: list[str],
         if snapshot_errors:
             raise SystemExit("weekly frozen input snapshot validation failed: " + "; ".join(snapshot_errors))
     _kol_review_state(plan)  # Validate rollback/slot limit before any report or ledger writes.
+    eod_feedback.weekly_response_state(plan)
     extra_candidates = _load_auto_apply_candidates(auto_apply_candidate_paths)
     if extra_candidates:
         plan.setdefault("auto_apply_candidates", []).extend(extra_candidates)

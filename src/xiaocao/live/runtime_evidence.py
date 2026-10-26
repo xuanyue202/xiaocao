@@ -155,9 +155,10 @@ def append_event(path: Path, row: dict[str, Any]) -> None:
 
 
 def stream_process(args: list[str], *, cwd: Path, env: dict[str, str], output_path: Path | None = None,
-                   operator_fd: int | None = None) -> int:
+                   operator_fd: int | None = None, stdout_path: Path | None = None) -> int:
     """Forward sanitized streams; detailed output is retained separately."""
-    with output_path.open('a', encoding='utf-8') if output_path else open(os.devnull, 'w') as evidence:
+    with (output_path.open('a', encoding='utf-8') if output_path else open(os.devnull, 'w')) as evidence, \
+            (stdout_path.open('a', encoding='utf-8') if stdout_path else open(os.devnull, 'w')) as stdout_evidence:
         process = None
         pending_signals: list[int] = []
         previous_handlers: dict[int, Any] = {}
@@ -184,13 +185,16 @@ def stream_process(args: list[str], *, cwd: Path, env: dict[str, str], output_pa
         for signum in pending_signals:
             forward_signal(signum, None)
         lock = threading.Lock()
-        def forward(source: Any, target: Any) -> None:
+        def forward(source: Any, target: Any, is_stdout: bool) -> None:
             redactor = StreamRedactor()
             for line in source:
                 clean = redactor.line(line)
                 with lock:
                     evidence.write(clean)
                     evidence.flush()
+                    if is_stdout:
+                        stdout_evidence.write(clean)
+                        stdout_evidence.flush()
                     if operator_fd is not None:
                         event = recovery_event_line(clean)
                         if event is not None:
@@ -204,8 +208,8 @@ def stream_process(args: list[str], *, cwd: Path, env: dict[str, str], output_pa
                     except BrokenPipeError:
                         pass
             source.close()
-        threads = [threading.Thread(target=forward, args=(process.stdout, sys.stdout)),
-                   threading.Thread(target=forward, args=(process.stderr, sys.stderr))]
+        threads = [threading.Thread(target=forward, args=(process.stdout, sys.stdout, True)),
+                   threading.Thread(target=forward, args=(process.stderr, sys.stderr, False))]
         for thread in threads:
             thread.start()
         try:

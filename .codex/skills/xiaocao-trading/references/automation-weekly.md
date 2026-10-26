@@ -9,6 +9,19 @@ Report creation time does not extend calendar coverage. Read `calendar_coverage`
 
 Read this file only for the Friday weekly flywheel-consumer branch.
 
+Read [EOD_WEEKLY_FEEDBACK.md](../../../../docs/EOD_WEEKLY_FEEDBACK.md) for daily
+handoff consumption. Before finalization, review every frozen
+`data_evidence_review.eod_feedback.items` entry, its original evidence copies,
+recurrence and prior Weekly response. Write `eod_feedback_responses` with a
+disposition, substantive rationale, frozen evidence, owner, next action and
+next review for each item; explain evidence gaps in `eod_feedback_gap_review`.
+Concentrate on common causes, useful findings, effective experiment samples,
+and whether registered design deviations are justified or need repair.
+Finalization enforces coverage and saves a hash-bound response in the existing
+change ledger for the next EOD. A code patch or passing tests cannot close an
+issue pending natural verification. This observation lane adds no strategy
+promotion input, experiment slot or execution authority.
+
 For APP Book B performance apply Operating Contract §6: inspect the exact
 capital-flow chain, separate allocation movements from profit, and compare
 unitized risk NAV without resetting high water or pause history. Read the dated
@@ -30,7 +43,7 @@ Use the supervisor's actual command status and verify the plan exists. A failed
 original plan stays failed; never rerun the weekly shell to repair its output.
 Only saved immutable inputs can support a dated read-only review continuation;
 disclose missing intermediate values and retain proposal-only authority.
-Execution inventory distinguishes `.wait.json` budget sidecars from terminal
+Execution inventory distinguishes `.wait.json` budget and `.orders.json` progress sidecars from terminal
 receipts, retaining orphaned waits as missing-terminal incidents. Follow any
 failed-read evidence reference under the repair branch before diagnosing cells.
 

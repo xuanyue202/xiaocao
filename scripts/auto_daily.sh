@@ -254,8 +254,7 @@ case "$STEP" in
       --start "$PAPER_VS_MARKET_START" \
       --end "$TODAY" \
       --output "$PAPER_VS_MARKET_OUT" >>"$LOG" 2>&1 || true
-    log "status digest -> WeCom relay (capital flywheel visibility; book A/B spread)"
-    run_python scripts/status.py --push-wecom >>"$LOG" 2>&1 || true
+    log "final status digest deferred to eod_closeout after APP, statement and daily review"
     # Capability flywheel: health-check daily, RECORD a dated verdict weekly (Fri)
     # so the loop turns automatically without a separate scheduler — but only on
     # clean data. On-demand recording is still `auto_daily.sh optimize`.

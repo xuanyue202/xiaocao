@@ -17,6 +17,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from xiaocao.research import guards
+from xiaocao.research import eod_feedback
 from xiaocao.research.paper_fill_evidence import WINDOW_BASES, classify_paper_fill as _fill_class
 from xiaocao.research.weekly_production_adapter import (
     build_production_observations, render_production_observations,
@@ -24,6 +25,7 @@ from xiaocao.research.weekly_production_adapter import (
 
 OPTIONS = ('baseline_no_kol', 'current_bounded', 'kol_challenger')
 PATTERNS = (
+    eod_feedback.DAILY_PATTERN, eod_feedback.WEEKLY_LEDGER,
     'kronos_screen/HYPOTHESES.jsonl',
     'reference/experience/xiaocao_hypotheses.jsonl',
     'reference/experience/research_protocols.yaml',
@@ -101,6 +103,14 @@ def _capture(root: Path, snapshot_dir: Path | None) -> tuple[dict, dict[str, byt
     # Saved comparison/run artifacts can name inputs beyond the conventional
     # filenames. Capture only local research originals, never another checkout.
     for path in list(paths_to_capture):
+        if path.match(eod_feedback.DAILY_PATTERN):
+            try:
+                for ref in eod_feedback.referenced_paths(path.read_bytes()):
+                    candidate = root / ref
+                    if candidate.is_file() and candidate.resolve().is_relative_to(root.resolve()):
+                        paths_to_capture.append(candidate)
+            except (KeyError, ValueError, TypeError, AttributeError):
+                pass  # Invalid/missing/hash-mismatched references remain feedback evidence gaps.
         if (path.name.startswith('weekly_comparison') or path.name == 'manifest.json'
                 or path.parent.name == 'shortline_comparisons'):
             try:
@@ -152,7 +162,7 @@ def _capture(root: Path, snapshot_dir: Path | None) -> tuple[dict, dict[str, byt
                     raise ValueError(f'content-addressed snapshot corrupted: {blob}')
             item['snapshot_path'] = str(blob.resolve())
         files.append(item)
-    manifest = dict(schema_version=1, files=files, missing_patterns=missing,
+    manifest = dict(schema_version=1, eod_feedback_contract=1, files=files, missing_patterns=missing,
                     source_semantics='captured bytes; mtime is never an observation time')
     manifest['sha256'] = _hash(_canonical(manifest))
     return manifest, contents
@@ -649,6 +659,7 @@ def build_weekly_evidence(root: Path, *, as_of: dt.date, snapshot_dir: Path | No
         production_observations=build_production_observations(contents, as_of=as_of),
         shortline_research=observe_shortline_research(contents, as_of=as_of),
         app_b_forward=observe_app_b_forward(contents, as_of=as_of),
+        eod_feedback=eod_feedback.observe_feedback(contents, as_of=as_of),
         missing_evidence=sorted(set(missing)), exploration_proposals=proposals,
         promotion=dict(auto_promote=False, writes_verdict_ledger=False, changes_strategy=False),
         limitations=['saved observations are not independent broker/source verification',
