@@ -971,9 +971,11 @@ class XiaocaoLiveService:
                         "active capture changed its recorded media binding"
                     )
             pids = self._sniffer_pids()
+            status_error = None
             try:
                 sniffer_status = self.sniffer.status()
-            except SnifferError:
+            except SnifferError as exc:
+                status_error = exc
                 sniffer_status = None
             if len(pids) > 1:
                 raise EnrichmentError("multiple exact sniffer processes are running")
@@ -1015,6 +1017,12 @@ class XiaocaoLiveService:
                     prompt_replayed=False,
                 )
             elif len(pids) != 1 or sniffer_status is None:
+                if len(pids) == 1 and isinstance(getattr(status_error, "__cause__", None), OSError):
+                    raise EnrichmentDiagnosticError(
+                        "sniffer status transport temporarily unavailable",
+                        category="transport_error", code="sniffer_status_transport_pending",
+                        stage="compressed_capture",
+                    ) from None
                 raise EnrichmentError("sniffer process/API health is inconsistent")
             else:
                 previous = next((row for row in reversed(self.events())

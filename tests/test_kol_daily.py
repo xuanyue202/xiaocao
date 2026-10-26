@@ -9309,3 +9309,29 @@ def test_xiaocao_audit_path_eof_and_exhaustion_fail_closed(
         kol_daily_script._read_agent_path(request, "audit_path")
     assert len(capsys.readouterr().out.splitlines()) == expected_requests
     assert consumed == []
+
+
+def test_human_wait_follows_backoff_same_capture_without_reactivation(monkeypatch, tmp_path):
+    from contextlib import nullcontext
+    import xiaocao.yangsheng.capture as capture
+    clock = datetime(2026, 10, 26, 14, tzinfo=timezone.utc)
+    calls, sleeps = [], []
+    class TestDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None): return clock
+    def waiting(seconds):
+        return {'waiting_items': [{'identity':'original', 'capture_job_id':'capture-original', 'stage':'human_playback', 'operator':'human', 'next_poll_not_before':(clock+timedelta(seconds=seconds)).isoformat()}]}
+    results = iter([lambda: waiting(20), lambda: {'waiting_items':[{'identity':'original','capture_job_id':'capture-original','stage':'compressed_capture','status':'downloading'}]}, lambda: {'handoff_dispatched':True}])
+    def poll(**kwargs):
+        calls.append(kwargs)
+        return next(results)()
+    def sleep(seconds):
+        nonlocal clock
+        sleeps.append(seconds); clock += timedelta(seconds=seconds)
+    monkeypatch.setattr(kol_daily_script, 'datetime', TestDatetime)
+    monkeypatch.setattr(kol_daily_script, '_cloud_handoff_sleep', sleep)
+    monkeypatch.setattr(capture, 'lifecycle_lease', lambda: nullcontext())
+    result = kol_daily_script._follow_cloud_handoff(SimpleNamespace(xiaocao_wechat=poll), {'source_results':[dict(name='xiaocao_wechat_live', **waiting(10))]})
+    assert result == {'handoff_dispatched':True}
+    assert calls == [{'only_identity':'original'}]*3
+    assert sleeps == [10,20,30]

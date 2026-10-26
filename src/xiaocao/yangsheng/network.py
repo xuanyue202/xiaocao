@@ -20,6 +20,8 @@ def fields(value):
 
 
 def restore(before, owned_url):
+    if snapshot() == before:
+        return {'restored': True, 'foreign_configuration_preserved': False}
     current = fields(command('-getautoproxyurl', 'Wi-Fi'))
     old = fields(before['pac'])
     if current.get('URL') != owned_url:
@@ -31,10 +33,12 @@ def restore(before, owned_url):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(); parser.add_argument('--receipt', required=True); args = parser.parse_args()
+    parser = argparse.ArgumentParser(); parser.add_argument('--receipt', required=True)
+    parser.add_argument('--wait-for-owner', action='store_true')
+    args = parser.parse_args()
     payload = json.loads(sys.stdin.readline())
     print('armed', flush=True)
-    select.select([sys.stdin], [], [], 60)
+    select.select([sys.stdin], [], [], None if args.wait_for_owner else 60)
     try: proof = restore(payload['before'], payload['owned_url'])
     except Exception as error: proof = {'restored': False, 'error_type': type(error).__name__}
     Path(args.receipt).write_text(json.dumps(proof, indent=2))

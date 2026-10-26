@@ -2443,6 +2443,25 @@ def _cloud_handoff_binding(
     return bindings[0] if bindings else None
 
 
+def _human_playback_wait(result: dict[str, Any]) -> dict[str, Any] | None:
+    rows = []
+    for outcome in result.get("source_results", [result]):
+        if isinstance(outcome, dict) and outcome.get("name") in {None, "xiaocao_wechat_live"}:
+            rows.extend(row for row in outcome.get("waiting_items", [])
+                        if isinstance(row, dict) and row.get("stage") == "human_playback")
+    if not rows:
+        return None
+    if len(rows) != 1 or rows[0].get("operator") != "human":
+        raise DailyError("human playback wait is ambiguous")
+    row = rows[0]
+    if not row.get("identity") or not row.get("capture_job_id"):
+        raise DailyError("human playback wait lacks an exact binding")
+    due = datetime.fromisoformat(row["next_poll_not_before"])
+    if due.tzinfo is None:
+        raise DailyError("human playback poll deadline is naive")
+    return row
+
+
 def _follow_cloud_handoff(
     runtime: "DailyRuntime",
     sweep_result: dict[str, Any],
@@ -2450,11 +2469,37 @@ def _follow_cloud_handoff(
     coordinator: DailyCoordinator | None = None,
 ) -> dict[str, Any] | None:
     if coordinator is not None and (
-        _cloud_handoff_binding(sweep_result, stage="compressed_capture") is not None
+        _human_playback_wait(sweep_result) is not None
+        or _cloud_handoff_binding(sweep_result, stage="compressed_capture") is not None
         or _cloud_handoff_binding(sweep_result) is not None
     ):
         with coordinator._source_locked("xiaocao_wechat_live"):
             return _follow_cloud_handoff(runtime, sweep_result)
+    human_wait = _human_playback_wait(sweep_result)
+    if human_wait is not None:
+        from xiaocao.yangsheng.capture import lifecycle_lease
+        original = (human_wait["identity"], human_wait["capture_job_id"])
+        # Other capture owners must not close the listener while the human plays.
+        # Release before the normal download/upload cleanup takes its exclusive lease.
+        while human_wait is not None:
+            due = datetime.fromisoformat(human_wait["next_poll_not_before"])
+            remaining = max(0, (due - datetime.now(timezone.utc)).total_seconds())
+            if remaining:
+                with lifecycle_lease():
+                    _cloud_handoff_sleep(min(60, remaining))
+                continue
+            sweep_result = runtime.xiaocao_wechat(only_identity=original[0])
+            human_wait = _human_playback_wait(sweep_result)
+            if human_wait is not None:
+                if (human_wait["identity"], human_wait["capture_job_id"]) != original:
+                    raise DailyError("human playback follow-up changed its binding")
+                continue
+            if sweep_result.get("handoff_dispatched") or sweep_result.get("already_completed"):
+                return sweep_result
+            next_binding = (_cloud_handoff_binding(sweep_result, stage="compressed_capture")
+                            or _cloud_handoff_binding(sweep_result))
+            if next_binding != original:
+                raise DailyError("human playback follow-up lost its exact binding")
     # A running download is not a terminal result. Keep the same PTY alive
     # through compression, cleanup, upload and its structured mailbox receipt.
     # Never turn an awaiting-playback result into repeated UI activation.
@@ -5471,91 +5516,95 @@ def main() -> int:
         _print({"rollout_readback": receipt})
         return 0
     if args.command == "capture-local":
-        runtime = DailyRuntime.__new__(DailyRuntime)
-        runtime.args = args
-        mailbox_reconciliation = runtime.reconcile_local_mailbox()
-        if mailbox_reconciliation:
-            _print({"mailbox_reconciliation": mailbox_reconciliation})
-        result = service.run(
-            [
-                SourceAdapter(**source).coordinator_entry()
-                for source in [{
-                "name": "xiaocao_wechat_live",
-                "priority": 10,
-                "run": _classified_source(
-                    "xiaocao_wechat_live", runtime.xiaocao_wechat
-                ),
-                "discover": _classified_source(
-                    "xiaocao_wechat_live",
-                    lambda: runtime.xiaocao_wechat(discovery_only=True),
-                ),
-                "narrow_resume": _classified_narrow_source(
-                    "xiaocao_wechat_live",
-                    runtime.xiaocao_wechat_narrow_resume,
-                ),
-                "reconcile": _classified_progress_source(
-                    "xiaocao_wechat_live",
-                    _missing_progress_operation(
-                        "xiaocao_wechat_live", "authoritative reconciliation"
+        from xiaocao.kol.human_playback import human_capture_network_owner
+        with human_capture_network_owner(args.xiaocao_wechat_output_dir.parent / "native_share_bridge.json"):
+            runtime = DailyRuntime.__new__(DailyRuntime)
+            runtime.args = args
+            mailbox_reconciliation = runtime.reconcile_local_mailbox()
+            if mailbox_reconciliation:
+                _print({"mailbox_reconciliation": mailbox_reconciliation})
+            result = service.run(
+                [
+                    SourceAdapter(**source).coordinator_entry()
+                    for source in [{
+                    "name": "xiaocao_wechat_live",
+                    "priority": 10,
+                    "run": _classified_source(
+                        "xiaocao_wechat_live", runtime.xiaocao_wechat
                     ),
-                ),
-            }, {
-                "name": "wechat_official_accounts",
-                "priority": 20,
-                "run": _classified_source(
-                    "wechat_official_accounts", runtime.wechat_official_local
-                ),
-                "narrow_resume": _classified_narrow_source(
-                    "wechat_official_accounts",
-                    lambda surface: _adapter_scope_resume(
+                    "discover": _classified_source(
+                        "xiaocao_wechat_live",
+                        lambda: runtime.xiaocao_wechat(discovery_only=True),
+                    ),
+                    "narrow_resume": _classified_narrow_source(
+                        "xiaocao_wechat_live",
+                        runtime.xiaocao_wechat_narrow_resume,
+                    ),
+                    "reconcile": _classified_progress_source(
+                        "xiaocao_wechat_live",
+                        _missing_progress_operation(
+                            "xiaocao_wechat_live", "authoritative reconciliation"
+                        ),
+                    ),
+                }, {
+                    "name": "wechat_official_accounts",
+                    "priority": 20,
+                    "run": _classified_source(
+                        "wechat_official_accounts", runtime.wechat_official_local
+                    ),
+                    "narrow_resume": _classified_narrow_source(
                         "wechat_official_accounts",
-                        surface,
-                        runtime.wechat_official_local,
+                        lambda surface: _adapter_scope_resume(
+                            "wechat_official_accounts",
+                            surface,
+                            runtime.wechat_official_local,
+                        ),
                     ),
-                ),
-                "reconcile": _classified_progress_source(
-                    "wechat_official_accounts",
-                    _missing_progress_operation(
+                    "reconcile": _classified_progress_source(
                         "wechat_official_accounts",
-                        "authoritative reconciliation",
+                        _missing_progress_operation(
+                            "wechat_official_accounts",
+                            "authoritative reconciliation",
+                        ),
                     ),
-                ),
-            }]
-            ],
-            blocker_sender=_sender,
-        )
-        if not result.get("silent"):
-            _print(result)
-        follow_result = _follow_cloud_handoff(runtime, result, coordinator=service)
-        if follow_result is not None:
-            _print(follow_result)
-        if result.get("status") != "outside_window":
-            # Xiaocao's retained capture and handoff have priority. A companion
-            # connection prompt must never delay the primary source's work.
-            companion = _run_liuguan_local_companion()
-            if companion.get("status") != "disabled":
-                _print({"yangsheng_capture": companion})
-            cleanup = _finish_liuguan_local_companion(result)
-            if cleanup.get("status") != "disabled":
-                _print({"shared_capture_cleanup": cleanup})
-        return 0
-    if args.command == "capture-xiaocao-item":
-        if not args.source_identity:
-            raise DailyError(
-                "capture-xiaocao-item requires the manifest identity"
+                }]
+                ],
+                blocker_sender=_sender,
             )
-        runtime = DailyRuntime.__new__(DailyRuntime)
-        runtime.args = args
-        with service._source_locked("xiaocao_wechat_live"):
-            result = runtime.xiaocao_wechat(
-                only_identity=args.source_identity,
-            )
-            if result.get("status") != "no_update":
+            if not result.get("silent"):
                 _print(result)
-            follow_result = _follow_cloud_handoff(runtime, result)
+            follow_result = _follow_cloud_handoff(runtime, result, coordinator=service)
             if follow_result is not None:
                 _print(follow_result)
-        return 0
+            if result.get("status") != "outside_window":
+                # Xiaocao's retained capture and handoff have priority. A companion
+                # connection prompt must never delay the primary source's work.
+                companion = _run_liuguan_local_companion()
+                if companion.get("status") != "disabled":
+                    _print({"yangsheng_capture": companion})
+                cleanup = _finish_liuguan_local_companion(result)
+                if cleanup.get("status") != "disabled":
+                    _print({"shared_capture_cleanup": cleanup})
+            return 0
+    if args.command == "capture-xiaocao-item":
+        from xiaocao.kol.human_playback import human_capture_network_owner
+        with human_capture_network_owner(args.xiaocao_wechat_output_dir.parent / "native_share_bridge.json"):
+            if not args.source_identity:
+                raise DailyError(
+                    "capture-xiaocao-item requires the manifest identity"
+                )
+            runtime = DailyRuntime.__new__(DailyRuntime)
+            runtime.args = args
+            with service._source_locked("xiaocao_wechat_live"):
+                result = runtime.xiaocao_wechat(
+                    only_identity=args.source_identity,
+                )
+                if result.get("status") != "no_update":
+                    _print(result)
+                follow_result = _follow_cloud_handoff(runtime, result)
+                if follow_result is not None:
+                    _print(follow_result)
+            return 0
     if args.command == "capture-wechat-official":
         runtime = DailyRuntime.__new__(DailyRuntime)
         runtime.args = args

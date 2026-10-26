@@ -2709,3 +2709,98 @@ def test_native_hold_prevents_browser_and_readiness_without_mutating_original(tm
     assert requests == []
     assert driver.playback_preparations == []
     assert (tmp_path / "wechat" / "manifest.json").read_bytes() == before
+
+
+@pytest.mark.parametrize("first_observation", ["empty", "transport", "health_transport"])
+def test_human_playback_restart_preserves_entry_and_backoff_and_never_uses_native_ui(tmp_path, monkeypatch, first_observation):
+    from contextlib import nullcontext
+    import xiaocao.yangsheng.capture as shared
+    monkeypatch.setattr(shared, "lifecycle_lease", lambda: nullcontext())
+    from datetime import timedelta
+    from xiaocao.kol import human_playback as human
+    now = datetime.fromisoformat('2026-10-26T22:00:00+08:00')
+    (tmp_path/'native_share_bridge.json').write_text(json.dumps({'playback_operator':'human', 'activation_hold':{'active':True}}))
+    driver = _CaptureDriver()
+    driver.prepare_human_playback = driver.prepare_playback
+    requests, observations, launches = [], [], []
+    def browser(request):
+        requests.append(request)
+        assert request['action'] == 'prepare_xiaoetong_human_entry'
+        return dict(action=request['action'], subscription_id=request['subscription_id'], browser_proof_path=str(tmp_path/'proof.json'))
+    monkeypatch.setattr(human, 'enable_capture_listener_pac', lambda: None)
+    monkeypatch.setattr(human, 'notify_human_once', lambda *a, **kw: None)
+    def launch(**kw):
+        launches.append(kw['item']['identity'])
+        result = dict(armed_at=now.isoformat(), identity=kw['item']['identity'], capture_job_id='kol-original', entry_launched=True)
+        kw['receipt_path'].write_text(json.dumps(result))
+        return result
+    monkeypatch.setattr(human, 'launch_verified_caoliao', launch)
+    def observe(*args, **kwargs):
+        observations.append(kwargs)
+        if len(observations) == 1:
+            if first_observation == 'health_transport':
+                raise EnrichmentDiagnosticError('temporary status timeout',category='transport_error',code='sniffer_status_transport_pending',stage='compressed_capture')
+            if first_observation == 'transport':
+                from xiaocao.kol.capture import SnifferError
+                raise SnifferError('temporary timeout')
+            return {'observed':False, 'reason':'media_pending'}
+        return dict(observed=True, source_identity='xiaoetong:apporiginal:l_original', live_id='l_original', candidate_id='fresh')
+    driver.observe_human_playback = observe
+    def subscription():
+        return XiaocaoWechatLiveSubscription(tmp_path/'wechat', history_reader=lambda: {}, browser_exchange=browser, capture_driver=driver, clock=lambda: now)
+    sub = subscription(); manifest = sub._load()
+    item = parse_xiaocao_live_messages(_history('[2026-10-26 08:00] 小花: #小程序://见势擒龙团/original'))[0]
+    item.update(capture_job_id='kol-original', status='awaiting_playback')
+    manifest['items'][item['identity']] = item; sub._save(manifest)
+    item = sub._check_mini_program_playback(manifest, item, reason='awaiting_playback')
+    assert sub._waiting(item, {})['waiting_items'][0]['stage'] == 'human_playback'
+    now += timedelta(seconds=5)
+    sub = subscription(); manifest = sub._load(); item = manifest['items'][item['identity']]
+    assert sub._check_mini_program_playback(manifest, item, reason='awaiting_playback') == item
+    assert observations == []
+    now += timedelta(seconds=5)
+    item = sub._check_mini_program_playback(manifest, item, reason='awaiting_playback')
+    assert datetime.fromisoformat(item['human_playback_next_poll_at']) == now+timedelta(seconds=20)
+    now += timedelta(seconds=20)
+    item = sub._check_mini_program_playback(manifest, item, reason='awaiting_playback')
+    assert item['activated'] is True and item['playback_window_closed'] is False
+    assert item['playback_window_cleanup_owner'] == 'human'
+    assert sub._check_mini_program_playback(manifest, item, reason='captured_window_cleanup') == item
+    assert len(requests) == len(launches) == 1
+    assert len(driver.playback_preparations) == 3
+    assert len(observations) == 2
+
+
+@pytest.mark.parametrize('confirmed', [True, False])
+def test_human_source_requires_direct_exact_confirmation_before_binding(tmp_path, monkeypatch, confirmed):
+    from contextlib import nullcontext
+    from datetime import timedelta
+    import xiaocao.yangsheng.capture as shared
+    from xiaocao.kol import human_playback as human
+    monkeypatch.setattr(shared, 'lifecycle_lease', lambda: nullcontext())
+    monkeypatch.setattr(human, 'enable_capture_listener_pac', lambda: None)
+    (tmp_path/'native_share_bridge.json').write_text('{"playback_operator":"human"}')
+    now = datetime.fromisoformat('2026-10-26T22:00:00+08:00')
+    driver = _CaptureDriver(); driver.prepare_human_playback = driver.prepare_playback
+    proposals = []
+    def observe(*args, **kwargs):
+        proposals.append(kwargs)
+        return dict(observed=bool(kwargs['expected_source']), reason='verified' if kwargs['expected_source'] else 'source_confirmation_required', source_identity='xiaoetong:appsnm3rlcp3566:l_original', candidate_id='fresh', live_id='l_original')
+    driver.observe_human_playback = observe
+    confirmations = []
+    def exchange(request):
+        confirmations.append(request)
+        assert request['action']=='confirm_xiaoetong_human_source'
+        return {key:request[key] for key in ('action','subscription_id','capture_job_id','candidate_id','source_identity')} | {'human_confirmed':confirmed}
+    sub = XiaocaoWechatLiveSubscription(tmp_path/'wechat', history_reader=lambda:{}, browser_exchange=exchange,capture_driver=driver,clock=lambda:now)
+    manifest = sub._load()
+    item = parse_xiaocao_live_messages(_history('[2026-10-26 08:32] 小花: #小程序://见势擒龙团/original'))[0]
+    item.update(status='awaiting_playback',capture_job_id='kol-original',human_playback_started_at=(now-timedelta(minutes=1)).isoformat())
+    manifest['items'][item['identity']] = item; sub._save(manifest)
+    item = sub._check_mini_program_playback(manifest,item,reason='awaiting_playback')
+    assert not item.get('activated') and not proposals[0]['expected_source']
+    now += timedelta(seconds=20)
+    item = sub._check_mini_program_playback(manifest,item,reason='awaiting_playback')
+    assert item.get('activated') is True if confirmed else item.get('activated') is not True
+    assert len(confirmations)==1
+    assert bool(proposals[1]['expected_source']) is confirmed

@@ -1,5 +1,7 @@
 # Native share entry through the reusable Caoliao code
 
+> Current human-assisted mode: when private `native_share_bridge.json` has `playback_operator: human`, follow [human-assisted-playback.md](human-assisted-playback.md). The agent only prepares listening and launches the verified Caoliao entry once. All later WeChat UI is human-owned; do not run the automatic native instructions below. Keep the legacy activation hold intact.
+
 Use for an original `#小程序://见势擒龙团/<token>` from the local capture request.
 Read [hourly-local-native-capture.md](hourly-local-native-capture.md) first for
 singleton readiness, PAC, finite replay binding and the downstream pipeline.

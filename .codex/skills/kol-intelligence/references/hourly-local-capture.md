@@ -1,5 +1,7 @@
 # Hourly Local Capture Node
 
+> Current human-assisted mode: when private `native_share_bridge.json` has `playback_operator: human`, follow [human-assisted-playback.md](human-assisted-playback.md). The agent only prepares listening and launches the verified Caoliao entry once. All later WeChat UI is human-owned; do not run the automatic native instructions below. Keep the legacy activation hold intact.
+
 Local node: WeChat capture, publisher discovery, upload, and credential-free
 handoff. Its runtime checkout is `/Users/bytedance/coding/xiaocao`. Never create,
 enable, or run this Automation on `MacBook-Pro-6.local` or from

@@ -1,5 +1,7 @@
 # Atomic Open → Allow
 
+> Current human-assisted mode: when private `native_share_bridge.json` has `playback_operator: human`, follow [human-assisted-playback.md](human-assisted-playback.md). The agent only prepares listening and launches the verified Caoliao entry once. All later WeChat UI is human-owned; do not run the automatic native instructions below. Keep the legacy activation hold intact.
+
 The human requested this on 2026-10-22 to remove model/dispatch gaps. Use the
 reviewed controller for B1/B2 in **one `cua_repl.js` invocation**. Its internal
 order remains two fresh stable-button reads → B1 → immediate read → exact brand check → PAC

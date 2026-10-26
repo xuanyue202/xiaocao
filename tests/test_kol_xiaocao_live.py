@@ -2680,3 +2680,23 @@ def test_missing_duration_is_compatible_only_with_explicit_mp4(tmp_path, media_t
     else:
         with pytest.raises(EnrichmentError, match='duration'):
             service.validate_media(job_id)
+
+
+def test_existing_sniffer_status_timeout_preserves_capture_and_transport_classification(tmp_path):
+    from urllib.error import URLError
+    from xiaocao.kol.enrichment_types import EnrichmentDiagnosticError
+    binary = tmp_path/'wx_video_download_macos_arm64'; binary.write_bytes(b'binary')
+    broken = False
+    class Sniffer:
+        def status(self):
+            if broken:
+                try: raise URLError('temporary timeout')
+                except URLError as error: raise SnifferError('status request failed') from error
+            return {'running':True,'version':'test'}
+        def candidates(self): return []
+    service = XiaocaoLiveService(tmp_path/'live',capture_ledger=tmp_path/'capture.jsonl',sniffer_binary=binary,sniffer_client=Sniffer(),runner=lambda *a, **kw: SimpleNamespace(stdout=f'1234 {binary}\n'),popen=lambda *a, **kw: pytest.fail('no replacement process'))
+    original = service.start(); broken = True
+    with pytest.raises(EnrichmentDiagnosticError) as failure: service.start()
+    assert failure.value.diagnostic_category == 'transport_error'
+    assert service.capture_store.latest()['job_id'] == original['capture_job_id']
+    assert len([row for row in service.events() if row['event']=='capture_armed']) == 1

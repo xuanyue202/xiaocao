@@ -480,6 +480,7 @@ class CaptureDriver(Protocol):
         *,
         source_identity: str,
         candidate_id: str,
+        observed_after: datetime | None = None,
     ) -> dict[str, Any]: ...
 
     def arm(
@@ -760,6 +761,7 @@ class XiaocaoLiveCaptureDriver:
         *,
         source_identity: str,
         candidate_id: str,
+        observed_after: datetime | None = None,
     ) -> dict[str, Any]:
         """Bind the UI observation to a fresh, exact sniffer candidate."""
         source_match = _XIAOETONG_SOURCE_IDENTITY.fullmatch(source_identity)
@@ -799,6 +801,10 @@ class XiaocaoLiveCaptureDriver:
             armed_at = datetime.fromisoformat(
                 current.get("native_repair_armed_at") or current["created_at"]
             )
+            if observed_after is not None:
+                if observed_after.tzinfo is None:
+                    raise ValueError("naive human playback boundary")
+                armed_at = max(armed_at, observed_after)
         except (KeyError, TypeError, ValueError) as exc:
             raise EnrichmentError("native capture timestamp is invalid") from exc
         if captured_at <= armed_at:
@@ -840,6 +846,78 @@ class XiaocaoLiveCaptureDriver:
         if bound is None:
             raise EnrichmentError("native capture could not bind its candidate")
         return bound
+
+    def prepare_human_playback(self, identity: str, capture_job_id: str) -> dict[str, Any]:
+        service = self._service(identity)
+        capture = service.capture_store.latest(capture_job_id)
+        if not capture or not (capture.get("expected_source") and capture.get("candidate")):
+            return self.prepare_playback(identity, capture_job_id)
+        # A crash after exact binding may precede the manifest write. Resume the
+        # original armed capture without clearing or replacing its accepted source.
+        resumed = service.start()
+        if resumed.get("capture_job_id") != capture_job_id:
+            raise EnrichmentError("human playback resumed a different capture")
+        return resumed
+
+    def observe_human_playback(self, identity: str, capture_job_id: str, *,
+                               observed_after: datetime,
+                               expected_source: str = "") -> dict[str, Any]:
+        """Select only a unique fresh merchant source; the existing binder proves media."""
+        service = self._service(identity)
+        sources: dict[str, list[dict[str, Any]]] = {}
+        for row in service.sniffer.candidates():
+            try:
+                captured = datetime.fromisoformat(str(row.get("captured") or ""))
+                if captured.tzinfo is None:
+                    captured = captured.replace(tzinfo=BEIJING)
+                if captured <= observed_after:
+                    continue
+            except ValueError:
+                continue
+            if row.get("media_type") != "m3u8" or not str(row.get("live_id") or "").startswith("l_"):
+                continue
+            media = urlsplit(str(row.get("url") or ""))
+            if (media.scheme != "https" or not (
+                Path(media.path).name == "playlist_eof.m3u8"
+                or media.hostname == "live-ex-speed.xiaoeknow.com"
+                or re.fullmatch(r"playlist(?:\.f[0-9]+)?\.m3u8", Path(media.path).name)
+            )):
+                continue
+            origin = urlsplit(str(row.get("source_url") or ""))
+            merchant = re.fullmatch(
+                r"(?P<app>app[A-Za-z0-9]+)\.(?:h5|mp)\.(?:xiaoeknow\.com|xe-live\.com)",
+                origin.hostname or "",
+            )
+            app = merchant.group("app") if merchant else (
+                "appsnm3rlcp3566" if origin.hostname == "xet.kj1team.cn"
+                and origin.path == "/_alive/v2/get_lookback_url" else ""
+            )
+            if not app or (not expected_source and app != "appsnm3rlcp3566"):
+                continue
+            source = f"xiaoetong:{app}:{row['live_id']}"
+            if expected_source and source != expected_source:
+                continue
+            sources.setdefault(source, []).append(row)
+        if len(sources) != 1:
+            return {"observed": False, "reason": "ambiguous_sources" if sources else "media_pending"}
+        source, candidates = next(iter(sources.items()))
+        candidate = max(candidates, key=lambda row: (str(row.get("captured") or ""), str(row.get("id") or "")))
+        if not expected_source:
+            return {"observed": False, "reason": "source_confirmation_required",
+                    "source_identity": source, "candidate_id": str(candidate.get("id") or ""),
+                    "live_id": str(candidate["live_id"])}
+        try:
+            self.bind_mini_program_capture(identity, capture_job_id,
+                source_identity=source, candidate_id=str(candidate.get("id") or ""),
+                observed_after=observed_after)
+        except EnrichmentError as exc:
+            if any(value in str(exc) for value in (
+                "unavailable", "lacks", "has not ended", "not a finite", "candidate is missing",
+            )):
+                return {"observed": False, "reason": "finite_media_not_yet_verified"}
+            raise
+        return {"observed": True, "source_identity": source,
+                "candidate_id": str(candidate["id"]), "live_id": str(candidate["live_id"])}
 
     def refresh_failed_native_capture(
         self, identity: str, capture_job_id: str, *, candidate_id: str,
@@ -1424,6 +1502,13 @@ class XiaocaoWechatLiveSubscription:
         waiting_item["playback_route"] = str(
             item.get("playback_route") or self.playback_route
         )
+        if item.get("human_playback_started_at") and item.get("activated") is not True:
+            waiting_item.update(
+                status="awaiting_human_playback", stage="human_playback",
+                code="human_playback_pending", operator="human",
+                next_poll_not_before=item["human_playback_next_poll_at"],
+                human_playback_poll_attempt=item.get("human_playback_poll_attempt", 0),
+            )
         return {
             "status": "waiting",
             "waiting_count": 1,
@@ -1698,6 +1783,11 @@ class XiaocaoWechatLiveSubscription:
         job later proves the same ``live_id`` before creating a download task.
         No signed media URL is accepted from this structured input.
         """
+        from .human_playback import human_playback_enabled
+        if human_playback_enabled(self.output_dir.parent / "native_share_bridge.json"):
+            return self._check_human_playback(manifest, item, reason=reason)
+        if item.get("human_playback_started_at"):
+            raise EnrichmentError("human playback ownership changed; preserve the original wait")
         from .native_entry import require_native_entry
         require_native_entry(self.output_dir.parent / "native_share_bridge.json")
         expected_source_identity = str(item.get("source_identity") or "")
@@ -2141,6 +2231,125 @@ class XiaocaoWechatLiveSubscription:
             raise error
         return item
 
+    def _check_human_playback(self, manifest: dict, item: dict, *, reason: str) -> dict:
+        from .human_playback import (
+            enable_capture_listener_pac, launch_verified_caoliao,
+            next_human_poll, notify_human_once,
+        )
+        from xiaocao.yangsheng.capture import lifecycle_lease
+        # Closure is human-owned. Never claim it was verified or invoke native UI.
+        if reason == "captured_window_cleanup" or item.get("activated") is True:
+            return item
+        if item.get("mini_program_name") != "见势擒龙团":
+            raise EnrichmentError("human Caoliao playback requires the original branded entry")
+        now = self.clock()
+        due = item.get("human_playback_next_poll_at")
+        if due and now < datetime.fromisoformat(due):
+            return item
+        if not item.get("human_playback_started_at"):
+            with lifecycle_lease():
+                self.capture_driver.prepare_human_playback(item["identity"], item["capture_job_id"])
+                enable_capture_listener_pac()
+                nonce = item.get("human_playback_nonce") or uuid4().hex
+                item = self._transition(manifest, item, item["status"], human_playback_nonce=nonce)
+                folder = self.output_dir / "items" / item["identity"]
+                folder.mkdir(parents=True, exist_ok=True)
+                receipt = folder / f"human-entry-{nonce}.json"
+                if receipt.exists():
+                    launched = json.loads(receipt.read_text())
+                    if (launched.get("entry_launched") is not True
+                        or launched.get("identity") != item["identity"]
+                        or launched.get("capture_job_id") != item["capture_job_id"]):
+                        raise EnrichmentError("human entry outcome unresolved; do not relaunch")
+                else:
+                    request = {
+                        "event": "daily_browser_input_required", "adapter": "xiaocao_wechat_live",
+                        "action": "prepare_xiaoetong_human_entry", "subscription_id": item["identity"],
+                        "capture_job_id": item["capture_job_id"], "operator": "human",
+                        "mini_program_name": item["mini_program_name"],
+                        "mini_program_token": item["mini_program_token"],
+                        "native_bridge_config_path": str(self.output_dir.parent / "native_share_bridge.json"),
+                        "instructions": (
+                            "仅用已绑定Browser核验原草料编辑器保存的当前小程序链接；不同则按原流程"
+                            "更新保存并重开组件核验。把真实新鲜的核验JSON保存到本机，返回browser_proof_path。"
+                            "不要读取/截图/绑定微信，不执行打开、允许、口令、协议、播放或关闭。"
+                            "程序会在收到来源凭证后只唤起草料一次，之后由人类全程操作，后台仅轮询下载器。"
+                        ),
+                        "required_response": {"action": "prepare_xiaoetong_human_entry",
+                            "subscription_id": item["identity"], "browser_proof_path": "absolute local JSON path"},
+                    }
+                    response = self._exchange_browser(request, item)
+                    self._validate_browser_response(request, response)
+                    launched = launch_verified_caoliao(
+                        config_path=self.output_dir.parent / "native_share_bridge.json", item=item,
+                        proof_path=Path(str(response.get("browser_proof_path") or "")),
+                        receipt_path=receipt, now=self.clock())
+                item = self._transition(manifest, item, "awaiting_playback",
+                    human_playback_started_at=launched["armed_at"], human_playback_poll_attempt=0,
+                    human_playback_next_poll_at=next_human_poll(self.clock(), 0).isoformat(),
+                    human_playback_entry_receipt=str(receipt), playback_operator="human",
+                    observed_page_state="human_playback_pending", activated=False,
+                    playback_window_closed=False, playback_window_cleanup_owner="human",
+                    user_action_required=False)
+                notify_human_once(folder / f"human-notification-{nonce}.json", published_at=item["published_at"])
+                return item
+        from urllib.error import URLError
+        try:
+            with lifecycle_lease():
+                self.capture_driver.prepare_human_playback(item["identity"], item["capture_job_id"])
+                enable_capture_listener_pac()
+                observation = self.capture_driver.observe_human_playback(
+                    item["identity"], item["capture_job_id"],
+                    observed_after=datetime.fromisoformat(item["human_playback_started_at"]),
+                    expected_source=str(item.get("source_identity") or item.get("human_confirmed_source_identity") or ""))
+        except (SnifferError, URLError):
+            observation = {"observed": False, "reason": "listener_transport_pending"}
+        except EnrichmentDiagnosticError as exc:
+            if exc.diagnostic_category != "transport_error":
+                raise
+            observation = {"observed": False, "reason": "listener_transport_pending"}
+        if (observation.get("reason") == "source_confirmation_required"
+            and observation.get("candidate_id") != item.get("human_source_rejected_candidate")):
+            # The share token is opaque. Fresh traffic alone cannot establish
+            # which original publication it belongs to. Ask the human once for
+            # this exact proposed binding; never synthesize a UI observation.
+            request = {
+                "event": "daily_browser_input_required", "adapter": "xiaocao_wechat_live",
+                "action": "confirm_xiaoetong_human_source", "operator": "human",
+                "subscription_id": item["identity"], "capture_job_id": item["capture_job_id"],
+                "published_at": item["published_at"],
+                "source_identity": observation["source_identity"], "candidate_id": observation["candidate_id"],
+                "instructions": "必须向人类确认：刚才手动打开并播放的是否为本发布时间的原课程。"
+                    "不得自动回答，不读取/点击/截图微信。仅在直接人类确认后返回 human_confirmed:true，"
+                    "并原样返回本请求 action/subscription_id/capture_job_id/source_identity/candidate_id。",
+            }
+            with lifecycle_lease():
+                response = self._exchange_browser(request, item)
+            self._validate_browser_response(request, response)
+            if any(response.get(key) != request[key] for key in ("capture_job_id", "source_identity", "candidate_id")):
+                raise EnrichmentError("human source confirmation changed its exact binding")
+            if response.get("human_confirmed") is True:
+                item = self._transition(manifest, item, item["status"],
+                    human_confirmed_source_identity=observation["source_identity"],
+                    human_confirmed_candidate_id=observation["candidate_id"],
+                    human_source_confirmed_at=self._now())
+                observation = {"observed": False, "reason": "confirmed_source_pending"}
+            else:
+                item = self._transition(manifest, item, item["status"],
+                    human_source_rejected_candidate=observation["candidate_id"])
+        if observation.get("observed") is True:
+            return self._transition(manifest, item, "playback_activated", activated=True,
+                playback_operator="human", media_request_observed=True,
+                observed_page_state="mini_program_media_observed",
+                source_identity=observation["source_identity"], source_resource_id=observation["live_id"],
+                candidate_id=observation["candidate_id"], playback_window_closed=False,
+                playback_window_cleanup_owner="human", user_action_required=False)
+        attempt = int(item.get("human_playback_poll_attempt", 0)) + 1
+        return self._transition(manifest, item, "awaiting_playback",
+            human_playback_poll_attempt=attempt,
+            human_playback_next_poll_at=next_human_poll(self.clock(), attempt).isoformat(),
+            human_playback_observation=observation.get("reason", "media_pending"))
+
     def _resolve_page(
         self,
         manifest: dict[str, Any],
@@ -2356,6 +2565,7 @@ class XiaocaoWechatLiveSubscription:
         if (
             item["status"] in {"capture_armed", "awaiting_playback"}
             and resource_id.startswith("l_")
+            and not (item.get("human_playback_started_at") and item.get("activated") is not True)
         ):
             capture_state = self.capture_driver.advance_capture(
                 item["identity"],
