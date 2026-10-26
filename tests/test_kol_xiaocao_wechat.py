@@ -927,8 +927,10 @@ def test_native_mini_program_entry_is_armed_before_ui_and_binds_observed_live(
             assert reconstruction["reuse_same_sniffer_and_capture"] is True
             assert request["ui_policy"]["unconfirmed_brand_navigation_window_menu_probe_allowed"] is False
             assert request["ui_policy"]["security_relogin_retry_policy"] == (
-                "changed_plan_and_applicable_authorization_required"
+                "human_login_then_authorized_same_item_continuation"
             )
+            assert request["ui_policy"]["security_relogin_root_cause_required"] is False
+            assert request["ui_policy"]["security_relogin_unattended_retry"] is False
             assert Path(request["native_entry_reference"]).is_file()
             assert request["native_bridge_config_path"] == (
                 "output/live/kol_xiaocao_live/native_share_bridge.json"

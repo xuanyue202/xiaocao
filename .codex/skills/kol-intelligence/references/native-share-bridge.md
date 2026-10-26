@@ -33,18 +33,42 @@ same-source repair, fresh File → `关闭全部标签页` (`performClose:`) clo
 actual brand course; the Window menu then proved absence. Prefer that semantic
 close below. This repairs the workflow, not the underlying input service.
 
-## Respect a native-entry hold before any interaction
+## Login recovery and explicit native-entry holds
+
+The human clarified on 2026-10-26: restore Xiaocao first, leave Liuguan aside,
+and record protection incidents without making their root cause a prerequisite
+for normal capture. An explicit login/protection screen stops the current
+native attempt; restore its PAC, retain every original job/claim and request
+the human-only login. Do not retry while login is pending. After human login
+confirmation, the existing capture authorization permits a fresh same-item
+continuation through this verified route. Recheck the saved target, current
+capture readiness and actual bridge; issue a new one-dispatch entry, never
+reuse a consumed ticket or repeat uncertain download/upload effects. No changed
+route or protection-cause proof is required just to resume after login.
+
+Record the actual installed version/build/signature, downloader hash/PID,
+original identity/capture, Browser proof, entry launch time, PAC URL/body hash
+and state, and timestamped atomic hashes. Export the real source-call trace
+after return; distinguish the first abnormal observation from security text.
+Do not log credentials, signed URLs, typed passwords or unrelated chat data.
+Incomplete telemetry stays incomplete and never justifies extra UI actions.
+
+An auth-only hold may be released on that human confirmation under the current
+capture authorization, preserving its history. A separate human stop/offline
+instruction, consent gate or denied action still requires its own applicable
+authorization and must never be bypassed. Do not remove arbitrary explicit holds.
 
 Read the private bridge config's `activation_hold` before native binding,
 screenshots, provider-entry issuance/open, PAC mutation or native input. An
 active hold stops those interventions across original items; preserve the exact
-jobs/claims and diagnose offline. A fresh login or another hourly invocation
-never clears it. The subscription blocks before readiness/browser requests,
+jobs/claims and diagnose offline. A login or hourly invocation never clears it
+automatically; the auth-only recovery above requires a human login confirmation.
+The subscription blocks before readiness/browser requests,
 and the atomic runtime independently rejects held plans; malformed hold state
 fails closed. Pure discovery, existing downloads and exact receipt reconciliation
 continue. A healthy Liuguan socket remains usable with zero native interaction.
-A future probe requires a concrete changed route and applicable human authority;
-do not clear a hold just to retry the same entry chain. Provider `open` and
+A login-confirmation recovery follows the paragraph above; other diagnostic
+probes still require their applicable human authority. Provider `open` and
 `getApp` activation are interventions even when there are zero button clicks.
 
 ## Reuse the configured code and bind the original share
@@ -293,6 +317,8 @@ suppress it or label it complete. A subsequent export preserves the real output
 and coverage before the next native input. This reduces orchestration work,
 without batching native input/readback or changing permitted native actions.
 
+The following AUTH_BASELINE is an optional diagnostic exception, not a
+prerequisite or changed-route requirement for normal login recovery above.
 For an explicitly user-authorized diagnostic rerun after a security exit,
 once Browser has verified the saved exact target, allow one passive native
 authentication-baseline read before enabling capture PAC or issuing/opening an
@@ -312,7 +338,7 @@ security decision can predate its UI. An offline trace/test pass is not a fix
 for WeChat self-protection or actual media/cloud acceptance.
 
 After the Browser/readiness/entry sequence, bind `wechat` with
-`await cua.getApp("com.tencent.xinWeChat")` only when no binding exists; follow
+`await cua.getApp("/Applications/WeChat.app")` only when no binding exists; follow
 the tool's first-use documentation. If the post-launch readback or B1/B2 result
 does not show the expected bridge/brand state, do not add a Window-menu probe
 or choose a window to chase the jump. One current-state readback then offline
@@ -334,11 +360,11 @@ events can be observed by an application; that is not evidence about WeChat's
 security policy. Keep dispatched actions, last normal state, first abnormal
 state and first explicit protection text separate in the operation receipt.
 
-After a security-relogin page, stop native inputs and preserve original IDs and
-claims. User login restoration alone does not authorize replaying the unchanged
-PAC → issued Scheme → cross-mini-program navigation chain. First identify a
-concrete evidence-backed changed repair/diagnostic plan and its applicable
-authorization; use offline validation before any approved bounded probe. Do not
+After a security-relogin page, stop this attempt, restore its PAC and preserve
+original IDs and claims. Wait for human login confirmation; then follow the
+verified Xiaocao same-item recovery above under the existing capture authority.
+Do not require a changed route or protection-root-cause proof for that recovery.
+A separate explicit stop or denied action still retains its own boundary. Do not
 turn relogin into a retry loop, move to another tool after denial, add arbitrary
 delays/count limits, or treat an offline pass as root-cause/E2E proof. Existing
 capture cleanup and authentication response requirements still apply.
