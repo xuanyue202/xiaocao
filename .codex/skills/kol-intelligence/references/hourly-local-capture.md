@@ -323,6 +323,11 @@ named LiangHuiMCP operation with exact `arguments`:
 
 Never reconstruct receipts. Send credential-free metadata/hashes only, no local
 paths or bytes.
+The connector's unchanged structured send envelope (`outcome` plus `receipt`)
+is also accepted: the runner derives only the missing wrapper operation from
+the receipt's exact operation. Explicit conflicting operations, hashes and IDs
+still fail validation. This never authorizes another send after a lost receipt;
+reconcile that same mailbox message first.
 
 `send_mailbox_message` uses mailbox `kol.handoff`, type `xiaocao.kol_handoff`,
 schema `1`, and the same `handoff_id` as message and correlation IDs. Only

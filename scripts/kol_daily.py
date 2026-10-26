@@ -1329,6 +1329,20 @@ def _read_agent_json(request: dict[str, Any]) -> dict[str, Any]:
     return value
 
 
+def _read_mailbox_json(request: dict[str, Any]) -> dict[str, Any]:
+    """Accept the connector's send envelope without rewriting its receipt."""
+    value = _read_agent_json(request)
+    receipt = value.get("receipt")
+    if (
+        request.get("operation") == "send_mailbox_message"
+        and "operation" not in value
+        and isinstance(receipt, dict)
+        and receipt.get("operation") == "send_mailbox_message"
+    ):
+        return {"operation": "send_mailbox_message", **value}
+    return value
+
+
 def _native_playback_failure_result(exc: EnrichmentDiagnosticError) -> dict[str, Any]:
     waiting_items = [
         {key: value for key, value in item.items() if key != "next_poll_not_before"}
@@ -2570,7 +2584,7 @@ class DailyRuntime:
     def _mailbox(self) -> LiangHuiMailboxClient:
         return LiangHuiMailboxClient(
             MailboxLedger(self.args.mailbox_output_dir),
-            exchange=_read_agent_json,
+            exchange=_read_mailbox_json,
         )
 
     @staticmethod

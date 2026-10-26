@@ -86,6 +86,10 @@ class Clock:
 @pytest.fixture(autouse=True)
 def isolated_capture_companion(monkeypatch):
     """CLI tests must never use the workstation's deployed downloader."""
+    from contextlib import nullcontext
+    from xiaocao.kol import human_playback
+
+    monkeypatch.setattr(human_playback, "human_capture_network_owner", lambda path: nullcontext())
     monkeypatch.setattr(kol_daily_script, "_run_liuguan_local_companion", lambda: {"status": "disabled"})
     monkeypatch.setattr(kol_daily_script, "_finish_liuguan_local_companion", lambda result: {"status": "disabled"})
 
@@ -1230,6 +1234,55 @@ def test_agent_json_disables_canonical_tty_for_long_response(
     assert applied[0][6][termios.VMIN] == 1
     assert applied[0][6][termios.VTIME] == 0
     assert applied[1] == original
+
+
+@pytest.mark.parametrize("invalid", [None, "operation", "hash", "identity"])
+def test_mailbox_connector_send_envelope_preserves_receipt_binding(
+    tmp_path, monkeypatch, invalid,
+):
+    from xiaocao.kol.mailbox import MailboxError
+
+    replies = []
+    requests = []
+
+    def reply(request):
+        requests.append(request)
+        arguments = request["arguments"]
+        value = {"outcome": "created", "receipt": {
+            "operation": "send_mailbox_message",
+            "family_id": "family-one", "mailbox_id": "kol.handoff",
+            "message_id": arguments["message_id"],
+            "message_type": "xiaocao.kol_handoff", "schema_version": 1,
+            "content_sha256": arguments["content_sha256"],
+            "created_by": "user-one", "created_at": "2026-10-27T00:00:00.000Z",
+        }}
+        if invalid == "operation":
+            value["operation"] = "ack_mailbox_message"
+        elif invalid == "hash":
+            value["receipt"]["content_sha256"] = "f" * 64
+        elif invalid == "identity":
+            value["receipt"]["message_id"] = "f" * 64
+        replies.append(value)
+        return json.dumps(value) + "\n"
+
+    monkeypatch.setattr(kol_daily_script, "_read_agent_line", reply)
+    runtime = DailyRuntime(SimpleNamespace(mailbox_output_dir=tmp_path, output_dir=tmp_path))
+    capsule = {"schema_version": 2, "handoff_id": "a" * 64,
+               "handoff_sha256": "b" * 64, "content_transport": "public_url_only",
+               "large_payload_local_bytes": 0}
+
+    def publish():
+        return runtime.publish_mailbox_handoff(capsule, object_kind="article", title="测试交接")
+
+    if invalid:
+        with pytest.raises(MailboxError, match="authoritative receipt"):
+            publish()
+    else:
+        result = publish()
+        assert result["mailbox_outcome"] == "created"
+        assert result["content_sha256"] == replies[0]["receipt"]["content_sha256"]
+    assert len(requests) == 1
+    assert "operation" not in replies[0] or invalid == "operation"
 
 
 @pytest.mark.parametrize("partial", [b"", b'{"activated":'])
