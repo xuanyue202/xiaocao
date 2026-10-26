@@ -15,6 +15,40 @@ delay Xiaocao. Outside-window invocations do not start the companion.
 Xiaocao upload, handoff and remote investment processing keep their own semantics.
 Liuguan accepted media feeds the local ASR adapter and never enters those routes.
 
+## Check and reuse the existing connection first
+
+For diagnosis, run `PYTHONPATH=src .venv/bin/python scripts/kol_yangsheng.py connections`.
+Optional `--reconnect-wait 35` only polls the retained local socket. This command
+never starts a backend, reads/operates WeChat, changes PAC, scans publishers,
+creates tasks or runs ASR. It checks the deployed binary/current service identity.
+A connected socket permits trying the authenticated list API; successful identity,
+coverage and media responses are still required. Connection status is not media
+or login acceptance.
+
+For an explicitly requested login diagnosis, run `kol_yangsheng.py session-status`.
+This separately reads the existing vendor app's Accessibility/visible-window
+metadata without launching, activating, clicking, taking screenshots or changing
+permissions. Only the exact security message plus its acknowledgement button in
+one currently visible window reports `reauthentication_required`. A missing or
+unreadable prompt reports `unknown`, never authenticated. Stop native dispatch
+when the fresh prompt is present and request the actual human re-login; do not
+dismiss the protection notice. Keep diagnosing offline while authentication is
+pending. Login recovery does not clear the automatic native-entry hold.
+
+The Channels list API is a bridge to the authenticated SDK in the retained native
+page. The page owns local reconnect; an empty server connection pool cannot be
+repaired by calling a list or reload endpoint. Do not synthesize an unauthenticated
+replacement socket. Xiaoetong uses passive mini-program response/media capture;
+this Channels SDK cannot open or resolve a branded Xiaoetong share.
+
+Read the private `native_share_bridge.json` activation hold before any missing-
+connection fallback. A live existing socket remains usable while held, with no
+UI/PAC action. A missing socket must return held/missing state without a native
+initialization prompt or stdin wait. Direct bootstrap is also held before leases,
+PAC or refresh. Login restoration does not clear the hold. Continue offline
+connection/source diagnosis and existing downloads/receipts; do not relaunch or
+refresh WeChat merely to make this diagnostic green.
+
 ## Native connection request
 
 On `daily_yangsheng_native_input_required`, establish one native replay-page
@@ -29,11 +63,14 @@ not navigate 33 homepages or sort screenshot positions as dates.
    Reuse an existing native feed page when available. Do not assume that a missing
    standalone browser means no page exists: WeChat can embed it beside the main
    window, and its separate rendering surface can appear blank.
-2. If the page was closed, use the freshly visible native search entry to open
-   the verified publisher **六观小院-町原**, select its **直播回放** tab and an
-   actual finite replay. The observed native toolbar can detach that page into
-   an independent window. No Wu navigation, user click or message sending is
-   needed. Use current controls and frames, never historical coordinates.
+2. If no verified native feed page remains, preserve the missing-connection
+   state. The earlier successful toolbar search required an already open native
+   browser; it is not a verified cold-start command. Do not open the Moments,
+   profile, chat or global-search UI as a fallback. Direct homepage opening
+   needs a separately verified, source-bound route. On October24 one bounded
+   `open -a /Applications/WeChat.app <observed-share-url>` returned0 but produced
+   no verifiable new feed window or socket; do not automate or repeat it as a
+   working route. No new replay was captured by that probe.
 3. Keep a compatible `native_lease()` around each bounded input/readback. The
    repository helper `scripts/kol_liuguan_window.swift` checks PID/window/frame
    and composited visibility. White screenshots alone do not establish logout.
@@ -79,6 +116,14 @@ a failed account read with repeated UI clicks or assumed protection causes.
 A saved native window is a hint, never authority to refresh a different tab.
 Keep the page available for the next activity; reopening it need not repeat a
 publisher scan in the UI. Do not ask the human to perform routine navigation.
+
+Xiaocao's existing Caoliao mini-program bridge is not evidence that Channels
+homepage opening works. The inspected Caoliao Channels component requires both
+the public `sph...` channel ID and `export/...` video ID; its confirmation stays
+disabled with an empty video ID. Internal `v2_...@finder` publisher identities and
+`weixin.qq.com/sph/` share tokens are different identifiers. Never interchange
+them, publish the official sample as a target, or edit Xiaocao's live bridge to
+test Liuguan. This component has not established a Channels cold-start route.
 
 ## Scan, download, ASR and cleanup
 

@@ -1281,11 +1281,18 @@ def _persisted_video_analysis_request(
 def _run_liuguan_local_companion() -> dict[str, Any]:
     # A separate non-investment catalogue; no source_event/report/handoff effects.
     from xiaocao.yangsheng.native import CaptureError
-    from xiaocao.yangsheng.runtime import ENABLED, run_local
+    from xiaocao.yangsheng.runtime import ENABLED, run_local, native_intervention_held
     if not ENABLED.is_file(): return {"status": "disabled"}
     try:
         value = run_local()
         if value.get("code") == "liuguan_native_connection_required":
+            try:
+                held = native_intervention_held()
+            except CaptureError as error:
+                return {**value, "status": "degraded", "code": str(error), "native_input_requested": False}
+            if held:
+                return {**value, "code": "liuguan_connection_unavailable_native_entry_held",
+                        "native_input_requested": False}
             reply = _read_agent_json({"event": "daily_yangsheng_native_input_required",
                 "action": "initialize_liuguan_native_replay", "api": "http://127.0.0.1:2022",
                 "reference": "liuguan-local-discovery.md", "scope": "liuguan_only"})

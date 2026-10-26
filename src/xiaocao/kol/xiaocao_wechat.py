@@ -1698,6 +1698,8 @@ class XiaocaoWechatLiveSubscription:
         job later proves the same ``live_id`` before creating a download task.
         No signed media URL is accepted from this structured input.
         """
+        from .native_entry import require_native_entry
+        require_native_entry(self.output_dir.parent / "native_share_bridge.json")
         expected_source_identity = str(item.get("source_identity") or "")
         expected_live_id = (
             expected_source_identity.rsplit(":", 1)[-1]
@@ -1756,14 +1758,18 @@ class XiaocaoWechatLiveSubscription:
                 "草料网页编辑优先用 Browser 已绑定的精确编辑器标签页，不用原生"
                 "Computer Use 操作网页；每次操作前核验当前编辑器 URL 和码 ID，"
                 "保存后重开编辑器组件读回原分享目标，再取得一次新鲜提供方入口。"
-                "浏览器核验完成后检查同一抓取服务/PAC，再签发并唤起一次；"
+                "浏览器核验完成后检查同一抓取服务/PAC。既有来源不明的品牌允许弹窗，"
+                "先按桥接R0一次取消并读回桥页，不点允许、不换原任务；再签发并唤起一次；"
                 "此后才读取微信并执行必要的 B0–B4。仅本任务已有精确课程读回时复用。"
                 "明确策略拒绝不得换工具绕过。微信原生窗口按 B0–B4 操作。"
                 "B1/B2 跳转未确认时，禁止追加窗口菜单探测或选择窗口；只做一次"
                 "当前状态读回并继续离线诊断。仅已核验课程的关闭验收使用窗口菜单。"
                 "安全重登录提示是结果，不得把最后一次菜单/截图动作标成触发原因。"
-                "出现安全重登录后停止原生输入；重新登录本身不授权原样重跑"
-                "PAC→Scheme→品牌跳转，须先有证据支持的变更修复/诊断方案及适用授权。"
+                "出现安全重登录后停止本轮原生输入、恢复本轮代理并保留原任务；"
+                "人类确认恢复登录后，可按已有抓取授权续原任务及已验证入口，"
+                "不以查明保护根因或更换路线为前提；登录未恢复时不自动重试。"
+                "每轮重新核验保存目标、同capture就绪和当前画面，保留新鲜入口及动作日志；"
+                "不复用已消耗票据、不重复未知下载/上传，也不绕过明确策略拒绝。"
                 "已有精确课程窗口则复用。"
                 if native_entry and course_app == "见势擒龙团"
                 else
@@ -1885,6 +1891,16 @@ class XiaocaoWechatLiveSubscription:
                         "input_lookup_errors": ["noWindowsAvailable", "windowNotFoundAtPosition"],
                         "fullscreen_cause_requires_current_evidence": True,
                         "surface": "reviewed_cua_only",
+                        "stale_confirmation_reset": {
+                            "preparer": "scripts/kol_prepare_native_atomic.py --prepare-stale-reset",
+                            "runtime": "scripts/kol_native_course_runtime.mjs",
+                            "requires_verified_browser_target": True,
+                            "requires_unbound_original_capture": True,
+                            "requires_pac_off": True,
+                            "max_cancel_inputs": 1,
+                            "allow_input_permitted": False,
+                            "readback_before_fresh_entry": True,
+                        },
                         "bridge_reconstruction": {
                             "max_attempts": 1,
                             "requires_fresh_visible_caoliao_bridge": True,
@@ -1900,7 +1916,9 @@ class XiaocaoWechatLiveSubscription:
                     }
                     request["ui_policy"].update({
                         "unconfirmed_brand_navigation_window_menu_probe_allowed": False,
-                        "security_relogin_retry_policy": "changed_plan_and_applicable_authorization_required",
+                        "security_relogin_retry_policy": "human_login_then_authorized_same_item_continuation",
+                        "security_relogin_root_cause_required": False,
+                        "security_relogin_unattended_retry": False,
                         "security_relogin_attribution": "observation_is_not_trigger_proof",
                     })
                     request["native_bridge_editor_policy"].update({

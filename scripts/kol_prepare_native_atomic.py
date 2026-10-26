@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -20,12 +21,26 @@ def main() -> None:
     parser.add_argument('--identity', required=True)
     parser.add_argument('--capture-job-id', required=True)
     parser.add_argument('--browser-proof', type=Path, required=True)
-    parser.add_argument('--entry-proof', type=Path, required=True)
+    parser.add_argument('--entry-proof', type=Path)
+    parser.add_argument('--prepare-stale-reset', action='store_true')
     parser.add_argument('--readiness-proof', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--mode', choices=('capture', 'diagnostic'), default='capture')
     parser.add_argument('--diagnostic-authorization-sha256')
+    parser.add_argument('--keep-capture-pac-off', action='store_true',
+                        help='Authorized one-variable control: keep the live backend but PAC off through Allow')
     args = parser.parse_args()
+    if args.keep_capture_pac_off:
+        if args.mode != 'capture':
+            parser.error('PAC timing control requires capture mode')
+        if args.prepare_stale_reset:
+            parser.error('PAC timing control cannot prepare a stale reset')
+        if not re.fullmatch(r'[a-f0-9]{64}', args.diagnostic_authorization_sha256 or ''):
+            parser.error('PAC timing control requires current human authorization binding')
+    if not args.entry_proof and not args.prepare_stale_reset:
+        parser.error('--entry-proof is required for Open/Allow')
+    if args.prepare_stale_reset and args.mode != 'capture':
+        parser.error('stale reset requires an original capture')
     root = Path(__file__).resolve().parents[1]
     manifest = json.loads((root/'output/live/kol_xiaocao_live/wechat_subscription/manifest.json').read_text())
     item = manifest['items'][args.identity]
@@ -42,16 +57,25 @@ def main() -> None:
     if not binary.exists():
         subprocess.run(['swiftc', '-O', str(source), '-o', str(binary)], check=True,
                        capture_output=True, timeout=45)
+    window_source = root/'scripts/kol_native_window_presence.swift'
+    window_hash = hashlib.sha256(window_source.read_bytes()).hexdigest()
+    window_binary = binary.parent/f'window-{window_hash[:16]}'
+    if not window_binary.exists():
+        subprocess.run(['swiftc', '-O', str(window_source), '-o', str(window_binary)],
+                       check=True, capture_output=True, timeout=45)
     browser = json.loads(args.browser_proof.read_text())
     plan = dict(schema_version=1, mode=args.mode, repo_root=str(root),
         identity=args.identity, capture_job_id=args.capture_job_id,
         message_sha256=item['message_sha256'], saved_target=browser['saved_target'],
         browser_proof_path=str(args.browser_proof.resolve()),
-        entry_proof_path=str(args.entry_proof.resolve()),
+        entry_proof_path=str(args.entry_proof.resolve()) if args.entry_proof else None,
         readiness=json.loads(args.readiness_proof.read_text()),
+        window_binary=str(window_binary), window_binary_sha256=hashlib.sha256(window_binary.read_bytes()).hexdigest(),
         vision_binary=str(binary), vision_binary_sha256=hashlib.sha256(binary.read_bytes()).hexdigest(),
         prepared_at=datetime.now(timezone.utc).isoformat())
-    if args.mode == 'diagnostic':
+    if args.keep_capture_pac_off:
+        plan['keep_capture_pac_off'] = True
+    if args.mode == 'diagnostic' or args.keep_capture_pac_off:
         plan['explicit_ui_diagnostic_authorization_sha256'] = args.diagnostic_authorization_sha256
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with os.fdopen(os.open(args.output, os.O_WRONLY|os.O_CREAT|os.O_EXCL, 0o600), 'w') as stream:
@@ -63,6 +87,11 @@ def main() -> None:
         f'var kolAtomicModule = await import({json.dumps(versioned_runtime_url(runtime, controller))});\n'
         f'var kolAtomicResult = await kolAtomicModule.runAtomicCourseAllow({{app:wechat,planPath:{json.dumps(str(args.output.resolve()))},emit:row=>nodeRepl.write(row)}});\n'
         'nodeRepl.write(kolAtomicResult);')
+    if args.prepare_stale_reset:
+        snippet = ('// KOL_ACTION:R0_PREPARE_CANCEL\n'
+            f'var kolResetModule = await import({json.dumps(versioned_runtime_url(runtime, controller))});\n'
+            f'var kolResetResult = await kolResetModule.prepareStaleBridgeReset({{app:wechat,planPath:{json.dumps(str(args.output.resolve()))},emit:row=>nodeRepl.write(row)}});\n'
+            'nodeRepl.write(kolResetResult);')
     print(json.dumps({'plan_path': str(args.output.resolve()), 'cua_snippet': snippet}, ensure_ascii=False))
 
 

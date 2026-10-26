@@ -217,6 +217,19 @@ or use another hour gate to reconcile it.
 
 ## WeChat and Xiaoetong gate
 
+The 2026-10-26 human scope is Xiaocao first; Liuguan is paused by moving its
+private shared-enabled descriptor aside, preserving its bytes and catalogue.
+Do not restore that descriptor, initialize Channels, sweep publishers or run
+Liuguan ASR during this Xiaocao recovery. Existing downloader tasks retain IDs.
+An observed WeChat security/login screen interrupts the current native attempt,
+not the entire capture project indefinitely. Stop input, restore this attempt's
+PAC and retain its original claims. After human login confirmation, continue
+the original item under the existing capture authorization and verified route;
+do not require protection-root-cause proof or a changed route. No unattended
+retry while login is pending, no consumed-ticket reuse, no duplicate uncertain
+effects, and no bypass of an explicit policy denial or separate human stop.
+Capture the runtime/entry/PAC/atomic trace described in native-share-bridge.md.
+
 Scan only `福利官小花四-刘丹（执业编号:A0380125080026）` via local `wechat-cli`;
 baseline older links on first initialization, reuse the singleton sniffer and
 preserve pending entries independently. New links must not supersede distinct
@@ -270,11 +283,14 @@ If the native WeChat client visibly says phone login is required, report
 `wechat_client_login_required` with `activated=false` and keep the same
 identity/job. This is not a Xiaoetong account-login or course-password state.
 Send one deduplicated user action even from `resume-source-repair`.
-For an observed security-relogin recurrence, login restoration does not by itself
-permit repeating the unchanged PAC/issued-entry/brand-navigation path. Continue
-offline diagnosis first and bind an evidence-backed changed repair/diagnostic
-plan to its applicable authorization. Never attribute protection to whichever
-menu/screenshot happened to reveal it. Preserve the original IDs and claims.
+For an observed security-relogin recurrence, stop this attempt and restore its
+capture PAC. Retain the original IDs and claims while the human restores login;
+no unattended entry retry is permitted while login is pending. A fresh human
+login confirmation permits same-item continuation through the verified route
+under the existing Xiaocao capture authorization, with fresh target/readiness/
+frame evidence and a new one-dispatch entry. No changed route or root-cause
+proof is a prerequisite. Separate human stops and explicit denials remain.
+Never attribute protection to whichever menu/screenshot happened to reveal it.
 Native action evidence follows the bridge reference: label steps, separate
 input/readback calls and export the exact current rollout slice with
 `scripts/kol_native_action_trace.py`. Open → Allow uses the reviewed
