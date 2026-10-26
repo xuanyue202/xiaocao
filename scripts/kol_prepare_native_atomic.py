@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -26,7 +27,16 @@ def main() -> None:
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--mode', choices=('capture', 'diagnostic'), default='capture')
     parser.add_argument('--diagnostic-authorization-sha256')
+    parser.add_argument('--keep-capture-pac-off', action='store_true',
+                        help='Authorized one-variable control: keep the live backend but PAC off through Allow')
     args = parser.parse_args()
+    if args.keep_capture_pac_off:
+        if args.mode != 'capture':
+            parser.error('PAC timing control requires capture mode')
+        if args.prepare_stale_reset:
+            parser.error('PAC timing control cannot prepare a stale reset')
+        if not re.fullmatch(r'[a-f0-9]{64}', args.diagnostic_authorization_sha256 or ''):
+            parser.error('PAC timing control requires current human authorization binding')
     if not args.entry_proof and not args.prepare_stale_reset:
         parser.error('--entry-proof is required for Open/Allow')
     if args.prepare_stale_reset and args.mode != 'capture':
@@ -63,7 +73,9 @@ def main() -> None:
         window_binary=str(window_binary), window_binary_sha256=hashlib.sha256(window_binary.read_bytes()).hexdigest(),
         vision_binary=str(binary), vision_binary_sha256=hashlib.sha256(binary.read_bytes()).hexdigest(),
         prepared_at=datetime.now(timezone.utc).isoformat())
-    if args.mode == 'diagnostic':
+    if args.keep_capture_pac_off:
+        plan['keep_capture_pac_off'] = True
+    if args.mode == 'diagnostic' or args.keep_capture_pac_off:
         plan['explicit_ui_diagnostic_authorization_sha256'] = args.diagnostic_authorization_sha256
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with os.fdopen(os.open(args.output, os.O_WRONLY|os.O_CREAT|os.O_EXCL, 0o600), 'w') as stream:

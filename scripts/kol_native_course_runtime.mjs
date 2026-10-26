@@ -53,7 +53,17 @@ export function visionRecognizer(binary) {
     }finally{await fs.rm(dir,{recursive:true,force:true});}
   };
 }
+function capturePacKeptOff(plan) {
+  requireThat(plan.keep_capture_pac_off===undefined||typeof plan.keep_capture_pac_off==='boolean','pac_control_invalid');
+  if(plan.keep_capture_pac_off===true){
+    requireThat(plan.mode==='capture','pac_control_requires_capture');
+    requireThat(typeof plan.explicit_ui_diagnostic_authorization_sha256==='string'&&/^[a-f0-9]{64}$/.test(plan.explicit_ui_diagnostic_authorization_sha256),'diagnostic_authorization_missing');
+    return true;
+  }
+  return false;
+}
 async function networkProof(plan,enable=false) {
+  const keepOff=capturePacKeptOff(plan);
   await requireNativeEntryEnabled(runtimeRepoRoot);
   const service=plan.readiness.network_service;
   requireThat(typeof service==='string'&&service.length>0&&!service.startsWith('-'),'network_service_invalid');
@@ -73,9 +83,9 @@ async function networkProof(plan,enable=false) {
     for(const port of [2022,2023])await requireEndpointAbsent(port);
   }
   let pac=(await exec('/usr/sbin/networksetup',['-getautoproxyurl',service])).stdout;
-  if(!enable)requireThat(pac.includes('Enabled: No'),'entry_requires_pac_off');
+  if(!enable||keepOff)requireThat(pac.includes('Enabled: No'),'entry_requires_pac_off');
   if(plan.mode==='diagnostic')requireThat(/Enabled: No/.test(pac),'diagnostic_requires_pac_off');
-  if(enable&&plan.mode==='capture'){
+  if(enable&&plan.mode==='capture'&&!keepOff){
     const response=await fetch('http://127.0.0.1:2023/proxy.pac',{signal:AbortSignal.timeout(3000)});
     requireThat(response.ok,'capture_pac_unhealthy');
     if(!pac.includes('URL: http://127.0.0.1:2023/proxy.pac')||!pac.includes('Enabled: Yes')){
@@ -118,6 +128,8 @@ async function requireInputWindow(plan,frame,windowId) {
 
 export async function validatePlan(plan,{requireEntry=true}={}) {
   requireThat(plan.schema_version===1&&['capture','diagnostic'].includes(plan.mode),'plan_schema_invalid');
+  const keepOff=capturePacKeptOff(plan);
+  requireThat(requireEntry||!keepOff,'pac_control_cannot_reset');
   requireThat(recent(plan.prepared_at),'plan_expired');
   requireThat(/^kol-wechat-[a-f0-9]{24}$/.test(plan.identity)&&/^kol-[a-f0-9]{12}$/.test(plan.capture_job_id),'plan_identity_invalid');
   requireThat(/^[a-f0-9]{64}$/.test(plan.message_sha256),'plan_message_invalid');
@@ -184,7 +196,7 @@ export async function runAtomicCourseAllow({app,planPath,emit=()=>{},resumePrein
     emit('KOL_ATOMIC_EVENT '+JSON.stringify(row)+'\n');
   };
   const result=await runOpenAllow({app,recognize:visionRecognizer(plan.vision_binary),record,beforeAllow:()=>networkProof(plan,true),beforeInput:createInputWindowGuard(frame=>requireInputWindow(plan,frame))});
-  return {...result,identity:plan.identity,capture_job_id:plan.capture_job_id,audit_sha256:sha(await fs.readFile(audit)),audit_path:audit};
+  return {...result,identity:plan.identity,capture_job_id:plan.capture_job_id,capture_pac_kept_off:plan.keep_capture_pac_off===true,audit_sha256:sha(await fs.readFile(audit)),audit_path:audit};
 }
 
 /** Before issuing an entry, prepare one exact visible Cancel on the original job. */

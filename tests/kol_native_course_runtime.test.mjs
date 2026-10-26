@@ -18,13 +18,17 @@ test('capture health checkpoint works without a global process in the CUA host',
     let livenessChecks=0;
     let listenerPid=123;
     let held=false;
+    let pacEnabled=false;
+    const mutations=[];
     const child={execFile:()=>{}};
     child.execFile[promisify.custom]=async(file,args)=>{
       if(file==='/usr/sbin/lsof'){assert.equal(args[3],'123');livenessChecks++;}
+      if(args[0]==='-setautoproxyurl')mutations.push(args);
+      if(args[0]==='-setautoproxystate'){mutations.push(args);pacEnabled=args[2]==='on';}
       return {stdout:
       file==='/sbin/route'?'interface: en0\n':
       args[0]==='-listnetworkserviceorder'?'(1) Wi-Fi\n(Hardware Port: Wi-Fi, Device: en0)\n':
-      args[0]==='-getautoproxyurl'?'Enabled: No\n':'p'+listenerPid+'\n'};
+      args[0]==='-getautoproxyurl'?'URL: http://127.0.0.1:2023/proxy.pac\nEnabled: '+(pacEnabled?'Yes':'No')+'\n':'p'+listenerPid+'\n'};
     };
     const context=vm.createContext({URL,Buffer,AbortSignal,fetch:async()=>({ok:true,json:async()=>({code:0})})});
     const modules=new Map();
@@ -50,6 +54,14 @@ test('capture health checkpoint works without a global process in the CUA host',
     await module.evaluate();
     const result=await module.namespace.networkProof({mode:'capture',readiness:{network_service:'Wi-Fi',same_pid:123}});
     assert.equal(result.verified,true);assert.equal(livenessChecks,2);
+    const control={mode:'capture',keep_capture_pac_off:true,explicit_ui_diagnostic_authorization_sha256:'a'.repeat(64),readiness:{network_service:'Wi-Fi',same_pid:123}};
+    // This is the production before-Allow checkpoint, with the same live backend.
+    await module.namespace.networkProof(control,true);
+    assert.equal(mutations.length,0);assert.equal(pacEnabled,false);
+    await module.namespace.networkProof({...control,keep_capture_pac_off:false},true);
+    assert.equal(mutations.length,2);assert.equal(pacEnabled,true);
+    await assert.rejects(module.namespace.networkProof(control,true),/entry_requires_pac_off/);
+    pacEnabled=false;
     listenerPid=456;
     await assert.rejects(module.namespace.networkProof({mode:'capture',readiness:{network_service:'Wi-Fi',same_pid:123}}),/capture_listener_process_mismatch/);
     const checksBeforeHold=livenessChecks;held=true;
@@ -58,6 +70,15 @@ test('capture health checkpoint works without a global process in the CUA host',
   `;
   const result=spawnSync(process.execPath,['--experimental-vm-modules','--input-type=module','-e',script],{cwd:new URL('..',import.meta.url),encoding:'utf8'});
   assert.equal(result.status,0,result.stderr);
+});
+
+test('PAC timing control requires capture mode and explicit authorization before any I/O',async()=>{
+  const plan={schema_version:1,mode:'capture',keep_capture_pac_off:true};
+  await assert.rejects(validatePlan(plan),/diagnostic_authorization_missing/);
+  for(const value of ['invalid',['a'.repeat(64)],{},null])
+    await assert.rejects(validatePlan({...plan,explicit_ui_diagnostic_authorization_sha256:value}),/diagnostic_authorization_missing/);
+  await assert.rejects(validatePlan({...plan,mode:'diagnostic',explicit_ui_diagnostic_authorization_sha256:'a'.repeat(64)}),/pac_control_requires_capture/);
+  await assert.rejects(validatePlan({...plan,keep_capture_pac_off:'true'}),/pac_control_invalid/);
 });
 
 test('copying the plan or entry file cannot repeat the same entry dispatch',async()=>{
