@@ -44,6 +44,8 @@ CODEX_AUTOMATION_ID=xiaocao-daily-eod PYTHONPATH=src .venv/bin/python scripts/eo
 
 入口只读原件和 SQLite 已保存观测，验证日期、owner、两分支终态及 statement/digest 的同一 observation。失败前不发送。它冻结交接及所引原件字节到 `output/live/review_feedback/`，每日期一份不可改写；最终摘要按 APP 模拟 B、纸面 B、T 顺序，沿用现有 outbox 和共享 durable delivery claim。现金/实际费用未闭合仍为最终盈亏 N/A。
 
+research 原命令 exit=0 的 `not_started`（尚无 funded morning、报告已保存）或 `NON_TRADING_DAY` 是合法无动作终态。保留确切 research_status，不把它们当成已产生模型成交/有效样本，也不因此阻断已完成 EOD 的交接；未知或失败结果仍阻断。
+
 若原业务失败、无合法同日证据或收尾无法通过，保留本地失败证据、当前缺口和下一负责人；不得回放业务来补报告。记录成功不等于发送成功，检查 delivery。不确定送达只走 exact-claim reconciliation；安全重试仍用 trading_change_notice，不重跑 closeout/status 造新消息。`--review` 不带 --push-wecom 用于明确不发送的本地验收。
 
 旧运行缺少新增 post-business 终态回执时，只能按原工具输出做标明 legacy_read_only_handoff 的本地交接；不能补造终态、回放子命令或以此发送新版收尾。首次完整验收等待下一个合法原始运行。
@@ -51,6 +53,8 @@ CODEX_AUTOMATION_ID=xiaocao-daily-eod PYTHONPATH=src .venv/bin/python scripts/eo
 ## 周度必回应与回流
 
 `weekly_evidence` 在原有内容寻址 inventory 中冻结每日记录及它们的原件副本，产出 `data_evidence_review.eod_feedback`。未完成事项不因超过七天/十二周消失；已验证旧修复保留审计，不反复占用处理列表。缺失/损坏记录显示 evidence_gap，旧日期不会被重建。
+
+周度状态另保存每项对应的原 daily receipt 引用。原件丢失或损坏时，未决回复仍保留 id、负责人和下一步，明确显示 evidence_gap；必须回应并说明缺证，不能以空清单或 close 消掉义务。存续账本只能证明这些跟进义务，不能重建缺失原件的类别、历史事实或验证状态。
 
 Weekly 在 `eod_feedback_responses[]` 逐项写 `id, disposition, rationale, owner, next_action, next_review, evidence_refs`。disposition 为 continue/deepen/verify/close/needs_evidence/stop_proposal；next_review 必须晚于本次日期，证据引用必须来自冻结 inventory。跨日集中分析共因、预防测试、有效实验样本、设计偏离的收益/成本与可证伪解释；读原始失败与最近运行，不能只抄每日结论。若存在输入错误，另写 `eod_feedback_gap_review` 说明具体缺口。
 

@@ -21,6 +21,9 @@ Finalization enforces coverage and saves a hash-bound response in the existing
 change ledger for the next EOD. A code patch or passing tests cannot close an
 issue pending natural verification. This observation lane adds no strategy
 promotion input, experiment slot or execution authority.
+Cross-check unresolved prior Weekly replies against their original daily
+receipt references. Missing/corrupt newer evidence remains evidence_gap with
+its owner/action; an older verified record cannot close that newer obligation.
 
 For APP Book B performance apply Operating Contract §6: inspect the exact
 capital-flow chain, separate allocation movements from profit, and compare

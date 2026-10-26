@@ -319,3 +319,115 @@ def test_post_business_real_child_warning_does_not_corrupt_json_stdout(tmp_path)
     assert result == 0
     assert json.loads(stdout.read_text()) == {'status': 'audited'}
     assert 'warning' in console.read_text()
+
+
+@pytest.mark.parametrize('missing_mode', ['absent', 'corrupt', 'legacy_state'])
+def test_missing_daily_keeps_unresolved_weekly_owner_and_requires_gap_response(tmp_path, missing_mode):
+    plan = weekly_plan(tmp_path)
+    plan['eod_feedback_responses'] = [response(plan)]
+    state = feedback.weekly_response_state(plan)
+    if missing_mode == 'legacy_state':
+        state.pop('reviewed_items')
+        state.pop('sha256')
+        state['sha256'] = feedback.sha(feedback.canonical(state))
+    ledger = tmp_path / feedback.WEEKLY_LEDGER
+    original_ledger = feedback.canonical({'date': '2026-10-30', 'eod_feedback_state': state}) + b'\n'
+    ledger.write_bytes(original_ledger)
+    daily_path = tmp_path / 'output/live/review_feedback/daily/2026-10-26.json'
+    if missing_mode == 'corrupt':
+        daily_path.write_text('{"incomplete":')
+    else:
+        daily_path.unlink()
+    observed = weekly_evidence.build_weekly_evidence(tmp_path, as_of=dt.date(2026, 11, 6),
+                                                    snapshot_dir=tmp_path / 'next_frozen')
+    next_plan = {'date': '2026-11-06', 'eod_feedback_contract': 1, 'data_evidence_review': observed}
+    review = observed['eod_feedback']
+    assert review['status'] == 'evidence_gap'
+    assert review['items'][0]['id'] == 'stable-timing-defect'
+    assert review['items'][0]['owner'] == 'daily EOD'
+    assert review['items'][0]['status'] == 'evidence_gap'
+    assert ledger.read_bytes() == original_ledger
+    assert weekly_evidence.verify_snapshots(observed) == []
+    with pytest.raises(ValueError, match='GAPS_REQUIRE_EXPLANATION'):
+        feedback.weekly_response_state(next_plan)
+    next_plan['eod_feedback_gap_review'] = 'Original daily receipt missing; keep owner and recover exact evidence.'
+    with pytest.raises(ValueError, match='RESPONSE_COVERAGE'):
+        feedback.weekly_response_state(next_plan)
+    next_plan['eod_feedback_responses'] = [dict(id='stable-timing-defect', disposition='needs_evidence',
+        rationale='Do not infer original repair status from a surviving weekly response', owner='daily EOD',
+        next_action='Locate original receipt or collect independent new evidence', next_review='2026-11-09',
+        evidence_refs=[{'path': feedback.WEEKLY_LEDGER, 'sha256': feedback.sha(original_ledger)}])]
+    assert feedback.weekly_response_state(next_plan)['evidence_gaps']
+    next_plan['eod_feedback_responses'][0]['disposition'] = 'close'
+    with pytest.raises(ValueError, match='ORIGINAL_ITEM_REQUIRED'):
+        feedback.weekly_response_state(next_plan)
+
+
+@pytest.mark.parametrize('research_output', [
+    {'status': 'not_started', 'authority': 0, 'reports': {'status': 'reported', 'authority': 0}},
+    {'status': 'NON_TRADING_DAY', 'authority': 0},
+])
+def test_supported_no_action_research_terminal_does_not_block_completed_closeout(tmp_path, research_output):
+    value, account = original_closeout(tmp_path)
+    name = value['evidence']['research']['path']
+    value['evidence']['research'] = write(tmp_path, name, research_output)
+    terminal_name = value['evidence']['research_terminal']['path']
+    terminal = json.loads((tmp_path / terminal_name).read_bytes())
+    terminal['stdout'] = value['evidence']['research']
+    value['evidence']['research_terminal'] = write(tmp_path, terminal_name, terminal)
+    sent = []
+    result = closeout(tmp_path, value, env=ENV, build_digest=lambda **kw: {'book_b_app': account},
+                      push_digest=lambda d: sent.append(d) or {'delivery': 'delivered'})
+    assert result['research_status'] == research_output['status']
+    assert result['delivery']['delivery'] == 'delivered' and len(sent) == 1
+    saved = json.loads(Path(result['daily_feedback']).read_bytes())
+    assert saved['research_status'] == research_output['status']
+    assert saved['digest']['book_b_app']['cumulative_pnl'] is None
+
+
+@pytest.mark.parametrize('research_output', [
+    {'status': 'not_started', 'authority': 0},
+    {'status': 'already_consumed', 'authority': 0},
+    {'status': 'blocked', 'phase': 'eod', 'authority': 0},
+])
+def test_unsupported_research_output_still_blocks_before_send(tmp_path, research_output):
+    value, account = original_closeout(tmp_path)
+    name = value['evidence']['research']['path']
+    value['evidence']['research'] = write(tmp_path, name, research_output)
+    terminal_name = value['evidence']['research_terminal']['path']
+    terminal = json.loads((tmp_path / terminal_name).read_bytes())
+    terminal['stdout'] = value['evidence']['research']
+    value['evidence']['research_terminal'] = write(tmp_path, terminal_name, terminal)
+    with pytest.raises(ValueError, match='RESEARCH_NOT_TERMINAL'):
+        closeout(tmp_path, value, env=ENV, build_digest=lambda **kw: {'book_b_app': account},
+                 push_digest=lambda d: pytest.fail('unknown/failed result must not send'))
+
+
+def test_missing_newer_reopened_item_cannot_close_using_surviving_old_verification(tmp_path):
+    first = daily(tmp_path)
+    test_ref = write(tmp_path, 'output/old-tests.json', {'result': 'passed'})
+    natural_ref = write(tmp_path, 'output/old-natural.json', {'observed': 'accepted'})
+    first['items'][0].update(status='verified', evidence_refs=[test_ref, natural_ref],
+        verification={'code_commit': 'a' * 40, 'tests': [test_ref], 'natural': [natural_ref]})
+    feedback.record_daily(tmp_path, first)
+    newer = daily(tmp_path, '2026-10-27')
+    feedback.record_daily(tmp_path, newer)
+    initial = weekly_evidence.build_weekly_evidence(tmp_path, as_of=dt.date(2026, 10, 30),
+                                                   snapshot_dir=tmp_path / 'initial_frozen')
+    plan = {'date': '2026-10-30', 'data_evidence_review': initial}
+    plan['eod_feedback_responses'] = [response(plan)]
+    state = feedback.weekly_response_state(plan)
+    write(tmp_path, feedback.WEEKLY_LEDGER, {'date': '2026-10-30', 'eod_feedback_state': state})
+    (tmp_path / 'output/live/review_feedback/daily/2026-10-27.json').unlink()
+    latest = weekly_evidence.build_weekly_evidence(tmp_path, as_of=dt.date(2026, 11, 6),
+                                                  snapshot_dir=tmp_path / 'latest_frozen')
+    item = latest['eod_feedback']['items'][0]
+    assert item['status'] == 'evidence_gap'
+    assert item['last_proved_daily']['status'] == 'verified'
+    plan = dict(date='2026-11-06', data_evidence_review=latest,
+        eod_feedback_gap_review='The reopened receipt is missing; old natural proof is stale.',
+        eod_feedback_responses=[dict(id=item['id'], disposition='close', rationale='old verification survives',
+            owner='daily EOD', next_action='verify original missing evidence', next_review='2026-11-09',
+            evidence_refs=[latest['eod_feedback']['receipts'][0]])])
+    with pytest.raises(ValueError, match='ORIGINAL_ITEM_REQUIRED'):
+        feedback.weekly_response_state(plan)

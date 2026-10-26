@@ -160,17 +160,45 @@ def observe_feedback(contents: dict[str, bytes], *, as_of: dt.date) -> dict:
             for response in state.get("responses", []):
                 prior = prior_responses.get(response["id"])
                 if prior is None or row["date"] >= prior["reviewed_at"]:
-                    prior_responses[response["id"]] = dict(response, reviewed_at=row["date"])
+                    source = state.get("reviewed_items", {}).get(response["id"], {})
+                    prior_responses[response["id"]] = dict(response, reviewed_at=row["date"],
+                        source_daily_receipt=source.get("daily_receipt"))
         except (KeyError, TypeError, ValueError, AttributeError) as exc:
             errors.append({"path": WEEKLY_LEDGER, "error": str(exc)})
     selected = []
+    ledger_ref = {"path": WEEKLY_LEDGER, "sha256": sha(contents[WEEKLY_LEDGER])} if WEEKLY_LEDGER in contents else None
+    captured_receipts = {(ref["path"], ref["sha256"]) for ref in receipts}
+    for identity, prior in prior_responses.items():
+        if prior.get("disposition") == "close":
+            continue
+        source = prior.get("source_daily_receipt")
+        missing_item = identity not in items
+        missing_source = bool(source and (source["path"], source["sha256"]) not in captured_receipts)
+        if not missing_item and not missing_source:
+            continue
+        errors.append({"path": source["path"] if source else WEEKLY_LEDGER,
+                       "id": identity, "error": "UNRESOLVED_WEEKLY_DAILY_EVIDENCE_MISSING"})
+        # A surviving older verification cannot explain a missing newer
+        # regression. Keep prior facts separately, never as the current status.
+        previous = items.get(identity)
+        items[identity] = dict(id=identity, kind=previous["kind"] if previous else "unknown",
+            status="evidence_gap", summary="未决周度事项的原每日交接缺失或无效，原状态待核。",
+            owner=prior["owner"], next_action=prior["next_action"],
+            next_verification=prior["next_review"], basis="observed",
+            falsifier="找回 hash 匹配的原始每日交接，或独立核验的新证据",
+            evidence_refs=[ledger_ref], first_seen=previous["first_seen"] if previous else "unknown",
+            last_seen=previous["last_seen"] if previous else "unknown",
+            observations=previous["observations"] if previous else 0,
+            daily_receipt=source, last_proved_daily=previous)
     for identity, item in sorted(items.items()):
         item["prior_weekly_response"] = prior_responses.get(identity)
         # Closed old repairs stay in immutable audit; unresolved items never age out.
         current_week = item["last_seen"] >= (as_of - dt.timedelta(days=6)).isoformat()
         prior = prior_responses.get(identity) or {}
         prior_closed = prior.get("disposition") == "close" and prior["reviewed_at"] >= item["last_seen"]
-        if current_week or (item["status"] != "verified" and not (prior_closed and item["kind"] != "issue")):
+        pending_weekly = bool(prior and not prior_closed and prior["reviewed_at"] >= item["last_seen"])
+        if (current_week or item["status"] == "evidence_gap" or pending_weekly
+                or (item["status"] != "verified" and not (prior_closed and item["kind"] != "issue"))):
             selected.append(item)
     return {"schema_version": 1, "authority": 0, "as_of": as_of.isoformat(),
             "status": "evidence_gap" if errors else ("review_required" if selected else "no_records"),
@@ -212,10 +240,14 @@ def weekly_response_state(plan: dict) -> dict | None:
                                                    for r in response["evidence_refs"]):
             raise ValueError("WEEKLY_FEEDBACK_RESPONSE_EVIDENCE_UNBOUND")
         item = required[response["id"]]
+        if response["disposition"] == "close" and item["status"] == "evidence_gap":
+            raise ValueError("WEEKLY_FEEDBACK_ORIGINAL_ITEM_REQUIRED")
         if response["disposition"] == "close" and item["kind"] == "issue" and item["status"] != "verified":
             raise ValueError("WEEKLY_FEEDBACK_REPAIR_NOT_NATURALLY_VERIFIED")
     state = {"schema_version": 1, "authority": 0, "date": plan["date"],
              "input_manifest_sha256": evidence["input_manifest"]["sha256"], "responses": responses,
+             "reviewed_items": {identity: {"daily_receipt": item["daily_receipt"]}
+                                for identity, item in required.items()},
              "evidence_gaps": observed["errors"], "gap_review": plan.get("eod_feedback_gap_review")}
     state["sha256"] = sha(canonical(state))
     return state

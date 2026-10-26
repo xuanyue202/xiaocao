@@ -34,6 +34,9 @@ replays. Leave missing terminal/source proof explicit and do not manufacture
 a successful closeout. Verify delivery separately. An uncertain send is never
 recovered by invoking closeout or status again; use the exact durable claim.
 Weekly owns cross-day synthesis; EOD does receipt/hash audit only for KOL.
+Preserve canonical research exit-0 no-action outcomes (`not_started` with saved
+reports, `NON_TRADING_DAY`) as their exact research_status, without claiming
+new samples or profit. They do not invalidate otherwise completed closeout.
 
 The scheduler wakes at 15:03. Enter the retained command promptly; both paper
 and APP EOD entrypoints wait until 15:10 before their slot claims or business

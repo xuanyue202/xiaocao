@@ -82,7 +82,12 @@ def closeout(root: Path, review: dict, *, env: Mapping[str, str],
     if accounting and statement.get("source_observation") != accounting:
         raise ValueError("EOD_CLOSEOUT_STATEMENT_NOT_ORIGINAL_OBSERVATION")
     research = load("research")
-    if research.get("phase") != "eod" or research.get("status") != "observed" or research.get("authority") != 0:
+    research_status = research.get("status")
+    research_observed = research_status == "observed" and research.get("phase") == "eod"
+    research_not_started = (research_status == "not_started"
+                            and (research.get("reports") or {}).get("status") == "reported")
+    if (research.get("authority") != 0
+            or not (research_observed or research_not_started or research_status == "NON_TRADING_DAY")):
         raise ValueError("EOD_CLOSEOUT_RESEARCH_NOT_TERMINAL")
     if load("feedback").get("status") != "audited":
         raise ValueError("EOD_CLOSEOUT_FEEDBACK_NOT_TERMINAL")
@@ -99,12 +104,13 @@ def closeout(root: Path, review: dict, *, env: Mapping[str, str],
         digest["book_b_app"] = {"valuation_status": "unavailable", "reason": app.get("reason", "EOD_ACCOUNT_UNAVAILABLE")}
     # The final dated text is frozen with the reviewed handoff. A later account
     # change cannot silently turn a delivery retry into another dated message.
-    path = eod_feedback.record_daily(root, dict(review, digest=digest))
+    path = eod_feedback.record_daily(root, dict(review, digest=digest, research_status=research_status))
     if paper["process_exit_code"] != 0 or paper.get("deterministic_status") != "succeeded":
         delivery = {"delivery": "blocked", "reason": "PAPER_EOD_FAILED"}
     else:
         delivery = push_digest(digest) if push_digest is not None else {"delivery": "not_requested"}
     return {"status": "recorded", "authority": 0, "daily_feedback": str(path),
             "daily_feedback_sha256": eod_feedback.sha(path.read_bytes()), "delivery": delivery,
+            "research_status": research_status,
             "paper_status": paper.get("deterministic_status"), "app_status": app.get("reason"),
             "digest": digest}
