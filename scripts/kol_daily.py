@@ -5367,60 +5367,65 @@ def main() -> int:
         })
         return 0
     if args.command == "resume-source-repair":
-        if not args.source_adapter or not args.failure_fingerprint:
-            raise DailyError(
-                "resume-source-repair requires source adapter and fingerprint"
-            )
-        service = DailyCoordinator(args.output_dir)
-        with service._source_locked(args.source_adapter):
-            pending = service.convergence.pending_resume(args.source_adapter)
-            if pending is None:
-                raise DailyError("source repair has no validated narrow resume")
-            progress, closure = pending
-            if progress.failure_fingerprint != args.failure_fingerprint:
-                raise DailyError("source repair fingerprint changed before resume")
-            repair_revision = str(
-                (closure.get("repair_receipt") or {}).get("repair_revision") or ""
-            )
-            if not re.fullmatch(r"[0-9a-f]{40}", repair_revision):
-                raise DailyError("source repair closure lost its repair revision")
-            if args.repair_revision and args.repair_revision != repair_revision:
-                raise DailyError("source repair revision changed before resume")
-            args.repair_revision = repair_revision
-            runtime = DailyRuntime(args)
-            surface = str(progress.details["narrow_resume_surface"])
-            outcome = _resume_source_repair_outcome(
-                runtime,
-                args.source_adapter,
-                surface,
-                failure_code=str(progress.details["failure"]["code"]),
-                provider_recovery_target=(
-                    {name: closure["repair_receipt"]["provider_recovery"][name]
-                     for name in ("source_identity", "bundle_sha256")}
-                    if closure["repair_receipt"].get("provider_recovery") is not None
-                    else None
-                ),
-            )
-            following = WriterProgress.from_dict(outcome["writer_progress"])
-            if following.status == "user_action_required":
-                outcome["notification_sent"] = service.notify_user_action(
-                    source=args.source_adapter,
-                    blocker_key=str(following.details["blocker_identity"]),
-                    action=str(following.details["action"]),
-                    blocker_sender=_sender,
+        from contextlib import nullcontext
+        from xiaocao.kol.human_playback import human_capture_network_owner
+        owner = (human_capture_network_owner(args.xiaocao_wechat_output_dir.parent / "native_share_bridge.json")
+                 if args.source_adapter == "xiaocao_wechat_live" else nullcontext())
+        with owner:
+            if not args.source_adapter or not args.failure_fingerprint:
+                raise DailyError(
+                    "resume-source-repair requires source adapter and fingerprint"
                 )
-            resume_receipt = service.record_repair_resume(
-                args.source_adapter,
-                prior=progress,
-                outcome=outcome,
-                following=following,
-                slot=_source_repair_slot(service),
-            )
-        _print({
-            "source_repair_resume": outcome,
-            "repair_resume_receipt": resume_receipt,
-        })
-        return 0
+            service = DailyCoordinator(args.output_dir)
+            with service._source_locked(args.source_adapter):
+                pending = service.convergence.pending_resume(args.source_adapter)
+                if pending is None:
+                    raise DailyError("source repair has no validated narrow resume")
+                progress, closure = pending
+                if progress.failure_fingerprint != args.failure_fingerprint:
+                    raise DailyError("source repair fingerprint changed before resume")
+                repair_revision = str(
+                    (closure.get("repair_receipt") or {}).get("repair_revision") or ""
+                )
+                if not re.fullmatch(r"[0-9a-f]{40}", repair_revision):
+                    raise DailyError("source repair closure lost its repair revision")
+                if args.repair_revision and args.repair_revision != repair_revision:
+                    raise DailyError("source repair revision changed before resume")
+                args.repair_revision = repair_revision
+                runtime = DailyRuntime(args)
+                surface = str(progress.details["narrow_resume_surface"])
+                outcome = _resume_source_repair_outcome(
+                    runtime,
+                    args.source_adapter,
+                    surface,
+                    failure_code=str(progress.details["failure"]["code"]),
+                    provider_recovery_target=(
+                        {name: closure["repair_receipt"]["provider_recovery"][name]
+                         for name in ("source_identity", "bundle_sha256")}
+                        if closure["repair_receipt"].get("provider_recovery") is not None
+                        else None
+                    ),
+                )
+                following = WriterProgress.from_dict(outcome["writer_progress"])
+                if following.status == "user_action_required":
+                    outcome["notification_sent"] = service.notify_user_action(
+                        source=args.source_adapter,
+                        blocker_key=str(following.details["blocker_identity"]),
+                        action=str(following.details["action"]),
+                        blocker_sender=_sender,
+                    )
+                resume_receipt = service.record_repair_resume(
+                    args.source_adapter,
+                    prior=progress,
+                    outcome=outcome,
+                    following=following,
+                    slot=_source_repair_slot(service),
+                )
+            _print({
+                "source_repair_resume": outcome,
+                "repair_resume_receipt": resume_receipt,
+            })
+            return 0
     service = DailyCoordinator(args.output_dir)
     service.mailbox_output_dir = args.mailbox_output_dir.expanduser().resolve()
     if args.command == "status":

@@ -9335,3 +9335,26 @@ def test_human_wait_follows_backoff_same_capture_without_reactivation(monkeypatc
     assert result == {'handoff_dispatched':True}
     assert calls == [{'only_identity':'original'}]*3
     assert sleeps == [10,20,30]
+
+
+def test_exact_xiaocao_repair_resume_owns_proxy_until_exit_even_on_failure(tmp_path, monkeypatch):
+    from contextlib import contextmanager
+    from xiaocao.kol import human_playback
+    calls=[]
+    @contextmanager
+    def owner(path):
+        calls.append('owner_enter')
+        try: yield
+        finally: calls.append('owner_exit')
+    class Coordinator:
+        def __init__(self,*args): self.convergence=SimpleNamespace(pending_resume=self.pending)
+        @contextmanager
+        def _source_locked(self, source):
+            calls.append(source); yield
+        def pending(self,source): calls.append('pending'); return None
+    monkeypatch.setattr(human_playback,'human_capture_network_owner',owner)
+    monkeypatch.setattr(kol_daily_script,'DailyCoordinator',Coordinator)
+    monkeypatch.setattr(sys,'argv',['kol_daily.py','resume-source-repair','--source-adapter','xiaocao_wechat_live','--failure-fingerprint','abc','--output-dir',str(tmp_path)])
+    with pytest.raises(DailyError,match='no validated narrow resume'):
+        kol_daily_script.main()
+    assert calls==['owner_enter','xiaocao_wechat_live','pending','owner_exit']
