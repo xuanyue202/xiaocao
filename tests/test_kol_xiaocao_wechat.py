@@ -2795,7 +2795,7 @@ def test_human_source_requires_direct_exact_confirmation_before_binding(tmp_path
     sub = XiaocaoWechatLiveSubscription(tmp_path/'wechat', history_reader=lambda:{}, browser_exchange=exchange,capture_driver=driver,clock=lambda:now)
     manifest = sub._load()
     item = parse_xiaocao_live_messages(_history('[2026-10-26 08:32] 小花: #小程序://见势擒龙团/original'))[0]
-    item.update(status='awaiting_playback',capture_job_id='kol-original',human_playback_started_at=(now-timedelta(minutes=1)).isoformat())
+    item.update(status='awaiting_playback',capture_job_id='kol-original',human_playback_started_at=(now-timedelta(minutes=1)).isoformat(),human_playback_nonce='f'*32)
     manifest['items'][item['identity']] = item; sub._save(manifest)
     item = sub._check_mini_program_playback(manifest,item,reason='awaiting_playback')
     assert not item.get('activated') and not proposals[0]['expected_source']
@@ -2804,3 +2804,24 @@ def test_human_source_requires_direct_exact_confirmation_before_binding(tmp_path
     assert item.get('activated') is True if confirmed else item.get('activated') is not True
     assert len(confirmations)==1
     assert bool(proposals[1]['expected_source']) is confirmed
+
+
+def test_human_restart_recovers_missing_action_request_without_relaunch_or_early_poll(tmp_path, capsys):
+    from datetime import timedelta
+    now = datetime.fromisoformat('2026-10-26T22:00:00+08:00')
+    (tmp_path/'native_share_bridge.json').write_text('{"playback_operator":"human"}')
+    driver = _CaptureDriver()
+    sub = XiaocaoWechatLiveSubscription(tmp_path/'wechat',history_reader=lambda:{},
+        browser_exchange=lambda _:pytest.fail('never reopen'),capture_driver=driver,clock=lambda:now)
+    manifest=sub._load()
+    item=parse_xiaocao_live_messages(_history('[2026-10-26 08:32] 小花: #小程序://见势擒龙团/original'))[0]
+    item.update(status='awaiting_playback',capture_job_id='kol-original',human_playback_started_at=now.isoformat(),
+        human_playback_nonce='a'*32,human_playback_next_poll_at=(now+timedelta(seconds=20)).isoformat(),human_playback_poll_attempt=1)
+    manifest['items'][item['identity']]=item;sub._save(manifest)
+    for _ in range(2):
+        assert sub._check_mini_program_playback(manifest,item,reason='awaiting_playback')==item
+    events=[json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert len(events)==1 and events[0]['event']=='daily_human_action_required'
+    assert events[0]['identity']==item['identity'] and events[0]['capture_job_id']=='kol-original'
+    assert driver.playback_preparations==[]
+    assert item['human_playback_poll_attempt']==1

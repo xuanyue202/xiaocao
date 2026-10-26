@@ -2242,6 +2242,16 @@ class XiaocaoWechatLiveSubscription:
             return item
         if item.get("mini_program_name") != "见势擒龙团":
             raise EnrichmentError("human Caoliao playback requires the original branded entry")
+        # A process can exit after saving the launched entry but before emitting
+        # its action request. Reconcile that receipt even before the next poll.
+        if item.get("human_playback_started_at") and not item.get("human_confirmed_source_identity"):
+            nonce = str(item.get("human_playback_nonce") or "")
+            if not re.fullmatch(r"[0-9a-f]{32}", nonce):
+                raise EnrichmentError("human playback reminder lost its entry identity")
+            folder = self.output_dir / "items" / item["identity"]
+            folder.mkdir(parents=True, exist_ok=True)
+            request_human_action_once(folder / f"human-notification-{nonce}.json",
+                published_at=item["published_at"], identity=item["identity"], capture_job_id=item["capture_job_id"])
         now = self.clock()
         due = item.get("human_playback_next_poll_at")
         if due and now < datetime.fromisoformat(due):
