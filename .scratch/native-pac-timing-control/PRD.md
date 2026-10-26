@@ -1,6 +1,6 @@
 # Original Xiaocao capture PAC timing control
 
-Status: In progress
+Status: Control executed; protection persists
 
 Human authorization: continue the proposed one-variable comparison on 2026-10-26.
 
@@ -16,3 +16,10 @@ Human authorization: continue the proposed one-variable comparison on 2026-10-26
 - 31 controller/runtime JS tests and 6 Python preparer tests passed. The new checkpoint test first failed on actual PAC mutations before the implementation.
 - Independent Standards review: no findings. Spec review found non-string authorization hashes could coerce to strings; fixed with an explicit string check and array/object/null negative cases. Final Spec review: no findings.
 - Real UI/capture result remains pending; this is experimental support, not a production timing switch or a protection fix.
+
+## Actual result, 2026-10-26 15:08
+
+- Same original morning capture, WeChat 4.1.13 and backend PID39600; one entry, one B1 and one B2. PAC remained OFF at the production checkpoint. Explicit security re-login was observed at 15:06:09.838+08, before a verified course or later PAC activation.
+- Original PTY received the truthful login-required result. Guard restored the original hold/network; all 145 task IDs and full JSON hashes match, all proxy flags OFF, original capture unbound, no new media/download/upload/Handoff.
+- Human restored login; no further native read, entry or click followed. Automation, Liuguan and ASR remain paused. No second trial is scheduled. This control did not avoid protection and does not prove its cause.
+- Private evidence: `output/live/kol_native_atomic/20261026-pac-after-brand/`, including hash-only atomic events and current-rollout trace. The prior pre-live statement above describes the earlier stage, not the present acceptance result.
