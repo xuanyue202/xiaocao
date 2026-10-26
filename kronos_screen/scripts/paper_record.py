@@ -1,15 +1,12 @@
 """Record the day's mode-qualified ★E picks as Book-B paper positions so
 live_monitor.py can track them under the v5 rule. Idempotent per (date, code).
 
-Fill model (realistic, not worst-case): a paper limit order at
-L = min(open x (1 + limit premium), basket_price). After the opening window
-settles, fill at min(window VWAP, L) if the window trades through L. If the
-initial low limit is not filled or would be rejected as too far from the tape,
-paper_record checks the latest opening-window price as the real-time retry
-proxy; when that price is still within the basket abandon bound, it buys at
-that real-time price and audits the retry. basket_price is the abandon bound
-only — never the fill assumption (the old behaviour booked every fill at the
-+2% chase cap, costing ~1.9%/trade of fictitious slippage).
+Book B (user decision 2026-10-26): charge the verified first-minute HIGH as
+conservative cost, deliberately without a VWAP/limit/basket discount. See
+Operating Contract §5 and paper_entry_cost.py for the rationale and evidence
+requirements. Existing eligibility gates still apply; this cost is not an APP
+order price or execution claim. Book A shares B's cost. Book T retains its
+separate legacy VWAP/limit/retry model. Historical ledger rows stay unchanged.
 Reads the dated immutable Book-B freeze when available (legacy variants still
 read signal_snapshots.jsonl); updates output/live/positions.jsonl.
 """
@@ -37,6 +34,7 @@ from xiaocao.live.book_b_workflow import adjudicate_book_b  # noqa: E402
 from xiaocao.research.shortline_comparison import record_selection_experiments  # noqa: E402
 from xiaocao.live.book_b_pricing import initial_limit_price  # noqa: E402
 from xiaocao.live.buy_guards import evaluate_buy_market_guard  # noqa: E402
+from xiaocao.live.paper_entry_cost import CONSERVATIVE_COST_BASIS, verified_first_minute_high  # noqa: E402
 from xiaocao.live.instrument_contract import (  # noqa: E402
     InstrumentContract,
     InstrumentContractError,
@@ -395,9 +393,11 @@ def _fill_window_stats(
     end_hhmm: str,
     instrument_contract: dict | InstrumentContract | None = None,
 ) -> dict | None:
-    """VWAP / low / high of the opening fill window from 1-min bars.
-    VWAP is the realistic small-order fill; window high systematically
-    overstates the cost (it was the prior fill assumption)."""
+    """Legacy window statistics plus raw bars for independent cost validation.
+
+    Legacy extrema may fall back to trade points; Paper-B conservative cost
+    must use verified_first_minute_high instead of trusting these statistics.
+    """
     try:
         rows = client.minute_line(
             code,
@@ -468,6 +468,7 @@ def _fill_window_stats(
         "trade_date": date_iso,
         "source": "xiaocao_api",
         "minute_rows": matching_rows,
+        "raw_minute_rows": rows,
     }
 
 
@@ -537,7 +538,7 @@ def _fill_price_from_window(
     limit_premium_pct: float,
     market_guard_now: datetime | None = None,
 ) -> tuple[float | None, str, str | None, dict]:
-    """Realistic paper fill with an order-status retry.
+    """Legacy model: T cost and B eligibility only, never B conservative cost.
 
     First submit a limit order at L = min(open x (1+premium), basket).
     - window low <= L -> fill at min(window VWAP, L) (limit fills at L or better).
@@ -681,6 +682,7 @@ def _attach_fill_prices(
     start_hhmm: str,
     end_hhmm: str,
     limit_premium_pct: float,
+    conservative_entry: bool = False,
 ) -> tuple[list[dict], list[dict]]:
     """Returns (fillable, skipped). Skipped picks (limit never reached) are
     surfaced for audit, never silently dropped."""
@@ -705,6 +707,28 @@ def _attach_fill_prices(
             window=window,
             limit_premium_pct=limit_premium_pct,
         )
+        if conservative_entry:
+            # User's adverse-cost benchmark, not an execution optimisation.
+            # Preserve eligibility; never lower verified HIGH to VWAP or a cap.
+            high, evidence = verified_first_minute_high(
+                window, code=code, trade_date=date_iso,
+                start_hhmm=start_hhmm, end_hhmm=end_hhmm,
+                observed_at=datetime.now(A_SHARE_TZ),
+            )
+            metadata["fill_cost_evidence"] = evidence
+            metadata["fill_eligibility_basis"] = basis
+            if metadata.get("skip_reason"):
+                metadata["fill_eligibility_rejection"] = {
+                    "reason": metadata["skip_reason"],
+                    "detail": metadata.get("skip_detail"),
+                }
+            if high is None:
+                price, basis = None, "skipped_unproven_first_minute_high"
+                metadata["skip_reason"] = "FIRST_MINUTE_HIGH_UNPROVEN"
+                metadata["skip_detail"] = evidence["reason"]
+            elif price is not None:
+                price, basis = high, CONSERVATIVE_COST_BASIS
+                metadata["fill_window_high"] = high
         enriched = dict(record)
         enriched["_paper_fill"] = {
             "price": price,
@@ -942,10 +966,8 @@ def _parse_args():
     ap.add_argument("--fill-window-end", default="0931",
                     help="opening execution window end, HHMM; default 0931")
     ap.add_argument("--limit-premium-pct", type=float, default=0.5,
-                    help="paper limit order premium over the 9:25 open reference, in %%; "
-                         "fill = min(window VWAP, open x (1+premium)) when touched; "
-                         "if not touched, retry at latest window price while <= basket; "
-                         "default 0.5")
+                    help="eligibility limit premium (%%), also used by Book T's legacy cost model; "
+                         "Book B always charges verified first-minute HIGH; default 0.5")
     ap.add_argument("--fill-settle-seconds", type=int, default=5,
                     help="seconds after the next minute to wait before reading the end bar")
     ap.add_argument("--no-wait-fill-window", action="store_true",
@@ -1181,6 +1203,7 @@ def _main_locked(a=None):
         start_hhmm=a.fill_window_start,
         end_hhmm=a.fill_window_end,
         limit_premium_pct=a.limit_premium_pct,
+        conservative_entry=True,
     )
     for r in skipped:
         meta = r.get("_paper_fill") or {}
@@ -1196,6 +1219,9 @@ def _main_locked(a=None):
             "name": r.get("name"), "source": f"auto:{a.pick}",
             "reason": meta.get("skip_reason"),
             "detail": meta.get("skip_detail"),
+            "fill_cost_evidence": meta.get("fill_cost_evidence"),
+            "fill_eligibility_basis": meta.get("fill_eligibility_basis"),
+            "fill_eligibility_rejection": meta.get("fill_eligibility_rejection"),
             "limit_price": meta.get("fill_limit_price"),
             "window_low": meta.get("fill_window_low"),
             "window_vwap": meta.get("fill_window_vwap"),
@@ -1220,7 +1246,7 @@ def _main_locked(a=None):
         })
     if not buyable:
         no_buy_support("ALL_FILL_GUARDS_SKIPPED")
-        print(f"{a.date}: all {a.pick} picks skipped (limit not reached and retry not suitable)")
+        print(f"{a.date}: all {a.pick} picks skipped (entry eligibility or cost evidence unproven)")
         return
     if not a.no_book_a and a.pick != "mode_exec_star":
         _record_book_a(buyable, a, fee_rate)
@@ -1456,6 +1482,9 @@ def _main_locked(a=None):
                 "gross_notional": gross_notional, "entry_fee": entry_fee,
                 "entry_cash_out": entry_cash_out,
                 "entry_price_basis": fill_basis,
+                **({"fill_cost_evidence": fill_meta["fill_cost_evidence"],
+                    "fill_eligibility_basis": fill_meta["fill_eligibility_basis"]}
+                   if "fill_cost_evidence" in fill_meta else {}),
                 "fill_window_start": a.fill_window_start,
                 "fill_window_end": a.fill_window_end,
                 "fill_window_high": fill_meta.get("fill_window_high"),
@@ -1493,6 +1522,9 @@ def _main_locked(a=None):
                 "name": r.get("name", ""), "price": round(px, 3), "shares": shares,
                 "gross_notional": gross_notional, "fee": entry_fee,
                 "cash_after": cash, "source": f"auto:{a.pick}", "price_basis": fill_basis,
+                **({"fill_cost_evidence": fill_meta["fill_cost_evidence"],
+                    "fill_eligibility_basis": fill_meta["fill_eligibility_basis"]}
+                   if "fill_cost_evidence" in fill_meta else {}),
                 "primary_score": r.get("primary_score"),
                 "p_score": r.get("p_score"),
                 "mode": r.get("mode"),
@@ -2030,6 +2062,9 @@ def _record_book_t(client: XiaocaoClient, a, *, wait_for_fill_window: bool = Fal
             "entry_fee": entry_fee,
             "entry_cash_out": entry_cash_out,
             "entry_price_basis": fill_basis,
+            **({"fill_cost_evidence": fill_meta["fill_cost_evidence"],
+                "fill_eligibility_basis": fill_meta["fill_eligibility_basis"]}
+               if "fill_cost_evidence" in fill_meta else {}),
             "fill_window_start": a.fill_window_start,
             "fill_window_end": a.fill_window_end,
             "fill_window_high": fill_meta.get("fill_window_high"),
@@ -2067,6 +2102,9 @@ def _record_book_t(client: XiaocaoClient, a, *, wait_for_fill_window: bool = Fal
             **contract_trade_fields,
             "cash_after": cash, "source": "auto:trend_book",
             "price_basis": fill_basis,
+            **({"fill_cost_evidence": fill_meta["fill_cost_evidence"],
+                "fill_eligibility_basis": fill_meta["fill_eligibility_basis"]}
+               if "fill_cost_evidence" in fill_meta else {}),
             "category_code": r.get("category_code"),
             "category_rank": r.get("category_rank"),
             "trend_score": r.get("trend_score"),
@@ -2214,6 +2252,9 @@ def _record_book_a(picks: list[dict], a, fee_rate: float) -> None:
                 "mode_exec_target_weight": r.get("mode_exec_target_weight"),
                 "gross_notional": gross, "entry_fee": fee, "entry_cash_out": cash_out,
                 "entry_price_basis": fill_basis,
+                **({"fill_cost_evidence": fill_meta["fill_cost_evidence"],
+                    "fill_eligibility_basis": fill_meta["fill_eligibility_basis"]}
+                   if "fill_cost_evidence" in fill_meta else {}),
                 "fill_window_start": a.fill_window_start,
                 "fill_window_end": a.fill_window_end,
                 "fill_window_high": fill_meta.get("fill_window_high"),
@@ -2240,6 +2281,9 @@ def _record_book_a(picks: list[dict], a, fee_rate: float) -> None:
                 "shares": shares, "gross_notional": gross, "fee": fee,
                 "cash_after": cash, "source": f"auto:{a.pick}:bookA",
                 "price_basis": fill_basis,
+                **({"fill_cost_evidence": fill_meta["fill_cost_evidence"],
+                    "fill_eligibility_basis": fill_meta["fill_eligibility_basis"]}
+                   if "fill_cost_evidence" in fill_meta else {}),
                 "fill_window_start": a.fill_window_start,
                 "fill_window_end": a.fill_window_end,
                 "fill_window_high": fill_meta.get("fill_window_high"),

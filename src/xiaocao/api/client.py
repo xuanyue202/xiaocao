@@ -694,7 +694,13 @@ class XiaocaoClient:
         count: int | None = None,
         code_type: int = 0,
     ) -> Any:
-        """Per-stock 1-min K-line. Supports HISTORICAL playback when both
+        """Per-stock minute price points, NOT verified minute OHLC bars.
+
+        The official frontend plots `trade` from this endpoint. OHLC fields
+        commonly are null; neither a point maximum nor a plausible 09:31 label
+        proves the first continuous minute's HIGH. See the 2026-10-26
+        paper-first-minute-source review before using this for entry cost.
+        Supports HISTORICAL playback when both
         `trade_date` (any past day) AND `count` are passed; without them the
         backend silently returns today's data only.
 

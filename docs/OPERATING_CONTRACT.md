@@ -1,6 +1,6 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：4.50
+**版本**：4.51
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
 **关联实现**：`src/xiaocao/live/{safety,capital_keychain,foundersc_native_ax,foundersc_native_broker,trading_execution,book_b_live_lifecycle,book_b_live_intraday}.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`native/foundersc_ax_executor/`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{book_b_live_morning,book_b_live_intraday,live_monitor,research_mode_switch_replay}.py`
@@ -304,7 +304,7 @@ APP 在用户明确批准的动态资金政策下，以账户绑定的资金划�
 
 ## 3. Book A — 验证参考口径（永不被监控）
 
-- **口径**：买入 = 与 Book B 对齐的最终实际纸面成交价和规划手数 `book_b_fill[D]`（同一批 fillable picks、同一份 ★E 整手分配、同一套 9:30-9:31 VWAP/limit/retry 入场）；卖出 = **下一交易日收盘** `close[D+1]`；**无 stop**。
+- **口径**：买入 = 与 Book B 对齐的最终实际纸面成交价和规划手数 `book_b_fill[D]`（同一批 fillable picks、同一份 ★E 整手分配、同一套 §5 首分钟最高价保守成本与既有入场资格）；卖出 = **下一交易日收盘** `close[D+1]`；**无 stop**。
 - **唯一实现**：`paper_record._record_book_a`（建仓，复用 Book B `entry_price_basis`/fill metadata）+ `settle_book_a.py`（盘后结算，幂等）。
 - **角色**：纯会计账本 + **kill-switch 传感器**；永不被 `live_monitor` 触碰或 stop 管理。
 - **MUST**：book A 行（`book="A"`）与 book B 互不阻塞建仓；settle 只用 `close[D+1]`，幂等。
@@ -584,20 +584,60 @@ no-KOL三项纸盘挑战，共同风险与B退出，仅前向独立账本。原�
 
 跨零点不等于 APP 当前委托已切交易日。仅正在恢复的撤单可在以下证据齐全时继续查询当前委托：原成功提示日期为前一日且订单号一致，持久精确委托时钟仍晚于今日当前时钟（排除当日重用同一编号），当前行的订单号、代码、方向、价格、数量和委托时钟全部一致，独立成交表仍通过对账。缺少任一证据或今日已到达该时钟，仍必须使用有明确日期的历史证据；不能只按旧订单号匹配。
 
-## 5. 成交模型（真实，非最坏价）
+## 5. Paper 成本估算与成交权限
+
+### Paper B：首分钟最高价保守成本（2026-10-26 用户明确决定）
+
+**目的**：把买入成本估得相对不利，检验策略在保守条件下能否盈利。这是有意
+采用的收益检验基准，不是需要消除的“虚构滑点”。2026-06-20 的 `f7b179cf`
+把较高成本解释为误差，改用 `min(VWAP, L)`；该平均成交假设没有实际订单成交
+证明，也偏离本目的。后续优化必须保留此目的；改变成本口径须有新的用户明确
+决定，不能因收益变差、与 APP 不一致或测试通过而自动降低估算成本。
+
+- Paper B 新买入的 `entry_price_basis=verified_first_minute_high_cost_v1`，
+  成本直接取**经过验证的首分钟真实 HIGH**。不用 VWAP、限价或 basket 将成本
+  向下截断。既有入场资格、市场、basket 放弃、资金/仓位/风险限制继续检查；
+  较高模型成本参与整手和含费预算。它可以高于模拟买单限价或 basket，表示
+  压力成本，不能成为 APP 下单价格、成交证明或放宽交易权限的理由。
+- 首分钟固定为 09:30–09:31；必须先证明来源提供该完整区间的真实 OHLCV、
+  时间戳代表区间起点还是终点，以及何时完成。`tradeTime=0931`、
+  `tradeMinutes=1`、`freq=1min` 和格式正确的 OHLC **本身不证明这些语义**。
+  再检查代码/交易日、唯一 bar、有限正数和自洽价格范围，保留原始 bar、
+  SHA-256、请求身份、观察时间及结果。09:32:05 后读取也不能替代来源语义证明。
+- **当前来源阻塞**：2026-10-26 的专有接口诊断尚未取得合格首分钟来源；
+  `minute_line` 是分时点，`minute_kline` 的 `1min` 请求被服务端拒绝。
+  因此当前验证器不会把任何 `minute_line` 响应认证为首分钟 HIGH，新 B/A
+  买入会因缺证跳过；接受路径及自然运行仍待真实来源验证，不能称已完成上线。
+  原始实验、可证伪条件与后续接入要求见
+  [首分钟来源诊断](reviews/2026-10-26-paper-first-minute-source.md)。
+- 缺少 high/真实 OHLCV、分钟身份不明、重复冲突、过早读取或来源不匹配时，
+  记 `FIRST_MINUTE_HIGH_UNPROVEN` 和精确原因，不补记买入。`trade` 点位最大值、
+  VWAP、限价、日内最高价和事后新快照都不能冒充首分钟最高价。
+- Book A 复用 B 的相同成本/手数及证据，保持退出比较配对。APP、Book T、独立
+  funded 实验仍遵循各自成交规则。历史账本、收益、高点/暂停及原始回执不重算；
+  跨本次切换的研究须披露不同成本版本，不把 Paper 盈利直接称为可执行 APP 收益。
+- 唯一验证：`xiaocao.live.paper_entry_cost.verified_first_minute_high`；正式 B
+  写者必须经 `paper_record._attach_fill_prices(conservative_entry=True)`。
+
+### 既有限价资格模型与 Book T 成本
+
+以下规则保留为 B 的入场资格检查及 T 的原成本模型；其中 VWAP/limit/retry
+产生的价格不再决定 B 的成本。
 
 - 初始限价 `L = min(open[D] × (1 + 0.5%), basket_price)`；开盘窗口（默认 09:30–09:31）结算后，若窗口最低价触达 `L`，**fill = min(窗口VWAP, L)**。
-- `basket_price` **仅为放弃线**，**MUST NOT** 作为成交假设（旧行为按 basket 记成交=虚构 ~1.9%/笔滑点，已废）。
+- 在本小节的既限价/T模型中，`basket_price` **仅为放弃线**，不能作为实际
+  成交的证明。旧“虚构 ~1.9%/笔滑点”说法属于被放弃的成交模型论证，不能
+  用来否定上节用户明确要求的保守成本基准。
 - 窗口最低价 > `L` → 先视为初始限价未成/可能被交易所价格笼子拦截，再检查窗口最后价（实时补单代理）：若 `last <= basket_price`，按 `last` 成交并记录 `retry_realtime_after_limit_reject`；若 `last > basket_price` 或缺少可用实时价 → **SKIP**（`paper_skips.jsonl`，`LIMIT_NOT_REACHED` + `skip_detail`，**不静默丢弃**）。
 - 无窗口数据 → 回退到 L（`fill_fallback`）。
 - **研究证据等级**：paper 窗口、重试及 fallback 都是模型成交，不是 APP 成交证明。研究与周复盘须披露成交依据覆盖和无窗口代理占比；缺窗口/依据的模型结果不得充当已证明可执行净收益。普通回测信号价格收益、paper NAV、相同进场的 A/B 退出比较和 KOL 配对增益分别标识；不跨口径认证 alpha。
-- 唯一实现：`paper_record._fill_price_from_window`。
+- 既有资格/T 模型实现：`paper_record._fill_price_from_window`。
 - 买入重试与实时补单必须复用 `buy_guards.evaluate_buy_market_guard`；跌停、
   停牌或权威状态不可得分别记录 `LIMIT_DOWN_BUY_BLOCKED` /
   `LIMIT_DOWN_CHECK_UNAVAILABLE`，不得把缺行情当作可成交。
 - **数据源单一性（OHLCV 故意不接公共源 fallback）**：止损/peak-dd 依赖的分钟线 OHLCV **只**来自专有 API（`client.minute_line`）。**MUST NOT** 把公共源（akshare/腾讯等）价格接入 live 止损路径：不同复权/时间戳/坏tick 会算出不同的 peak/dd，使 book B 与验证 next-close 口径及 API 喂的回测**静默漂移**——正是 data_health 要抓的"真的谎言"。OHLCV 不可得时应 **fail-safe（持有/跳过）**，而非用二手数据动作。公共源仅允许用于**带 provenance 标记、经对账的研究/回填工具**，且 book A/B 记账永不读 `source='public'`。
 - **四指数与成熟样本完整性**：`refresh_daily_cache.py` 每日必须把上证、深成指、创业板指、中证1000、持仓、当日信号，以及上一交易日 live Book-B 信号批次一起做分钟重建，并按显式 `--date` 选择目标日。上一批信号的 D+1 日线必须在 `forward_eval` 前齐备；当天指数重建已经开始但成熟批次仍有缺口时，`data_doctor` 必须 CRITICAL 并阻断学习。`forward_eval` 的 `market_return_pct` 与 paper-vs-market 均要求四项指数齐全；任一缺失时聚合值/超额收益为 N/A，禁止把缺失当 0 或用部分指数冒充四指数均值。
-- Book T 使用同一成交模型与同一专有 OHLCV 边界；`basket_price` 仍只是放弃线。
+- Book T 使用上述既有限价成本模型与同一专有 OHLCV 边界；`basket_price` 仍只是放弃线。
 - **ETF 表达契约**：Book T v2 的 ETF 候选必须携带经校验的 `instrument_type=etf`、`lot_size`、`settlement_cycle`、买卖费率、目录交易日与 provenance；realtime/minute/daily（或 settlement）行情事实、当前交易状态和流动性状态缺失或未验证时，新开仓、主动换仓和模拟成交 **MUST** fail-closed。ETF 分钟成交价只读专有 API 的 `trade` 字段；不得回退到 `close`、股票 100 股假设或公共源。
 
 ## 6. 仓位与资金
@@ -735,7 +775,7 @@ no-KOL三项纸盘挑战，共同风险与B退出，仅前向独立账本。原�
 - [x] paper/sensor/research 永远放行；unknown kind 默认拒。
 - [x] real_capital 缺任一 Keychain runtime 项 / 授权文件 / 签名篡改 / 过期 / 非有限或非正金额 / 越权 / 超额 → 拒；两条件 in-scope → 放行；每个决定入审计；敏感值不进环境、参数或回执。
 - [x] `require_capital_action` 拒时抛 `CapitalActionDenied`。
-- [x] 成交 ≤ basket 放弃线（`_fill_price_from_window`）；窗口最低价 > L 时，实时价仍在 basket 内则补单成交，否则 SKIP。
+- [x] B 的资格/T 的模型价格遵守 basket 放弃线；B/A 成本另取已验证首分钟最高价，不受价格折减，缺证不记买入。
 - [x] book A/B fixture 回放：同组 picks 过 A/B，realized 差 **完全等于出场口径差**（逐仓可归因，无记账漂移）；无 stop 触发时 book A == book B（消灭 iteration-7 的 -4,191 漂移）。`tests/test_operating_contract.py::test_ab_replay_*`
 - [x] Book T snapshot/account/monitor key 均带 `book` 命名空间；B/T 同票同日不互相覆盖；T 宽止损不调用短线 strong-hold/composite。
 - [x] Book B 与历史回放共用 `strategy.mode_switch`；D-1 outcome 不进入 D 日早盘状态；`COLD/UNKNOWN/BJSE` 无成交权限；`--notional` 不能绕过 3 席位、每模式 1 只和批次 50% 上限。
@@ -750,6 +790,7 @@ no-KOL三项纸盘挑战，共同风险与B退出，仅前向独立账本。原�
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| 4.51 | 2026-10-26 | 用户明确恢复 Paper B 首分钟真实最高价保守成本，保存验证证据；Book A 同价，禁止将保守性当误差优化，历史账本与 APP/T/独立实验保持原口径。 |
 | 4.50 | 2026-10-23 | 用户允许午休APP工程测试：北京时间工作日11:30（含）至13:00（不含）开放；13:00起停止新测试操作，保留原锁、逐次检查和同批次收尾。 |
 | 4.49 | 2026-10-23 | 用户批准KOL盘前条件准备与开盘增量复核：完整覆盖/独立接受、引用预备和相关性组装；保留原政策发布、COLD及所有交易门，paper预唤醒提前至09:10。 |
 | 4.48 | 2026-10-22 | 用户批准统一APP B落地：共同最终计划/分配、独立sellable_only与原owner有界SELL终态回读；前向资金控制和三个挑战、APP生命周期/费用/资金报告，保留E/COLD/B退出及晋级门。 |

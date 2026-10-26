@@ -100,6 +100,18 @@ status. Published neutral policy, completed current request, reused policy and
 timeout are distinct. Paper's original writer also records isolated selection
 evidence; it does not start another funded experiment or replay a terminal day.
 
+## Paper B conservative cost
+
+Before changing entry pricing or interpreting a Paper/APP return gap, read
+Operating Contract §5's 2026-10-26 user decision. Preserve the verified
+first-minute HIGH cost and its raw-bar/hash evidence; missing evidence is a
+reported no-buy. This intentionally adverse benchmark is not an execution
+error to optimise away. Keep the original writer and historical receipts;
+Book A pairs with B, while APP, T and funded experiments retain their own rules.
+The current source is explicitly unproved: new A/B entries are data-blocked
+until a real full-minute source is validated. See Contract §5 and its linked
+source diagnosis; never treat a mocked cost test as market-source acceptance.
+
 ## Execute
 
 Scheduler wakes are preparation only: producer wakes at 09:18, paper at 09:10; APP

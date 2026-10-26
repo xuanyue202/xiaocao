@@ -3,8 +3,10 @@ from __future__ import annotations
 
 from collections import Counter
 
+from xiaocao.live.paper_entry_cost import CONSERVATIVE_COST_BASIS
 
-WINDOW_BASES = {"opening_window_vwap", "opening_window_vwap_capped_by_limit"}
+
+WINDOW_BASES = {CONSERVATIVE_COST_BASIS, "opening_window_vwap", "opening_window_vwap_capped_by_limit"}
 
 
 def classify_paper_fill(row: dict) -> str:

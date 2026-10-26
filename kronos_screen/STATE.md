@@ -173,6 +173,8 @@ Kronos base **frozen** emb + PCA8 + Ridge + 按日横截面 target = **鲁棒但
 - 跑全年 backtest 命令见 fullyear_backtest.log 头部
 
 ## 迭代7: 自动模拟盘复盘 (06-01..06-12, 9个交易日) + 执行/风控层修复
+
+> 2026-10-26 用户纠正：下述“虚构滑点”及 VWAP 成本属于历史判断，不能作为当前 Paper B 改价依据。现行保守成本及原因见 `docs/OPERATING_CONTRACT.md` §5；原复盘保留供追溯。
 **复盘结论 (decompose_pnl 精确对账, 26笔平仓 -6,651):**
 - 亏损归因 (exact, price-diff x shares): **入场滑点 -4,417 (59%)** > 出场时机 -1,588 (21%) > 选股alpha -1,448 (19%) > fees -47。
 - 入场: paper 一直按 basket=entry×1.02 最差挂单价记成交 (+1.85%/笔虚构滑点)。
