@@ -577,6 +577,38 @@ def test_post_claim_lv_browser_eval_projects_download_repair_profile():
     )
 
 
+@pytest.mark.parametrize("accepted_alias", [False, True])
+@pytest.mark.parametrize("with_new_event", [False, True])
+def test_alias_reuse_keeps_receipts_without_counting_new_effects(accepted_alias, with_new_event):
+    from xiaocao.kol.daily import DailyCoordinator
+
+    event = {
+        "event_id": "event-1",
+        "gray_report": {"status": "published"},
+        "alert": {"status": "delivered"},
+        "book_kol_us": {"status": "no_trade"},
+        "reconciled_existing": accepted_alias,
+        "source_event_alias": {"new_external_side_effect_count": 0},
+    }
+    events = [event]
+    if with_new_event:
+        events.append({**event, "event_id": "event-2", "reconciled_existing": False})
+    expected = (0 if accepted_alias else 2) + (2 if with_new_event else 0)
+    outcome = {"name": "subscription_video", "status": "completed", "events": events}
+    progress = normalize_source_result(
+        "subscription_video", outcome,
+        failure_revision=FAILURE_REVISION,
+        provider_contract_version="xiaocao_writer_v1",
+    )
+    assert progress.details["new_external_effect_count"] == expected
+    assert progress.details["claim_receipt_summary"] == {
+        "claim_count": 2 * len(events), "receipt_count": 2 * len(events),
+        "uncertain_effect_count": 0,
+    }
+    state = DailyCoordinator._source_states([outcome])[0]
+    assert state.get("new_external_effect_count", 0) == expected
+
+
 def test_source_wait_without_durable_deadline_becomes_repair_required():
     progress = normalize_source_result(
         "lv_text_image",
