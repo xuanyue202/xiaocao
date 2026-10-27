@@ -737,6 +737,16 @@ def _validate_projection(item: dict[str, Any]) -> None:
                     stage="longitudinal_projection",
                     field="longitudinal_projection.viewpoints.evaluation.basis",
                 )
+            try:
+                validate_reader_payload("viewpoint", viewpoint)
+                validate_reader_payload("viewpoint_evaluation", evaluation)
+            except ReaderCopyError as exc:
+                raise _fail(
+                    str(exc),
+                    error_code="longitudinal_projection_invalid",
+                    stage="longitudinal_projection",
+                    field="longitudinal_projection.viewpoints",
+                ) from exc
 
 
 def _validate_actionable_signals(

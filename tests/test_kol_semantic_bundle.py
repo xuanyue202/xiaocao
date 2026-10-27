@@ -800,6 +800,39 @@ def test_projection_identity_matches_actual_publication_consumer(tmp_path, local
     assert candidate["metadata"]["viewpoint_count"] == 1
 
 
+@pytest.mark.parametrize("field,value", [
+    ("horizon", "2026-10-28"),
+    ("stance", "wait"),
+    ("basis", "current evidence"),
+])
+def test_projection_reader_rejection_precedes_bundle_receipt(tmp_path, field, value):
+    from xiaocao.kol.reader_copy import ReaderCopyError, validate_reader_payload
+
+    request, draft, bundle_path, receipt_path, _ = _fixture(tmp_path)
+    viewpoint = {
+        "local_thesis_id": "t1", "subject": "量能确认",
+        "stance": "量能恢复前不追涨。", "horizon": "下一交易日",
+        "reasoning": "缩量降低突破可靠性。",
+        "evidence_refs": [{"claim_id": draft["claims"][0]["claim_id"],
+                           "excerpt": "下一交易日先看成交额是否恢复"}],
+        "evaluation": {"status": "current", "basis": "等待量能恢复。"},
+    }
+    target = viewpoint["evaluation"] if field == "basis" else viewpoint
+    target[field] = value
+    kind = "viewpoint_evaluation" if field == "basis" else "viewpoint"
+    with pytest.raises(ReaderCopyError):
+        validate_reader_payload(kind, target)
+    draft["longitudinal_projection"] = {
+        "status": "promoted", "reason": "保留量能观点。",
+        "evaluated_at": "2026-08-08T07:00:00+08:00", "viewpoints": [viewpoint],
+    }
+    with pytest.raises(SemanticBundleError) as caught:
+        build_validated_bundle(request, draft, bundle_path=bundle_path, receipt_path=receipt_path)
+    assert caught.value.stage == "longitudinal_projection"
+    assert not bundle_path.exists()
+    assert not receipt_path.exists()
+
+
 def test_content_value_requires_independent_terminal_reason(tmp_path):
     request, draft, bundle_path, receipt_path, _ = _fixture(tmp_path)
     del draft["content_value"]["reason"]

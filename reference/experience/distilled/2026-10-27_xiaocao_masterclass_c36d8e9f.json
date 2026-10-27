@@ -1,0 +1,415 @@
+{
+  "date": "2026-10-27",
+  "kind": "盘后大师班复盘",
+  "summary": "小草把当日环境称为轮跌并预期次日修复；执行上主张N与N半只选一、配人气股低吸，红盘起爆只作不高买的人工例外。组合的作用是提高稳定性而非保证更赚钱；当前基础评分被明确判为全错，大跌幅探索也被当场撤回。",
+  "posture": {
+    "regime": "10月27日高开后普跌、作者称为轮跌，次日处于待修复窗口。",
+    "dominant_style": "N或N半择一加人气股低吸；趋势抱团可与盘中低吸组合；红盘起爆仅作作者人工观察例外。",
+    "risk": "环境仍差、当前基础评分全错、情绪股负反馈、红盘追高、口述分数和收益无法证明成交。",
+    "style_ranking": [
+      "经当日重新验证的N或N半与人气股低吸组合",
+      "经新版本验证的趋势抱团加盘中低吸",
+      "不高买前提下由作者单独观察的红盘起爆",
+      "当前错误基础评分与被撤回的大跌幅分支"
+    ]
+  },
+  "regime_call": {
+    "source_view": "作者认为10月27日处于轮跌弱环境，10月28日大概率修复，最终倾向低开高走；后续可能反弹、横盘、再反弹。",
+    "system_assessment": "官方指数收盘支持10月27日普跌，但不证明10月28日修复或后续两段反弹。生产31条信号全部COLD，不能把来源观点直接恢复为本地可执行资格。",
+    "horizon": "次日路径只到2026年10月28日收盘；后续反弹判断没有精确截止，必须逐日复核。",
+    "what_would_falsify": [
+      "10月28日低开后没有承接并继续走弱，收盘未形成修复。",
+      "市场宽度、短线情绪与作者偏好的模式未同步改善。",
+      "N、N半、人气股低吸或趋势抱团没有取得当日有效资格。",
+      "高位与情绪股负反馈继续扩散，弱环境进一步恶化。"
+    ]
+  },
+  "directions": [
+    {
+      "view": "N与N半只选其一，再配人气股低吸。",
+      "attribution": "小草原始观点",
+      "boundary": "次日计划；板倒接力评分可能上不来，末尾“新仓”转写不能推导仓位比例。"
+    },
+    {
+      "view": "红盘起爆可由作者单独观察，但不要买太高。",
+      "attribution": "小草原始观点",
+      "boundary": "前段曾出现“不能”的否定，后段明确给出人工例外；不等于系统自动资格。"
+    },
+    {
+      "view": "趋势抱团可与盘中低吸组合。",
+      "attribution": "小草原始观点",
+      "boundary": "当前基础评分全错，4000分、1000分和31分口述未独立核验。"
+    },
+    {
+      "view": "大跌幅现阶段不用看、不能无脑，还要继续跑数据。",
+      "attribution": "小草最终观点",
+      "boundary": "覆盖并约束此前的临时探索。"
+    }
+  ],
+  "stocks": [
+    {
+      "name": "奥雅股份",
+      "role": "老师口述的历史收益与高抛示例",
+      "boundary": "10月26日本地仅COLD标杆短线起爆观察，无★E、无BUY；口述高点不证明成交。"
+    },
+    {
+      "name": "大普微",
+      "role": "红盘起爆历史样例",
+      "boundary": "10月27日开收到收-3.13%；不是未点名北交所第一名，也不是当前本地正式候选。"
+    },
+    {
+      "name": "冰山冷热",
+      "role": "人气股低吸、盘中模式与大跌幅回看",
+      "boundary": "10月27日开收到收-2.96%；次日“估计没问题”为低置信判断。"
+    },
+    {
+      "name": "郑中设计",
+      "role": "N半与高抛历史示例",
+      "boundary": "10月27日开收到收+7.83%；不能由口述高点推成交。"
+    },
+    {
+      "name": "百洋股份",
+      "role": "人气股低吸与大跌幅探索样例",
+      "boundary": "10月27日开收到收-5.14%；大跌幅分支随后撤回。"
+    },
+    {
+      "name": "百胜智能",
+      "role": "趋势抱团加盘中低吸的高分样例",
+      "boundary": "10月26日本地仅COLD孕线低吸观察，无★E、无BUY；4000分未核。"
+    },
+    {
+      "name": "新华百货",
+      "role": "趋势抱团盘中演示",
+      "boundary": "没有本地正式命中或老师成交证据。"
+    },
+    {
+      "name": "国脉文化/果麦文化",
+      "role": "原文分别出现的盘中演示surface",
+      "boundary": "证券目录确认两只证券身份不同，但“果麦”那次原声是否独立点名或ASR误字无法确认，不能宣称两只均为老师独立示例。"
+    },
+    {
+      "name": "三峡新材",
+      "role": "情绪股历史样例",
+      "boundary": "10月26日本地仅COLD绿断低吸观察，无★E、无BUY；老师仍认为弱环境做情绪股有问题。"
+    },
+    {
+      "name": "东安动力",
+      "role": "情绪股历史样例",
+      "boundary": "未形成本地正式命中。"
+    },
+    {
+      "name": "华阳智能/海洋王/和泰机电",
+      "role": "大跌幅探索样例",
+      "boundary": "探索被作者撤回，不能据此启用模式。"
+    }
+  ],
+  "method_principles": [
+    {
+      "principle": "不要因单日涨跌决定次日停做或追做，避免把节奏做反。",
+      "attribution": "小草原始观点"
+    },
+    {
+      "principle": "组合可以更稳定，但不一定更赚钱；当天单票50%与组合100%只是例子，不是统计保证。",
+      "attribution": "小草原始观点"
+    },
+    {
+      "principle": "当前基础评分全错，监控值只供观察，不能看到分就无脑买。",
+      "attribution": "小草原始观点"
+    },
+    {
+      "principle": "研究组合时冻结模式、总风险预算和复核窗口，才可比较稳定性。",
+      "attribution": "system_synthesized研究约束，不是小草原话"
+    }
+  ],
+  "exit_lessons": [
+    {
+      "lesson": "出现高抛提示时可以卖；担忧后续路径时，奥雅案例允许先卖一半。",
+      "attribution": "小草原始观点"
+    },
+    {
+      "lesson": "口述高点、收盘收益和跨日加法不是账户净收益，缺成交、仓位、费用与滑点时不得入账。",
+      "attribution": "system_synthesized审计边界"
+    }
+  ],
+  "hypotheses": [],
+  "existing_hypothesis_feedback": [
+    {
+      "hypothesis_id": "XH-276",
+      "assessment": "support_with_boundary",
+      "feedback": "本场再次支持跨模式组合提高稳定性的方向，并明确不一定更赚钱；单票50%与组合100%不是统计胜率。",
+      "external_merge_performed": false
+    },
+    {
+      "hypothesis_id": "XH-274",
+      "assessment": "negative_boundary",
+      "feedback": "作者先探索大跌幅，随后因低分、常无票和样本不足明确撤回，不能把本场当作启用支持。",
+      "external_merge_performed": false
+    },
+    {
+      "hypothesis_id": "XH-248",
+      "assessment": "support_with_scope",
+      "feedback": "作者重申现系统不做可转债、需独立算法，并强调T+0重复交易冲动与活跃度风险。",
+      "external_merge_performed": false
+    },
+    {
+      "hypothesis_id": "XH-134",
+      "assessment": "qualification",
+      "feedback": "百胜4000分、冰山约1000分和31分只作待验口述；作者同时明确基础计算全错，不能更新阈值。",
+      "external_merge_performed": false
+    }
+  ],
+  "timing_notes": [
+    "作者预计2026年10月31日前后上线固定时点模式切换。",
+    "作者预计模式切换后约一周上线监控值，之后再上高分模式切换。",
+    "以上均为产品计划，不是已交付事实；监控值不是自动买入信号。"
+  ],
+  "typo_corrections": [
+    {
+      "surface": "大普威/大不威",
+      "normalized": "大普微",
+      "confidence": "high"
+    },
+    {
+      "surface": "正宗设计/正宗车技/正宗特技",
+      "normalized": "郑中设计",
+      "confidence": "high"
+    },
+    {
+      "surface": "白色智能/百盛智能",
+      "normalized": "百胜智能",
+      "confidence": "high"
+    },
+    {
+      "surface": "合泰机电",
+      "normalized": "和泰机电",
+      "confidence": "high"
+    },
+    {
+      "surface": "果麦文化",
+      "normalized": "果麦文化（证券身份存在）",
+      "confidence": "low",
+      "note": "该处原声是否独立点名或ASR误字未确认，不与国脉文化强行合并，也不宣称独立演示已确认。"
+    },
+    {
+      "surface": "湖北文化/一次问传媒/太大风实验/聚能",
+      "normalized": null,
+      "confidence": "low",
+      "note": "没有唯一证券映射。"
+    }
+  ],
+  "action_summary": {
+    "posture_update": "candidate_only：次日修复只保留为来源当前观点，等待10月28日事实，不改写posture_current。",
+    "playbook_update": "proposal_only：组合稳定性、结果追逐纠偏、错误评分禁用与监控非自动买入仅作authority=0材料。",
+    "hypothesis_update": "0 new / 0 merges：hypotheses为空；existing_hypothesis_feedback只是本篇与XH-276、XH-274、XH-248、XH-134的比较，不预测外部backlog已更新。",
+    "audit_evidence": "完整读取37456字节逐字稿与98段；核对官方收盘、证券目录、10月26至27日31条全COLD本地信号、3条独立纸面交易和家庭快照。",
+    "instrumentation_todo": "未来前向冻结完整候选、模式版本、首次分数时点、可成交价、仓位、退出、费用、失败样本与监控延迟；不得回填事后高点。",
+    "routing": [
+      "parent_deterministic_validation",
+      "parent_copy_final_distillation",
+      "strategy_hit_audit_review",
+      "existing_hypothesis_comparison_only",
+      "no_new_hypothesis",
+      "no_automatic_parameter_change",
+      "no_book_execution"
+    ]
+  },
+  "decision_trace": [
+    {
+      "observation": "10月27日高开后主要指数收低，作者称环境为轮跌。",
+      "inference": "次日可能有修复窗口，但不是确定反转。",
+      "action": "只保留次日观察，收盘后重新复核。"
+    },
+    {
+      "observation": "作者给出N/N半择一、人气股低吸、红盘起爆不高买和趋势抱团低吸。",
+      "inference": "这是模式级条件，不是点名股普遍买入。",
+      "action": "必须等待当日资格、价格与风险预算。"
+    },
+    {
+      "observation": "当前基础评分被作者判为全错，大跌幅探索被撤回。",
+      "inference": "旧分数和大跌幅不能进入执行。",
+      "action": "禁用旧评分与该探索分支，等新版本和前瞻数据。"
+    }
+  ],
+  "judgment_heuristics": [
+    "先区分作者最终结论与临时探索；后段撤回约束前段探索。",
+    "点名股、模式、收益口径、系统事实和本地发出分别审计。",
+    "短线适用性按期限、触发和风险价值判断，不按家庭持仓或关键词筛选。"
+  ],
+  "strategy_hit_audit": {
+    "status": "completed_with_date_identity_and_role_scoped_evidence",
+    "audit_scope": {
+      "source_review_date": "2026-10-27",
+      "local_signal_dates": [
+        "2026-10-26",
+        "2026-10-27"
+      ],
+      "local_signal_rows": 31,
+      "rule": "只有日期、证券身份和模式角色同时对齐才能算本地策略命中；COLD shadow、日内高点、纸面其他股票和老师口述收益均不算正式命中。"
+    },
+    "teacher_named_winners": [
+      {
+        "surface_form": "奥雅股份",
+        "official_name": "奥雅股份",
+        "code": "300949.XSHE",
+        "source_role": "老师口述10月26日至27日红盘起爆收益与高抛样例",
+        "local_classification": "cohort_watchlist",
+        "detail": "10月26日本地COLD标杆短线起爆，无★E、无BUY；行情只能核价格路径。",
+        "boundary": "不证明老师或学员成交，也不计本地正式命中。"
+      },
+      {
+        "surface_form": "郑中设计/正宗设计",
+        "official_name": "郑中设计",
+        "code": "002811.XSHE",
+        "source_role": "老师口述N半与高抛赢家",
+        "local_classification": "not_emitted",
+        "detail": "31条冻结信号没有002811；10月27日开收到收+7.83%。",
+        "boundary": "只限定本地两日切片，不证明老师成交。"
+      },
+      {
+        "surface_form": "百洋股份",
+        "official_name": "百洋股份",
+        "code": "002696.XSHE",
+        "source_role": "人气股低吸历史收益样例",
+        "local_classification": "not_emitted",
+        "detail": "31条冻结信号没有002696；10月27日开收到收-5.14%。",
+        "boundary": "日内高点与口述高抛不计正式命中。"
+      },
+      {
+        "surface_form": "百胜智能/白色智能",
+        "official_name": "百胜智能",
+        "code": "301083.XSHE",
+        "source_role": "趋势抱团加盘中低吸的高分赢家样例",
+        "local_classification": "cohort_watchlist",
+        "detail": "10月26日本地COLD孕线低吸，无★E、无BUY。",
+        "boundary": "本地模式与老师模式不能互认，4000分未核。"
+      },
+      {
+        "surface_form": "新华百货",
+        "official_name": "新华百货",
+        "code": "600785.XSHG",
+        "source_role": "趋势抱团盘中赢家样例",
+        "local_classification": "not_emitted",
+        "detail": "31条冻结信号没有600785。",
+        "boundary": "不证明老师成交或本地策略命中。"
+      },
+      {
+        "surface_form": "国脉文化",
+        "official_name": "国脉文化",
+        "code": "600640.XSHG",
+        "source_role": "趋势抱团盘中示例",
+        "local_classification": "not_emitted",
+        "detail": "31条冻结信号没有600640。",
+        "boundary": "与果麦证券身份不同；果麦那次原声角色仍不确定。"
+      },
+      {
+        "surface_form": "果麦文化",
+        "official_name": "果麦文化",
+        "code": "301052.XSHE",
+        "source_role": "原文surface出现的盘中示例候选",
+        "local_classification": "no_evidence",
+        "detail": "证券身份存在，但无法确认该处是独立点名还是ASR误字。",
+        "boundary": "不能宣称独立老师赢家，也不能与国脉强并。"
+      },
+      {
+        "surface_form": "三峡新材",
+        "official_name": "三峡新材",
+        "code": "600293.XSHG",
+        "source_role": "情绪股反弹历史样例",
+        "local_classification": "cohort_watchlist",
+        "detail": "10月26日本地COLD绿断低吸，无★E、无BUY。",
+        "boundary": "老师同时认为弱环境做情绪股有问题。"
+      },
+      {
+        "surface_form": "东安动力",
+        "official_name": "东安动力",
+        "code": "600178.XSHG",
+        "source_role": "情绪股反弹历史样例",
+        "local_classification": "not_emitted",
+        "detail": "31条冻结信号没有600178。",
+        "boundary": "不是当前推荐。"
+      }
+    ],
+    "local_strategy_benchmark_hits": [
+      {
+        "name": "奥雅股份",
+        "code": "300949.XSHE",
+        "date": "2026-10-26",
+        "classification": "cohort_watchlist",
+        "mode": "标杆短线起爆",
+        "state": "COLD",
+        "formal_hit": false
+      },
+      {
+        "name": "百胜智能",
+        "code": "301083.XSHE",
+        "date": "2026-10-26",
+        "classification": "cohort_watchlist",
+        "mode": "孕线低吸",
+        "state": "COLD",
+        "formal_hit": false
+      },
+      {
+        "name": "三峡新材",
+        "code": "600293.XSHG",
+        "date": "2026-10-26",
+        "classification": "cohort_watchlist",
+        "mode": "绿断低吸",
+        "state": "COLD",
+        "formal_hit": false
+      }
+    ],
+    "direction_core": [
+      {
+        "direction": "A股整体弱势",
+        "source_role": "作者当日市场诊断",
+        "system_evidence": "上证-1.33%、深证-2.50%、创业板-3.41%，均高开后收低。",
+        "classification": "qualified_direction_match",
+        "boundary": "只支持当日弱势，不证明轮跌标签、次日修复或两段反弹。"
+      },
+      {
+        "direction": "生产可执行短线集合",
+        "source_role": "系统独立事实",
+        "system_evidence": "10月26日24条与10月27日7条信号全部COLD，10月27日★E为NONE。",
+        "classification": "no_formal_current_hit",
+        "boundary": "不能用COLD删除来源观点，也不能恢复任何模式资格。"
+      }
+    ],
+    "classification_counts": {
+      "cohort_watchlist": 3,
+      "not_emitted": 5,
+      "no_evidence": 1,
+      "formal_strategy_hits": 0
+    },
+    "paper_ledger_boundary": "10月26日澳洋健康Book A/B SELL与10月27日京东方A Book T SELL均是独立本地账本，不是老师点名赢家买入或本场策略命中。"
+  },
+  "author": "小草",
+  "source": "小草直播《10月27日大师班》",
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/reference/experience/transcripts/2026-10/2026-10-27_xiaocao_masterclass_c36d8e9f.txt",
+      "sha256": "c36d8e9f35ffc95415e7a47a0ac4f64fc6d847f5144c7492b27889bc02bcf215",
+      "size": 37456
+    },
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261027_01a17d8b/market_evidence_video.json",
+      "sha256": "31cc10dda939b343fe41bc4591aa7717517661854e44cddf53ab63603ce83da8",
+      "size": 6410
+    },
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261027_01a17d8b/household_video_readback.json",
+      "sha256": "cf9a0cee14966ecca92da2eaf6d39fed40a3e7d7232ce0d1a61776817e6c2c75",
+      "size": 22327
+    },
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261027_01a17d8b/video_local_strategy_audit.json",
+      "sha256": "a3ac8afa4bfdfc7aa82634aa8855d4a6a17f02ecf2cb1f0a4a75e17d92fe9d57",
+      "size": 36869
+    }
+  ],
+  "limitations": [
+    "老师侧订单、成交、费用和完整评分快照缺失。",
+    "末尾“新仓”转写有歧义，不能推导具体仓位比例。",
+    "大跌幅、监控值与新模式需前瞻数据；当前不构成策略参数。"
+  ]
+}
+
