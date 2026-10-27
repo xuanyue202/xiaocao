@@ -85,7 +85,10 @@ def verify_source_event_alias(
             or prior["evidence_sha256"] != equivalence["prior_evidence"]["sha256"]
             or prior["author"] != item["author"] or prior["source"] != item["source"]
             or prior["published_at"] != item["published_at"]
-            or prior["source_identity"] == item["source_identity"]):
+            or (prior["source_identity"] == item["source_identity"] and (
+                prior["source_version_key"] == item["source_version_key"]
+                or prior["evidence_sha256"] != item["evidence_sha256"]
+            ))):
         raise EnrichmentError("source event alias changes author, source or event date")
     current_claims = {row["claim_id"]: row for row in item["claims"]}
     prior_claims = {row["claim_id"]: row for row in prior["claims"]}

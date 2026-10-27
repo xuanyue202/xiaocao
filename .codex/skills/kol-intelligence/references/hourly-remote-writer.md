@@ -339,6 +339,11 @@ publication. A verified alias preserves the canonical source binding, gives the
 new intake its own completion claim/receipt and terminal, and creates no new
 report, reminder, trade or knowledge ingestion.
 
+A renamed revision under the same stable source identity may use this proof
+only when the publication version changes and the complete transcript bytes
+have the same SHA-256. Same-version intake and changed transcript bytes under
+that identity remain excluded; neither permits another business delivery.
+
 When that projection reports a content-hash-bound `classification_backfill`
 manifest, the remote writer owns the exact listed viewpoint IDs. Reuse the
 already-published viewpoint, evaluation and cited evidence; do not reread every
