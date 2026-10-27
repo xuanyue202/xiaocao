@@ -1,0 +1,410 @@
+{
+  "schema_version": "xiaocao-knowledge-draft-v1",
+  "knowledge_status": "reusable_knowledge",
+  "date": "2026-10-15",
+  "kind": "大师班晚间直播",
+  "author": "小草",
+  "source": "小草直播《2026年10月15日大师班专场》",
+  "authority": 0,
+  "summary": "本场可复用内容是弱市允许空仓、盘中高分信号的早盘时效、住房财富效应，以及按当时态审计而非事后回填；本草稿仅提交authority=0复发支持与方法边界，不调参、不交易。",
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/private_evidence/kol_transcripts/2026-10/2026-10-15_xiaocao_masterclass_a8933f03.txt",
+      "sha256": "a8933f03f21fe44b9883e006c0722f9d690ce66a8479a34ea75d6cebc8410819",
+      "size_bytes": 57580,
+      "segment_count": 148,
+      "read_to_eof": true,
+      "size": 57580
+    },
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261027_01a17b31/video1015_supplemental_primary.json",
+      "sha256": "edbdcaf3eb1ea8826e0be863545fc7be8ba554e2fa3ffdbdd55458bf0fd3e47b",
+      "kind": "supplemental_primary_and_immutable_local_recommendation",
+      "read_to_eof": true,
+      "size": 8685
+    },
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261027_01a17b31/video1015_security_directory_v2.json",
+      "sha256": "c3f5f41b708fc66aefacf656f3d71b36c3bd94d9cbf99c6f58f81d2023e983b6",
+      "kind": "cache_first_original_provider_security_directory",
+      "read_to_eof": true,
+      "size": 2563
+    },
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261027_01a17b31/video1015_local_ledger_readback.json",
+      "sha256": "c790dc39236cab3da551e06b4d493316dc0dd7d5d0921ccce9b349cb083ba360",
+      "kind": "immutable_local_paper_ledger_readback",
+      "read_to_eof": true,
+      "size": 27200
+    }
+  ],
+  "posture": {
+    "regime": "来源日期的A股弱势、下跌面广且高位情绪承压；处理日不把旧判断冒充当前行情。",
+    "dominant_style": "普通参与者空仓；有经验者只按来源分别提到的“下跌低吸”或“盘中下跌超跌低吸”窄门槛观察，不把它们合并成通用模式名。",
+    "risk": "情绪股、高位模式、事后回看和跨市场宏观外推容易把历史叙述误当当前信号。",
+    "style_ranking": [
+      "空仓与风险控制",
+      "下跌或超跌低吸",
+      "其他情绪模式暂避"
+    ],
+    "currentness": "2026-10-15的短线窗口已全部到期；本地09:26推荐和09:32 Paper B成交只供命名空间审计，不使老师观点恢复时效。",
+    "global_posture_write": "proposal_only"
+  },
+  "regime_call": {
+    "call": "弱市生存优先，旧日短线信号不续期。",
+    "horizon": "来源所指为2026年10月15日盘中与下一交易日；当前仅保留研究框架。",
+    "triggers": [
+      "环境门控已给出空仓",
+      "9:35前下跌或超跌低吸达到100分且排名第一"
+    ],
+    "what_would_falsify": [
+      "完整逐秒候选池显示晚到或非首名信号同样稳定",
+      "含成本样本显示空仓基准显著劣于预注册模式且风险可控"
+    ],
+    "evidence_boundary": "没有完整候选池、模式分时标、逐笔成交与含成本收益，不能确认胜率或收益。"
+  },
+  "directions": [
+    {
+      "name": "弱市空仓门控",
+      "status": "reusable_method",
+      "statement": "环境不利且模式门槛未通过时，把空仓作为合法动作。"
+    },
+    {
+      "name": "早盘低吸时点",
+      "status": "reusable_method",
+      "statement": "来源分别提到下跌低吸和盘中下跌超跌低吸；同类高分信号越早越有可执行价值，须冻结首次过阈值秒点，不得把口述名称归并成系统通用模式。"
+    },
+    {
+      "name": "防前视复盘",
+      "status": "reusable_method",
+      "statement": "不能把盘后涨停或牛股结果回填到竞价样本后再宣称策略有效。"
+    },
+    {
+      "name": "住房财富效应",
+      "status": "research_candidate",
+      "statement": "房价与收入预期走弱可能通过储蓄、消费和贷款需求影响风险资产修复。"
+    }
+  ],
+  "stocks": [
+    {
+      "name": "肯特股份",
+      "ticker": "301591.XSHE",
+      "role": "来源日期的低吸案例",
+      "boundary": "完整来源反复明确名称，目录只核对代码；老师当时榜单、分数、买价和成交仍未知。"
+    },
+    {
+      "name": "美农生物",
+      "ticker": "301156.XSHE",
+      "role": "来源日期候选",
+      "boundary": "完整来源反复明确名称，目录只核对代码；口述亏损约3.4至3.5点，未以老师交易记录核验。"
+    },
+    {
+      "name": "沃特股份",
+      "ticker": "002886.XSHE",
+      "role": "来源日期候选",
+      "boundary": "完整来源反复明确名称，目录只核对代码；口述约赚4.3点，未以老师交易记录核验。"
+    },
+    {
+      "name": "强达电路",
+      "ticker": "301628.XSHE",
+      "role": "来源日期候选",
+      "boundary": "完整来源反复明确名称，目录只核对代码；老师结果和成交未知。"
+    },
+    {
+      "name": "澳弘电子",
+      "ticker": "605058.XSHG",
+      "role": "本地09:26候选与来源疑似历史口述的跨命名空间审计对象",
+      "boundary": "目录和本地推荐只证明证券身份与本地候选；来源ASR仍有多种写法，不能据此确认老师所指、模式命中或成交。"
+    }
+  ],
+  "method_principles": [
+    "按模式分别设阈值，不把一个分数门槛套到所有模式。",
+    "早盘策略必须记录首次达到阈值的秒级时间、当时完整候选池和第一名身份。",
+    "盘后涨停或牛股结果不得回填到盘前或竞价样本。",
+    "只保留一到两个真正可监控和可执行的模式，避免观察能力超载。",
+    "政策宣传数字必须连同项目资格、拿地日期、工程条件、付款条款和退出成本一起核验。"
+  ],
+  "exit_lessons": [
+    "盘中浮盈不能替代收盘或实际成交收益。",
+    "情绪股和高位模式在弱环境中应先服从风险门控。"
+  ],
+  "decision_trace": [
+    "来源先确认大面积下跌与环境空仓。",
+    "在愿意承担模式风险的窄范围内，来源分别谈到“下跌低吸”和“盘中下跌超跌低吸”，只保留9:35前、100分以上、排名第一的窄门；没有证据支持一个更宽泛的通用模式名。",
+    "来源拒绝常规参与红盘起爆、紫薇和断板情绪股；红盘起爆的唯一例外是个人自行承担风险，只用小娱乐仓观察第一名。原文明说“倒接力不算”特殊防守玩法，因此倒接力不属于该例外。",
+    "处理时所有具体窗口均已到期，因此不形成当前交易动作。"
+  ],
+  "judgment_heuristics": [
+    "先看环境门控，再看模式资格，再看首次出现时点。",
+    "用当时全量候选验证方法，不用幸存赢家解释过去。",
+    "宏观因果链拆成可观测中介变量后再研究。"
+  ],
+  "hypotheses": [
+    {
+      "claim": "当交易者判断环境不利且没有通过其模式门槛的机会时，允许空仓可能比为了参与感强行交易更能控制回撤与纪律违约。",
+      "implied_rule": "所有候选都未通过预注册门槛时，把空仓设为合法基准动作。",
+      "falsifiable_test": "比较不利环境中空仓、强制选择候选和实时门控组合的净收益、回撤、换手与纪律违约。",
+      "expected_effect": "空仓应降低左尾和违约；若实时组合能稳定覆盖成本并控制风险，则门槛需重估。",
+      "category": "风险预算",
+      "reuse_existing_id": "XH-178",
+      "relationship": "exact_recurrence",
+      "attribution": "小草，2026-10-15完整直播证据；本场仅追加复发支持。",
+      "authority": 0
+    },
+    {
+      "claim": "盘中高分信号越早出现，短线可用性越高；9:35后的同类信号价值下降。",
+      "implied_rule": "对高分信号按首次出现时间分层，早盘窗口结束后不追逐已经扩大的涨幅。",
+      "falsifiable_test": "对所有盘中高分候选记录首次达到阈值的秒级时间，分9:35前后比较可成交收益、滑点、最大回撤和封板率。",
+      "expected_effect": "减少把事后上涨误认成事前可执行信号。",
+      "category": "timing",
+      "reuse_existing_id": "XH-235",
+      "relationship": "exact_recurrence",
+      "attribution": "小草，2026-10-15完整直播证据；本场仅追加复发支持。",
+      "authority": 0
+    },
+    {
+      "claim": "居民住房财富持续缩水可能通过消费信心和风险偏好渠道减慢权益市场修复。",
+      "implied_rule": "同时跟踪房价、居民资产负债表、消费信心和权益市场风险偏好，不用单一房价或未经核验的住房资产占比直接决定仓位。",
+      "falsifiable_test": "按月和按季度构造一线城市房价、居民杠杆与财富、消费信心、可选消费、A股成交和风险偏好面板，检验住房财富变化对随后一至三个季度消费与权益风险偏好的增量解释；若控制收入、利率、政策和市场趋势后关系不稳定，则否定。",
+      "expected_effect": "若成立，房地产财富效应可作为中期信心修复的解释变量，但仍不自动触发交易。",
+      "category": "housing_wealth_effect",
+      "reuse_existing_id": "XH-199",
+      "relationship": "independent_support",
+      "attribution": "小草，2026-10-15完整直播证据；来源明确归因住房财富缩水会削弱消费，本场仅为XH-199机制链的独立支持，住房财富到权益修复仍待研究，不是实证确认。",
+      "authority": 0
+    }
+  ],
+  "timing_notes": [
+    "来源短线规则只适用于2026年10月15日盘中及其明确所说的下一交易日。",
+    "9:35前、越早越好、100分以上和排名第一必须同时保留。",
+    "本地09:26推荐早于老师口述的约09:31案例，二者策略命名空间不同，不能互相证明榜单或分数。"
+  ],
+  "typo_corrections": [
+    {
+      "source_form": "肯特美，容沃特和强达",
+      "normalized": "肯特股份、美农生物、沃特股份、强达电路",
+      "confidence": "high"
+    },
+    {
+      "source_form": "傲宏电子/奥红/二红/浩宏电子",
+      "normalized": "较可能指澳弘电子",
+      "confidence": "low",
+      "boundary": "目录确认澳弘电子代码605058.XSHG，本地09:26推荐也有同名候选；但两者不能证明来源多种ASR写法必然指它，来源映射仍为疑似。"
+    }
+  ],
+  "strategy_hit_audit": {
+    "scope": "比较老师来源口述、同日09:26本地推荐和同日本地Paper B精确账本；不证明老师账户、APP、家庭持仓、老师成交或收益。",
+    "teacher_named_winners": [
+      {
+        "surface_form": "肯特股份",
+        "source_claim": "约09:31达到约1000分，盘中约十四五点、收盘约六七点",
+        "classification": "not_emitted",
+        "reason": "301591身份已核对；不在本地09:26固定20行推荐中，只能说该本地快照未发出同名候选，不能推断老师模式池为零或否定老师口述。",
+        "entry_and_fill": "unknown"
+      },
+      {
+        "surface_form": "美农生物",
+        "source_claim": "同场四只之一，口述约亏3.4至3.5点",
+        "classification": "not_emitted",
+        "reason": "301156身份已核对；不在本地09:26固定20行推荐中，不代表老师盘中模式未命中。",
+        "entry_and_fill": "unknown"
+      },
+      {
+        "surface_form": "沃特股份",
+        "source_claim": "同场四只之一，口述约赚4.3点",
+        "classification": "not_emitted",
+        "reason": "002886身份已核对；不在本地09:26固定20行推荐中，不代表老师盘中模式未命中。",
+        "entry_and_fill": "unknown"
+      },
+      {
+        "surface_form": "强达电路",
+        "source_claim": "同场四只之一，结果未清楚给出",
+        "classification": "not_emitted",
+        "reason": "301628身份已核对；不在本地09:26固定20行推荐中，不代表老师盘中模式未命中。",
+        "entry_and_fill": "unknown"
+      },
+      {
+        "surface_form": "疑似澳弘电子",
+        "source_claim": "历史回看约40点",
+        "classification": "no_evidence",
+        "reason": "605058证券身份及本地同名候选存在，但来源ASR多形，不能靠名称近似确认老师所指或老师策略命中。",
+        "entry_and_fill": "unknown"
+      },
+      {
+        "surface_form": "莱美药业",
+        "source_claim": "历史“大肉”案例",
+        "classification": "no_evidence",
+        "reason": "300006身份可核对，但补充的同日09:26推荐和Paper B账本没有提供该历史案例的老师入场或成交。",
+        "entry_and_fill": "unknown"
+      }
+    ],
+    "local_strategy_benchmark_hits": [
+      {
+        "asset": "亚邦股份（603188）",
+        "classification": "emitted_strategy_hit",
+        "reason": "本地09:26固定推荐中唯一★E，N字低吸ACTIVE、目标权重0.5；本地Paper B于09:32:05以4.804买入15400股。老师未点名该股，不能称老师命中。"
+      },
+      {
+        "asset": "澳弘电子（605058）",
+        "classification": "emitted_strategy_hit",
+        "reason": "本地09:26固定推荐发出首红断低吸COLD候选，primary 341.69、rank 69.7，未被二级选择、非★E、目标权重0；这是本地发射记录，不证明来源ASR映射或老师命中。"
+      }
+    ],
+    "direction_core_observations": [
+      "本地09:26推荐共有20行，只有亚邦股份为★E；候选出现、ACTIVE、★E、目标权重和成交是不同事实。",
+      "本地Paper B精确同日行包括亚邦股份买入，以及09:35:39以7.01卖出旧持仓天顺风能9400股（HARD_STOP）；老师点名股票没有同日Paper B成交。",
+      "老师来源、本地推荐、本地Paper B和APP是不同证据命名空间；本审计没有APP证据。",
+      "缺少老师完整盘中模式池时，未知保持未知，不能把名单缺失归一化为零，也不能把名称重合称为老师策略命中。"
+    ],
+    "local_signal_inventory": {
+      "row_count": 20,
+      "only_star_E": {
+        "asset": "亚邦股份（603188）",
+        "mode": "N字低吸",
+        "state": "ACTIVE",
+        "target_weight": 0.5
+      },
+      "aohong": {
+        "asset": "澳弘电子（605058）",
+        "mode": "首红断低吸",
+        "state": "COLD",
+        "primary_score": 341.69,
+        "rank": 69.7,
+        "secondary_selected": false,
+        "star_E": false,
+        "target_weight": 0.0
+      }
+    },
+    "local_paper_b_exact_date": {
+      "buy": {
+        "asset": "亚邦股份（603188）",
+        "time": "09:32:05",
+        "shares": 15400,
+        "price": 4.804
+      },
+      "exit_old_position": {
+        "asset": "天顺风能（002531）",
+        "time": "09:35:39",
+        "shares": 9400,
+        "price": 7.01,
+        "reason": "HARD_STOP"
+      },
+      "teacher_named_stock_fills": []
+    },
+    "audit_limit": "本地固定快照和Paper B账本只证明独立本地系统的发射与成交；老师约09:31池、老师分数、老师入场、老师成交与老师收益仍未知。",
+    "normalization_note": "早先空证券目录是字段规范化错误而非证券缺失；仅作内部审计，不据此把任何老师模式名单归零。"
+  },
+  "action_summary": {
+    "posture_update": "not_applied：来源日期短线窗口已过，补充证据不恢复时效，不改写全局姿态。",
+    "playbook_update": "proposal_only：保留空仓基准、按原始模式词分开审计、秒级首次过阈值与反前视回填方法，authority=0。",
+    "hypothesis_update": "reuse_and_bound：XH-178、XH-235使用登记簿原claim追加精确复发支持；XH-199使用原claim但只标独立机制支持；XH-246部分支持和XH-247相关扩展不放入hypotheses。",
+    "audit_evidence": "reviewed：完整148段来源、一手政策与宏观链接、20行09:26本地推荐、同日Paper B精确账本；三套命名空间分开。",
+    "instrumentation_todo": "no_issue_created：若后续研究获授权，冻结老师逐秒完整模式池、首次过阈值、可成交价、下单与成交，并按模式分别保存。",
+    "routing": [
+      "authority_0_only",
+      "reuse_exact_claim_XH-178",
+      "reuse_exact_claim_XH-235",
+      "independent_support_XH-199",
+      "partial_XH-246_not_ingested",
+      "related_XH-247_not_ingested",
+      "strategy_hit_audit",
+      "no_strategy_or_parameter_change",
+      "parent_single_file_ingestion_authority_0",
+      "no_book_execution"
+    ]
+  },
+  "dedup_review": {
+    "status": "completed",
+    "new_hypothesis_ids": [],
+    "reason": "XH-178、XH-235使用登记簿原claim作精确复发；XH-199使用原claim作独立机制支持；XH-246仅部分支持，XH-247仅相关扩展，后两者不进入hypotheses。",
+    "curation_boundary": "父级流程按正式归档JSON结构去重；本草稿不执行知识入库，也不把口述案例称为实证确认。"
+  },
+  "limitations": [
+    "来源含口播转录误差；证券目录只能核对名称代码，不能证明老师榜单、分数、入场或成交。",
+    "央行材料只支持2026年9月末M2为359.63万亿元、同比7.2%；不支持跨币种比较、70万亿或100万亿债务估算、资产价格保证或因果结论。",
+    "本地09:26推荐与Paper B成交属于本地系统证据，不属于APP或老师交易证据，也不能用于家庭持仓推断。",
+    "复发记录是authority=0支持建议，不是经验胜率或因果关系的实证确认。"
+  ],
+  "knowledge_judgment": {
+    "authority": 0,
+    "exact_recurrence_support": [
+      "XH-178",
+      "XH-235"
+    ],
+    "independent_support": [
+      {
+        "registry_id": "XH-199",
+        "boundary": "来源明确住房财富缩水到消费收缩；进一步到权益市场修复仍是可证伪研究假设，不是实证确认。"
+      }
+    ],
+    "partial_or_related_not_ingested": [
+      {
+        "registry_id": "XH-246",
+        "relationship": "partial_support",
+        "reason": "既有命题同时包含低吸100分与起爆1000分；本场只支持低吸侧100分，不能整条复发。"
+      },
+      {
+        "registry_id": "XH-247",
+        "relationship": "related_extension",
+        "reason": "既有命题特指13日、14日缺失监控偏差；本场事后赢家回填是相关前视偏差扩展，不是同一事实复发。"
+      }
+    ],
+    "empirical_confirmation": false,
+    "reason": "单场口述只提供精确复发、独立机制支持或方法扩展，不提供胜率和因果关系的实证确认；父级流程负责正式归档结构与去重。"
+  },
+  "operational_provenance": {
+    "accepted_original_draft": {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_xiaocao_live/semantic_requests/kol-c9ee34cac249/.semantic_delegation/2336ce4a67db72556b1a19dc0e16b74530aded10974fc084b5c8dd0cd0ee698b/knowledge_draft.json",
+      "sha256": "82043b2d61a12cb5ba87bd88c1c3ce6b8bc050b33eedb9e2909d55842ca9aa44",
+      "size": 19103
+    },
+    "source_request": {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_xiaocao_live/semantic_requests/kol-c9ee34cac249/analysis_request.json",
+      "sha256": "2336ce4a67db72556b1a19dc0e16b74530aded10974fc084b5c8dd0cd0ee698b",
+      "size": 62072
+    },
+    "normalized_source_evidence": {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_netdisk_enrichment/artifacts/kol-netdisk-2348aace80f1fba1/20261015 大师班专场(晚17：30开播)-compressed.txt",
+      "sha256": "a8933f03f21fe44b9883e006c0722f9d690ce66a8479a34ea75d6cebc8410819",
+      "size_bytes": 57580,
+      "segment_count": 148,
+      "read_to_eof": true,
+      "size": 57580
+    },
+    "parent_acceptance": {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261027_01a17b31/video1015_parent_accepted.json",
+      "sha256": "0be67504d9b972bf54aef1a96b31d52cb47ce38dca67f1812ec23cf25ebbcc77",
+      "size": 4630
+    },
+    "private_archive_proof": {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261027_01a17b31/video1015_private_archive.json",
+      "sha256": "583d5f8abe0e29ec9e4251b121df085a5fc6dab1133f15c750ed3ba3bdb39c1b",
+      "size": 775
+    },
+    "market_evidence": {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261027_01a17b31/video1015_market_evidence.json",
+      "sha256": "17cc2c439887a49c6f92e801eb7fdf7c13e2d9b2279015c3550f46cbb5ddd90b",
+      "size": 2771
+    },
+    "supplemental_evidence": [
+      {
+        "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261027_01a17b31/video1015_supplemental_primary.json",
+        "sha256": "edbdcaf3eb1ea8826e0be863545fc7be8ba554e2fa3ffdbdd55458bf0fd3e47b",
+        "size": 8685
+      },
+      {
+        "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261027_01a17b31/video1015_security_directory_v2.json",
+        "sha256": "c3f5f41b708fc66aefacf656f3d71b36c3bd94d9cbf99c6f58f81d2023e983b6",
+        "size": 2563
+      },
+      {
+        "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261027_01a17b31/video1015_local_ledger_readback.json",
+        "sha256": "c790dc39236cab3da551e06b4d493316dc0dd7d5d0921ccce9b349cb083ba360",
+        "size": 27200
+      }
+    ],
+    "privacy_boundary": "Private raw transcript kept under output/private_evidence, excluded frompublicGit.",
+    "ingest_receipt": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261027_01a17b31/video1015_knowledge_ingest_receipt.json",
+    "feedback_assessment": "来源细化不利环境下空仓、秒级首名门槛与反前视；不构成持续性主跌统计确认，不能推翻仅单日/数日回调不自动空仓的既有校准。旧posture已过期，不复活。其余轮动和退出先验本场不构成验证。"
+  }
+}
