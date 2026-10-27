@@ -18,13 +18,23 @@ from zoneinfo import ZoneInfo
 from .enrichment_types import EnrichmentError, EnrichmentDiagnosticError
 
 
+def _course_title_key(title: str) -> str:
+    """Ignore the downloader's width, spacing and decorative bell formatting."""
+    normalized = "".join(
+        chr(ord(char) - 0xFEE0) if 0xFF01 <= ord(char) <= 0xFF5E else char
+        for char in title
+    )
+    return "".join(normalized.replace("🔔", "").replace("\ufe0f", "").split())
+
+
 def verify_course_metadata(candidate: dict, lineage: dict, published_at: str) -> dict:
     """Match the observed title and merchant session to the original publication."""
     title = str(candidate.get("title") or "").strip()
     merchant_title = str(lineage.get("course_title") or "").strip()
+    title_key = _course_title_key(title)
     published = datetime.fromisoformat(published_at)
     timestamp = lineage.get("course_start_at")
-    if (not title or title != merchant_title or published.tzinfo is None
+    if (not title_key or title_key != _course_title_key(merchant_title) or published.tzinfo is None
         or isinstance(timestamp, bool) or not isinstance(timestamp, (int, float))):
         raise EnrichmentError("course title or merchant session unavailable")
     try:
@@ -36,19 +46,20 @@ def verify_course_metadata(candidate: dict, lineage: dict, published_at: str) ->
         or (started.hour < 12) != (published.hour < 12)):
         raise EnrichmentError("course session conflicts with original publication")
     morning = published.hour < 12
-    if ((morning and "盘前大师班" not in title)
-        or (not morning and ("大师班专场" not in title or "盘前" in title))):
+    if ((morning and "盘前大师班" not in title_key)
+        or (not morning and ("大师班专场" not in title_key or "盘前" in title_key))):
         raise EnrichmentError("course title does not match the original Xiaocao session")
     # A title with an explicit date cannot contradict the actual merchant date.
-    for match in re.finditer(r"(?:(\d{4})年)?(\d{1,2})月(\d{1,2})日", title):
+    for match in re.finditer(r"(?:(\d{4})年)?(\d{1,2})月(\d{1,2})日", title_key):
         year, month, day = match.groups()
         if ((year and int(year) != started.year)
             or int(month) != started.month or int(day) != started.day):
             raise EnrichmentError("course title date conflicts with merchant session")
-    for match in re.finditer(r"(?<!\d)(\d{4})[-/.]?(\d{2})[-/.]?(\d{2})(?!\d)", title):
+    for match in re.finditer(r"(?<!\d)(\d{4})[-/.]?(\d{2})[-/.]?(\d{2})(?!\d)", title_key):
         if tuple(map(int, match.groups())) != (started.year, started.month, started.day):
             raise EnrichmentError("course title date conflicts with merchant session")
     return {"method": "merchant_title_and_session", "title": title,
+            "merchant_title": merchant_title,
             "course_start_at": started.isoformat(), "source_published_at": published_at,
             "metadata_anchors": lineage["metadata_anchors"]}
 

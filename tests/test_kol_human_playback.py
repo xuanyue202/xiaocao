@@ -142,6 +142,40 @@ def test_course_metadata_uses_merchant_title_and_original_session(bad):
         assert proof['title'] == candidate['title']
 
 
+@pytest.mark.parametrize('title,accepted', [
+    ('大师班专场(18：00开播)', True),
+    ('大师班专场（ 🔔️18:00 开播 ）', True),
+    ('大师班专场(19：00开播)', False),
+    ('另一大师班专场(18：00开播)', False),
+    ('大师班专场(18：00开播)10月26日', False),
+    ('🔔️', False),
+])
+def test_course_metadata_accepts_only_observed_display_formatting(title, accepted):
+    lineage = {'course_title': '大师班专场（🔔18:00开播）',
+               'course_start_at': 1793095200, 'metadata_anchors': []}
+    if not accepted:
+        with pytest.raises(EnrichmentError):
+            human.verify_course_metadata({'title': title}, lineage, '2026-10-27T16:37:00+08:00')
+        return
+    proof = human.verify_course_metadata({'title': title}, lineage, '2026-10-27T16:37:00+08:00')
+    assert proof['title'] == title
+    assert proof['merchant_title'] == lineage['course_title']
+    with pytest.raises(EnrichmentError):
+        human.verify_course_metadata({'title': title}, lineage, '2026-10-26T16:37:00+08:00')
+
+
+@pytest.mark.parametrize('title,merchant_title', [
+    ('大师班专场10 月26日(18：00开播)', '大师班专场10月26日（🔔18:00开播）'),
+    ('大师班专场(18:00开播)2026－10－26', '大师班专场（🔔18:00开播）2026-10-26'),
+    ('大师班专场①(18：00开播)', '大师班专场1（🔔18:00开播）'),
+])
+def test_course_title_formatting_preserves_conflicting_dates_and_number_labels(title, merchant_title):
+    lineage = {'course_title': merchant_title, 'course_start_at': 1793095200,
+               'metadata_anchors': []}
+    with pytest.raises(EnrichmentError):
+        human.verify_course_metadata({'title': title}, lineage, '2026-10-27T16:37:00+08:00')
+
+
 def test_unbound_exact_title_verifies_before_binding_without_human(monkeypatch, tmp_path):
     import xiaocao.kol.xiaocao_wechat as wechat
     row = candidate(title='盘前大师班直播10月27日')
