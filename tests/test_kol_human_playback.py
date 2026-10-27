@@ -115,7 +115,48 @@ def test_unbound_human_media_never_binds_an_unrelated_or_unconfirmed_course(monk
     assert driver.observe_human_playback('original','capture-original',observed_after=NOW)['reason'] == 'media_pending'
     rows[0]['source_url'] = rows[0]['source_url'].replace('apporiginal','appsnm3rlcp3566')
     result = driver.observe_human_playback('original','capture-original',observed_after=NOW)
-    assert result['reason'] == 'source_confirmation_required' and result['observed'] is False
+    assert result['reason'] == 'course_metadata_unverified' and result['observed'] is False
+
+
+@pytest.mark.parametrize('bad', ['', 'title', 'date', 'session', 'missing_time', 'title_date',
+                                  'unrelated', 'compact_date', 'iso_date'])
+def test_course_metadata_uses_merchant_title_and_original_session(bad):
+    candidate = {'title':'盘前大师班直播10月27日'}
+    lineage = {'course_title':candidate['title'], 'course_start_at':1793064000,
+               'metadata_anchors':[{'base_info_sha256':'a'*64}]}
+    if bad == 'title': candidate['title'] = '另一门课'
+    if bad == 'date': lineage['course_start_at'] -= 86400
+    if bad == 'session': lineage['course_start_at'] += 9*3600
+    if bad == 'missing_time': lineage.pop('course_start_at')
+    if bad == 'title_date':
+        candidate['title'] = lineage['course_title'] = '盘前大师班直播10月26日'
+    if bad == 'unrelated': candidate['title'] = lineage['course_title'] = '无关课程'
+    if bad == 'compact_date': candidate['title'] = lineage['course_title'] = '20261026 盘前大师班'
+    if bad == 'iso_date': candidate['title'] = lineage['course_title'] = '2026-10-26 盘前大师班'
+    if bad:
+        with pytest.raises(EnrichmentError):
+            human.verify_course_metadata(candidate,lineage,'2026-10-27T08:33:00+08:00')
+    else:
+        proof = human.verify_course_metadata(candidate,lineage,'2026-10-27T08:33:00+08:00')
+        assert proof['method'] == 'merchant_title_and_session'
+        assert proof['title'] == candidate['title']
+
+
+def test_unbound_exact_title_verifies_before_binding_without_human(monkeypatch, tmp_path):
+    import xiaocao.kol.xiaocao_wechat as wechat
+    row = candidate(title='盘前大师班直播10月27日')
+    row['source_url'] = 'https://xet.kj1team.cn/_alive/v2/get_lookback_url'
+    driver = object.__new__(XiaocaoLiveCaptureDriver)
+    monkeypatch.setattr(driver,'_service',lambda _:SimpleNamespace(
+        sniffer=SimpleNamespace(candidates=lambda:[row]),sniffer_binary=tmp_path/'sniffer'))
+    monkeypatch.setattr(wechat,'_native_v2_merchant_lineage',lambda *a,**kw:{
+        'course_title':row['title'],'course_start_at':1793064000,'metadata_anchors':[{'base_info_sha256':'a'*64}]})
+    binds=[]
+    monkeypatch.setattr(driver,'bind_mini_program_capture',lambda *a,**kw:binds.append((a,kw)))
+    result=driver.observe_human_playback('original','capture-original',observed_after=NOW,
+        published_at='2026-10-27T08:33:00+08:00')
+    assert result['observed'] is True and len(binds)==1
+    assert result['source_verification']['title']==row['title']
 
 
 def test_network_owner_is_exclusive_before_snapshot_and_preserves_unchanged_proxy(tmp_path, monkeypatch):

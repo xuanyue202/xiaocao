@@ -290,6 +290,7 @@ def test_repair_cli_checks_source_slot_before_progress_or_callback(tmp_path, mon
     monkeypatch.setattr(kol_daily, "_resume_source_repair_outcome", lambda *_args, **_kwargs: pytest.fail("duplicate repair"))
     monkeypatch.setattr(sys, "argv", [
         "kol_daily.py", "resume-source-repair", "--output-dir", str(tmp_path),
+        "--xiaocao-wechat-output-dir", str(tmp_path / "wechat"),
         "--source-adapter", "xiaocao_wechat_live", "--failure-fingerprint", "a" * 64,
     ])
     with owner._source_locked("xiaocao_wechat_live"):
@@ -307,6 +308,7 @@ def test_local_continuation_cli_uses_canonical_source_slot(tmp_path, monkeypatch
     monkeypatch.setattr(kol_daily.DailyRuntime, method, lambda *_args, **_kwargs: pytest.fail("duplicate continuation"))
     monkeypatch.setattr(sys, "argv", [
         "kol_daily.py", command, "--output-dir", str(tmp_path),
+        "--xiaocao-wechat-output-dir", str(tmp_path / "wechat"),
         "--source-identity", "original-video",
     ])
     with owner._source_locked(source):
@@ -333,6 +335,7 @@ def test_busy_continuation_cli_reports_wait_instead_of_repair_failure(tmp_path):
         result = subprocess.run([
             sys.executable, str(Path(kol_daily.__file__).resolve()),
             "capture-xiaocao-item", "--output-dir", str(tmp_path),
+            "--xiaocao-wechat-output-dir", str(tmp_path / "wechat"),
             "--source-identity", "original-video",
         ], capture_output=True, text=True, timeout=5)
     assert result.returncode == 0, result.stderr

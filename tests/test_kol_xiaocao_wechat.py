@@ -2772,8 +2772,8 @@ def test_human_playback_restart_preserves_entry_and_backoff_and_never_uses_nativ
     assert len(observations) == 2
 
 
-@pytest.mark.parametrize('confirmed', [True, False])
-def test_human_source_requires_direct_exact_confirmation_before_binding(tmp_path, monkeypatch, confirmed):
+@pytest.mark.parametrize('verified', [True, False])
+def test_human_source_uses_machine_evidence_without_confirmation(tmp_path, monkeypatch, verified):
     from contextlib import nullcontext
     from datetime import timedelta
     import xiaocao.yangsheng.capture as shared
@@ -2786,25 +2786,26 @@ def test_human_source_requires_direct_exact_confirmation_before_binding(tmp_path
     proposals = []
     def observe(*args, **kwargs):
         proposals.append(kwargs)
-        return dict(observed=bool(kwargs['expected_source']), reason='verified' if kwargs['expected_source'] else 'source_confirmation_required', source_identity='xiaoetong:appsnm3rlcp3566:l_original', candidate_id='fresh', live_id='l_original')
+        return dict(observed=verified, reason='verified' if verified else 'course_metadata_unverified',
+                    source_identity='xiaoetong:appsnm3rlcp3566:l_original', candidate_id='fresh',
+                    live_id='l_original', source_verification={'method':'merchant_title_and_session'})
     driver.observe_human_playback = observe
-    confirmations = []
-    def exchange(request):
-        confirmations.append(request)
-        assert request['action']=='confirm_xiaoetong_human_source'
-        return {key:request[key] for key in ('action','subscription_id','capture_job_id','candidate_id','source_identity')} | {'human_confirmed':confirmed}
-    sub = XiaocaoWechatLiveSubscription(tmp_path/'wechat', history_reader=lambda:{}, browser_exchange=exchange,capture_driver=driver,clock=lambda:now)
+    sub = XiaocaoWechatLiveSubscription(tmp_path/'wechat', history_reader=lambda:{},
+        browser_exchange=lambda _:pytest.fail('no repeated human confirmation'),
+        capture_driver=driver, clock=lambda:now)
     manifest = sub._load()
     item = parse_xiaocao_live_messages(_history('[2026-10-26 08:32] 小花: #小程序://见势擒龙团/original'))[0]
-    item.update(status='awaiting_playback',capture_job_id='kol-original',human_playback_started_at=(now-timedelta(minutes=1)).isoformat(),human_playback_nonce='f'*32)
+    item.update(status='awaiting_playback',capture_job_id='kol-original',
+                human_playback_started_at=(now-timedelta(minutes=1)).isoformat(),human_playback_nonce='f'*32)
     manifest['items'][item['identity']] = item; sub._save(manifest)
     item = sub._check_mini_program_playback(manifest,item,reason='awaiting_playback')
-    assert not item.get('activated') and not proposals[0]['expected_source']
-    now += timedelta(seconds=20)
-    item = sub._check_mini_program_playback(manifest,item,reason='awaiting_playback')
-    assert item.get('activated') is True if confirmed else item.get('activated') is not True
-    assert len(confirmations)==1
-    assert bool(proposals[1]['expected_source']) is confirmed
+    assert bool(item.get('activated')) is verified
+    assert proposals[0]['published_at'] == item['published_at']
+    assert not item.get('human_confirmed_source_identity')
+    if verified:
+        assert item['source_verification']['method'] == 'merchant_title_and_session'
+    else:
+        assert item['human_playback_observation'] == 'course_metadata_unverified'
 
 
 def test_human_deferral_preserves_original_and_allows_next_course(tmp_path):

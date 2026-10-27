@@ -7,13 +7,50 @@ import fcntl
 import hashlib
 import json
 import os
+import re
 import select
 from pathlib import Path
 import subprocess
 import sys
 from urllib.parse import parse_qs, urlencode, urlsplit
+from zoneinfo import ZoneInfo
 
 from .enrichment_types import EnrichmentError, EnrichmentDiagnosticError
+
+
+def verify_course_metadata(candidate: dict, lineage: dict, published_at: str) -> dict:
+    """Match the observed title and merchant session to the original publication."""
+    title = str(candidate.get("title") or "").strip()
+    merchant_title = str(lineage.get("course_title") or "").strip()
+    published = datetime.fromisoformat(published_at)
+    timestamp = lineage.get("course_start_at")
+    if (not title or title != merchant_title or published.tzinfo is None
+        or isinstance(timestamp, bool) or not isinstance(timestamp, (int, float))):
+        raise EnrichmentError("course title or merchant session unavailable")
+    try:
+        started = datetime.fromtimestamp(timestamp, ZoneInfo("Asia/Shanghai"))
+    except (ValueError, OverflowError, OSError) as exc:
+        raise EnrichmentError("course merchant session invalid") from exc
+    published = published.astimezone(ZoneInfo("Asia/Shanghai"))
+    if (started.date() != published.date()
+        or (started.hour < 12) != (published.hour < 12)):
+        raise EnrichmentError("course session conflicts with original publication")
+    morning = published.hour < 12
+    if ((morning and "盘前大师班" not in title)
+        or (not morning and ("大师班专场" not in title or "盘前" in title))):
+        raise EnrichmentError("course title does not match the original Xiaocao session")
+    # A title with an explicit date cannot contradict the actual merchant date.
+    for match in re.finditer(r"(?:(\d{4})年)?(\d{1,2})月(\d{1,2})日", title):
+        year, month, day = match.groups()
+        if ((year and int(year) != started.year)
+            or int(month) != started.month or int(day) != started.day):
+            raise EnrichmentError("course title date conflicts with merchant session")
+    for match in re.finditer(r"(?<!\d)(\d{4})[-/.]?(\d{2})[-/.]?(\d{2})(?!\d)", title):
+        if tuple(map(int, match.groups())) != (started.year, started.month, started.day):
+            raise EnrichmentError("course title date conflicts with merchant session")
+    return {"method": "merchant_title_and_session", "title": title,
+            "course_start_at": started.isoformat(), "source_published_at": published_at,
+            "metadata_anchors": lineage["metadata_anchors"]}
 
 
 def _claim_json(path: Path, value: dict) -> None:

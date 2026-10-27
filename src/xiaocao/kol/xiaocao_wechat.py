@@ -192,6 +192,8 @@ def _native_v2_merchant_lineage(
             finite = _observed_native_finite_playlist(candidate, root, armed_at, captured_at)
     return {
         "method": "native_v2_merchant_response",
+        "course_title": str(info.get("title") or "").strip(),
+        "course_start_at": info.get("zb_start_at"),
         "media_resource_sha256": _sha256_text(resource),
         "metadata_anchors": [{"candidate_id": candidate["id"], "source_host": origin.hostname,
             "source_path": origin.path, "json_path": candidate["json_path"],
@@ -861,7 +863,8 @@ class XiaocaoLiveCaptureDriver:
 
     def observe_human_playback(self, identity: str, capture_job_id: str, *,
                                observed_after: datetime,
-                               expected_source: str = "") -> dict[str, Any]:
+                               expected_source: str = "",
+                               published_at: str = "") -> dict[str, Any]:
         """Select only a unique fresh merchant source; the existing binder proves media."""
         service = self._service(identity)
         sources: dict[str, list[dict[str, Any]]] = {}
@@ -902,10 +905,21 @@ class XiaocaoLiveCaptureDriver:
             return {"observed": False, "reason": "ambiguous_sources" if sources else "media_pending"}
         source, candidates = next(iter(sources.items()))
         candidate = max(candidates, key=lambda row: (str(row.get("captured") or ""), str(row.get("id") or "")))
+        verification = {}
         if not expected_source:
-            return {"observed": False, "reason": "source_confirmation_required",
-                    "source_identity": source, "candidate_id": str(candidate.get("id") or ""),
-                    "live_id": str(candidate["live_id"])}
+            from .human_playback import verify_course_metadata
+            try:
+                captured = datetime.fromisoformat(str(candidate["captured"]))
+                if captured.tzinfo is None:
+                    captured = captured.replace(tzinfo=BEIJING)
+                lineage = _native_v2_merchant_lineage(candidate,
+                    app_id="appsnm3rlcp3566", live_id=str(candidate["live_id"]),
+                    armed_at=observed_after, captured_at=captured,
+                    debug_root=(service.sniffer_binary.parent / "elive_live_debug")
+                    if hasattr(service, "sniffer_binary") else None)
+                verification = verify_course_metadata(candidate, lineage, published_at)
+            except (EnrichmentError, ValueError, KeyError):
+                return {"observed": False, "reason": "course_metadata_unverified"}
         try:
             self.bind_mini_program_capture(identity, capture_job_id,
                 source_identity=source, candidate_id=str(candidate.get("id") or ""),
@@ -917,7 +931,8 @@ class XiaocaoLiveCaptureDriver:
                 return {"observed": False, "reason": "finite_media_not_yet_verified"}
             raise
         return {"observed": True, "source_identity": source,
-                "candidate_id": str(candidate["id"]), "live_id": str(candidate["live_id"])}
+                "candidate_id": str(candidate["id"]), "live_id": str(candidate["live_id"]),
+                **({"source_verification": verification} if verification else {})}
 
     def refresh_failed_native_capture(
         self, identity: str, capture_job_id: str, *, candidate_id: str,
@@ -2351,6 +2366,7 @@ class XiaocaoWechatLiveSubscription:
                 observation = self.capture_driver.observe_human_playback(
                     item["identity"], item["capture_job_id"],
                     observed_after=datetime.fromisoformat(item["human_playback_started_at"]),
+                    published_at=item["published_at"],
                     expected_source=str(item.get("source_identity") or item.get("human_confirmed_source_identity") or ""))
         except (SnifferError, URLError):
             observation = {"observed": False, "reason": "listener_transport_pending"}
@@ -2358,36 +2374,6 @@ class XiaocaoWechatLiveSubscription:
             if exc.diagnostic_category != "transport_error":
                 raise
             observation = {"observed": False, "reason": "listener_transport_pending"}
-        if (observation.get("reason") == "source_confirmation_required"
-            and observation.get("candidate_id") != item.get("human_source_rejected_candidate")):
-            # The share token is opaque. Fresh traffic alone cannot establish
-            # which original publication it belongs to. Ask the human once for
-            # this exact proposed binding; never synthesize a UI observation.
-            request = {
-                "event": "daily_browser_input_required", "adapter": "xiaocao_wechat_live",
-                "action": "confirm_xiaoetong_human_source", "operator": "human",
-                "subscription_id": item["identity"], "capture_job_id": item["capture_job_id"],
-                "published_at": item["published_at"],
-                "source_identity": observation["source_identity"], "candidate_id": observation["candidate_id"],
-                "instructions": "必须向人类确认：刚才手动打开并播放的是否为本发布时间的原课程。"
-                    "不得自动回答，不读取/点击/截图微信。仅在直接人类确认后返回 human_confirmed:true，"
-                    "并原样返回本请求 action/subscription_id/capture_job_id/source_identity/candidate_id。",
-            }
-            with lifecycle_lease():
-                response = self._exchange_browser(request, item)
-            self._validate_browser_response(request, response)
-            if any(response.get(key) != request[key] for key in ("capture_job_id", "source_identity", "candidate_id")):
-                raise EnrichmentError("human source confirmation changed its exact binding")
-            if response.get("human_confirmed") is True:
-                return self._transition(manifest, item, item["status"],
-                    human_playback_next_poll_at=self._now(),
-                    human_playback_observation="confirmed_source_pending",
-                    human_confirmed_source_identity=observation["source_identity"],
-                    human_confirmed_candidate_id=observation["candidate_id"],
-                    human_source_confirmed_at=self._now())
-            else:
-                item = self._transition(manifest, item, item["status"],
-                    human_source_rejected_candidate=observation["candidate_id"])
         if observation.get("observed") is True:
             return self._transition(manifest, item, "playback_activated", activated=True,
                 playback_operator="human", media_request_observed=True,
@@ -2395,6 +2381,7 @@ class XiaocaoWechatLiveSubscription:
                 observed_page_state="mini_program_media_observed",
                 source_identity=observation["source_identity"], source_resource_id=observation["live_id"],
                 candidate_id=observation["candidate_id"], playback_window_closed=False,
+                source_verification=observation.get("source_verification") or {},
                 playback_window_cleanup_owner="human", user_action_required=False)
         attempt = int(item.get("human_playback_poll_attempt", 0)) + 1
         return self._transition(manifest, item, "awaiting_playback",
