@@ -4684,9 +4684,11 @@ def test_daily_status_preserves_specific_video_waiting_stage(tmp_path):
     assert calls == 2
 
 
+@pytest.mark.parametrize("claim_binding", ["matching", "missing", "changed"])
 def test_video_provider_wait_preserves_failure_for_progress_projection(
     tmp_path,
     monkeypatch,
+    claim_binding,
 ):
     identity = "a" * 64
     version = "b" * 64
@@ -4714,6 +4716,9 @@ def test_video_provider_wait_preserves_failure_for_progress_projection(
                 "next_poll_not_before": "2026-08-08T11:00:00+08:00",
                 "reconciliation_status": "exact_private_copy_absent",
                 "trigger_attempt": 2,
+                "trigger_attempt_maximum": 2,
+                "claim_id": "d" * 64,
+                "side_effect_uncertain": True,
             }
 
     monkeypatch.setattr(
@@ -4730,6 +4735,20 @@ def test_video_provider_wait_preserves_failure_for_progress_projection(
         enrichment_session="enrichment",
         opencli_profile="work",
     )
+
+    claim_path = runtime.args.video_output_dir / "claims" / f"lv_transfer_{version}.json"
+    claim_path.parent.mkdir(parents=True)
+    if claim_binding != "missing":
+        claim_path.write_text(json.dumps({
+            "claim_id": ("e" if claim_binding == "changed" else "d") * 64,
+            "source_identity": identity,
+            "source_version_key": version,
+        }))
+
+    if claim_binding != "matching":
+        with pytest.raises(DailyError, match="wait claim binding changed"):
+            runtime.videos(only_identity=identity, refresh_listing=False)
+        return
 
     result = runtime.videos(
         only_identity=identity,
@@ -4753,6 +4772,12 @@ def test_video_provider_wait_preserves_failure_for_progress_projection(
     )
     assert progress.status == "wait_until"
     assert progress.details["category"] == "provider_wait"
+    assert progress.details["attempt_budget"] == {"attempted": 2, "maximum": 2}
+    assert progress.details["claim_receipt_summary"] == {
+        "claim_count": 1,
+        "receipt_count": 0,
+        "uncertain_effect_count": 1,
+    }
 
 
 def test_daily_resume_wait_runs_only_exact_due_source(tmp_path):

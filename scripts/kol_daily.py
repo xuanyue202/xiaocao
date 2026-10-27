@@ -3532,6 +3532,7 @@ class DailyRuntime:
         events = []
         waiting = 0
         waiting_items = []
+        pending_transfer_claims: dict[str, bool] = {}
         for item in pending:
             state = _persisted_video_analysis_request(
                 self.args.video_output_dir,
@@ -3655,6 +3656,9 @@ class DailyRuntime:
                         "status": state_status,
                         "stage": state_stage,
                         "trigger_attempt": state.get("trigger_attempt"),
+                        "trigger_attempt_maximum": state.get(
+                            "trigger_attempt_maximum"
+                        ),
                         "next_poll_not_before": state.get(
                             "next_poll_not_before"
                         ),
@@ -3681,6 +3685,20 @@ class DailyRuntime:
                         "retryable": True,
                     }
                 waiting_items.append(waiting_item)
+                if state_stage == "cloud_transfer_confirmation" and state.get("claim_id"):
+                    claim_id = str(state["claim_id"])
+                    binding = _lv_transfer_claim_binding(
+                        self.args.video_output_dir, item,
+                    )
+                    if binding.get("claim_identity") != (
+                        f"lv_transfer:{item['version_key']}:{claim_id}"
+                    ):
+                        raise DailyError("Lv transfer wait claim binding changed")
+                    waiting_item.update(binding)
+                    pending_transfer_claims[claim_id] = (
+                        pending_transfer_claims.get(claim_id, False)
+                        or state.get("side_effect_uncertain") is True
+                    )
                 continue
             semantic_request = {
                     **state,
@@ -3742,6 +3760,11 @@ class DailyRuntime:
             "status": "waiting",
             "waiting_count": waiting,
             "waiting_items": waiting_items,
+            **({"claim_receipt_summary": {
+                "claim_count": len(pending_transfer_claims),
+                "receipt_count": 0,
+                "uncertain_effect_count": sum(pending_transfer_claims.values()),
+            }} if pending_transfer_claims else {}),
         }
 
     def videos_reconcile(self, progress: WriterProgress) -> dict[str, Any]:

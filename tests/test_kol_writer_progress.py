@@ -506,6 +506,46 @@ def test_read_only_provider_reconciliation_wait_is_not_an_uncertain_effect():
     }
 
 
+@pytest.mark.parametrize("extra_uncertainty", [False, True])
+def test_bound_transfer_wait_preserves_uncertainty_precedence(extra_uncertainty):
+    item = {
+        "identity": "transfer-1",
+        "stage": "cloud_transfer_confirmation",
+        "category": "provider_wait",
+        "code": "waiting_cloud_transfer_receipt",
+        "next_poll_not_before": "2026-08-08T12:30:00+08:00",
+        "trigger_attempt": 1,
+        "trigger_attempt_maximum": 2,
+        "effect_kind": "cloud_transfer",
+        "claim_identity": "lv_transfer:version-1:claim-1",
+        "readback_operation": "read_lv_transfer_claim_receipt",
+    }
+    items = [item]
+    if extra_uncertainty:
+        items.append({
+            **item,
+            "identity": "transfer-2",
+            "category": "uncertain_state",
+            "claim_identity": "lv_transfer:version-2:claim-2",
+        })
+    progress = normalize_source_result(
+        "subscription_video",
+        {
+            "status": "waiting",
+            "waiting_items": items,
+            "claim_receipt_summary": {
+                "claim_count": len(items),
+                "receipt_count": 0,
+                "uncertain_effect_count": len(items),
+            },
+        },
+        failure_revision=FAILURE_REVISION,
+        provider_contract_version="xiaocao_writer_v1",
+    )
+    assert progress.status == ("reconcile_required" if extra_uncertainty else "wait_until")
+    assert progress.details["claim_receipt_summary"]["uncertain_effect_count"] == len(items)
+
+
 def test_post_claim_lv_browser_eval_projects_download_repair_profile():
     progress = normalize_source_result(
         "lv_text_image",

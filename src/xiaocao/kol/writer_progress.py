@@ -2916,7 +2916,22 @@ def normalize_source_result(
         or (item or {}).get("code")
         or "progress_deadline_missing"
     )
-    if category == "uncertain_state" or summary["uncertain_effect_count"]:
+    deadline = str((item or {}).get("next_poll_not_before") or "").strip()
+    bounded_transfer_wait = (
+        len(items) == 1
+        and summary["claim_count"] == 1
+        and summary["uncertain_effect_count"] <= 1
+        and category == "provider_wait"
+        and stage == "cloud_transfer_confirmation"
+        and bool(deadline)
+        and (item or {}).get("effect_kind") == "cloud_transfer"
+        and bool((item or {}).get("claim_identity"))
+        and (item or {}).get("readback_operation")
+        == "read_lv_transfer_claim_receipt"
+    )
+    if category == "uncertain_state" or (
+        summary["uncertain_effect_count"] and not bounded_transfer_wait
+    ):
         claim_identity = str((item or {}).get("claim_identity") or "")
         readback_operation = str(
             (item or {}).get("readback_operation") or ""
@@ -2939,7 +2954,6 @@ def normalize_source_result(
             )
         category = "control_plane_handler_error"
         code = "uncertain_effect_lacks_readback_binding"
-    deadline = str((item or {}).get("next_poll_not_before") or "").strip()
     if deadline:
         attempted = int((item or {}).get("trigger_attempt") or 1)
         maximum = max(
