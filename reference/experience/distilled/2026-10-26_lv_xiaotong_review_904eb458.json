@@ -1,0 +1,402 @@
+{
+  "date": "2026-10-26",
+  "kind": "吕晓彤投资框架复盘",
+  "summary": "以模型收入、融资能力和资本回报向下验证AI硬件需求；把互联网式扩散与房地产式集中作为互斥情景；区分平台与供应商；把社群环境和既有仓位造成的确认偏误纳入执行复盘。全部为authority=0候选，不改变小草全局姿态、策略、仓位或参数。",
+  "author": "吕晓彤",
+  "source": "百度网盘订阅视频《10月26日》完整转写",
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_subscription_videos/enrichment/598122c743eb5c3e4411a2d0bc39b3d067b2cbe9064a5be152be7126e798cde0/artifacts/kol-netdisk-cloud-bc8415cd2065dfe1/10月26日.txt",
+      "sha256": "904eb45893e4b47423a250718879ece48c6b1a920dbed3c3a596e69122d18e2d",
+      "size": 71027
+    }
+  ],
+  "posture": {
+    "regime": "高利率与AI资本回报争议下的全球科技风险收缩；这是吕晓彤的来源判断，不更新小草全局姿态。",
+    "dominant_style": "传统AI硬件承压，物理AI与机器人出现相对轮动观察。",
+    "risk": "模型融资、资本开支回报、供应链利润和估值倍数可能同时恶化；大量具名公司信息仍是未核实转述。",
+    "style_ranking": [
+      "【系统整理】避险与等待确认",
+      "【系统整理】物理人工智能与机器人相对轮动观察",
+      "【系统整理】平台与模型候选；平台偏好主要来自作者转述的被引用观点，来源没有给出完整固定排序",
+      "【系统整理】传统人工智能硬件下游制造"
+    ]
+  },
+  "regime_call": {
+    "horizon": "2026-10-26之后数个交易日至数周；结构框架可跨期复用",
+    "call": "高利率与AI资本回报不确定性并存时，先等待需求、融资、订单和价格共同确认；不要把被套资产反弹视为必然。",
+    "what_would_falsify": "无风险收益率回落，同时多家模型的收入、融资和资本开支回报改善，并由供应链订单、盈利和广泛价格修复共同确认。"
+  },
+  "directions": [
+    {
+      "name": "AI硬件产业链",
+      "view": "先验证终端商业化、融资和资本回报，再看芯片、存储、半导体设备、光模块、MLCC、PCB。",
+      "authority": 0
+    },
+    {
+      "name": "物理AI与机器人",
+      "view": "来源观察为近期相对强势；产业成立需由系统另行核验产品、订单、交付和现金流。",
+      "authority": 0
+    },
+    {
+      "name": "人民币半导体设备",
+      "view": "来源只给出“相信产业链则看、不相信则轻”的条件分支，没有具体标的或执行参数。",
+      "authority": 0
+    },
+    {
+      "name": "AI平台与供应商",
+      "view": "来源转述巴菲特式平台优先叙述；系统只把平台现金回报与供应商订单周期分开研究。",
+      "authority": 0
+    }
+  ],
+  "stocks": [
+    {
+      "name": "Alphabet/Google",
+      "role": "巴菲特相关转述中的平台候选；未核实持仓和采访。"
+    },
+    {
+      "name": "Meta",
+      "role": "平台候选及发债传闻；未核实。"
+    },
+    {
+      "name": "NVIDIA",
+      "role": "AI硬件链顶端与高位回购叙述；同期价格和回购动机未核实。"
+    },
+    {
+      "name": "SK hynix",
+      "role": "存储供应商与回购、下跌叙述；同期行情未核实。"
+    },
+    {
+      "name": "Anthropic",
+      "role": "约2万亿美元降至约1.5万亿美元的口述，原文数字和单位有转写噪声，未核实。"
+    },
+    {
+      "name": "DeepSeek",
+      "role": "约7000亿元估值和融资跳票传闻；来源明确说真假不知。"
+    },
+    {
+      "name": "Moonshot AI/Kimi",
+      "role": "约500亿美元入场、老股东寻求300亿或380亿转让的传闻；后两项单位未明确，全部未核实。"
+    },
+    {
+      "name": "智谱AI",
+      "role": "徐新转述中的候选平台之一。"
+    },
+    {
+      "name": "半导体设备、光模块、MLCC、PCB",
+      "role": "AI硬件需求向下传导的行业层级，不是具体买卖单。"
+    }
+  ],
+  "method_principles": [
+    "【来源】科技投资本身混沌，投资者需要形成自己的判断，不能选择性只听支持既有仓位的声音。",
+    "【系统】把互联网式扩散和房地产式集中并列，分别绑定收入、融资、资本开支、订单、盈利和价格证据。",
+    "【系统】平台与供应商分别评估定价权、资本开支负担、自由现金流、客户集中度和订单周期。",
+    "【系统】物理AI相对强势与产业验证分开，主题上涨不能替代产品、订单、交付和商业化证据。",
+    "【系统】社群互动和公开表达发生前保存决策计划，事后比较计划与实际执行偏差。"
+  ],
+  "exit_lessons": [
+    "作者自述原本想从韩国回来后清掉A股，却在直播和社群氛围中转为满仓；环境和既有立场可能改变退出执行。",
+    "作者在同一句口述中先说半仓，随即自我修正为四成、三成；这只是个人仓位约数，不证明半仓属于更早时点，也不是家庭模板。",
+    "当产业故事破裂时不能假定一定反弹；退出判断应依赖原情景是否仍成立。",
+    "指数持仓被作者口述为“无所谓”是个人例外，不能扩展成指数无风险或家庭可继续持有的系统结论。"
+  ],
+  "hypotheses": [
+    {
+      "claim": "当通用模型市场从多家竞争转为少数赢家时，重复资本开支消失可能使多级硬件供应链同时遭遇订单和估值收缩。",
+      "implied_rule": "压力测试同时跟踪模型集中度、落败者融资、平台资本开支、供应商订单、产能利用率、盈利预期和估值倍数。",
+      "falsifiable_test": "比较模型集中度上升窗口中各级供应商订单、利润、产能利用率与估值变化；若赢家新增采购完全吸收退出者需求且供应链无共同收缩，则拒绝。",
+      "expected_effect": "识别顶层整合向下游传导的非线性风险。",
+      "category": "ai_supply_chain_concentration",
+      "provenance": "系统根据来源的房地产式情景归纳，非吕晓彤确定预测。",
+      "source_basis": [
+        "e59ec477f6523cb32324bb5816c9e16fb07d735199b51a55f57f96691a7b020b",
+        "79c4d30bc239a1530b1a818a10c95ad5413a2bf4237e73ca5fcc57d84bbe9b07",
+        "8b9a2ad6a0ff9de6edcb3fcfc8825bfb9cb5bc00fa4a326f20036fa7494f9277",
+        "a3294a91d0a2c39b24a766866d729549e24a7574e8f9834068f527265f46e3e8",
+        "18797ee5daac8a808e10b9356510946e169ec0999985662b1cdbd37075f4c199",
+        "1ca3fe1ace30a004aa1a414e63459238c57fb8a0823101b35fec5197a8255999",
+        "0ff451fb1ae9d348ffb79a181b5160294d45c378d90c28ffacae9647bd5e7b92"
+      ],
+      "related_existing_ids": [
+        "XH-296",
+        "XH-299"
+      ],
+      "dedup_boundary": "XH-296和XH-299关注平台融资韧性；本条关注模型集中后多级供应链的总需求与估值共同收缩。"
+    }
+  ],
+  "timing_notes": [
+    "来源日期为2026-10-26，语义处理日为2026-10-27。",
+    "观望、避险、物理AI相对轮动和指数例外属于当期判断，需随行情和事实过期复审。",
+    "资本回报传导、互斥情景、角色分离和行为偏差属于跨期研究框架。",
+    "所有未核实估值、融资、持仓、发债、回购与行情叙述保持来源归因，不进入事实层。"
+  ],
+  "typo_corrections": [
+    {
+      "raw": "athroo pic / ethro pic / a tropic / is oro pic",
+      "normalized": "Anthropic",
+      "confidence": "high_from_context"
+    },
+    {
+      "raw": "cloud",
+      "normalized": "可能指Claude",
+      "confidence": "low_do_not_force_entity"
+    },
+    {
+      "raw": "姑姑",
+      "normalized": "Google",
+      "confidence": "high_from_context"
+    },
+    {
+      "raw": "小智",
+      "normalized": "智谱AI",
+      "confidence": "medium_from_context"
+    },
+    {
+      "raw": "企鹅/小企鹅",
+      "normalized": "可能指腾讯",
+      "confidence": "medium_do_not_use_for_trade"
+    },
+    {
+      "raw": "办社",
+      "normalized": "未可靠识别的存储产业链主体",
+      "confidence": "unresolved"
+    },
+    {
+      "raw": "阿长/阿海",
+      "normalized": "未可靠识别的公司简称",
+      "confidence": "unresolved"
+    },
+    {
+      "raw": "直角二",
+      "normalized": "未可靠识别的早期项目",
+      "confidence": "unresolved"
+    },
+    {
+      "raw": "灰常亮",
+      "normalized": "亮灰",
+      "confidence": "required_household_display_normalization"
+    }
+  ],
+  "action_summary": {
+    "posture_update": "not_applied：作者为吕晓彤，按多作者合同不得改写小草全局A股姿态或REGIME_TIMELINE。",
+    "playbook_update": "no_change：仅形成authority=0候选方法，未获研究和人工门槛批准。",
+    "hypothesis_update": "candidate_only：仅保留1条具有独立可证伪变量的系统候选（模型集中度向多级硬件订单与估值传导）；其余机制只记为既有假设的局部或相邻支持，不新建近义候选，交由父流程继续validate/ingest与研究门槛。",
+    "audit_evidence": "完整来源SHA-256为904eb45893e4b47423a250718879ece48c6b1a920dbed3c3a596e69122d18e2d；183个稳定segment已逐段复核。",
+    "instrumentation_todo": "no_issue_created：未来研究可观测模型收入、融资、资本回报、供应链订单以及社群互动前后的计划偏离。",
+    "routing": [
+      "semantic_report",
+      "candidate_hypotheses_authority_0",
+      "parent_validate_and_ingest_if_authorized",
+      "no_posture_write",
+      "no_book_write"
+    ]
+  },
+  "decision_trace": [
+    {
+      "step": "观察",
+      "source_role": "吕晓彤原始观点",
+      "detail": "高利率、模型增速和融资受质疑，传统AI硬件承压，物理AI相对走强；作者本人未确定两派终局。"
+    },
+    {
+      "step": "推断",
+      "source_role": "吕晓彤情景拆解",
+      "detail": "若AI像互联网，应用扩散会延续硬件需求；若像房地产，少数模型胜出会使重复资本开支和供应链需求收缩。"
+    },
+    {
+      "step": "当期动作",
+      "source_role": "吕晓彤原始观点",
+      "detail": "空仓者先观望或开始买一些但无数量和对象；作者自述自己已经被套，因此自己只能先观望；不保证反弹。"
+    },
+    {
+      "step": "系统约束",
+      "source_role": "系统归纳",
+      "detail": "只有收入、融资、资本回报、订单、盈利与价格共同确认，才讨论改变风险预算；这不是作者原话。"
+    },
+    {
+      "step": "账户核验",
+      "source_role": "系统原则",
+      "detail": "采用外部观点前先核对账户实际持仓、风险预算与数据置信度；低置信度账户读数不得驱动交易。"
+    }
+  ],
+  "judgment_heuristics": [
+    "【来源】先形成自己的判断，不要选择性只听支持既有仓位的结论。",
+    "【来源】科技本身混沌，不能要求讲者每天给出确定的清仓或持有答案。",
+    "【系统】把互斥情景、可观察触发器和失效条件写入同一决策记录。",
+    "【系统】平台、模型、芯片、存储、设备和元件逐级看资本回报与订单，不把整条链当成同一个资产。",
+    "【系统】公开表达和社群互动是执行偏差暴露变量，需要与实际计划偏离一起复盘。"
+  ],
+  "evidence_quotes": [
+    {
+      "segment_id": "b5048bbf7875154c71c376c3e4942479592547ff6ace09ef1728ea1a2e03cb21",
+      "segment_index": 33,
+      "raw_quote": "AI硬件的这个逻辑呢？其实本质上是基于啊AI是否快速发展"
+    },
+    {
+      "segment_id": "887b633c1a43cf711e4a083ec551eae0319164b20b7c0563cd76de51a65bc733",
+      "segment_index": 36,
+      "raw_quote": "你本账大家就是说这个市场上你得投入的这个钱能算过账来？你才能继续投入"
+    },
+    {
+      "segment_id": "08f0b6e5b816c60e28e0c925748c0a5c78dbefb3b12d2b61d7b7f3da90a7cb40",
+      "segment_index": 43,
+      "raw_quote": "跟互联网一样对吧？一个惨烈的，一个去化的，一个过程，然后再创出新高啊"
+    },
+    {
+      "segment_id": "79c4d30bc239a1530b1a818a10c95ad5413a2bf4237e73ca5fcc57d84bbe9b07",
+      "segment_index": 46,
+      "raw_quote": "另外一派观点，那这一派观点呢，现在也是略占上风啊"
+    },
+    {
+      "segment_id": "502982106bcd6c34a7a16979817b3de227268ba0f0dbf7f6972dfee1a95057f1",
+      "segment_index": 48,
+      "raw_quote": "降低估值两万美金，20000亿美金发不出去，然后变成一点五五万亿美金"
+    },
+    {
+      "segment_id": "9efebadd23d19a9d2d69898f84d7b7eb91b0985147c0e1ea4a1693f7b36c86c8",
+      "segment_index": 66,
+      "raw_quote": "看不清楚美债收益率又高企"
+    },
+    {
+      "segment_id": "3493c2991e5fbd895159b614761bc02b21d9300c7c726ecc0d6187008453c55a",
+      "segment_index": 74,
+      "raw_quote": "制造业你值什么20倍PE最多值五倍PE？"
+    },
+    {
+      "segment_id": "65077f5f6bed0e69bf78aae2801d3a5fdbc4745b3d99736165f132f95051e08a",
+      "segment_index": 82,
+      "raw_quote": "那我就我就等待呗，那我还能怎么样？"
+    },
+    {
+      "segment_id": "18530aa7c6f3f9a1eb937546a4b14c097b2ce8faf1e4c08b27b1395ab214af9d",
+      "segment_index": 83,
+      "raw_quote": "现在其实涨的最多的是物理AI"
+    },
+    {
+      "segment_id": "0be655f6f51b6e4ff27ffc195701b2043a64727f4e1f5ce28b31dccc3c22a4c7",
+      "segment_index": 87,
+      "raw_quote": "给了他啊7000亿的这个估值"
+    },
+    {
+      "segment_id": "61fcde90c927b3504e2fe0a91a633272ac08376f2355ebbbf05c885cbfc2cb11",
+      "segment_index": 88,
+      "raw_quote": "他说他说没有很多人最后跳票了，我不知道是不是真的啊"
+    },
+    {
+      "segment_id": "92e238150aafc888da77795dbbd72dd25e43adc7e06ca3774b695a13ab440bd5",
+      "segment_index": 90,
+      "raw_quote": "那绝大多数人对吧？都已经被套在里面了"
+    },
+    {
+      "segment_id": "2a02b5c81306009ac80838f81cc172c8eef2b0e84a03015034141fb8737114fd",
+      "segment_index": 91,
+      "raw_quote": "你买的指数也也也无求所谓"
+    },
+    {
+      "segment_id": "da9ca0f6f79e242b3098d3ae6ca8de5c87485969f888e0073f5bef2fb87f666c",
+      "segment_index": 103,
+      "raw_quote": "那你自己做出判断吧"
+    },
+    {
+      "segment_id": "e3fb94b406d9bcbd0bd726169639d8c670134fa34bb523405b876e94b54d0c34",
+      "segment_index": 111,
+      "raw_quote": "kimi 5百亿美金"
+    },
+    {
+      "segment_id": "0489b1ec760e117925af307e7b79de3c7438ccf2494894a675ed5cd7ddc14f06",
+      "segment_index": 112,
+      "raw_quote": "有有一种说法啊，说kimi现在老老股东都在那寻求300亿，能不能卖掉什么380亿，能不能卖掉？"
+    },
+    {
+      "segment_id": "1ca3fe1ace30a004aa1a414e63459238c57fb8a0823101b35fec5197a8255999",
+      "segment_index": 117,
+      "raw_quote": "那他怎么去采购设备？他怎么给设备利润？"
+    },
+    {
+      "segment_id": "98821cbd4b9b86a9bb87f8ec5b63cf52a642d77597c1757923f905a9bf66ce77",
+      "segment_index": 120,
+      "raw_quote": "kimi deep seek智谱，这些应该全投一遍，不知道哪家能出来"
+    },
+    {
+      "segment_id": "55ebc7be31ae497c10ca6d33d158b53151b658359b0aa30d79aed8a8293711d0",
+      "segment_index": 136,
+      "raw_quote": "如果你相信这个故事，那你只能去买，对吧？这些。半导体设备啊"
+    },
+    {
+      "segment_id": "bc682270adb304d68486e0287e1b1206fbb604eb5c48d352416af13f2ae44d1e",
+      "segment_index": 140,
+      "raw_quote": "如果这个故事破灭了，那当然不就不反弹呀？"
+    },
+    {
+      "segment_id": "712c71862ca41e148499cc310de531b2008e2c7053ad79c10c5816467e86feaa",
+      "segment_index": 158,
+      "raw_quote": "美股我也半仓呀，我我现在美股只剩四成仓了，三成仓吧"
+    },
+    {
+      "segment_id": "8e8a9f0ff6815e8af31efb40cb1bff39de5a41b9756edfa8832ae44fbda3f0b3",
+      "segment_index": 164,
+      "raw_quote": "给他勾满上，他就满上了"
+    },
+    {
+      "segment_id": "00bca7ff9cf787c27bd385567b8653658f1fcd59ccd3b77ab889169a5f259bf0",
+      "segment_index": 167,
+      "raw_quote": "你是一个环境的产物"
+    },
+    {
+      "segment_id": "2030642c158c56105b09077c4ae18176171350ff718e57e477768c00f0f2a825",
+      "segment_index": 172,
+      "raw_quote": "这些存储什么的，就就刚才说的这套判断啊。不行赶紧避险"
+    },
+    {
+      "segment_id": "bda111197d37a5296d1705d960318b180cb176447b7397667f792571623e84ef",
+      "segment_index": 178,
+      "raw_quote": "这个炒菜机器人是个趋势"
+    }
+  ],
+  "prior_comparison": [
+    {
+      "existing_id": "XH-298",
+      "relationship": "partial_adjacent_support_not_recurrence",
+      "reason": "来源支持增速、融资和投入回收问题，但未完整提出资本回报相对资金成本安全垫及自由现金流融资能力。"
+    },
+    {
+      "existing_id": "XH-115",
+      "relationship": "partial_adjacent_support_not_recurrence",
+      "reason": "来源支持传统AI硬件转向机器人这一局部轮动，没有黄金、大饼、创新药等完整跨资产集合。"
+    },
+    {
+      "existing_id": "XH-128",
+      "relationship": "partial_adjacent_support_not_recurrence",
+      "reason": "来源支持先看当前需求与融资，但未完整提出短期估值现金流层和长期技术层的正式分层。"
+    },
+    {
+      "existing_id": "XH-122",
+      "relationship": "partial_adjacent_support_not_recurrence",
+      "reason": "来源只提出机器人突破故事，研发、订单、交付、现金流、监管和商业化的完整门槛是既有知识与系统约束。"
+    },
+    {
+      "existing_id": "XH-152",
+      "relationship": "partial_adjacent_support_not_recurrence",
+      "reason": "XH-152已覆盖供应链各环节不能互相替代；本来源补充模型增速和融资这一上游叙述，但没有形成独立于既有分层验证的新增预测。"
+    },
+    {
+      "existing_id": "XH-170",
+      "relationship": "overlapping_support_no_new_candidate",
+      "reason": "来源再次暴露社群互动导致计划偏离；XH-170已把群体互动、事前价格、预算和取消条件设为可检验变量，本期不另建近义候选。"
+    },
+    {
+      "existing_id": "XH-198",
+      "relationship": "overlapping_support_no_new_candidate",
+      "reason": "来源再次呈现既有重仓下的确认偏误；XH-198已覆盖集中度、反方证据、核验与退出强度，本期不另建近义候选。"
+    },
+    {
+      "existing_id": "XH-296",
+      "relationship": "adjacent_new_boundary",
+      "reason": "既有条目关注平台外售算力，本期候选关注模型集中对多级供应链总需求的影响。"
+    },
+    {
+      "existing_id": "XH-299",
+      "relationship": "adjacent_new_boundary",
+      "reason": "既有条目关注平台融资韧性，本期候选关注顶层集中后的供应链订单和估值。"
+    }
+  ]
+}
