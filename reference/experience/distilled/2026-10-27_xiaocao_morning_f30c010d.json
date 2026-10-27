@@ -1,0 +1,423 @@
+{
+  "date": "2026-10-27",
+  "kind": "morning",
+  "authority": 0,
+  "summary": "小草把早间决策拆成高位风险约束、按模式而非题材交易、跨模式组合和轮动环境中的专有高抛信号退出；这些内容只作为可复验的零权威研究材料。",
+  "author": "小草",
+  "source": "小草直播",
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/private_evidence/kol_transcripts/2026-10/2026-10-27_xiaocao_masterclass_f30c010d.txt",
+      "sha256": "f30c010d366ba391d99023f9484afb45240258f72e0ca9421a4664960933a141",
+      "size": 9357
+    },
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261027_01a17b31/video1027_market_evidence.json",
+      "sha256": "9cd3b62d11991064a12e9701bc95ee17fe98837b0a6382e266d38c4765d3352f",
+      "size": 9404
+    },
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261027_01a17b31/video1027_local_evidence.json",
+      "sha256": "b435082e5089422575cd07d740f9a6cec67830a530a20762113b36a62777d679",
+      "size": 255239
+    },
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/recommend_2026-10-26.md",
+      "sha256": "37eff6ad7476ea841c6c888d26e2d491c957be173b535c0b8a9e87ca66dd8bfb",
+      "size": 11748
+    },
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/recommend_2026-10-27.md",
+      "sha256": "87db8467e044db8ac07ba1304b6d946b3f9863f4b6c62e2f0a226323b7a20d3e",
+      "size": 7733
+    }
+  ],
+  "posture": {
+    "regime": "来源把当日描述为高位风险仍需控制、指数高开低走且个股轮动的短线环境；这只是作者早间至盘中的判断。",
+    "dominant_style": "模式内短线与轮动高抛，修复后偏向更短的玩法。",
+    "risk": "高位股、冲高后的回落和专有信号无法由午间报价重建；仓位应轻，不能把题材上涨当成模式资格。",
+    "style_ranking": [
+      "先控制高位股与总仓位风险",
+      "再按人气股低吸、N半、红盘起爆等各自模式独立取样",
+      "已有仓位按标的自身高抛状态管理",
+      "不因科技题材上涨或事后高收益追认模式外交易"
+    ]
+  },
+  "regime_call": {
+    "call": "作者把当日界定为高位风险仍需控制、指数高开低走且个股轮动的短线环境；已有仓位服从标的自身高抛信号，新机会只在模式内观察。",
+    "horizon": "2026年10月27日早间至当日收盘；跨期部分仅保留为研究方法",
+    "what_would_falsify": [
+      "高位股风险代理持续改善且完整模式样本的风险调整收益同步转强",
+      "指数和个股从高开低走转为有持续承接的广泛修复",
+      "预注册研究证明固定时点退出或单一模式比来源所述组合与专有信号方案更优"
+    ]
+  },
+  "directions": [
+    {
+      "name": "高位股风险约束",
+      "role": "当日总风险边界",
+      "conditions": [
+        "慈文传媒、三峡新材被作者列为高位风险较大的例子",
+        "慈文传媒开板只被作者当作高位风险暂时解除的条件式代理，片尾又出现回落",
+        "参与必须轻仓，不能由一个代理扩写成全市场已经安全"
+      ]
+    },
+    {
+      "name": "跨模式组合",
+      "role": "降低单一路径依赖的候选方法",
+      "conditions": [
+        "人气股低吸、N半和红盘起爆分别挑一只只是来源举例",
+        "组合是并列分散，不是模式交集或交叉确认",
+        "来源没有给出模式权重、总体仓位百分比或统计胜率"
+      ]
+    },
+    {
+      "name": "轮动高抛",
+      "role": "已有短线仓位的退出方法",
+      "conditions": [
+        "进入高抛区间不等于信号已经出现",
+        "信号出现后可以减半或全抛，来源在轮动环境下倾向至少减半",
+        "减半后剩余仓位可继续观察，但这一口述规则仍需按同一入场集合复验"
+      ]
+    }
+  ],
+  "stocks": [
+    {
+      "surface_form": "郑中设计",
+      "role": "早间撤单观察、N半或早间模式标的，以及片尾高抛信号例子",
+      "resolution": "目录核对为郑中设计（002811.XSHE）",
+      "actionability": "来源内时序必须保留：先进入高抛区间但未出信号，片尾才明确出高抛；午间价格不能回填专有信号或教师买价。",
+      "classification": "not_emitted"
+    },
+    {
+      "surface_form": "奥雅、奥雅股份",
+      "role": "前一日红盘起爆第一名的口头回看及当日已出高抛信号的例子",
+      "resolution": "目录核对为奥雅股份（300949.XSHE）",
+      "actionability": "来源允许减半或全抛，并说减半后剩余可留；30点口述收益没有教师买价和成交回执。10月26日本地同名信号是COLD、不可执行观察行，不证明教师模式。",
+      "classification": "emitted_strategy_hit"
+    },
+    {
+      "surface_form": "海洋王",
+      "role": "前一日盘中买入的口头回看与等待高抛信号的例子",
+      "resolution": "目录核对为海洋王（002724.XSHE）",
+      "actionability": "来源说有信号可抛、未出信号可等，但没有明确证明本场已经出现海洋王的专有高抛信号。",
+      "classification": "not_emitted"
+    },
+    {
+      "surface_form": "慈文传媒",
+      "role": "一字跌停开板与片尾回落的高位风险代理",
+      "resolution": "目录核对为慈文传媒（002343.XSHE）",
+      "actionability": "只作为来源当日条件式风险代理，不证明整个高位股环境永久转好。",
+      "classification": "not_emitted"
+    },
+    {
+      "surface_form": "三峡新材",
+      "role": "高位股风险例子",
+      "resolution": "目录核对为三峡新材（600293.XSHG）",
+      "actionability": "10月26日本地同名信号是绿断低吸COLD、不可执行观察行；来源角色不同，不能写成教师策略命中。",
+      "classification": "emitted_strategy_hit"
+    },
+    {
+      "surface_form": "冰山冷热",
+      "role": "模式表现的口头例子",
+      "resolution": "目录核对为冰山冷热（000530.XSHE）",
+      "actionability": "午间报价只能核对点时价格和身份，不能证明来源口述买价、模式命中或成交。",
+      "classification": "not_emitted"
+    },
+    {
+      "surface_form": "百洋股份",
+      "role": "当日上涨的口头例子",
+      "resolution": "目录核对为百洋股份（002696.XSHE）",
+      "actionability": "午间报价只能核对点时价格和身份，不能证明来源口述买价、模式命中或成交。",
+      "classification": "not_emitted"
+    },
+    {
+      "surface_form": "宇宙观电视、大补v",
+      "role": "红盘起爆的第一、第二候选口述",
+      "resolution": "保持未决；目录中的宇特光电和大普微只是音近候选，不能据目录硬配",
+      "actionability": "身份未决，不进入交易或历史命中判断。",
+      "classification": "no_evidence"
+    }
+  ],
+  "method_principles": [
+    "把题材叙事与模式资格分开：科技上涨不构成交易理由，模式内有标的才按模式处理。",
+    "把跨模式组合视为并列分散而不是交集确认；冻结每个模式的一只候选、总风险、相关性、费用和退出后再比较。",
+    "把高抛区间与高抛信号分开记录；价格进入区间只启动观察，专有信号出现才触发来源所述减仓分支。",
+    "把直播中的事后收益与真实证据分开；没有买价、成交、专有信号时，不从午间报价反推教师收益或模式胜率。"
+  ],
+  "exit_lessons": [
+    "郑中设计展示了状态变化：先进入高抛区间但没有信号，可以等待；片尾才明确出现高抛信号。",
+    "奥雅股份出现高抛信号后，来源允许减半或全抛；轮动环境下至少减半，减半后的剩余仓位可继续观察。",
+    "海洋王只给出有信号可抛、无信号等待的条件分支，来源没有明确证明本场信号已经出现。",
+    "全卖与减半是来源允许的两条分支，不应擅自固化成确定比例或替代现有退出规则。"
+  ],
+  "decision_trace": [
+    {
+      "observation": "慈文传媒、三峡新材等高位股风险较大，慈文传媒能否打开一字跌停被当作风险代理。",
+      "inference": "早间高位股容错率不足，单一开板只能暂时缓和风险，不能证明全部高位环境转强。",
+      "action": "总体轻仓并尽量回避高位股；仅按各自模式处理候选。",
+      "why": "先限制高位与仓位尾部风险，再决定具体模式。"
+    },
+    {
+      "observation": "作者把人气股低吸、N半和红盘起爆并列，举例每个模式各取一只，同时反对凭手气只挑一只。",
+      "inference": "作者希望用跨模式组合降低单一路径依赖，而非要求多个模式同时确认同一标的。",
+      "action": "研究中冻结跨模式并列组合，但不补造权重、仓位或胜率。",
+      "why": "避免把来源组合语义误写成模式交集。"
+    },
+    {
+      "observation": "轮动环境中，郑中设计先处于高抛区间但未出信号，随后出信号；奥雅股份已出信号，海洋王仍按是否出信号分支。",
+      "inference": "同一价格区间内，专有信号状态和标的时序比固定钟点或午间价格更重要。",
+      "action": "研究首次专有高抛信号、减半和全抛分支，不用午间价倒推信号。",
+      "why": "来源的退出逻辑依赖标的自身状态，而不是统一钟点或单一涨幅。"
+    }
+  ],
+  "judgment_heuristics": [
+    "先判断高位与总仓位风险，再看模式资格，最后看个股专有信号。",
+    "一个条件式风险代理只能约束其原语境，不能推广为全市场安全结论。",
+    "当来源允许多个动作分支时，保留分支和触发条件，不替作者决定唯一动作。",
+    "同名或音近证券必须由独立身份资料支持；目录候选不是身份结论。"
+  ],
+  "hypotheses": [
+    {
+      "claim": "把“进入高抛区间”和“专有高抛信号出现”分成两个可观测状态，可能减少把观察状态误当触发状态造成的过早退出。",
+      "implied_rule": "系统研究需分别冻结进入区间时点、首次高抛信号时点和可成交退出价；午间点价和事后涨幅不能回填专有信号，研究通过前不替代现有退出规则。",
+      "falsifiable_test": "在同一入场样本中比较进入区间即卖、首次高抛信号卖和现行退出的费用后收益、最大不利变动、卖飞幅度与可成交性；若分状态记录不能降低误触发或改善样本外退出质量则否决。",
+      "expected_effect": "减少状态误判导致的过早退出，并使区间观察与信号触发可独立审计。",
+      "category": "exit_instrumentation",
+      "provenance": "system_research_synthesis",
+      "source_basis": "作者在郑中设计上先说已到高抛区间但尚未出信号，片尾再说信号已出；“减少过早退出”是系统提出的待证效果，不是作者本场已证明的结论。",
+      "related_existing_ids": [
+        "XH-054",
+        "XH-074"
+      ],
+      "dedup_boundary": "XH-054比较跷跷板环境中的自身信号与固定钟点准确性，XH-074研究次日首次信号和无信号收盘退出；本候选只检验区间状态与信号状态分离这条记录缝隙。"
+    }
+  ],
+  "existing_hypothesis_feedback": [
+    {
+      "id": "XH-054",
+      "relationship": "partial_not_ingested",
+      "reason": "本场支持标的自身高抛信号分支以及区间与信号的状态差异，但没有跷跷板环境下相对固定钟点准确性更高的比较证据，不能整条复现。"
+    },
+    {
+      "id": "XH-074",
+      "relationship": "partial_not_ingested",
+      "reason": "本场支持信号出现后的减半或全抛分支，却没有“无信号再收盘退出”及相对固定开盘或收盘风险收益更好的完整内容，不能整条复现。"
+    },
+    {
+      "id": "XH-276",
+      "relationship": "related_not_merged",
+      "reason": "作者本场只举人气股低吸、N半和红盘起爆各一只组成并列组合，没有给固定总风险、权重或降低波动与提高一致性的实证；这些属于研究设计边界，不是作者断言。"
+    },
+    {
+      "id": "XH-155",
+      "relationship": "partial_support_only",
+      "reason": "本场再次把高位一字跌停开板当作风险代理，但没有完整给出断板低吸次日样本未失效、续作胜率和盈亏比三部分，不能把整条旧命题视为复现。"
+    },
+    {
+      "id": "XH-176",
+      "relationship": "partial_support_only",
+      "reason": "本场只支持轮动环境冲高减仓分支，没有覆盖强环境延后、弱环境反抽卖和统一对照，不能整条合并。"
+    },
+    {
+      "id": "XH-277",
+      "relationship": "partial_support_only",
+      "reason": "作者说大盘高开低走并据此偏向减仓，但没有高开、平开、低开匹配样本或承接统计，只能作为新来源片段。"
+    }
+  ],
+  "strategy_hit_audit": {
+    "status": "completed_read_only_with_limits",
+    "scope": "核对10月26日与27日冻结推荐、31行信号快照、2条仓位、2条纸面成交和16条决策日志；本地发出层与教师模式、账户、买价、成交和专有信号严格分开。",
+    "local_strategy_binding": {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261027_01a17b31/video1027_local_evidence.json",
+      "sha256": "b435082e5089422575cd07d740f9a6cec67830a530a20762113b36a62777d679",
+      "recommendation_dates": [
+        "2026-10-26",
+        "2026-10-27"
+      ],
+      "signal_rows": 31,
+      "position_rows": 2,
+      "paper_trade_rows": 2,
+      "decision_journal_rows": 16
+    },
+    "teacher_named_winners": [
+      {
+        "asset": "郑中设计（002811.XSHE）",
+        "source_claim": "来源称早间仍在模式内并在片尾出现高抛信号。",
+        "classification": "not_emitted",
+        "reason": "10月26日和27日冻结的31行本地信号没有郑中设计同名记录；这只说明本地发出范围未覆盖它，不否定教师模式，也不证明教师挂单、买价、成交或专有高抛信号。"
+      },
+      {
+        "asset": "奥雅股份（300949.XSHE）",
+        "source_claim": "来源称前一日红盘起爆第一名、当日出高抛信号并口述约30点。",
+        "classification": "emitted_strategy_hit",
+        "reason": "10月26日冻结信号有奥雅股份，标签为本地“标杆短线起爆”，模式COLD且不可执行；同名重合不等于教师“红盘起爆”模式同义，也不证明教师买价、成交、专有信号或约30点收益。"
+      },
+      {
+        "asset": "海洋王（002724.XSHE）",
+        "source_claim": "来源称前一日盘中买入且当日表现强。",
+        "classification": "not_emitted",
+        "reason": "10月26日和27日冻结的31行本地信号没有海洋王同名记录；不据此评价教师交易，午间报价也不能核对教师买价、账户成交或专有信号。"
+      },
+      {
+        "asset": "冰山冷热（000530.XSHE）",
+        "source_claim": "来源把它作为模式上涨的口头例子。",
+        "classification": "not_emitted",
+        "reason": "10月26日和27日冻结信号没有冰山冷热同名记录；这不证明教师模式是否命中或交易结果。"
+      },
+      {
+        "asset": "百洋股份（002696.XSHE）",
+        "source_claim": "来源把它作为当日上涨的口头例子。",
+        "classification": "not_emitted",
+        "reason": "10月26日和27日冻结信号没有百洋股份同名记录；目录和午间报价只确认身份与点时价格。"
+      },
+      {
+        "asset": "慈文传媒（002343.XSHE）",
+        "source_claim": "来源把开板与回落用作高位风险代理。",
+        "classification": "not_emitted",
+        "reason": "10月26日和27日冻结信号没有慈文传媒同名记录；它在来源中是风险代理，不因未发出而评价教师选股。"
+      },
+      {
+        "asset": "三峡新材（600293.XSHG）",
+        "source_claim": "来源把它列为高位风险较大的例子。",
+        "classification": "emitted_strategy_hit",
+        "reason": "10月26日冻结信号有三峡新材，标签为本地“绿断低吸”，模式COLD且不可执行；来源角色是高位风险例子，不能把同名重合写成教师策略命中。"
+      },
+      {
+        "asset": "宇宙观电视、大补v",
+        "source_claim": "来源把两者列为红盘起爆第一与第二候选，第一只为北交所；多数无权限者看第二只。",
+        "classification": "no_evidence",
+        "reason": "两只证券身份未唯一确认；宇特光电和大普微仅为音近目录候选，不能据候选名称判断本地发出或遗漏。"
+      }
+    ],
+    "local_strategy_benchmark_hits": [
+      {
+        "asset": "奥雅股份（300949.XSHE）",
+        "classification": "emitted_strategy_hit",
+        "local_role": "2026-10-26冻结信号中的标杆短线起爆观察行",
+        "reason": "模式COLD、mode_trade_eligible=false，10月26日推荐仅在观察名单，★E为NONE；与教师同名，但模式语义和成交均不相互证明。"
+      },
+      {
+        "asset": "三峡新材（600293.XSHG）",
+        "classification": "emitted_strategy_hit",
+        "local_role": "2026-10-26冻结信号中的绿断低吸观察行",
+        "reason": "模式COLD、mode_trade_eligible=false，10月26日推荐仅在观察名单，★E为NONE；来源把它用作高位风险例子，不构成同模式命中。"
+      }
+    ],
+    "direction_core_observations": [
+      "10月26日和27日两份固定推荐都显示★E为NONE；这只证明本地Book B没有通过硬门的新批次，不等于教师当日没有模式候选。",
+      "2条纸面成交均为澳洋健康旧持仓卖出，和教师点名股无关；10月27日绑定决策日志显示本地Book B无持仓，也不代表家庭或教师账户为空。",
+      "午间广度快照中下跌家数多于上涨家数，只支持点时市场偏弱，不能重建作者早间完整模式池。",
+      "行情、本地信号与纸面账本都不包含教师专有评分、高抛信号、教师买价或教师账户成交。"
+    ],
+    "audit_limit": "已取得本地冻结策略与纸面账本，但未取得教师账户或APP成交证据；not_emitted只限定两份固定推荐和31行信号快照的本地范围，不能外推教师执行。"
+  },
+  "timing_notes": [
+    "源文件元数据为2026年10月27日08:33发布，但正文从09:21讲到多次盘中变化，统一称同日早间直播含盘中内容，不用08:33推断每句话的精确时点。",
+    "郑中设计的撤单口述绑定09:19至09:20，但原句“今天早上昨天我们见”存在转写或回看日期歧义；只确认该窗口处理时已过期，不靠08:33元数据硬定动作日期。高抛信号与轮动减仓只绑定2026年10月27日当日。",
+    "午间行情观测时间约为11:30，只能核对点时市场和证券身份。",
+    "100分、1000分和3000分是本场口述例子，不自动继承其他场次的09:35加100分硬门槛；评分定义、首次时点和完整候选池仍缺失。"
+  ],
+  "typo_corrections": [
+    {
+      "raw": "正中设计、震动设计、中东设计、正宗",
+      "corrected": "郑中设计",
+      "basis": "上下文反复指向同一标的，证券目录存在唯一匹配名称"
+    },
+    {
+      "raw": "时文传媒、词文传媒、斯文传媒",
+      "corrected": "慈文传媒",
+      "basis": "上下文和证券目录共同支持"
+    },
+    {
+      "raw": "红盘举报、红盘警报、红包举报、红盘气泡",
+      "corrected": "红盘起爆",
+      "basis": "同一模式在上下文中反复出现"
+    },
+    {
+      "raw": "人气股定息、人气股DC",
+      "corrected": "人气股低吸",
+      "basis": "模式上下文和同一标的重叠描述支持"
+    },
+    {
+      "raw": "奥雅、欧阳、高雅、二压",
+      "corrected": "奥雅股份",
+      "basis": "上下文和证券目录共同支持"
+    },
+    {
+      "raw": "柏杨",
+      "corrected": "百洋股份",
+      "basis": "前文完整名称与证券目录共同支持"
+    },
+    {
+      "raw": "宇宙观电视、大补v",
+      "corrected": "保持证券身份未决",
+      "basis": "宇特光电和大普微仅为音近候选，目录不足以唯一确认"
+    }
+  ],
+  "action_summary": {
+    "posture_update": "proposal_only：同日姿态只保留为来源观点，须由完整后续证据判断是否仍有效",
+    "playbook_update": "proposal_only：高位风险优先、跨模式并列组合、区间与信号分离、轮动信号后减半或全抛均需前向复验",
+    "hypothesis_update": "one_distinct_candidate：仅保留“高抛区间状态与专有信号状态分开记录”的系统研究候选；跨模式各一只留在方法原则并与XH-276标为相关，减半或全抛留在退出教训并对XH-074/XH-176标部分支持，不新增近义命题。",
+    "audit_evidence": "reviewed：完整27段来源、证券目录、午间行情、两份固定推荐、31行信号、2条仓位、2条纸面成交和16条决策日志；未取得教师账户、买价、成交或专有信号",
+    "instrumentation_todo": "no_issue_created：未来研究需冻结模式候选、总风险、首次信号时点、可成交价格、减半与全抛分支以及完整费用回撤",
+    "routing": [
+      "authority_0_only",
+      "one_system_research_synthesis_candidate",
+      "related_not_merged_XH-276",
+      "partial_not_ingested_XH-054",
+      "partial_not_ingested_XH-074",
+      "partial_only_XH-155",
+      "partial_only_XH-176",
+      "partial_only_XH-277",
+      "no_strategy_or_parameter_change"
+    ]
+  },
+  "limitations": [
+    "没有作者完整盘中模式池、专有评分生成时点、高抛信号原始记录和真实买价成交。",
+    "没有家庭当前账本，不能把作者的轻仓或减半口述换算成家庭金额。",
+    "证券音近名称未强行消歧，目录候选不进入建议或执行。",
+    "本草稿不写入知识库、不更新姿态、不修改策略或参数，全部内容authority=0。"
+  ],
+  "operational_provenance": {
+    "accepted_original_draft": {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_xiaocao_live/semantic_requests/kol-1e3b92fc660e/.semantic_delegation/a3098f36161573fdb4b57a77284ded0da69d52ccd98419b76f729f244e545dab/knowledge_draft.json",
+      "sha256": "6b4da89b23e252e0a403fb7eb12b2a35039ee4f6ff4a9d8634c62c13f187afd7",
+      "size": 22574
+    },
+    "source_request": {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_xiaocao_live/semantic_requests/kol-1e3b92fc660e/analysis_request.json",
+      "sha256": "a3098f36161573fdb4b57a77284ded0da69d52ccd98419b76f729f244e545dab",
+      "size": 18330
+    },
+    "normalized_source_evidence": {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_netdisk_enrichment/artifacts/kol-netdisk-5866fe9ebb1d8339/20261027 盘前大师班直播10月27日-compressed.txt",
+      "sha256": "f30c010d366ba391d99023f9484afb45240258f72e0ca9421a4664960933a141"
+    },
+    "parent_acceptance": {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261027_01a17b31/video1027_parent_accepted.json",
+      "sha256": "2fdc391361a486b6714eb68f753f80b2bb53149a3dc7fd6843ce9c1f8f0a66e6",
+      "size": 4551
+    },
+    "private_archive_proof": {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261027_01a17b31/video1027_private_archive.json",
+      "sha256": "d6b343d66b7db754e20fbe488262bf06aea5feab6bd7fd0369f82e56466ea1db",
+      "size": 726
+    },
+    "market_evidence": {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261027_01a17b31/video1027_market_evidence.json",
+      "sha256": "9cd3b62d11991064a12e9701bc95ee17fe98837b0a6382e266d38c4765d3352f",
+      "size": 9404
+    },
+    "supplemental_evidence": [
+      {
+        "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261027_01a17b31/video1027_local_evidence.json",
+        "sha256": "b435082e5089422575cd07d740f9a6cec67830a530a20762113b36a62777d679",
+        "size": 255239
+      }
+    ],
+    "privacy_boundary": "Private raw transcript excluded from public Git; account context excluded from public archive.",
+    "ingest_receipt": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261027_01a17b31/video1027_knowledge_ingest_receipt.json",
+    "feedback_assessment": "Expired July posture stays expired; same-day weakness does not establish persistent decline. Source additions remain authority=0, with no strategy, parameter, posture or playbook promotion."
+  }
+}

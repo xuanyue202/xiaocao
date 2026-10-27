@@ -4684,9 +4684,11 @@ def test_daily_status_preserves_specific_video_waiting_stage(tmp_path):
     assert calls == 2
 
 
+@pytest.mark.parametrize("claim_binding", ["matching", "missing", "changed"])
 def test_video_provider_wait_preserves_failure_for_progress_projection(
     tmp_path,
     monkeypatch,
+    claim_binding,
 ):
     identity = "a" * 64
     version = "b" * 64
@@ -4714,6 +4716,9 @@ def test_video_provider_wait_preserves_failure_for_progress_projection(
                 "next_poll_not_before": "2026-08-08T11:00:00+08:00",
                 "reconciliation_status": "exact_private_copy_absent",
                 "trigger_attempt": 2,
+                "trigger_attempt_maximum": 2,
+                "claim_id": "d" * 64,
+                "side_effect_uncertain": True,
             }
 
     monkeypatch.setattr(
@@ -4730,6 +4735,20 @@ def test_video_provider_wait_preserves_failure_for_progress_projection(
         enrichment_session="enrichment",
         opencli_profile="work",
     )
+
+    claim_path = runtime.args.video_output_dir / "claims" / f"lv_transfer_{version}.json"
+    claim_path.parent.mkdir(parents=True)
+    if claim_binding != "missing":
+        claim_path.write_text(json.dumps({
+            "claim_id": ("e" if claim_binding == "changed" else "d") * 64,
+            "source_identity": identity,
+            "source_version_key": version,
+        }))
+
+    if claim_binding != "matching":
+        with pytest.raises(DailyError, match="wait claim binding changed"):
+            runtime.videos(only_identity=identity, refresh_listing=False)
+        return
 
     result = runtime.videos(
         only_identity=identity,
@@ -4753,6 +4772,12 @@ def test_video_provider_wait_preserves_failure_for_progress_projection(
     )
     assert progress.status == "wait_until"
     assert progress.details["category"] == "provider_wait"
+    assert progress.details["attempt_budget"] == {"attempted": 2, "maximum": 2}
+    assert progress.details["claim_receipt_summary"] == {
+        "claim_count": 1,
+        "receipt_count": 0,
+        "uncertain_effect_count": 1,
+    }
 
 
 def test_daily_resume_wait_runs_only_exact_due_source(tmp_path):
@@ -9252,6 +9277,49 @@ def test_subscription_video_source_resume_reuses_retained_bundle_without_scan(
     else:
         assert runtime.videos_narrow_resume("subscription_video:source") == {"status": "completed"}
         assert calls == [{"only_identity": items[0]["identity"], "refresh_listing": False}]
+
+
+@pytest.mark.parametrize("case", ["unique", "ambiguous", "wrong_binding", "other_rejection"])
+def test_source_timeout_blocker_resume_is_exact_and_never_discovers(tmp_path, monkeypatch, case):
+    root = tmp_path / "videos"
+    (root / "claims").mkdir(parents=True)
+    items = []
+    for index in range(2 if case == "ambiguous" else 1):
+        item = {"identity": str(index + 1) * 64, "version_key": str(index + 3) * 64,
+                "source": kol_daily_script.LV_SOURCE, "size": 123}
+        items.append(item)
+        claim = {
+            "source_identity": "wrong" if case == "wrong_binding" else item["identity"],
+            "source_version_key": item["version_key"], "source_size": item["size"],
+            "triggered_at": "2026-10-27T11:40:58+08:00",
+            "provider_trigger_status": "cloud_transfer_rejected", "provider_outcome": "rejected",
+            "provider_request_observed": True, "provider_response_observed": True,
+            "provider_http_status": 200, "provider_errno": 4,
+            "provider_message": "容量不足" if case == "other_rejection" else "请求超时，请稍后再试",
+        }
+        (root / "claims" / f"lv_transfer_{item['version_key']}.json").write_text(json.dumps(claim))
+
+    class Service:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def pending_items(self):
+            return items
+
+    monkeypatch.setattr(kol_daily_script, "SubscriptionVideoService", Service)
+    runtime = DailyRuntime.__new__(DailyRuntime)
+    runtime.args = SimpleNamespace(video_output_dir=root, config=tmp_path / "private.yaml")
+    calls = []
+    runtime.videos = lambda **kwargs: calls.append(kwargs) or {"status": "waiting"}
+    if case in {"ambiguous", "wrong_binding"}:
+        error = "multiple retained" if case == "ambiguous" else "claim binding changed"
+        with pytest.raises(DailyError, match=error):
+            runtime.videos_narrow_resume("subscription_video:source")
+        assert calls == []
+    else:
+        runtime.videos_narrow_resume("subscription_video:source")
+        assert calls == ([{"only_identity": items[0]["identity"], "refresh_listing": False}]
+                         if case == "unique" else [{}])
 
 
 @pytest.mark.parametrize('change', [None, 'hash', 'origin', 'identity', 'missing_failure', 'wrong_version', 'outside_slot', 'triggered'])

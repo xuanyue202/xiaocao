@@ -1,8 +1,10 @@
 """The hourly sole writer must enforce model routing before consuming a report."""
 
 import json
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -10,6 +12,7 @@ from scripts import kol_daily
 from tests.test_kol_semantic_bundle import _fixture
 from xiaocao.kol.daily import DailyError
 from xiaocao.kol.semantic_bundle import build_validated_bundle_from_files
+from xiaocao.kol import semantic_delegation
 from xiaocao.kol.semantic_delegation import (
     PARENT_REVIEW_CHECKS, prepare, record_dispatch, verify_result,
 )
@@ -152,6 +155,73 @@ def test_other_authors_keep_existing_canonical_route(tmp_path):
     assert kol_daily._require_canonical_semantic_artifact(bundle, request) == bundle
 
 
+def test_changed_contract_remains_exact_semantic_input_wait(tmp_path, monkeypatch):
+    references = tmp_path / "references"
+    references.mkdir()
+    for name in ("full-contract.md", "durable-knowledge.md"):
+        shutil.copy2(semantic_delegation.REFERENCES / name, references / name)
+    monkeypatch.setattr(semantic_delegation, "REFERENCES", references)
+    request, request_path, draft, market, bundle = _inputs(tmp_path)
+    prepared = prepare(request_path, market_evidence=market)
+    packet = json.loads(Path(prepared["packet_path"]).read_text())
+    draft_path = Path(packet["expected_outputs"]["semantic_draft.json"])
+    draft_path.write_text(json.dumps(draft))
+    record_dispatch(
+        request_path, packet_path=prepared["packet_path"],
+        agent_id="019a7213-73b4-7351-87c4-13e1234abcde",
+        invocation_args=prepared["spawn_arguments_path"],
+    )
+    build_validated_bundle_from_files(request_path, draft_path, market)
+    Path(prepared["packet_path"]).with_name("parent_source_review.json").write_text("{}")
+    contract = references / "durable-knowledge.md"
+    contract.write_text(contract.read_text() + "\nChanged after dispatch.\n")
+    original_request = request_path.read_bytes()
+
+    with pytest.raises(kol_daily.SemanticInputUnavailable, match="binding changed") as caught:
+        kol_daily._require_canonical_semantic_artifact(bundle, request)
+
+    assert caught.value.request == request
+    assert caught.value.field == "bundle_path"
+    assert request_path.read_bytes() == original_request
+    result = kol_daily._classified_narrow_source(
+        "subscription_video",
+        lambda _surface: kol_daily._require_canonical_semantic_artifact(bundle, request),
+    )("subscription_video:source")
+    assert result["writer_progress"]["status"] == "structured_input"
+    assert result["writer_progress"]["response_field"] == "bundle_path"
+    waiting = result["waiting_items"][0]
+    assert waiting["analysis_request_path"] == str(request_path)
+    assert waiting["evidence_sha256"] == request["evidence_sha256"]
+    assert "binding changed" in waiting["input_error"]
+    runtime = kol_daily.DailyRuntime.__new__(kol_daily.DailyRuntime)
+    runtime.args = SimpleNamespace(
+        xiaocao_output_dir=tmp_path / "xiaocao",
+        decision_output_dir=tmp_path / "decisions",
+    )
+    monkeypatch.setattr(kol_daily, "XiaocaoLiveService", lambda *_a, **_k: SimpleNamespace(
+        import_handoff_capsule=lambda _capsule: None,
+    ))
+    targets = []
+
+    def process_target(*, handoff_id):
+        targets.append(handoff_id)
+        return kol_daily._require_canonical_semantic_artifact(bundle, request)
+
+    runtime.xiaocao = process_target
+    message_id = "a" * 64
+    result = runtime._process_mailbox_message({
+        "message_id": message_id,
+        "payload": {"handoff_id": message_id, "source_mode": "cloud_handoff"},
+    })
+    assert targets == [message_id]
+    assert result["business_complete"] is False
+    assert result["writer_progress"]["status"] == "structured_input"
+    assert result["writer_progress"]["item_identity"] == message_id
+    assert result["writer_progress"]["response_field"] == "bundle_path"
+    assert result["waiting_items"][0]["analysis_request_path"] == str(request_path)
+    assert request_path.read_bytes() == original_request
+
+
 def test_packet_parent_review_does_not_fall_back_for_invalid_file(tmp_path):
     request = tmp_path / "analysis_request.json"
     packet = tmp_path / "context" / "context_packet.json"
@@ -180,8 +250,12 @@ def test_missing_parent_review_reports_the_required_evidence(tmp_path):
     packet_path.with_name("parent_semantic_review.json").write_text(
         '{"decision":"accepted"}', encoding="utf-8"
     )
-    with pytest.raises(DailyError, match="parent full-source review is missing"):
+    with pytest.raises(
+        kol_daily.SemanticInputUnavailable, match="parent full-source review is missing"
+    ) as caught:
         kol_daily._require_canonical_semantic_artifact(bundle, request)
+    assert caught.value.request == request
+    assert caught.value.field == "bundle_path"
 
 
 def test_semantic_stdin_prompt_exposes_consumer_parent_review_paths(tmp_path, monkeypatch):

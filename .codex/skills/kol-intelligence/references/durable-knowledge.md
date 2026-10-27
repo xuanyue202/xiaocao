@@ -45,6 +45,8 @@ PYTHONPATH=src python3 scripts/distill_transcript.py --refresh-action-log
 
 Before `--ingest`, compare claims with the current tail of `reference/experience/xiaocao_hypotheses.jsonl` and with the same batch. Reuse the exact claim string for a genuine recurrence so the harness merges source dates/authors. Curate near-duplicates instead of creating many slightly reworded IDs. Inspect the diff after ingest.
 
+For a new system-synthesized candidate, preserve its optional `provenance`, `source_basis`, `related_existing_ids`, and `dedup_boundary` fields in the backlog. The source author is provenance, not proof that the author asserted the system's expected benefit. The ingest harness copies these fields verbatim; it does not judge or promote the claim.
+
 `--feedback` closes the loop: explicitly state whether the new material confirms, refines, contradicts, or does not address each relevant flagged prior. Do not force commentary on unrelated priors. Add a playbook `[校准]` line only when this comparison supplies real confirmation or contradiction, never merely because a transcript was processed.
 
 ## Provenance and filenames

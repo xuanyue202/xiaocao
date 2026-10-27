@@ -55,6 +55,24 @@ an observation only after verifying the original source interval, exact failure
 ledger row, current source version and untriggered claim. Bind the real sweep
 event ID and evidence hash; never invent or rewrite an originating sweep.
 
+If the destination tree remains at one empty `/` root after its initial load,
+the transfer adapter may collapse and expand that exact root once, then require
+the first destination folder to appear. This repairs a stale expanded root;
+it never confirms a save or creates another transfer attempt. Populated or
+ambiguous trees retain the existing fail-closed path selection.
+
+An observed transfer response with HTTP 200, errno 4 and the exact message
+`请求超时，请稍后再试` is a temporary provider failure, not proof of a capacity or
+membership blocker. Preserve the original response and 30-minute exact-copy
+confirmation window. After exact directory and settled search readback, only
+the existing per-object attempt budget may continue. A legacy source-scoped
+blocker may select one uniquely bound timeout claim without refreshing source
+discovery; multiple retained continuations fail closed. Other rejections retain
+their existing stop boundary.
+If the timeout exhausts that budget without a verified copy, retain the
+uncertain-effect flag and reconcile; the timeout response never proves a
+successful or fully settled external result.
+
 This sole writer consumes Xiaocao `scope=post_handoff` and URL-only
 `wechat_official_article` LiangHuiMCP capsules as discovery metadata, not full
 articles: each is not the full article. It never scans the local
@@ -114,6 +132,8 @@ if the process exits. Ack only after every downstream effect and durable
 receipt; `acked|already_acked` is `全部完成`, never handoff creation alone.
 
 ### Narrow repair resume
+
+Keep packet-bound contracts unchanged while an analyst is working. If a contract changes, preserve the original packet, prepare an immutable context revision, deliver its exact prompt to the same analyst and record that delivery. A rejected delegated bundle remains an exact `bundle_path` input wait; revalidate the revised output and parent review before the narrow continuation.
 
 ```bash
 PYTHONPATH=src .venv/bin/python scripts/kol_daily.py validate-repair --mailbox-message-id <exact-64-hex-message-id>
@@ -320,6 +340,15 @@ Missing or changed proof stops the exact object; never fall through to a new
 publication. A verified alias preserves the canonical source binding, gives the
 new intake its own completion claim/receipt and terminal, and creates no new
 report, reminder, trade or knowledge ingestion.
+
+A renamed revision under the same stable source identity may use this proof
+only when the publication version changes and the complete transcript bytes
+have the same SHA-256. Same-version intake and changed transcript bytes under
+that identity remain excluded; neither permits another business delivery.
+For this exact-byte revision case, upload-derived publication timestamps may
+differ from a renamed file's date-only timestamp. Keep both original request
+timestamps; the accepted full-source equivalence and stable identity govern
+reuse, without rewriting the canonical report's original source binding.
 
 When that projection reports a content-hash-bound `classification_backfill`
 manifest, the remote writer owns the exact listed viewpoint IDs. Reuse the

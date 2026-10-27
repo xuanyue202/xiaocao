@@ -1,0 +1,202 @@
+{
+  "date": "2026-10-26",
+  "kind": "大师班直播方法提炼",
+  "author": "小草",
+  "source": "小草直播",
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/private_evidence/kol_transcripts/2026-10/2026-10-26_xiaocao_masterclass_210731ca.txt",
+      "sha256": "210731ca8100416f56045a8c1ce92c63c0811f12f3e0abe3d29914e60b7c743c",
+      "size": 4431
+    }
+  ],
+  "authority": 0,
+  "summary": "小草在广泛低开、预期分歧并伴随盘中跳水的环境里，主张先收缩风险，按轮动思路观察N半、红盘起爆和紫薇盘中高分候选，并建议把两种模式组合使用。来源同时披露监控故障，但没有明说停用排名；将数据可靠性作为使用排名前的安全门槛，是系统研究推断。",
+  "posture": {
+    "regime": "广泛低开、分歧轮动且盘中波动放大",
+    "dominant_style": "防守优先，条件式观察N半、红盘起爆和紫薇盘中排名",
+    "risk": "作者把当时称为逐字稿所记的“清仓环境”，又多次提醒仓位；轻仓与清仓的原音边界未核实，不能据此固化精确仓位。作者还披露监控池和机器出现卡顿、死机，但没有界定受影响区间；候选完整性与分数可靠性因此被系统标为未证实。",
+    "style_ranking": [
+      "先控制总风险并按轮动处理",
+      "红盘起爆只观察当时条件尚可且不过度追随的候选",
+      "N半候选略偏高时不立即跟随",
+      "盘中跳水阶段查看高分排名；是否先要求可靠数据属于系统附加的安全评估"
+    ]
+  },
+  "regime_call": {
+    "call": "广泛低开且分歧加大时，先收缩风险，再按轮动处理并把两种模式组合使用；来源没有说明取交集或交叉确认，也没有给出模式权重。",
+    "horizon": "来源只覆盖2026年10月26日早间直播（含竞价及作者所称盘中观察，具体时段未核实）；行情结论已经过期，方法只作为可检验候选。",
+    "what_would_falsify": [
+      "跨样本检验显示广泛低开分歧日立即跟随高分候选的风险调整后结果并不差于收缩风险与等待确认",
+      "既有XH-276在本场语境下未降低回撤，或稀释收益过多",
+      "系统研究若显示故障标签不能识别排名结果恶化，则否定把监控健康作为安全门槛的增量价值"
+    ]
+  },
+  "directions": [
+    {
+      "name": "轮动行情",
+      "role": "当时的市场处理框架",
+      "boundary": "作者没有给出下一交易日或未来数日的轮动路径。"
+    },
+    {
+      "name": "红盘起爆",
+      "role": "条件式观察模式",
+      "boundary": "当时前列候选条件仍不充分，并伴随仓位约束。"
+    },
+    {
+      "name": "N半与紫薇盘中筛选",
+      "role": "高分候选观察工具",
+      "boundary": "N半首位略偏高，紫薇与监控排名又受现场故障影响，不能外推为买入规则。"
+    }
+  ],
+  "stocks": [
+    {
+      "name": "百洋股份",
+      "code": "002696.XSHE",
+      "role": "逐字稿反复点到的盘中或紫薇高分候选",
+      "boundary": "当前身份核验只确认证券名称和代码，不能证明10月26日的高分、推荐时点、入场条件或可成交性。"
+    }
+  ],
+  "method_principles": [
+    "先判断全局环境和风险预算，再看单个候选；单票问答不能替代市场广度、模式状态和排名结构。",
+    "广泛低开并预期分歧时按轮动处理，仓位先于机会，避免看到环境稍好就立即跟随。",
+    "把“两种模式组合”按原意记录为既有XH-276的本场复现；来源没有说明取交集或交叉确认，研究时沿用固定总风险、冻结模式权重和记录相关性的既有边界。",
+    "盘中跳水不等于立即恐慌；作者只披露监控异常，没有明说停用排名。把监控健康作为使用排名的前置门槛，是系统待验的安全推断。",
+    "具名候选和高分只能作为当时观察，必须补齐唯一身份、发现时点、信号分数、成交价格和退出边界后才能评估。"
+  ],
+  "exit_lessons": [],
+  "hypotheses": [
+    {
+      "claim": "在约四千余只股票低开、市场预期分歧的交易日，先收缩风险并按轮动等待确认，可能比环境稍有改善就立即跟随候选更能控制回撤。",
+      "implied_rule": "仅作为研究候选；事前冻结低开广度、分歧标签、模式候选、发现时点与统一风险预算，比较等待确认和立即跟随。",
+      "falsifiable_test": "在足够多的广泛低开分歧日中，比较等待确认组与立即跟随组的费用后收益、最大不利变动、尾损和成交率；若等待确认没有改善收益回撤比或显著漏失优质机会，则否定。",
+      "expected_effect": "降低分歧日早段追随造成的尾部损失。",
+      "category": "环境与仓位联动",
+      "authority": 0
+    },
+    {
+      "registry_id": "XH-276",
+      "match": "exact_recurrence",
+      "attribution": "来源明确说两种模式组合；固定总风险、模式权重和检验边界来自既有XH-276，不是本场新增原话。",
+      "claim": "在固定总风险下组合多个短线模式，可能降低单一模式波动并提高执行一致性。",
+      "implied_rule": "冻结模式间风险权重，记录相关性、收益、回撤和交易成本；不把单一模式内部的前两名平铺重复计为新命题。",
+      "falsifiable_test": "与单一模式和随机跨模式组合比较风险调整收益；若组合未降低回撤或稀释收益过多则否决。",
+      "expected_effect": "降低单一短线模式波动。",
+      "category": "portfolio_construction",
+      "authority": 0
+    },
+    {
+      "attribution": "system_research_synthesis；作者只披露监控故障，没有明说故障时停用排名。",
+      "claim": "系统研究假设：盘中高分排名只有在监控数据完整可靠时才可能提供增量；故障状态下暂停依赖排名可能优于继续使用残缺结果。",
+      "implied_rule": "为每次盘中排名记录数据完整性、延迟、故障状态、候选集和实际可成交价格；故障状态默认不产生候选。",
+      "falsifiable_test": "将正常状态、延迟状态和故障状态分层，对比继续使用排名与停用排名的误选率、费用后收益、最大不利变动和漏失率；若故障标签不能识别结果恶化，则否定。",
+      "expected_effect": "避免把软件卡顿或残缺排名误当成投资信号。",
+      "category": "系统推断的数据质量门槛",
+      "authority": 0
+    }
+  ],
+  "timing_notes": [
+    "来源文件称盘前大师班，逐字稿同时出现竞价、作者所称盘中跳水与九点多钟；统一保留为2026年10月26日早间直播，具体是否已过09:30未核实。",
+    "具体候选、分数和仓位判断均属于当时窗口；截至2026年10月27日复核时已经过期。",
+    "来源没有给出下一交易日或未来数日的基准路径。"
+  ],
+  "typo_corrections": [
+    {
+      "raw": "分期",
+      "normalized": "分歧",
+      "basis": "前后文连续讨论低开、广度和“今天分歧的话，大概率是要分歧的”。"
+    },
+    {
+      "raw": "红盘举报／按举报",
+      "normalized": "红盘起爆",
+      "basis": "同段紧接明确说出“红盘起爆”，且为项目已有模式名称。"
+    },
+    {
+      "raw": "白杨股份／百安股份／百洋股份",
+      "normalized": "百洋股份",
+      "basis": "逐字稿后续反复出现“百洋股份”，独立当前证券身份核验返回002696.XSHE；这不验证来源当日分数和推荐时点。"
+    },
+    {
+      "raw": "海什么的／荆荆州／海洋网吧／所所成",
+      "normalized": "未解析的音近证券提及",
+      "basis": "完整上下文仍不能唯一确认正式证券名称与代码，禁止按音近补猜。"
+    }
+  ],
+  "decision_trace": [
+    {
+      "observation": "开盘约四千余只股票低开，作者预计当日分歧，并把环境理解为轮动和强风险收缩。",
+      "inference": "环境稍有改善不足以支持立即跟随，仓位控制优先于候选选择。",
+      "action": "先收缩风险，再观察N半、红盘起爆和盘中模式是否给出独立确认。",
+      "why": "广泛低开与分歧提高了早段信号反转和追随失败的风险。"
+    },
+    {
+      "observation": "红盘起爆前列候选涨幅或条件尚不充分，作者建议最好把两种模式组合。",
+      "inference": "本场只支持“两种模式组合”，可作为既有XH-276的复现；不能推成取交集或交叉确认。",
+      "action": "复用XH-276的固定总风险、冻结模式权重和相关性审计，不创建交集假设。",
+      "why": "来源没有说明组合算法；检验边界来自既有知识，而非本场作者原话。"
+    },
+    {
+      "observation": "盘中跳水时作者仍建议查看高分排名，但监控池持续报错并最终死机。",
+      "inference": "行情波动本身不必触发恐慌；把数据可靠性设为排名可用的前置条件，是系统安全推断。",
+      "action": "研究时比较故障状态下继续依赖排名与暂停依赖排名的结果；不把停用规则归给作者。",
+      "why": "来源没有给故障影响范围，系统只能把完整性标为未证实并提出可证伪研究。"
+    }
+  ],
+  "judgment_heuristics": [
+    "先看全局广度和环境，再看模式，最后才看个股。",
+    "仓位含义存在轻仓与清仓歧义时，只保留收缩风险方向，不补造百分比。",
+    "两种模式组合复用XH-276的固定总风险、权重冻结和相关性审计；不得改写成作者主张取交集。",
+    "监控异常时先核实影响范围是系统安全推断，不是作者明示规则；是否暂停依赖排名须研究验证。",
+    "音近证券名称不能据语感补成代码；唯一身份核验也不能反向证明历史信号。"
+  ],
+  "action_summary": {
+    "posture_update": "仅形成authority=0候选；当日姿态已过期，不直接改写当前仓位或确定性姿态。",
+    "playbook_update": "no_change；单场直播和故障排名不足以修改正式打法。",
+    "hypothesis_update": "authority=0：合并XH-276本场复现，另存广泛低开风险预算与系统数据健康候选；不晋级参数。",
+    "audit_evidence": "完整14段逐字稿已反链；百洋股份仅完成当前身份核验，其余音近实体保持未解析。",
+    "instrumentation_todo": "研究需冻结低开广度、环境标签、各模式完整候选、重复成员、监控健康、发现时点、成交价格和样本外绩效。",
+    "routing": [
+      "authority=0候选知识",
+      "禁止自动调参",
+      "须经研究工具与人工门槛后方可晋级"
+    ]
+  },
+  "operational_provenance": {
+    "accepted_original_draft": {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_xiaocao_live/semantic_requests/kol-01c81ca02579/.semantic_delegation/5f0f32a68728fa779e349d5f36cc48a251b9b9c64126d690b7ac183a397c0ac0/knowledge_draft.json",
+      "sha256": "4990b28f7a03ff61535caada63eeab78a8cafcdcb78afdcd861fc7c89fd243a5",
+      "size": 10870
+    },
+    "source_request": {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_xiaocao_live/semantic_requests/kol-01c81ca02579/analysis_request.json",
+      "sha256": "5f0f32a68728fa779e349d5f36cc48a251b9b9c64126d690b7ac183a397c0ac0",
+      "size": 13645
+    },
+    "market_evidence": {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261027_01a17b31/article_market_evidence_v2.json",
+      "sha256": "ce05847679884af0b899b7a711e353252d038d1550b396e1bc7c3c53abe6e52c",
+      "size": 7980
+    },
+    "supplemental_security_identity": {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261027_01a17b31/baiyang_identity.json",
+      "sha256": "2c2bcdd6b57c4bd05cd1214b4c6c5edc08fab6933bb7b5c0c534b82de6160ab6",
+      "size": 1504
+    },
+    "private_archive_proof": {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261027_01a17b31/video1026_private_archive.json",
+      "sha256": "be31c9997eeba8deaaae4b5a5f7f46306c0ac494fe043bdfb566166e423c3b3e",
+      "size": 706
+    },
+    "privacy_boundary": "Private raw transcript stored under output/private_evidence; excluded from public Git",
+    "ingestion_status": "ingested_authority_0",
+    "ingest_receipt": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261027_01a17b31/video1026_knowledge_ingest_receipt.json",
+    "feedback_assessment": "本场细化广泛低开分歧时的风险预算；XH-276仅复现，不构成实证确认。单日回调不等于持续性主跌，现行posture已过期且不被本场复活。监控健康为系统研究假设；不得自动启用。",
+    "normalized_source_evidence": {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_netdisk_enrichment/artifacts/kol-netdisk-6fbc4f8ef7705098/20261026 盘前大师班直播10月26日-compressed.txt",
+      "sha256": "210731ca8100416f56045a8c1ce92c63c0811f12f3e0abe3d29914e60b7c743c",
+      "size": 4431
+    },
+    "temporal_correction": "Independent Spec review corrected an unproven post-open label in this archive. Immutable original analyst draft and published bundle are preserved; source timing remains unresolved.",
+    "review_correction_receipt": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261027_01a17b31/video1026_knowledge_review_correction_final.json"
+  }
+}

@@ -117,6 +117,32 @@ def test_alias_requires_both_accepted_bundles_and_reuses_receipts(alias_case):
     assert len((c.decisions / "book_kol_us" / "decisions.jsonl").read_text().splitlines()) == 1
 
 
+@pytest.mark.parametrize("revision", [
+    "identical_transcript", "new_publication_timestamp", "changed_transcript", "same_version",
+])
+def test_same_identity_renamed_revision_requires_identical_transcript(alias_case, revision):
+    c = alias_case
+    item = deepcopy(c.current)
+    item["source_identity"] = "old"
+    if revision != "changed_transcript":
+        ref = c.write("new.txt", "原直播投资原句与条件。")
+        item["evidence_sha256"] = ref["sha256"]
+    if revision == "same_version":
+        item["source_version_key"] = "v1"
+    if revision == "new_publication_timestamp":
+        item["published_at"] = "2026-10-13"
+    ref = c.write("bundle.json", {"items": [item]})
+    c.proof["bundle_sha256"] = ref["sha256"]
+    if revision not in {"identical_transcript", "new_publication_timestamp"}:
+        with pytest.raises(EnrichmentError, match="changes author, source or event date"):
+            aliases.verify_source_event_alias(c.path, c.proof, c.decisions)
+        return
+    result = aliases.verify_source_event_alias(c.path, c.proof, c.decisions)
+    assert result["proof_kind"] == "accepted_source_event_alias"
+    assert result["current_evidence_sha256"] == result["prior_evidence_sha256"]
+    assert len((c.decisions / "events.jsonl").read_text().splitlines()) == 1
+
+
 @pytest.mark.parametrize("mutation", ["quote", "missing_claim", "extra_prior", "changed_day", "trade", "material_change"])
 def test_alias_rejects_incomplete_or_different_source_semantics(alias_case, mutation):
     c = alias_case
@@ -163,12 +189,21 @@ def test_alias_rejects_missing_durable_effect_proofs(alias_case, monkeypatch, mi
         aliases.verify_source_event_alias(c.path, c.proof, c.decisions)
 
 
-def test_alias_completion_and_replay_never_dispatch_business_writers(alias_case, monkeypatch):
+@pytest.mark.parametrize("same_identity", [False, True])
+def test_alias_completion_and_replay_never_dispatch_business_writers(
+    alias_case, monkeypatch, same_identity,
+):
     from xiaocao.kol import decisions
     from xiaocao.kol.netdisk_enrichment import NetdiskEnrichmentService
     from xiaocao.kol.daily import validate_source_event
 
     c = alias_case
+    if same_identity:
+        text = (c.path.parent / "old.txt").read_text()
+        evidence = c.write("new.txt", text)
+        c.current.update(source_identity="old", evidence_sha256=evidence["sha256"])
+        bundle = c.write("bundle.json", {"items": [c.current]})
+        c.proof["bundle_sha256"] = bundle["sha256"]
     transcript = c.path.parent / "new.txt"
     sha = hashlib.sha256(transcript.read_bytes()).hexdigest()
     state = {"job_id": "j1", "status": "verified", "transcript_path": str(transcript), "transcript_sha256": sha}
@@ -201,8 +236,9 @@ def test_alias_completion_and_replay_never_dispatch_business_writers(alias_case,
     )
     persisted = json.loads(__import__("pathlib").Path(result["decision_result_path"]).read_text())
     terminal = validate_source_event(persisted["items"][0]["daily_terminal"])
-    assert terminal["event_id"] == "new"
-    assert terminal["source_binding"]["source_identity"] == "new"
+    assert terminal["event_id"] == ("old" if same_identity else "new")
+    assert terminal["source_binding"]["source_identity"] == ("old" if same_identity else "new")
+    assert terminal["source_binding"]["publication_version"] == "v2"
     assert terminal["source_event_alias"]["canonical_event_id"] == "old"
     assert persisted["semantic_duplicate_reconciliation"]["new_external_side_effect_count"] == 0
     replay = service.reconcile_semantic_duplicate(

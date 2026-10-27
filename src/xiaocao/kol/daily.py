@@ -57,6 +57,7 @@ from .writer_progress import (
     FailureFingerprint,
     normalize_source_result,
     resolve_repository_revision,
+    source_event_effect_count,
     WriterProgress,
 )
 
@@ -2622,9 +2623,7 @@ class DailyCoordinator:
                 0
                 if row.get("external_business_effects_replayed") is False
                 else sum(
-                    int(event.get("gray_report", {}).get("status") == "published")
-                    + int(event.get("alert", {}).get("status") == "delivered")
-                    + int(event.get("book_kol_us", {}).get("status") == "filled")
+                    source_event_effect_count(event)
                     for event in row.get("events") or []
                     if isinstance(event, Mapping)
                 )

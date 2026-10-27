@@ -2754,6 +2754,23 @@ def _progress_claim_summary(outcome: Mapping[str, Any]) -> dict[str, int]:
     }
 
 
+def source_event_effect_count(event: Mapping[str, Any], *, include_reused: bool = False) -> int:
+    """Count confirmed effects, excluding accepted alias reuse by default."""
+    alias = event.get("source_event_alias")
+    if (
+        not include_reused
+        and event.get("reconciled_existing") is True
+        and isinstance(alias, Mapping)
+        and alias.get("new_external_side_effect_count") == 0
+    ):
+        return 0
+    return (
+        int((event.get("gray_report") or {}).get("status") == "published")
+        + int((event.get("alert") or {}).get("status") == "delivered")
+        + int((event.get("book_kol_us") or {}).get("status") == "filled")
+    )
+
+
 def normalize_source_result(
     adapter: str,
     outcome: Mapping[str, Any],
@@ -2789,16 +2806,14 @@ def normalize_source_result(
         events = [
             row for row in raw_events if isinstance(row, dict)
         ] if isinstance(raw_events, list) else []
-        external_effect_count = sum(
-            int((event.get("gray_report") or {}).get("status") == "published")
-            + int((event.get("alert") or {}).get("status") == "delivered")
-            + int((event.get("book_kol_us") or {}).get("status") == "filled")
-            for event in events
+        external_effect_count = sum(source_event_effect_count(event) for event in events)
+        receipted_effect_count = sum(
+            source_event_effect_count(event, include_reused=True) for event in events
         )
         terminal_summary = (
             {
-                "claim_count": external_effect_count,
-                "receipt_count": external_effect_count,
+                "claim_count": receipted_effect_count,
+                "receipt_count": receipted_effect_count,
                 "uncertain_effect_count": 0,
             }
             if summary == {
@@ -2916,7 +2931,22 @@ def normalize_source_result(
         or (item or {}).get("code")
         or "progress_deadline_missing"
     )
-    if category == "uncertain_state" or summary["uncertain_effect_count"]:
+    deadline = str((item or {}).get("next_poll_not_before") or "").strip()
+    bounded_transfer_wait = (
+        len(items) == 1
+        and summary["claim_count"] == 1
+        and summary["uncertain_effect_count"] <= 1
+        and category == "provider_wait"
+        and stage == "cloud_transfer_confirmation"
+        and bool(deadline)
+        and (item or {}).get("effect_kind") == "cloud_transfer"
+        and bool((item or {}).get("claim_identity"))
+        and (item or {}).get("readback_operation")
+        == "read_lv_transfer_claim_receipt"
+    )
+    if category == "uncertain_state" or (
+        summary["uncertain_effect_count"] and not bounded_transfer_wait
+    ):
         claim_identity = str((item or {}).get("claim_identity") or "")
         readback_operation = str(
             (item or {}).get("readback_operation") or ""
@@ -2939,7 +2969,6 @@ def normalize_source_result(
             )
         category = "control_plane_handler_error"
         code = "uncertain_effect_lacks_readback_binding"
-    deadline = str((item or {}).get("next_poll_not_before") or "").strip()
     if deadline:
         attempted = int((item or {}).get("trigger_attempt") or 1)
         maximum = max(

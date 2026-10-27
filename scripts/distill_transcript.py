@@ -365,6 +365,9 @@ def ingest(source: Path = DISTILLED) -> int:
             if provenance:
                 entry["authors"] = [provenance["author"]]
                 entry["source_refs"] = [provenance]
+            for field in ("provenance", "source_basis", "related_existing_ids", "dedup_boundary"):
+                if field in h:
+                    entry[field] = h[field]
             by_claim[key] = entry
             new_entries.append(entry)
             nxt += 1

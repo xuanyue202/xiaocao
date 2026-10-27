@@ -30,6 +30,64 @@ from xiaocao.kol.subscription_video import (
 NOW = datetime.fromisoformat("2026-07-25T16:00:00+08:00")
 
 
+@pytest.mark.parametrize("expanded,expected_clicks", [(True, 2), (False, 1)])
+def test_lv_transfer_reloads_only_empty_destination_root(expanded, expected_clicks):
+    observed = _run_destination_root_fixture(expanded=expanded)
+    assert observed == {"result": {"status": "ready", "recovered": True}, "clicks": expected_clicks}
+
+
+@pytest.mark.parametrize("case,expected_status", [
+    ("already_loaded", "ready"),
+    ("populated", "ready"),
+    ("ambiguous", "destination_tree_root_not_unique"),
+    ("never_loads", "destination_tree_root_not_loaded"),
+    ("render_pending", "ready"),
+    ("never_renders", "destination_tree_root_missing"),
+    ("ambiguous_after_collapse", "destination_tree_root_not_collapsed"),
+])
+def test_lv_transfer_root_recovery_preserves_selection_guards(case, expected_status):
+    observed = _run_destination_root_fixture(case=case)
+    assert observed["result"]["status"] == expected_status
+    assert observed["clicks"] == (2 if case == "never_loads" else 1 if case == "ambiguous_after_collapse" else 0)
+    if case in {"ambiguous", "never_loads", "never_renders", "ambiguous_after_collapse"}:
+        assert observed["result"]["triggered"] is False
+
+
+def _run_destination_root_fixture(*, expanded=True, case="empty"):
+    from xiaocao.kol.subscription_video import _ENSURE_TRANSFER_TREE_ROOT_FUNCTION
+
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("Node is required to exercise destination root recovery")
+    script = r"""
+const fixture = __FIXTURE__;
+let now = 0, clicks = 0, expanded = fixture.expanded, loaded = fixture.case === 'already_loaded';
+Date.now = () => now;
+globalThis.setTimeout = callback => {now += 100; queueMicrotask(callback);};
+const arrow = {
+  classList: {contains: value => value === 'minus' && expanded},
+  click: () => {clicks++; expanded = !expanded; if (expanded && fixture.case !== 'never_loads') loaded = true;},
+};
+const root = {
+  getAttribute: () => '/',
+  closest: () => ({querySelector: () => arrow}),
+};
+const course = {getAttribute: () => '/课程'};
+const other = {getAttribute: () => '/别处'};
+const dialog = {querySelectorAll: () => fixture.case === 'never_renders' ? []
+  : fixture.case === 'render_pending' ? now < 300 ? [] : [root, course]
+  : fixture.case === 'ambiguous_after_collapse' && clicks ? [root, {...root}]
+  : fixture.case === 'ambiguous' ? [root, {...root}]
+  : fixture.case === 'populated' ? [root, other] : loaded ? [root, course] : [root]};
+const ensure = __FUNCTION__;
+(async () => console.log(JSON.stringify({result: await ensure(dialog, '课程', () => true), clicks})))();
+""".replace("__FIXTURE__", json.dumps({"expanded": expanded, "case": case})).replace(
+        "__FUNCTION__", _ENSURE_TRANSFER_TREE_ROOT_FUNCTION,
+    )
+    result = subprocess.run([node, "-e", script], check=True, capture_output=True, text=True)
+    return json.loads(result.stdout)
+
+
 @pytest.mark.parametrize("already_selected", [False, True])
 @pytest.mark.parametrize("semantic_checkbox", [False, True])
 @pytest.mark.parametrize("recent_paths,selected_paths,expected", [
@@ -3263,6 +3321,81 @@ def test_lv_transfer_stops_on_explicit_provider_rejection(tmp_path):
         "lv-cloud-transfer-provider-rejected"
     )
     assert blocked["reconciliation_status"] == "provider_rejected"
+
+
+@pytest.mark.parametrize("phase", ["waiting", "settled", "exhausted", "other_rejection"])
+def test_lv_transfer_temporary_timeout_keeps_window_and_attempt_budget(tmp_path, phase):
+    service = _service(tmp_path, sleep=lambda _seconds: None)
+    item = service._normalize(_source_rows()[0][1], source=LV_SOURCE, author=LV_AUTHOR)
+    service.ensure_lv_destination = lambda **_kwargs: {"status": "completed"}
+    copy_ready = False
+    clicks = []
+    service._direct_private_entries = lambda **_kwargs: (
+        [_row("timeout-copy", f"{LV_DESTINATION_DIRECTORY}/{item['name']}",
+              size=item["size"], modified_at=item["modified_at"] + 1)]
+        if copy_ready else []
+    )
+    service._search_private_exact = lambda **_kwargs: []
+    receipt_name = f"lv_transfer_{item['version_key']}"
+    claim_path = service._claim_path(receipt_name)
+    claim_path.parent.mkdir(parents=True)
+    minutes = 5 if phase == "waiting" else 31
+    prior = {
+        "schema_version": 1, "event": "lv_cloud_transfer_blocked", "status": "blocked",
+        "claim_id": "original-timeout-claim", "claimed_at": (NOW - timedelta(minutes=minutes)).isoformat(),
+        "triggered_at": (NOW - timedelta(minutes=minutes)).isoformat(),
+        "trigger_attempt": 2 if phase == "exhausted" else 1, "trigger_attempt_maximum": 2,
+        "source_identity": item["identity"], "source_version_key": item["version_key"],
+        "source_path": item["path"], "source_size": item["size"],
+        "target_path": f"{LV_DESTINATION_DIRECTORY}/{item['name']}", "large_payload_local_bytes": 0,
+        "provider_trigger_status": "cloud_transfer_rejected", "provider_outcome": "rejected",
+        "provider_request_observed": True, "provider_response_observed": True,
+        "provider_http_status": 200, "provider_errno": 4,
+        "provider_message": "容量不足" if phase == "other_rejection" else "请求超时，请稍后再试",
+        "blocker_key": "lv-cloud-transfer-provider-rejected", "user_action_required": True,
+        "side_effect_uncertain": False,
+    }
+    claim_path.write_text(json.dumps(prior), encoding="utf-8")
+    original_line = json.dumps(prior) + "\n"
+    service.events_path.write_text(original_line, encoding="utf-8")
+
+    def opencli(_session, *args, **_kwargs):
+        nonlocal copy_ready
+        assert phase == "settled", "unsettled, exhausted or permanent response must never click"
+        if args[0] == "open":
+            return {"url": "sanitized"}
+        if args[0] == "click":
+            clicks.append(args[1]); copy_ready = True
+            return {"clicked": True, "matches_n": 1}
+        if "destinationSegments" in args[1]:
+            return {"status": "save_confirmation_ready", "triggered": False,
+                    "confirmation_selector": '[data-xiaocao-lv-confirm="ready"]'}
+        return {"status": "cloud_transfer_accepted", "triggered": True, "provider_outcome": "accepted"}
+
+    service._opencli_json = opencli
+    if phase in {"exhausted", "other_rejection"}:
+        error = "did not materialize after bounded" if phase == "exhausted" else "rejected by provider"
+        with pytest.raises(EnrichmentError, match=error):
+            service.transfer_lv_video(item, lv_session="lv", private_session="private", profile=None)
+        assert clicks == []
+        assert json.loads(claim_path.read_text())["trigger_attempt"] == prior["trigger_attempt"]
+        assert json.loads(claim_path.read_text())["side_effect_uncertain"] is (phase == "exhausted")
+    else:
+        result = service.transfer_lv_video(item, lv_session="lv", private_session="private", profile=None)
+        if phase == "waiting":
+            assert clicks == []
+            assert result["next_poll_not_before"] == (NOW + timedelta(minutes=25)).isoformat(timespec="seconds")
+            assert result["user_action_required"] is False
+            assert "blocker_key" not in result
+            assert result["provider_errno"] == 4
+            assert result["side_effect_uncertain"] is True
+        else:
+            assert result["status"] == "completed"
+            assert len(clicks) == 1
+            claim = json.loads(claim_path.read_text())
+            assert claim["retry_of"] == prior["claim_id"]
+            assert claim["trigger_attempt"] == claim["trigger_attempt_maximum"] == 2
+    assert service.events_path.read_text().startswith(original_line)
 
 
 def test_semantic_duplicate_requires_receipted_household_and_paper_ledgers(

@@ -69,7 +69,11 @@ from xiaocao.kol.semantic_bundle import (
     validate_receipt_bindings,
 )
 from xiaocao.kol.semantic_delegation import verify_result as verify_delegated_result
-from xiaocao.kol.subscription_video import LV_SOURCE, SubscriptionVideoService
+from xiaocao.kol.subscription_video import (
+    LV_SOURCE,
+    SubscriptionVideoService,
+    is_retryable_lv_transfer_timeout,
+)
 from xiaocao.kol.wechat_official import (
     DEFAULT_PUBLISHERS as DEFAULT_WECHAT_OFFICIAL_PUBLISHERS,
     DEFAULT_WITHIN as DEFAULT_WECHAT_OFFICIAL_WITHIN,
@@ -258,9 +262,11 @@ class SemanticInputUnavailable(DailyError):
         self,
         request_or_message: dict[str, Any] | str,
         field: str | None = None,
+        *,
+        reason: str | None = None,
     ):
         if isinstance(request_or_message, dict):
-            message = f"daily runner is waiting for {field} on stdin"
+            message = reason or f"daily runner is waiting for {field} on stdin"
             self.request = request_or_message
             self.field = str(field or "")
         else:
@@ -1042,8 +1048,12 @@ def _require_canonical_semantic_artifact(
         )
         if acceptance["semantic_acceptance"]["status"] != "parent_accepted":
             raise ValueError("parent full-source quality review requires changes")
-    except (OSError, ValueError, TypeError, KeyError, SemanticBundleError) as exc:
-        raise DailyError(f"semantic delegation acceptance failed: {exc}") from exc
+    except (OSError, ValueError, TypeError, KeyError, SemanticBundleError, DailyError) as exc:
+        raise SemanticInputUnavailable(
+            request,
+            "bundle_path",
+            reason=f"semantic delegation acceptance failed: {exc}",
+        ) from exc
     return bundle_path
 
 
@@ -1656,6 +1666,27 @@ def _classified_source(name: str, runner):
         try:
             return runner()
         except SemanticInputUnavailable as exc:
+            request = exc.request
+            if request.get("analysis_request_path") and exc.field == "bundle_path":
+                waiting_item = _semantic_waiting_item(
+                    request,
+                    identity=str(request.get("identity") or request.get("source_identity") or ""),
+                    version_key=str(request.get("version_key") or request.get("source_version_key") or ""),
+                    name=str(request.get("title") or request.get("name") or ""),
+                    author=str(request.get("author") or ""),
+                )
+                waiting_item.update(response_field=exc.field, input_error=str(exc))
+                outcome = {
+                    "status": "waiting",
+                    "waiting_count": 1,
+                    "waiting_items": [waiting_item],
+                }
+                progress = normalize_source_result(
+                    name, outcome,
+                    failure_revision=_writer_failure_revision(),
+                    provider_contract_version="xiaocao_writer_v1",
+                )
+                return {**outcome, "writer_progress": progress.to_dict()}
             raise TransientSourceError(
                 "semantic input unavailable",
                 category="input_error",
@@ -2777,7 +2808,10 @@ class DailyRuntime:
                     code="xiaocao_handoff_import_rejected",
                     stage="mailbox_import",
                 ) from exc
-            result = self.xiaocao(handoff_id=handoff_id)
+            result = _classified_source(
+                "xiaocao_wechat_live",
+                lambda: self.xiaocao(handoff_id=handoff_id),
+            )()
         else:
             raise EnrichmentDiagnosticError(
                 "mailbox handoff capsule type is unsupported",
@@ -2792,6 +2826,11 @@ class DailyRuntime:
             **result,
             "business_complete": handoff_id in completed,
         }
+        if (result.get("writer_progress") or {}).get("status") == "structured_input":
+            response["writer_progress"] = WriterProgress.from_dict({
+                **result["writer_progress"],
+                "item_identity": handoff_id,
+            }).to_dict()
         if handoff_id in completed and (
             isinstance(result.get("writer_progress"), dict)
             or isinstance(result.get("events"), list)
@@ -3528,6 +3567,7 @@ class DailyRuntime:
         events = []
         waiting = 0
         waiting_items = []
+        pending_transfer_claims: dict[str, bool] = {}
         for item in pending:
             state = _persisted_video_analysis_request(
                 self.args.video_output_dir,
@@ -3651,6 +3691,9 @@ class DailyRuntime:
                         "status": state_status,
                         "stage": state_stage,
                         "trigger_attempt": state.get("trigger_attempt"),
+                        "trigger_attempt_maximum": state.get(
+                            "trigger_attempt_maximum"
+                        ),
                         "next_poll_not_before": state.get(
                             "next_poll_not_before"
                         ),
@@ -3677,6 +3720,20 @@ class DailyRuntime:
                         "retryable": True,
                     }
                 waiting_items.append(waiting_item)
+                if state_stage == "cloud_transfer_confirmation" and state.get("claim_id"):
+                    claim_id = str(state["claim_id"])
+                    binding = _lv_transfer_claim_binding(
+                        self.args.video_output_dir, item,
+                    )
+                    if binding.get("claim_identity") != (
+                        f"lv_transfer:{item['version_key']}:{claim_id}"
+                    ):
+                        raise DailyError("Lv transfer wait claim binding changed")
+                    waiting_item.update(binding)
+                    pending_transfer_claims[claim_id] = (
+                        pending_transfer_claims.get(claim_id, False)
+                        or state.get("side_effect_uncertain") is True
+                    )
                 continue
             semantic_request = {
                     **state,
@@ -3738,6 +3795,11 @@ class DailyRuntime:
             "status": "waiting",
             "waiting_count": waiting,
             "waiting_items": waiting_items,
+            **({"claim_receipt_summary": {
+                "claim_count": len(pending_transfer_claims),
+                "receipt_count": 0,
+                "uncertain_effect_count": sum(pending_transfer_claims.values()),
+            }} if pending_transfer_claims else {}),
         }
 
     def videos_reconcile(self, progress: WriterProgress) -> dict[str, Any]:
@@ -4043,6 +4105,24 @@ class DailyRuntime:
                 )
                 if request is not None and _persisted_validated_bundle(request) is not None:
                     retained.append(str(item["identity"]))
+                if item.get("source") != LV_SOURCE:
+                    continue
+                claim_path = (self.args.video_output_dir / "claims"
+                              / f"lv_transfer_{item['version_key']}.json")
+                if not claim_path.is_file():
+                    continue
+                claim = json.loads(claim_path.read_text(encoding="utf-8"))
+                if not is_retryable_lv_transfer_timeout(claim):
+                    continue
+                if (
+                    claim.get("source_identity") != item["identity"]
+                    or claim.get("source_version_key") != item["version_key"]
+                    or claim.get("source_size") != item.get("size")
+                    or not claim.get("triggered_at")
+                ):
+                    raise DailyError("video timeout claim binding changed")
+                retained.append(str(item["identity"]))
+            retained = list(dict.fromkeys(retained))
             if len(retained) > 1:
                 raise DailyError("video source resume has multiple retained bundles")
             if retained:
