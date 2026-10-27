@@ -1,0 +1,673 @@
+{
+  "schema_version": 2,
+  "knowledge_status": "reusable_knowledge",
+  "date": "2026-10-25",
+  "kind": "盘后大师班",
+  "author": "小草",
+  "source": "小草直播",
+  "authority": 0,
+  "summary": "来源把下跌后的市场判断为由主跌向轮动过渡，提出短线模式、退出节奏和相对仓位层数都应随环境切换，并强调至少三个月统计与概率纪律。学生关于开盘后首个或首次达到10分以上且并非独立一档样本的观察，被老师改写为‘9:31前10分是否有优势、独立一档要满足什么条件’的待测问题；另有一个名称转写未决的‘多少钱模式’被暂时评价为弱于直接排名。两者都不是已验证阈值、买点或模式结论。相关内容只作为权威等级为0的研究证据；与既有候选假设重合的部分只登记反馈，不新增近义命题。",
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/private_evidence/kol_transcripts/2026-10/2026-10-25_xiaocao_masterclass_9d2b9d68.txt",
+      "sha256": "9d2b9d68ff83d8cd58ee87e53e63644d1171e477674a6d6032437e898cdb438b",
+      "size": 31726
+    },
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261027_01a17b31/video1025_supplemental_primary.json",
+      "sha256": "983c55d9ef11025fbf1fbb90372b2775e84bac4e88ed99e377eeb62ab23c2342",
+      "size": 5624
+    },
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261027_01a17b31/video1025_local_evidence.json",
+      "sha256": "5579f80c0148402c78e18507afe7c5c19ed48593363e3e1f67dc473d20749ea5",
+      "size": 278068
+    }
+  ],
+  "posture": {
+    "regime": "主跌后向轮动过渡，反转概率仍低",
+    "dominant_style": "短线情绪与断板、接力、一进二等模式可能阶段性改善，趋势大票仍弱",
+    "risk": "上方套牢盘、科技核心被动修复、转势判断过早和高位模式左尾",
+    "style_ranking": [
+      "出现实时资格的短线模式",
+      "下跌低吸作为相对稳健备选",
+      "趋势大票反弹",
+      "无条件重仓押反转"
+    ]
+  },
+  "regime_call": {
+    "call": "来源认为后续连续急杀的概率降低，交易难度可能下降，但这不等于已经反转，更可能继续轮动。",
+    "source_view": "来源认为后续连续急杀的概率降低，交易难度可能下降，但这不等于已经反转，更可能继续轮动。",
+    "horizon": "来源对市场姿态和短线风格的原词是“未来这几天”；来源中的“明天”对应2026-10-26，该具体低吸、N半、红盘起爆、人气股起爆与等待连板接力的计划已经过期。2026-10-30收盘只是系统设置的保守最迟复核截止，不是作者明确期限，必须被实时结构提前证伪且不得自动续期。",
+    "conditions": [
+      "作者条件：短线情绪和模式评分持续改善。",
+      "作者量能主张：10月23日上午没有放量、下午上涨时放量；若用作后续判断，只能保留为“作者所称的上涨放量延续”。上证代理仅支持上午弱、午后转强的价格路径，分时amt口径未证明，系统不能把它改写成承接指标。",
+      "作者条件：科技核心由被动上涨转为主动走强，才可能提高反转判断。"
+    ],
+    "what_would_falsify": [
+      "短线模式评分突然转为低分，且断板、接力、一进二等模式的赚钱效应未能延续。",
+      "高位与接力负反馈扩散，轮动阶段并未带来更可控的短线环境。",
+      "市场重新进入连续急跌，否定“后续连续急杀概率降低”的基准情形。",
+      "科技核心由被动修复转为持续主动主升并消化套牢盘，则“反转概率仍低、主要继续轮动”的判断需要上调或重做。"
+    ],
+    "falsifiers": [
+      "短线模式评分突然转为低分，且断板、接力、一进二等模式的赚钱效应未能延续。",
+      "高位与接力负反馈扩散，轮动阶段并未带来更可控的短线环境。",
+      "市场重新进入连续急跌，否定“后续连续急杀概率降低”的基准情形。",
+      "科技核心由被动修复转为持续主动主升并消化套牢盘，则“反转概率仍低、主要继续轮动”的判断需要上调或重做。"
+    ],
+    "confidence": "中等偏低；价格路径有上证代理旁证，作者的量能口径和老师侧模型均未独立证明。"
+  },
+  "directions": [
+    {
+      "name": "短线情绪模式",
+      "stance": "观察改善后按资格参与",
+      "horizon": "来源所说的未来几天",
+      "conditions": [
+        "作者条件：断板、接力、一进二或高位模式的评分和表现继续改善。",
+        "系统执行前置条件：若要形成当前动作，仍需当日资格、唯一候选身份和价格路径确认；这不是作者已验证的承接门槛。"
+      ],
+      "risks": [
+        "只是轮动而非反转",
+        "模式高分可能快速失效"
+      ]
+    },
+    {
+      "name": "下跌低吸",
+      "stance": "作为不愿复杂判断时的相对稳健备选",
+      "horizon": "轮动过渡阶段",
+      "conditions": [
+        "作者观点：下跌低吸在轮动过渡阶段仍可做且相对稳一点。",
+        "系统执行前置条件：当日模式资格与价格路径重新确认；不能把本地模型等同于老师模型。"
+      ],
+      "risks": [
+        "稳定是来源相对判断，不等于低风险或必胜"
+      ]
+    },
+    {
+      "name": "科技趋势大票",
+      "stance": "不把反弹当反转",
+      "horizon": "未来几天至套牢盘被消化前",
+      "conditions": [
+        "核心科技需要由被动上涨转为主动领涨才可上调判断"
+      ],
+      "risks": [
+        "上方套牢盘",
+        "新易盛、天孚通信、德明利等只是弱势例子，不是买卖建议"
+      ]
+    }
+  ],
+  "stocks": [
+    {
+      "surface_form": "新益盛",
+      "official_name": "新易盛",
+      "code": "300502.XSHE",
+      "role": "科技核心弱势例子",
+      "action": "无",
+      "source_basis": "来源用其涨幅有限说明科技核心没有主动反转；证券目录只用于名称解析。"
+    },
+    {
+      "surface_form": "天府通信",
+      "official_name": "天孚通信",
+      "code": "300394.XSHE",
+      "role": "科技核心弱势例子",
+      "action": "无",
+      "source_basis": "来源用其涨幅有限说明科技核心没有主动反转；证券目录只用于名称解析。"
+    },
+    {
+      "surface_form": "德明利",
+      "official_name": "德明利",
+      "code": "001309.XSHE",
+      "role": "科技核心弱势例子",
+      "action": "无",
+      "source_basis": "来源回看科技核心表现；证券目录只用于名称解析。"
+    },
+    {
+      "surface_form": "读者传媒",
+      "official_name": "读者传媒",
+      "code": "603999.XSHG",
+      "role": "断板大低开历史涨停例外",
+      "action": "无",
+      "source_basis": "来源把它作为主跌阶段早卖规则的历史例外；本地出版传媒601999不是同一证券。"
+    },
+    {
+      "surface_form": "城市传媒",
+      "official_name": "城市传媒",
+      "code": "600229.XSHG",
+      "role": "概率例子中首先说出后随即纠正的名称",
+      "action": "无",
+      "source_basis": "证券目录只用于身份解析；说话人随即纠正，因此不作为最终例子。"
+    },
+    {
+      "surface_form": "华北制药",
+      "official_name": "华北制药",
+      "code": "600812.XSHG",
+      "role": "纠正城市传媒后提出的历史候选之一",
+      "action": "无",
+      "source_basis": "来源说‘应该是华北制药或者新华文轩’，随后最终采用新华文轩。"
+    },
+    {
+      "surface_form": "新华文轩",
+      "official_name": "新华文轩",
+      "code": "601811.XSHG",
+      "role": "概率例子最终采用的次日涨停历史样本",
+      "action": "无",
+      "source_basis": "来源按城市传媒→华北制药或新华文轩→新华文轩的顺序自我纠正；这里只保留历史角色。"
+    },
+    {
+      "surface_form": "正域工业",
+      "official_name": "正裕工业",
+      "code": "603089.XSHG",
+      "role": "连板接力历史例子",
+      "action": "无",
+      "source_basis": "名称由证券目录与日线共同校正；日线只支持价格结果，不支持老师模式、排名或成交。"
+    },
+    {
+      "surface_form": "利亚达",
+      "official_name": "利亚德",
+      "code": "300296.XSHE",
+      "role": "连板接力历史例子",
+      "action": "无",
+      "source_basis": "名称由证券目录与日线共同校正；日线只支持价格结果，不支持老师模式、排名或成交。"
+    },
+    {
+      "surface_form": "东软软件、微软、独特的传媒、直播传媒、万迪股份",
+      "official_name": null,
+      "code": null,
+      "role": "断板大低开历史例子",
+      "action": "无",
+      "source_basis": "原始转写无法唯一映射；不因音近候选或本地出现出版传媒而硬配。"
+    }
+  ],
+  "method_principles": [
+    "交易规则必须放回产生它的市场阶段评估，固定卖点或固定模式不能跨环境照搬。",
+    "对模式和评分档位至少连续统计三个月；盘中系统每天有多个观察点，不能用几笔赢家替代样本。",
+    "先观察、再提出可检验问题、再测试，避免为一次结果即时改规则。",
+    "不同环境需要不同模型，固定时点、全天动态排名与秒级回测的数据口径不能混用。",
+    "学生观察到开盘后首个或首次达到10分以上、且分数并非独立一档的样本；老师只把它转成‘9:31前10分是否有优势、独立一档有什么条件’的待测问题。原句‘第一至十分以上’存在转写歧义，10分与9:31都不是已验证门槛或买点。",
+    "来源暂称‘多少钱模式’的未决模式好像不如直接排名强，老师给出的理由是直接排名本身已有计算和筛选；模式名称和相对强弱都需另行定义与测试。",
+    "概率规则允许约三至四成例外，单个例外不构成反证，也不能成为次日反向追随的依据。"
+  ],
+  "exit_lessons": [
+    "主跌阶段的断板大低开样本倾向早卖；轮动过渡阶段可能需要延后到盘中或高抛信号。",
+    "可用第一次冲高卖一半、第二次高抛卖完处理卖飞焦虑，但这只是来源给出的条件分支。",
+    "昨天大涨且次日容易分歧时仍可能适合早卖，不能把延后卖出推广为所有短线仓位。"
+  ],
+  "decision_trace": [
+    {
+      "observation": "来源主张上午没有放量、下午上涨时放量；这是老师的量能判断。",
+      "inference": "连续急杀概率下降，市场可能从主跌转向轮动。",
+      "decision": "不重仓押反转，优先观察短线模式并按分歧或修复决定相对仓位层数。",
+      "uncertainty": "上证分时只支持价格路径，原始量能口径未被补充数据证明，也不能改写成承接指标。"
+    },
+    {
+      "observation": "科技核心和相关板块被描述为反弹有限、被动上涨。",
+      "inference": "上方套牢盘仍重，趋势大票难以确认反转。",
+      "decision": "短期不把科技大票反弹升级为趋势反转。",
+      "uncertainty": "10月27日午间上下文不能证明10月23日科技表现。"
+    },
+    {
+      "observation": "短线玩法在过渡阶段被判断更容易卖飞。",
+      "inference": "统一早卖规则可能不再适配。",
+      "decision": "按环境、前一日涨跌与高抛信号选择早卖、晚卖或分批卖。",
+      "uncertainty": "具体模式样本、买价和持仓未给出。"
+    },
+    {
+      "observation": "学生口述开盘后首个或首次达到10分以上、且分数并非独立一档的紫薇样本，原句‘第一至十分以上’有转写歧义。",
+      "inference": "老师提出9:31前10分是否有优势、独立一档要满足什么条件，要求先观察再测试。",
+      "decision": "只登记为研究问题，不把10分、9:31或独立一档转成买点、筛选门槛或当前动作。",
+      "uncertainty": "学生样本定义、观察区间、对照组和完整测试结果均缺失。"
+    },
+    {
+      "observation": "老师说名称转写未决的‘多少钱模式’好像没有直接排名强，并称直接排名本身已有计算和筛选。",
+      "inference": "来源暂时偏向直接排名，但没有给出统一口径的相对收益比较。",
+      "decision": "保留相对模式选择信息，待名称、计算口径与样本明确后再测试。",
+      "uncertainty": "‘多少钱模式’无法唯一解析，‘好像’只表达暂时判断。"
+    }
+  ],
+  "judgment_heuristics": [
+    "轮动不等于反转；判断反转需要核心板块主动走强并消化套牢盘。",
+    "短线模式突然由高分转低分，是过渡行情可能结束的警戒信号。",
+    "第二天偏分歧时用一层滚动，偏修复时用两层滚动；层是策略内部相对单位，不是家庭组合百分比。",
+    "开盘后首个或首次10分以上、非独立一档与9:31前10分只构成待测问题；必须保留学生观察与老师提问的角色差异。",
+    "‘多少钱模式’与直接排名的强弱比较要先解决模式名称和统一样本口径；直接排名已有计算筛选只是来源理由，不是已验证优势。",
+    "规则命中率即使达到六至七成，也要预先接受三至四成例外。"
+  ],
+  "hypotheses": [],
+  "existing_hypothesis_feedback": [
+    {
+      "hypothesis_id": "XH-075",
+      "relationship": "supporting_source_evidence",
+      "feedback": "本场再次把风格切换描述为由主跌向轮动的渐进过程，并以模式资格和相对层数逐级调整。",
+      "provenance": {
+        "source_basis": "小草2026-10-25完整转录第44至48、64至76段",
+        "system_basis": "仅作来源复现，未完成样本外检验"
+      }
+    },
+    {
+      "hypothesis_id": "XH-176",
+      "relationship": "supporting_source_evidence",
+      "feedback": "本场明确认为退出速度应随环境变化，主跌期偏早卖、轮动过渡期可稍晚卖。",
+      "provenance": {
+        "source_basis": "小草2026-10-25完整转录第49至59段",
+        "system_basis": "未取得完整模式收益样本"
+      }
+    },
+    {
+      "hypothesis_id": "XH-074",
+      "relationship": "partial_overlap",
+      "feedback": "本场补充第一次冲高减半、第二次高抛退出的条件分支；不把它复制成新命题。",
+      "provenance": {
+        "source_basis": "小草2026-10-25完整转录第52至54段",
+        "system_basis": "与既有轮动退出假设局部重合"
+      }
+    },
+    {
+      "hypothesis_id": "XH-067",
+      "relationship": "supporting_source_evidence",
+      "feedback": "来源认为趋势大票套牢盘沉重时，断板、接力和一进二等短线玩法可能阶段性占优。",
+      "provenance": {
+        "source_basis": "小草2026-10-25完整转录第45至47、64至68段",
+        "system_basis": "10月27日本地冻结信号并未证明这些模式已可执行"
+      }
+    },
+    {
+      "hypothesis_id": "XH-218",
+      "relationship": "methodological_support",
+      "feedback": "来源要求至少三个月统计并警惕因一次例外切换规则，为保持长期一致性提供方法论证据。",
+      "provenance": {
+        "source_basis": "小草2026-10-25完整转录第12至20、60至63段",
+        "system_basis": "本场没有新增收益检验"
+      }
+    },
+    {
+      "hypothesis_id": "XH-271",
+      "relationship": "partial_overlap",
+      "feedback": "来源称下跌低吸在过渡阶段仍相对稳定，但没有给出与倒接力的完整对照收益，因此只作局部反馈。",
+      "provenance": {
+        "source_basis": "小草2026-10-25完整转录第55、71至74段",
+        "system_basis": "冻结推荐中的本地模式名和老师口述模式不能直接等同"
+      }
+    },
+    {
+      "hypothesis_id": "XH-138",
+      "relationship": "partial_overlap",
+      "feedback": "学生关于开盘后首个或首次达到10分以上且并非独立一档样本的观察，被老师转成‘9:31前10分是否有优势、独立一档有什么条件’的待测问题；不复制为新阈值命题。",
+      "provenance": {
+        "source_basis": "小草2026-10-25完整转录第26、27、33段；第26段‘第一至十分以上’原始转写存在歧义",
+        "system_basis": "与既有排名边界可观测性命题局部重合；本场没有原始样本、对照组或验证结果"
+      }
+    },
+    {
+      "hypothesis_id": "XH-181",
+      "relationship": "partial_overlap",
+      "feedback": "来源新增9:31前10分这一具体研究提问，但老师明确以疑问句提出，学生观察也未定义完整口径，因此只补充候选时点反馈。",
+      "provenance": {
+        "source_basis": "小草2026-10-25完整转录第33段：‘9点31分之前的十分是不是有优势’",
+        "system_basis": "与既有候选时点未定命题局部重合；10分和9:31均不作为已验证门槛或买点"
+      }
+    }
+  ],
+  "timing_notes": [
+    "来源发布日为2026-10-25周日，来源中的“明天”对应下一交易日2026-10-26。",
+    "来源中的“未来这几天”在2026-10-27独立复核时仍可能处于有效区间；2026-10-30收盘只是系统为短线复核设置的保守最迟操作截止，并非作者明确期限，必须被实时结构提前证伪且不得自动续期。",
+    "9:31前10分是老师基于学生样本提出的研究问题，不是已验证开盘门槛、买点或有效期。",
+    "10月26日的下跌低吸、N半、红盘起爆、人气股起爆计划已经过期，只能作为历史计划审计。",
+    "来源文件名写18:00而请求元数据为17:00，报告只使用日级日期。"
+  ],
+  "typo_corrections": [
+    {
+      "raw": "新益盛",
+      "normalized": "新易盛",
+      "basis": "证券目录唯一匹配300502"
+    },
+    {
+      "raw": "天府通信",
+      "normalized": "天孚通信",
+      "basis": "证券目录唯一匹配300394"
+    },
+    {
+      "raw": "正域工业",
+      "normalized": "正裕工业",
+      "basis": "证券目录与日线共同支持603089"
+    },
+    {
+      "raw": "利亚达",
+      "normalized": "利亚德",
+      "basis": "证券目录与日线共同支持300296"
+    },
+    {
+      "raw": "红斑细胞",
+      "normalized": "红盘起爆",
+      "basis": "同一句前文已出现红盘起爆，属于上下文自校正"
+    },
+    {
+      "raw": "东软软件、微软、独特的传媒、直播传媒、万迪股份",
+      "normalized": null,
+      "basis": "存在多个音近候选或无唯一正式证券名，不硬映射"
+    },
+    {
+      "raw": "第一至十分以上",
+      "normalized": null,
+      "basis": "可能表达首个或首次达到10分以上，但原始转写不清，保留歧义"
+    },
+    {
+      "raw": "多少钱模式",
+      "normalized": null,
+      "basis": "模式名称无法由上下文唯一解析；只保留与直接排名的原始相对比较"
+    }
+  ],
+  "strategy_hit_audit": {
+    "allowed_classifications": [
+      "emitted_strategy_hit",
+      "emitted_qibao_hit",
+      "raw_pool_only",
+      "cohort_benchmark",
+      "cohort_watchlist",
+      "not_emitted",
+      "no_evidence"
+    ],
+    "audit_scope": {
+      "source_review_date": "2026-10-25",
+      "local_recommendation_dates": [
+        "2026-10-23",
+        "2026-10-26",
+        "2026-10-27"
+      ],
+      "local_signal_row_counts": {
+        "2026-10-23": 3,
+        "2026-10-26": 24,
+        "2026-10-27": 7
+      },
+      "rule": "not_emitted只用于来源事件日能够与本地冻结记录对齐且对应代码确实缺席的对象；历史事件日不明、身份未解析或只有价格旁证时一律为no_evidence。三日34行不能反推其他历史日期。"
+    },
+    "teacher_named_winners": [
+      {
+        "surface_form": "读者传媒",
+        "official_name": "读者传媒",
+        "code": "603999.XSHG",
+        "source_role": "断板大低开历史涨停例外",
+        "source_segment_ids": [
+          "529ee0db0f7b6552ac15ef7b7784627b9b6ec50bdd09ecdddca15cc6f6ccceda"
+        ],
+        "event_time": "来源只说“在这之前”及第二天涨停，具体事件日不明",
+        "classification": "no_evidence",
+        "evidence_range": "没有与该历史事件日绑定的本地推荐、信号、仓位或成交证据；2026-10-26出现的出版传媒601999不是读者传媒603999。",
+        "boundary": "只保留为作者举出的概率例外，不证明本地策略命中、老师买入或成交。"
+      },
+      {
+        "surface_form": "正域工业",
+        "official_name": "正裕工业",
+        "code": "603089.XSHG",
+        "source_role": "连板接力历史赢家例子",
+        "source_segment_ids": [
+          "45ee2bb45e63628c9c7fc17b35605ea9bdac814e55ae0e273f5ba36c6d85df1b",
+          "0aa779bc338affc12c5fde346cb8816233ab62b989f71be0823a605fc904c51f"
+        ],
+        "event_time": "来源明确说周五，按来源日期语境对应2026-10-23",
+        "classification": "not_emitted",
+        "evidence_range": "仅在2026-10-23冻结推荐和3条本地信号行内未见603089；日线支持该日价格结果。",
+        "boundary": "not_emitted只限定2026-10-23本地系统；日线和缺席记录均不证明老师模式、排名、买入或成交，也不外推到10月22、26、27日。"
+      },
+      {
+        "surface_form": "利亚达",
+        "official_name": "利亚德",
+        "code": "300296.XSHE",
+        "source_role": "周四未涨停、第二天20%涨停的连板接力历史例子",
+        "source_segment_ids": [
+          "45ee2bb45e63628c9c7fc17b35605ea9bdac814e55ae0e273f5ba36c6d85df1b",
+          "e3f36632c61ff73900bb1761b07d67ca388b40eeb4d7aa4b236248db88a92b24",
+          "0aa779bc338affc12c5fde346cb8816233ab62b989f71be0823a605fc904c51f"
+        ],
+        "event_time": "来源周四/第二天语境对应2026-10-22至23日",
+        "classification": "not_emitted",
+        "evidence_range": "仅在2026-10-23冻结推荐和3条本地信号行内未见300296；日线支持10月22至23日价格路径。本地包没有10月22信号行。",
+        "boundary": "not_emitted只限定10月23日本地系统，不能扩展到10月22，也不能证明老师模式、排名、买入或成交。"
+      }
+    ],
+    "direction_core_observations": [
+      {
+        "surface_form": "新益盛",
+        "official_name": "新易盛",
+        "code": "300502.XSHE",
+        "source_role": "10月23日科技核心反弹有限的支持例子",
+        "source_segment_ids": [
+          "39b57f56957270f782833ccbe3d5b06ac6ee0119158be713a6990e0ae5c70393"
+        ],
+        "classification": "not_emitted",
+        "evidence_range": "2026-10-23冻结推荐和3条本地信号行内未见300502。",
+        "boundary": "它不是老师的入场信号；未发出只描述本地10月23日范围，不能证明10月23日科技表现或老师模型。"
+      },
+      {
+        "surface_form": "天府通信",
+        "official_name": "天孚通信",
+        "code": "300394.XSHE",
+        "source_role": "10月23日科技核心反弹有限的支持例子",
+        "source_segment_ids": [
+          "39b57f56957270f782833ccbe3d5b06ac6ee0119158be713a6990e0ae5c70393"
+        ],
+        "classification": "not_emitted",
+        "evidence_range": "2026-10-23冻结推荐和3条本地信号行内未见300394。",
+        "boundary": "它不是老师的入场信号；未发出只描述本地10月23日范围，不能证明10月23日科技表现或老师模型。"
+      },
+      {
+        "surface_form": "德明利",
+        "official_name": "德明利",
+        "code": "001309.XSHE",
+        "source_role": "10月23日科技核心表现的支持例子",
+        "source_segment_ids": [
+          "39b57f56957270f782833ccbe3d5b06ac6ee0119158be713a6990e0ae5c70393"
+        ],
+        "classification": "not_emitted",
+        "evidence_range": "2026-10-23冻结推荐和3条本地信号行内未见001309。",
+        "boundary": "它不是老师的入场信号；未发出只描述本地10月23日范围，不能证明10月23日科技表现或老师模型。"
+      }
+    ],
+    "speaker_corrected_names": [
+      {
+        "surface_form": "城市传媒",
+        "official_name": "城市传媒",
+        "code": "600229.XSHG",
+        "source_role": "概率例子中首先说出、随后立即否定的名称",
+        "source_segment_ids": [
+          "f09ad1cc4dcfd9cc55e95daa7b847e7f9c16c67d9ad5cb19ea31c344115ef1ac"
+        ],
+        "event_time": "来源只说“有一天”，具体日期不明",
+        "classification": "no_evidence",
+        "evidence_range": "没有事件日绑定的本地策略证据；说话人明确说“不是”并继续纠正。",
+        "boundary": "不能作为最终赢家、模式命中或本地未发出结论。"
+      },
+      {
+        "surface_form": "华北制药",
+        "official_name": "华北制药",
+        "code": "600812.XSHG",
+        "source_role": "纠正城市传媒后提出的两个候选之一",
+        "source_segment_ids": [
+          "f09ad1cc4dcfd9cc55e95daa7b847e7f9c16c67d9ad5cb19ea31c344115ef1ac"
+        ],
+        "event_time": "来源只说“有一天”，具体日期不明",
+        "classification": "no_evidence",
+        "evidence_range": "没有事件日绑定的本地策略证据；来源随后最终采用新华文轩。",
+        "boundary": "不能把候选回忆升级为最终赢家或本地未发出结论。"
+      },
+      {
+        "surface_form": "新华文轩",
+        "official_name": "新华文轩",
+        "code": "601811.XSHG",
+        "source_role": "自我纠正后最终采用的次日涨停历史例子",
+        "source_segment_ids": [
+          "f09ad1cc4dcfd9cc55e95daa7b847e7f9c16c67d9ad5cb19ea31c344115ef1ac",
+          "436511c23fd84ab2e7c8c1cd2f5640a02667b8de24c73de445590e0faba55aa6"
+        ],
+        "event_time": "来源只说“有一天”，具体日期不明",
+        "classification": "no_evidence",
+        "evidence_range": "没有事件日绑定的本地推荐、信号、仓位、成交或日线补充证据。",
+        "boundary": "只保留为概率例外；不能用10月23、26、27的本地行推断该历史日未发出。"
+      }
+    ],
+    "unresolved_historical_examples": [
+      {
+        "surface_form": "东软软件",
+        "official_name": null,
+        "code": null,
+        "source_role": "来源明确说10月23日的断板大低开例子",
+        "source_segment_ids": [
+          "b13119b1e6387e7fb9578fc6ed77dd5a3dd7a8a0335276264c3604571b9b4629"
+        ],
+        "classification": "no_evidence",
+        "evidence_range": "身份无法在东软载波、东软集团等候选间唯一解析，不能与本地行匹配。",
+        "boundary": "具体日期已知也不能在身份未决时宣称not_emitted。"
+      },
+      {
+        "surface_form": "微软",
+        "official_name": null,
+        "code": null,
+        "source_role": "断板大低开历史例子",
+        "source_segment_ids": [
+          "529ee0db0f7b6552ac15ef7b7784627b9b6ec50bdd09ecdddca15cc6f6ccceda"
+        ],
+        "classification": "no_evidence",
+        "evidence_range": "A股语境下无法唯一解析，事件日也未明确。",
+        "boundary": "不硬配正式公司微软或任一A股。"
+      },
+      {
+        "surface_form": "独特的传媒",
+        "official_name": null,
+        "code": null,
+        "source_role": "第二天涨停的断板大低开历史例子",
+        "source_segment_ids": [
+          "529ee0db0f7b6552ac15ef7b7784627b9b6ec50bdd09ecdddca15cc6f6ccceda"
+        ],
+        "classification": "no_evidence",
+        "evidence_range": "原始转写无法唯一对应证券，事件日不明。",
+        "boundary": "不能凭音近候选作命中或未发出判断。"
+      },
+      {
+        "surface_form": "直播传媒",
+        "official_name": null,
+        "code": null,
+        "source_role": "断板大低开历史例子",
+        "source_segment_ids": [
+          "529ee0db0f7b6552ac15ef7b7784627b9b6ec50bdd09ecdddca15cc6f6ccceda"
+        ],
+        "classification": "no_evidence",
+        "evidence_range": "原始转写与事件日均未唯一确认。2026-10-26本地出版传媒601999只是音近对象。",
+        "boundary": "直播传媒、读者传媒和出版传媒三者不合并。"
+      },
+      {
+        "surface_form": "万迪股份",
+        "official_name": null,
+        "code": null,
+        "source_role": "总体偏早卖的断板大低开历史例子",
+        "source_segment_ids": [
+          "529ee0db0f7b6552ac15ef7b7784627b9b6ec50bdd09ecdddca15cc6f6ccceda"
+        ],
+        "classification": "no_evidence",
+        "evidence_range": "万得凯301309只是音近候选，身份与事件日均不明。",
+        "boundary": "不能硬配代码，也不能从三日本地行推断历史未发出。"
+      }
+    ],
+    "local_strategy_benchmark_hits": [],
+    "exact_source_named_emissions": [],
+    "classification_counts": {
+      "not_emitted": 5,
+      "no_evidence": 9
+    },
+    "near_name_exclusion": "2026-10-26本地出现的是出版传媒601999，不是读者传媒603999，也不能据此解析直播传媒；三者保持分离。",
+    "teacher_mode_boundary": "本地发出或未发出只描述对应日期的本地冻结推荐范围，不能证明老师模式、排名、买价或成交。日线只支持正裕工业与利亚德的价格结果。",
+    "paper_ledger_boundary": "2026-10-27本地Book B账本读回为空仓，只是独立纸面账本状态，不证明家庭具体持仓。"
+  },
+  "action_summary": {
+    "posture_update": "不直接更新；本场姿态有当前提醒意义，但需与后续实时市场和模式资格共同验证。",
+    "playbook_update": "不直接更新；环境适配卖点、相对层数和概率纪律作为既有先验的新增来源证据。",
+    "hypothesis_update": "不新增近义候选；除原有反馈外，9:31前10分与非独立一档的待测问题仅向XH-138、XH-181登记局部反馈；‘多少钱模式’因名称未决且缺统一比较，不生成命题。",
+    "audit_evidence": "保留78段完整来源、上证代理分时、证券目录、正裕工业与利亚德日线，并将三日冻结推荐和34条本地信号按事件日逐股限定：10月23日可证明的代码缺席标为not_emitted，日期不明或身份未决的历史例子标为no_evidence。",
+    "instrumentation_todo": "若进入研究，需冻结完整模式候选集、统一买卖时点、费用、失败样本和环境标签，比较早卖、晚卖与分批卖。",
+    "routing": [
+      "existing_hypothesis_feedback",
+      "decision_trace",
+      "exit_lessons",
+      "strategy_hit_audit"
+    ]
+  },
+  "dedup_review": {
+    "registry": "reference/experience/xiaocao_hypotheses.jsonl",
+    "verdict_ledger": "kronos_screen/HYPOTHESES.jsonl",
+    "new_hypotheses": 0,
+    "reason": "可复用内容已被既有环境切换、退出速度、短线相对优势、统计一致性、排名边界和候选时点命题部分覆盖；为避免整条复现近义命题，只记录带来源边界的反馈。名称未决的‘多少钱模式’缺少可操作定义，不形成新命题。"
+  },
+  "limitations": [
+    "上证指数分时仅是大盘价格路径代理，来源没有唯一指明指数。",
+    "分时数据的amt字段没有被证明为真实分钟区间或全市场成交额，不能核验来源量能判断。",
+    "日线只能核验正裕工业与利亚德的价格结果，不能证明老师模式、排名、买入、成交或评分。",
+    "家庭资产桶摘要不是完整具体持仓；blockedPositionCount为0也不证明任一股票可卖。",
+    "10月27日午间上下文不能用来证明10月23日科技板块表现。",
+    "学生样本原句‘第一至十分以上’存在转写歧义，且没有样本表、对照组与测试结果；10分和9:31只保留为待测条件。",
+    "‘多少钱模式’的名称、计算口径和完整比较样本均缺失，不能静默改名或认定直接排名已被验证更强。",
+    "原始转录存在证券名和模式名错音，未能唯一解析的对象均保持未解析。",
+    "策略命中审计仅在事件日与本地冻结记录精确对齐时使用not_emitted；日期不明、身份未决或只有价格旁证的历史案例均为no_evidence。"
+  ],
+  "operational_provenance": {
+    "accepted_original_draft": {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_xiaocao_live/semantic_requests/kol-bd9b548c810a/.semantic_delegation/7725acd4d0ebbba76c8ad8fecb8b78ffd5699569a582a10856a615d693670a86/context-4750f7bde0d2b9fb28b4018a30c3b09eb4f2c9f1fe5791c6cdd3e0969b3c7f44/knowledge_draft.json",
+      "sha256": "c986622dfe79dfbaaa804ed7b5fdbcd5bab8cc59d7daf6c314519d5020a974cc",
+      "size": 20556
+    },
+    "source_request": {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_xiaocao_live/semantic_requests/kol-bd9b548c810a/analysis_request.json",
+      "sha256": "7725acd4d0ebbba76c8ad8fecb8b78ffd5699569a582a10856a615d693670a86",
+      "size": 36693
+    },
+    "normalized_source_evidence": {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_netdisk_enrichment/artifacts/kol-netdisk-2a534dbbd64a2b51/20261025 大师班专场(18：00开播)-compressed.txt",
+      "sha256": "9d2b9d68ff83d8cd58ee87e53e63644d1171e477674a6d6032437e898cdb438b",
+      "size": 31726
+    },
+    "parent_acceptance": {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261027_01a17b31/video1025_parent_accepted.json",
+      "sha256": "ccf4ba3fb1b60a6dd6059939453529bf155c1814826cc88f3a1859a98e843408",
+      "size": 4691
+    },
+    "private_archive_proof": {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261027_01a17b31/video1025_private_archive.json",
+      "sha256": "9de9a9dcc4caeb5f8303e872235854f1138376a7fabeb2ae1d22be3882fa92ff",
+      "size": 569
+    },
+    "market_evidence": {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261027_01a17b31/video1027_market_evidence.json",
+      "sha256": "9cd3b62d11991064a12e9701bc95ee17fe98837b0a6382e266d38c4765d3352f",
+      "size": 9404
+    },
+    "supplemental_evidence": [
+      {
+        "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261027_01a17b31/video1025_supplemental_primary.json",
+        "sha256": "983c55d9ef11025fbf1fbb90372b2775e84bac4e88ed99e377eeb62ab23c2342",
+        "size": 5624
+      },
+      {
+        "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261027_01a17b31/video1025_local_evidence.json",
+        "sha256": "5579f80c0148402c78e18507afe7c5c19ed48593363e3e1f67dc473d20749ea5",
+        "size": 278068
+      }
+    ],
+    "context_delivery": {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_xiaocao_live/semantic_requests/kol-bd9b548c810a/.semantic_delegation/7725acd4d0ebbba76c8ad8fecb8b78ffd5699569a582a10856a615d693670a86/context-4750f7bde0d2b9fb28b4018a30c3b09eb4f2c9f1fe5791c6cdd3e0969b3c7f44/actual_context_delivery.json",
+      "sha256": "555aefd7dd428197f9f83757c801593ae1b35003b903899f8b10035856431868",
+      "size": 4028
+    },
+    "privacy_boundary": "Private raw transcript excluded from public Git; household account context excluded from public knowledge archive.",
+    "ingest_receipt": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261027_01a17b31/video1025_knowledge_ingest_receipt.json",
+    "feedback_assessment": "Eight existing-ID feedback entries remain source-bound partial/methodological notes in this archive; no whole-claim recurrence merge. Expired posture is not revived, and no playbook, strategy or parameter promotion.",
+    "source_bound_knowledge_amendment": {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_xiaocao_live/semantic_requests/kol-bd9b548c810a/.semantic_delegation/7725acd4d0ebbba76c8ad8fecb8b78ffd5699569a582a10856a615d693670a86/context-4750f7bde0d2b9fb28b4018a30c3b09eb4f2c9f1fe5791c6cdd3e0969b3c7f44/knowledge_archive_revision/knowledge_draft.json",
+      "sha256": "1c4b897f390e731f3911814e8581a0b76850eb27ed4554a0c7128ce160d4e9a1",
+      "size": 36364
+    },
+    "amendment_parent_acceptance": {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261027_01a17b31/video1025_knowledge_amendment_parent_acceptance.json",
+      "sha256": "9b2a0c6718e4e4bac2deb6d8542f5c66f4677d313b5d4dfd410f378d83dea7c5",
+      "size": 1594
+    },
+    "post_ingest_amendment_receipt": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261027_01a17b31/video1025_knowledge_amendment_receipt.json"
+  }
+}
