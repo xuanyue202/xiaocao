@@ -117,7 +117,9 @@ def test_alias_requires_both_accepted_bundles_and_reuses_receipts(alias_case):
     assert len((c.decisions / "book_kol_us" / "decisions.jsonl").read_text().splitlines()) == 1
 
 
-@pytest.mark.parametrize("revision", ["identical_transcript", "changed_transcript", "same_version"])
+@pytest.mark.parametrize("revision", [
+    "identical_transcript", "new_publication_timestamp", "changed_transcript", "same_version",
+])
 def test_same_identity_renamed_revision_requires_identical_transcript(alias_case, revision):
     c = alias_case
     item = deepcopy(c.current)
@@ -127,9 +129,11 @@ def test_same_identity_renamed_revision_requires_identical_transcript(alias_case
         item["evidence_sha256"] = ref["sha256"]
     if revision == "same_version":
         item["source_version_key"] = "v1"
+    if revision == "new_publication_timestamp":
+        item["published_at"] = "2026-10-13"
     ref = c.write("bundle.json", {"items": [item]})
     c.proof["bundle_sha256"] = ref["sha256"]
-    if revision != "identical_transcript":
+    if revision not in {"identical_transcript", "new_publication_timestamp"}:
         with pytest.raises(EnrichmentError, match="changes author, source or event date"):
             aliases.verify_source_event_alias(c.path, c.proof, c.decisions)
         return

@@ -343,6 +343,10 @@ A renamed revision under the same stable source identity may use this proof
 only when the publication version changes and the complete transcript bytes
 have the same SHA-256. Same-version intake and changed transcript bytes under
 that identity remain excluded; neither permits another business delivery.
+For this exact-byte revision case, upload-derived publication timestamps may
+differ from a renamed file's date-only timestamp. Keep both original request
+timestamps; the accepted full-source equivalence and stable identity govern
+reuse, without rewriting the canonical report's original source binding.
 
 When that projection reports a content-hash-bound `classification_backfill`
 manifest, the remote writer owns the exact listed viewpoint IDs. Reuse the
