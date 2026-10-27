@@ -237,6 +237,30 @@ def test_ingest_preserves_multi_author_source_provenance(tmp_path, monkeypatch):
     }]
 
 
+def test_ingest_preserves_system_synthesis_attribution(tmp_path, monkeypatch):
+    d = _valid_distilled()
+    metadata = {
+        "provenance": "system_research_synthesis",
+        "source_basis": "The source distinguishes two states; the expected benefit is untested.",
+        "related_existing_ids": ["XH-054", "XH-074"],
+        "dedup_boundary": "State instrumentation, not a demonstrated exit improvement.",
+    }
+    d["hypotheses"][0].update(metadata)
+    source = tmp_path / "distilled.json"
+    source.write_text(json.dumps(d), encoding="utf-8")
+    backlog = tmp_path / "backlog.jsonl"
+    backlog.write_text("", encoding="utf-8")
+    monkeypatch.setattr(dt, "BACKLOG", backlog)
+
+    assert dt.ingest(source) == 0
+    first = backlog.read_text(encoding="utf-8")
+    entry = json.loads(first)
+    assert {key: entry[key] for key in metadata} == metadata
+    assert "authority=0" in entry["status"]
+    assert dt.ingest(source) == 0
+    assert backlog.read_text(encoding="utf-8") == first
+
+
 def test_ingest_is_idempotent(tmp_path, monkeypatch):
     ddir = tmp_path / "distilled"
     ddir.mkdir()
