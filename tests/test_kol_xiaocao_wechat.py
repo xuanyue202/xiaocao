@@ -2764,6 +2764,7 @@ def test_human_playback_restart_preserves_entry_and_backoff_and_never_uses_nativ
     now += timedelta(seconds=20)
     item = sub._check_mini_program_playback(manifest, item, reason='awaiting_playback')
     assert item['activated'] is True and item['playback_window_closed'] is False
+    assert item['playback_surface'] == 'wechat_mini_program'
     assert item['playback_window_cleanup_owner'] == 'human'
     assert sub._check_mini_program_playback(manifest, item, reason='captured_window_cleanup') == item
     assert len(requests) == len(launches) == 1
@@ -2823,6 +2824,8 @@ def test_human_deferral_preserves_original_and_allows_next_course(tmp_path):
         human_playback_nonce='a'*32, human_playback_entry_receipt='original-entry.json')
     following.update(status='discovered')
     manifest['items'] = {v['identity']:v for v in (original,following)}
+    manifest['items']['unrelated-old'] = dict(identity='unrelated-old',
+        status='discovered', published_at='2026-09-01T08:00:00+08:00')
     sub._save(manifest)
     before = deepcopy(original)
     deferred = sub.defer_human_playback(original['identity'], user_defer_authorized=True)
@@ -2831,8 +2834,10 @@ def test_human_deferral_preserves_original_and_allows_next_course(tmp_path):
         if key != 'updated_at': assert deferred[key] == value
     current = sub._load()
     assert sub._next_pending(current)['identity'] == following['identity']
+    before_readback = (tmp_path/'wechat'/'manifest.json').read_bytes()
     result = sub.run_once(opencli_session='test', only_identity=original['identity'])
     assert result['status'] == 'deferred' and result['already_completed'] is False
+    assert (tmp_path/'wechat'/'manifest.json').read_bytes() == before_readback
     assert driver.arms == []
     old = sub._load(); old['items'][original['identity']]['published_at']='2026-09-01T08:00:00+08:00'
     sub._save(old)

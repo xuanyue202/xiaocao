@@ -2391,6 +2391,7 @@ class XiaocaoWechatLiveSubscription:
         if observation.get("observed") is True:
             return self._transition(manifest, item, "playback_activated", activated=True,
                 playback_operator="human", media_request_observed=True,
+                playback_surface="wechat_mini_program",
                 observed_page_state="mini_program_media_observed",
                 source_identity=observation["source_identity"], source_resource_id=observation["live_id"],
                 candidate_id=observation["candidate_id"], playback_window_closed=False,
@@ -2500,6 +2501,11 @@ class XiaocaoWechatLiveSubscription:
         backfill_since: str | None = None,
     ) -> dict[str, Any]:
         manifest = self._load()
+        deferred = manifest["items"].get(only_identity) if only_identity else None
+        if isinstance(deferred, dict) and deferred.get("human_playback_deferred") is True:
+            return {"status": "deferred", "identity": deferred["identity"],
+                    "capture_job_id": deferred["capture_job_id"], "already_completed": False,
+                    "reason": "direct_user_defer", "user_resume_required": True}
         if backfill_since is not None:
             self._prepare_manual_backfill(manifest, only_identity, backfill_since)
         if only_identity is None:
@@ -2555,10 +2561,6 @@ class XiaocaoWechatLiveSubscription:
                 }
         if item is None:
             return {"status": "no_update"}
-        if item.get("human_playback_deferred") is True:
-            return {"status": "deferred", "identity": item["identity"],
-                    "capture_job_id": item["capture_job_id"], "already_completed": False,
-                    "reason": "direct_user_defer", "user_resume_required": True}
 
         if (
             item["status"] == "discovered"
