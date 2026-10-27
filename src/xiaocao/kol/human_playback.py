@@ -49,10 +49,10 @@ def next_human_poll(now: datetime, attempt: int) -> datetime:
 
 def request_human_action_once(path: Path, *, published_at: str,
                               identity: str, capture_job_id: str) -> None:
-    """Ask the owning Codex chat to use its native question notification.
+    """Emit one action notice while the owning runner keeps polling.
 
     This is an event, not proof that the chat/OS displayed a notification.
-    The asynchronous user question must not block downloader polling.
+    The notice requires no reply and must not block downloader polling.
     """
     try:
         _claim_json(path, {"state": "request_claimed"})
@@ -62,12 +62,14 @@ def request_human_action_once(path: Path, *, published_at: str,
         "event": "daily_human_action_required", "action": "manual_xiaoetong_playback",
         "identity": identity, "capture_job_id": capture_job_id,
         "published_at": published_at,
-        "instructions": "使用 request_user_input_async 向人类发起一次本课程操作问题，由Codex原生问题通知提醒。"
+        "response_required": False,
+        "instructions": "向人类发一次普通操作提醒，不使用 request_user_input_async，不等待已播放回复。"
             "请人类在已唤起草料手动打开、允许并播放本发布时间的原课，可在捕获请求后关闭。"
-            "不要使用AppleScript通知、独立弹窗或伪装ChatGPT发通知。问题保持待答，后台HTTP轮询继续。"
-            "直接人类回复已播放本课后，可据此处理后续同课程的精确来源确认；不要重复询问。",
+            "不要使用AppleScript通知、独立弹窗或伪装ChatGPT发通知。提醒后后台HTTP轮询继续。"
+            "精确来源已知且媒体验证通过就继续下载；若收到人类主动回复，可复用来核对同课程来源。"
+            "无法绑定原课时只说明具体来源缺口，不用通用播放问答代替校验。",
     }, ensure_ascii=False), flush=True)
-    path.write_text(json.dumps({"state": "codex_question_requested", "display_verified": False}) + "\n")
+    path.write_text(json.dumps({"state": "codex_action_notice_requested", "display_verified": False}) + "\n")
 
 
 def enable_capture_listener_pac() -> None:

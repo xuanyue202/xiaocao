@@ -21,7 +21,7 @@ def test_human_backoff_caps_at_five_minutes_and_rejects_naive_state():
         human.next_human_poll(NOW, -1)
 
 
-def test_native_action_question_is_exact_once_and_never_launches_local_popup(tmp_path, monkeypatch, capsys):
+def test_native_action_notice_is_exact_once_without_required_reply_or_local_popup(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(human.subprocess, 'run', lambda *a, **kw: pytest.fail('no custom notifier'))
     monkeypatch.setattr(human.subprocess, 'Popen', lambda *a, **kw: pytest.fail('no custom popup'))
     receipt = tmp_path / 'notification.json'
@@ -32,7 +32,8 @@ def test_native_action_question_is_exact_once_and_never_launches_local_popup(tmp
     assert len(events) == 1
     assert events[0]['event'] == 'daily_human_action_required'
     assert events[0]['identity'] == 'original' and events[0]['capture_job_id'] == 'capture-original'
-    assert json.loads(receipt.read_text()) == {'state':'codex_question_requested','display_verified':False}
+    assert events[0]['response_required'] is False
+    assert json.loads(receipt.read_text()) == {'state':'codex_action_notice_requested','display_verified':False}
     assert receipt.stat().st_mode & 0o777 == 0o600
 
 

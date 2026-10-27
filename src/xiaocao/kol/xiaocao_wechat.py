@@ -1224,6 +1224,7 @@ class XiaocaoWechatLiveSubscription:
             "pending_items": [
                 {key: item[key] for key in (
                     "identity", "published_at", "status", "capture_job_id",
+                    "human_playback_deferred",
                 ) if key in item}
                 for item in pending
             ],
@@ -1263,6 +1264,8 @@ class XiaocaoWechatLiveSubscription:
         expired = []
         for item in list(manifest["items"].values()):
             if item["identity"] == skip_identity:
+                continue
+            if item.get("human_playback_deferred") is True:
                 continue
             if item.get("status") not in {
                 "discovered", "page_resolved", "capture_armed", "awaiting_playback",
@@ -1309,6 +1312,41 @@ class XiaocaoWechatLiveSubscription:
             return item
         return self._transition(manifest, item, "expired", manual_backfill_excluded=True,
             manual_backfill_excluded_at=self._now(), manual_backfill_exclusion_reason="direct_user_skip")
+
+    def defer_human_playback(self, identity: str, *, user_defer_authorized: bool) -> dict[str, Any]:
+        """Retain an idle original while a human lets later courses proceed."""
+        if user_defer_authorized is not True:
+            raise EnrichmentError("human playback deferral requires a direct user instruction")
+        manifest = self._load()
+        item = manifest["items"].get(identity)
+        if (not isinstance(item, dict) or item.get("status") != "awaiting_playback"
+            or item.get("playback_operator") != "human"
+            or not item.get("human_playback_started_at")
+            or any(item.get(key) for key in (
+                "candidate_id", "task_id", "source_identity", "human_confirmed_source_identity",
+                "media_request_observed", "handoff_id",
+            ))):
+            raise EnrichmentError("only an unbound human playback wait can be deferred")
+        check = getattr(self.capture_driver, "can_expire_wait", None)
+        if not callable(check) or check(identity, item.get("capture_job_id")) is not True:
+            raise EnrichmentError("human playback deferral lacks an exact idle capture")
+        if item.get("human_playback_deferred") is True:
+            return item
+        return self._transition(manifest, item, item["status"],
+            human_playback_deferred=True, human_playback_deferred_at=self._now(),
+            human_playback_deferral_reason="direct_user_defer")
+
+    def resume_deferred_human_playback(self, identity: str, *, user_resume_authorized: bool) -> dict[str, Any]:
+        """Release only the human deferral; keep the original entry and claims."""
+        if user_resume_authorized is not True:
+            raise EnrichmentError("human playback resume requires a direct user instruction")
+        manifest = self._load()
+        item = manifest["items"].get(identity)
+        if (not isinstance(item, dict) or item.get("status") != "awaiting_playback"
+            or item.get("human_playback_deferred") is not True):
+            raise EnrichmentError("original has no deferred human playback wait")
+        return self._transition(manifest, item, item["status"],
+            human_playback_deferred=False, human_playback_resumed_at=self._now())
 
     def _prepare_manual_backfill(
         self, manifest: dict[str, Any], identity: str | None, since: str,
@@ -1382,6 +1420,7 @@ class XiaocaoWechatLiveSubscription:
             dict(item)
             for item in manifest["items"].values()
             if item.get("status") not in _TERMINAL
+            and item.get("human_playback_deferred") is not True
         ]
         if not pending:
             return None
@@ -2516,6 +2555,10 @@ class XiaocaoWechatLiveSubscription:
                 }
         if item is None:
             return {"status": "no_update"}
+        if item.get("human_playback_deferred") is True:
+            return {"status": "deferred", "identity": item["identity"],
+                    "capture_job_id": item["capture_job_id"], "already_completed": False,
+                    "reason": "direct_user_defer", "user_resume_required": True}
 
         if (
             item["status"] == "discovered"

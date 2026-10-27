@@ -2806,6 +2806,63 @@ def test_human_source_requires_direct_exact_confirmation_before_binding(tmp_path
     assert bool(proposals[1]['expected_source']) is confirmed
 
 
+def test_human_deferral_preserves_original_and_allows_next_course(tmp_path):
+    from copy import deepcopy
+    now = datetime.fromisoformat('2026-10-27T08:00:00+08:00')
+    driver = _CaptureDriver()
+    driver.can_expire_wait = lambda identity, job: job == 'capture-original'
+    sub = XiaocaoWechatLiveSubscription(tmp_path/'wechat', history_reader=lambda:{},
+        browser_exchange=lambda _:pytest.fail('deferred item must not request input'),
+        capture_driver=driver, clock=lambda:now)
+    manifest = sub._load()
+    following, original = parse_xiaocao_live_messages(_history(
+        '[2026-10-25 17:00] 小花: #小程序://见势擒龙团/earlierOriginal',
+        '[2026-10-26 16:46] 小花: #小程序://见势擒龙团/laterOriginal'))
+    original.update(status='awaiting_playback', capture_job_id='capture-original',
+        playback_operator='human', human_playback_started_at=now.isoformat(),
+        human_playback_nonce='a'*32, human_playback_entry_receipt='original-entry.json')
+    following.update(status='discovered')
+    manifest['items'] = {v['identity']:v for v in (original,following)}
+    sub._save(manifest)
+    before = deepcopy(original)
+    deferred = sub.defer_human_playback(original['identity'], user_defer_authorized=True)
+    assert sub.defer_human_playback(original['identity'], user_defer_authorized=True) == deferred
+    for key, value in before.items():
+        if key != 'updated_at': assert deferred[key] == value
+    current = sub._load()
+    assert sub._next_pending(current)['identity'] == following['identity']
+    result = sub.run_once(opencli_session='test', only_identity=original['identity'])
+    assert result['status'] == 'deferred' and result['already_completed'] is False
+    assert driver.arms == []
+    old = sub._load(); old['items'][original['identity']]['published_at']='2026-09-01T08:00:00+08:00'
+    sub._save(old)
+    assert original['identity'] not in sub.expire_stale_waits(sub._load())
+    released = sub.resume_deferred_human_playback(original['identity'], user_resume_authorized=True)
+    assert released['human_playback_deferred'] is False
+    assert released['capture_job_id'] == before['capture_job_id']
+    assert released['human_playback_nonce'] == before['human_playback_nonce']
+
+
+@pytest.mark.parametrize('bad', ['authorization','bound_media','capture_claim'])
+def test_human_deferral_rejects_unauthorized_or_bound_work(tmp_path, bad):
+    driver = _CaptureDriver()
+    driver.can_expire_wait = lambda *_: bad != 'capture_claim'
+    sub = XiaocaoWechatLiveSubscription(tmp_path/'wechat', history_reader=lambda:{},
+        browser_exchange=lambda _:pytest.fail('no input'),capture_driver=driver)
+    manifest = sub._load()
+    item = parse_xiaocao_live_messages(_history('[2026-10-26 16:46] 小花: #小程序://见势擒龙团/original'))[0]
+    item.update(status='awaiting_playback',capture_job_id='original',playback_operator='human',
+        human_playback_started_at='2026-10-27T08:00:00+08:00')
+    if bad == 'bound_media': item['candidate_id']='accepted'
+    manifest['items'][item['identity']]=item; sub._save(manifest)
+    before = (tmp_path/'wechat'/'manifest.json').read_bytes()
+    with pytest.raises(EnrichmentError):
+        sub.defer_human_playback(item['identity'], user_defer_authorized=bad!='authorization')
+    assert (tmp_path/'wechat'/'manifest.json').read_bytes() == before
+    with pytest.raises(EnrichmentError):
+        sub.resume_deferred_human_playback(item['identity'], user_resume_authorized=False)
+
+
 def test_human_restart_recovers_missing_action_request_without_relaunch_or_early_poll(tmp_path, capsys):
     from datetime import timedelta
     now = datetime.fromisoformat('2026-10-26T22:00:00+08:00')
