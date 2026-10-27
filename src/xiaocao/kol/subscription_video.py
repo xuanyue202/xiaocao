@@ -588,6 +588,48 @@ _SELECT_RECENT_DESTINATION_FUNCTION = r"""async (dialog, segments, visible) => {
 }"""
 
 
+_ENSURE_TRANSFER_TREE_ROOT_FUNCTION = r"""async (dialog, firstSegment, visible) => {
+  const rows = () => [...dialog.querySelectorAll('.treeview-txt')].filter(visible);
+  const firstPath = '/' + firstSegment;
+  const hasFirst = () => rows().some(node => node.getAttribute('node-path') === firstPath);
+  const renderDeadline = Date.now() + 10000;
+  while (Date.now() < renderDeadline && rows().length === 0) {
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  if (rows().length === 0) return {status: 'destination_tree_root_missing', triggered: false};
+  if (hasFirst()) return {status: 'ready', recovered: false};
+  const initialDeadline = Date.now() + 2000;
+  while (Date.now() < initialDeadline && rows().length === 1 && !hasFirst()) {
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  if (hasFirst()) return {status: 'ready', recovered: false};
+  const roots = rows().filter(node => node.getAttribute('node-path') === '/');
+  // Recover only an empty root, never a populated tree or an ambiguous account.
+  if (roots.length !== 1) return {status: 'destination_tree_root_not_unique', triggered: false};
+  if (rows().length !== 1) return {status: 'ready', recovered: false};
+  const rootArrow = () => rows().find(node => node.getAttribute('node-path') === '/')
+    ?.closest('.treeview-node-handler')?.querySelector('.treeview-node-arrow');
+  let arrow = rootArrow();
+  if (!arrow) return {status: 'destination_tree_root_arrow_missing', triggered: false};
+  if (arrow.classList.contains('minus')) {
+    arrow.click();
+    await new Promise(resolve => setTimeout(resolve, 150));
+    arrow = rootArrow();
+    if (!arrow || arrow.classList.contains('minus')) {
+      return {status: 'destination_tree_root_not_collapsed', triggered: false};
+    }
+  }
+  arrow.click();
+  const deadline = Date.now() + 10000;
+  while (Date.now() < deadline && !hasFirst()) {
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  return hasFirst()
+    ? {status: 'ready', recovered: true}
+    : {status: 'destination_tree_root_not_loaded', triggered: false};
+}"""
+
+
 _SELECT_TRANSFER_DIALOG_FUNCTION = r"""(root, visible) => {
   const titledDialogs = [...root.querySelectorAll(
     '#share-save-dialog-title'
@@ -764,6 +806,9 @@ _TRANSFER_SCRIPT = r"""(async () => {
     return recentDestination;
   }
   if (recentDestination.status === 'tree_required') {
+    const ensureTreeRoot = __ENSURE_TREE_ROOT__;
+    const treeRoot = await ensureTreeRoot(dialog, destinationSegments[0], visible);
+    if (treeRoot.status !== 'ready') return treeRoot;
     for (const segment of destinationSegments) {
       const segmentDeadline = Date.now() + 10000;
       let matches = [];
@@ -1045,7 +1090,7 @@ _TRANSFER_SCRIPT = r"""(async () => {
     provider_request_observed: network.requestSeen,
     provider_response_observed: network.responseSeen
   };
-})()""".replace("__SELECT_RECENT_DESTINATION__", _SELECT_RECENT_DESTINATION_FUNCTION).replace("__SELECT_TRANSFER_DIALOG__", _SELECT_TRANSFER_DIALOG_FUNCTION)
+})()""".replace("__SELECT_RECENT_DESTINATION__", _SELECT_RECENT_DESTINATION_FUNCTION).replace("__SELECT_TRANSFER_DIALOG__", _SELECT_TRANSFER_DIALOG_FUNCTION).replace("__ENSURE_TREE_ROOT__", _ENSURE_TRANSFER_TREE_ROOT_FUNCTION)
 
 
 _TRANSFER_PAGE_SUBMIT_SCRIPT = r"""(async () => {

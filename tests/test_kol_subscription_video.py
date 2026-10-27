@@ -30,6 +30,62 @@ from xiaocao.kol.subscription_video import (
 NOW = datetime.fromisoformat("2026-07-25T16:00:00+08:00")
 
 
+@pytest.mark.parametrize("expanded,expected_clicks", [(True, 2), (False, 1)])
+def test_lv_transfer_reloads_only_empty_destination_root(expanded, expected_clicks):
+    observed = _run_destination_root_fixture(expanded=expanded)
+    assert observed == {"result": {"status": "ready", "recovered": True}, "clicks": expected_clicks}
+
+
+@pytest.mark.parametrize("case,expected_status", [
+    ("already_loaded", "ready"),
+    ("populated", "ready"),
+    ("ambiguous", "destination_tree_root_not_unique"),
+    ("never_loads", "destination_tree_root_not_loaded"),
+    ("render_pending", "ready"),
+    ("never_renders", "destination_tree_root_missing"),
+])
+def test_lv_transfer_root_recovery_preserves_selection_guards(case, expected_status):
+    observed = _run_destination_root_fixture(case=case)
+    assert observed["result"]["status"] == expected_status
+    assert observed["clicks"] == (2 if case == "never_loads" else 0)
+    if case in {"ambiguous", "never_loads", "never_renders"}:
+        assert observed["result"]["triggered"] is False
+
+
+def _run_destination_root_fixture(*, expanded=True, case="empty"):
+    from xiaocao.kol.subscription_video import _ENSURE_TRANSFER_TREE_ROOT_FUNCTION
+
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("Node is required to exercise destination root recovery")
+    script = r"""
+const fixture = __FIXTURE__;
+let now = 0, clicks = 0, expanded = fixture.expanded, loaded = fixture.case === 'already_loaded';
+Date.now = () => now;
+globalThis.setTimeout = callback => {now += 100; queueMicrotask(callback);};
+const arrow = {
+  classList: {contains: value => value === 'minus' && expanded},
+  click: () => {clicks++; expanded = !expanded; if (expanded && fixture.case !== 'never_loads') loaded = true;},
+};
+const root = {
+  getAttribute: () => '/',
+  closest: () => ({querySelector: () => arrow}),
+};
+const course = {getAttribute: () => '/课程'};
+const other = {getAttribute: () => '/别处'};
+const dialog = {querySelectorAll: () => fixture.case === 'never_renders' ? []
+  : fixture.case === 'render_pending' ? now < 300 ? [] : [root, course]
+  : fixture.case === 'ambiguous' ? [root, {...root}]
+  : fixture.case === 'populated' ? [root, other] : loaded ? [root, course] : [root]};
+const ensure = __FUNCTION__;
+(async () => console.log(JSON.stringify({result: await ensure(dialog, '课程', () => true), clicks})))();
+""".replace("__FIXTURE__", json.dumps({"expanded": expanded, "case": case})).replace(
+        "__FUNCTION__", _ENSURE_TRANSFER_TREE_ROOT_FUNCTION,
+    )
+    result = subprocess.run([node, "-e", script], check=True, capture_output=True, text=True)
+    return json.loads(result.stdout)
+
+
 @pytest.mark.parametrize("already_selected", [False, True])
 @pytest.mark.parametrize("semantic_checkbox", [False, True])
 @pytest.mark.parametrize("recent_paths,selected_paths,expected", [

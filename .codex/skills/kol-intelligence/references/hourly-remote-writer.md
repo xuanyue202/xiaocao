@@ -55,6 +55,12 @@ an observation only after verifying the original source interval, exact failure
 ledger row, current source version and untriggered claim. Bind the real sweep
 event ID and evidence hash; never invent or rewrite an originating sweep.
 
+If the destination tree remains at one empty `/` root after its initial load,
+the transfer adapter may collapse and expand that exact root once, then require
+the first destination folder to appear. This repairs a stale expanded root;
+it never confirms a save or creates another transfer attempt. Populated or
+ambiguous trees retain the existing fail-closed path selection.
+
 This sole writer consumes Xiaocao `scope=post_handoff` and URL-only
 `wechat_official_article` LiangHuiMCP capsules as discovery metadata, not full
 articles: each is not the full article. It never scans the local
