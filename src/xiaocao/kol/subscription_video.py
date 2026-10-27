@@ -4031,7 +4031,8 @@ class SubscriptionVideoService:
             and claim.get("blocker_key") == blocker_key
         ):
             if (
-                claim.get("provider_outcome") == "unobserved"
+                (claim.get("provider_outcome") == "unobserved"
+                 or is_retryable_lv_transfer_timeout(claim))
                 and claim.get("side_effect_uncertain") is not True
             ):
                 corrected = {
@@ -4039,6 +4040,8 @@ class SubscriptionVideoService:
                     "side_effect_uncertain": True,
                     "uncertainty_correction": (
                         "provider_outcome_unobserved"
+                        if claim.get("provider_outcome") == "unobserved"
+                        else "provider_transfer_timeout"
                     ),
                     "uncertainty_corrected_at": self._time().isoformat(
                         timespec="seconds"
@@ -4065,6 +4068,7 @@ class SubscriptionVideoService:
             "pending": False,
             "side_effect_uncertain": (
                 claim.get("provider_outcome") == "unobserved"
+                or is_retryable_lv_transfer_timeout(claim)
             ),
             "user_action_required": True,
             "blocker_key": blocker_key,

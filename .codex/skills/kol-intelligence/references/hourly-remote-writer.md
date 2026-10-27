@@ -69,6 +69,9 @@ the existing per-object attempt budget may continue. A legacy source-scoped
 blocker may select one uniquely bound timeout claim without refreshing source
 discovery; multiple retained continuations fail closed. Other rejections retain
 their existing stop boundary.
+If the timeout exhausts that budget without a verified copy, retain the
+uncertain-effect flag and reconcile; the timeout response never proves a
+successful or fully settled external result.
 
 This sole writer consumes Xiaocao `scope=post_handoff` and URL-only
 `wechat_official_article` LiangHuiMCP capsules as discovery metadata, not full

@@ -3353,6 +3353,7 @@ def test_lv_transfer_temporary_timeout_keeps_window_and_attempt_budget(tmp_path,
         "provider_http_status": 200, "provider_errno": 4,
         "provider_message": "容量不足" if phase == "other_rejection" else "请求超时，请稍后再试",
         "blocker_key": "lv-cloud-transfer-provider-rejected", "user_action_required": True,
+        "side_effect_uncertain": False,
     }
     claim_path.write_text(json.dumps(prior), encoding="utf-8")
     original_line = json.dumps(prior) + "\n"
@@ -3378,6 +3379,7 @@ def test_lv_transfer_temporary_timeout_keeps_window_and_attempt_budget(tmp_path,
             service.transfer_lv_video(item, lv_session="lv", private_session="private", profile=None)
         assert clicks == []
         assert json.loads(claim_path.read_text())["trigger_attempt"] == prior["trigger_attempt"]
+        assert json.loads(claim_path.read_text())["side_effect_uncertain"] is (phase == "exhausted")
     else:
         result = service.transfer_lv_video(item, lv_session="lv", private_session="private", profile=None)
         if phase == "waiting":
