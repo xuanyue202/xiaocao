@@ -43,12 +43,13 @@ def test_lv_transfer_reloads_only_empty_destination_root(expanded, expected_clic
     ("never_loads", "destination_tree_root_not_loaded"),
     ("render_pending", "ready"),
     ("never_renders", "destination_tree_root_missing"),
+    ("ambiguous_after_collapse", "destination_tree_root_not_collapsed"),
 ])
 def test_lv_transfer_root_recovery_preserves_selection_guards(case, expected_status):
     observed = _run_destination_root_fixture(case=case)
     assert observed["result"]["status"] == expected_status
-    assert observed["clicks"] == (2 if case == "never_loads" else 0)
-    if case in {"ambiguous", "never_loads", "never_renders"}:
+    assert observed["clicks"] == (2 if case == "never_loads" else 1 if case == "ambiguous_after_collapse" else 0)
+    if case in {"ambiguous", "never_loads", "never_renders", "ambiguous_after_collapse"}:
         assert observed["result"]["triggered"] is False
 
 
@@ -75,6 +76,7 @@ const course = {getAttribute: () => '/课程'};
 const other = {getAttribute: () => '/别处'};
 const dialog = {querySelectorAll: () => fixture.case === 'never_renders' ? []
   : fixture.case === 'render_pending' ? now < 300 ? [] : [root, course]
+  : fixture.case === 'ambiguous_after_collapse' && clicks ? [root, {...root}]
   : fixture.case === 'ambiguous' ? [root, {...root}]
   : fixture.case === 'populated' ? [root, other] : loaded ? [root, course] : [root]};
 const ensure = __FUNCTION__;

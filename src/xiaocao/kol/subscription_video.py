@@ -607,8 +607,12 @@ _ENSURE_TRANSFER_TREE_ROOT_FUNCTION = r"""async (dialog, firstSegment, visible) 
   // Recover only an empty root, never a populated tree or an ambiguous account.
   if (roots.length !== 1) return {status: 'destination_tree_root_not_unique', triggered: false};
   if (rows().length !== 1) return {status: 'ready', recovered: false};
-  const rootArrow = () => rows().find(node => node.getAttribute('node-path') === '/')
-    ?.closest('.treeview-node-handler')?.querySelector('.treeview-node-arrow');
+  const rootArrow = () => {
+    const currentRoots = rows().filter(node => node.getAttribute('node-path') === '/');
+    return currentRoots.length === 1
+      ? currentRoots[0].closest('.treeview-node-handler')?.querySelector('.treeview-node-arrow')
+      : null;
+  };
   let arrow = rootArrow();
   if (!arrow) return {status: 'destination_tree_root_arrow_missing', triggered: false};
   if (arrow.classList.contains('minus')) {
