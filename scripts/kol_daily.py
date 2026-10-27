@@ -262,9 +262,11 @@ class SemanticInputUnavailable(DailyError):
         self,
         request_or_message: dict[str, Any] | str,
         field: str | None = None,
+        *,
+        reason: str | None = None,
     ):
         if isinstance(request_or_message, dict):
-            message = f"daily runner is waiting for {field} on stdin"
+            message = reason or f"daily runner is waiting for {field} on stdin"
             self.request = request_or_message
             self.field = str(field or "")
         else:
@@ -1046,8 +1048,12 @@ def _require_canonical_semantic_artifact(
         )
         if acceptance["semantic_acceptance"]["status"] != "parent_accepted":
             raise ValueError("parent full-source quality review requires changes")
-    except (OSError, ValueError, TypeError, KeyError, SemanticBundleError) as exc:
-        raise DailyError(f"semantic delegation acceptance failed: {exc}") from exc
+    except (OSError, ValueError, TypeError, KeyError, SemanticBundleError, DailyError) as exc:
+        raise SemanticInputUnavailable(
+            request,
+            "bundle_path",
+            reason=f"semantic delegation acceptance failed: {exc}",
+        ) from exc
     return bundle_path
 
 
@@ -1660,6 +1666,27 @@ def _classified_source(name: str, runner):
         try:
             return runner()
         except SemanticInputUnavailable as exc:
+            request = exc.request
+            if request.get("analysis_request_path") and exc.field == "bundle_path":
+                waiting_item = _semantic_waiting_item(
+                    request,
+                    identity=str(request.get("identity") or request.get("source_identity") or ""),
+                    version_key=str(request.get("version_key") or request.get("source_version_key") or ""),
+                    name=str(request.get("title") or request.get("name") or ""),
+                    author=str(request.get("author") or ""),
+                )
+                waiting_item.update(response_field=exc.field, input_error=str(exc))
+                outcome = {
+                    "status": "waiting",
+                    "waiting_count": 1,
+                    "waiting_items": [waiting_item],
+                }
+                progress = normalize_source_result(
+                    name, outcome,
+                    failure_revision=_writer_failure_revision(),
+                    provider_contract_version="xiaocao_writer_v1",
+                )
+                return {**outcome, "writer_progress": progress.to_dict()}
             raise TransientSourceError(
                 "semantic input unavailable",
                 category="input_error",
@@ -2781,7 +2808,10 @@ class DailyRuntime:
                     code="xiaocao_handoff_import_rejected",
                     stage="mailbox_import",
                 ) from exc
-            result = self.xiaocao(handoff_id=handoff_id)
+            result = _classified_source(
+                "xiaocao_wechat_live",
+                lambda: self.xiaocao(handoff_id=handoff_id),
+            )()
         else:
             raise EnrichmentDiagnosticError(
                 "mailbox handoff capsule type is unsupported",
@@ -2796,6 +2826,11 @@ class DailyRuntime:
             **result,
             "business_complete": handoff_id in completed,
         }
+        if (result.get("writer_progress") or {}).get("status") == "structured_input":
+            response["writer_progress"] = WriterProgress.from_dict({
+                **result["writer_progress"],
+                "item_identity": handoff_id,
+            }).to_dict()
         if handoff_id in completed and (
             isinstance(result.get("writer_progress"), dict)
             or isinstance(result.get("events"), list)

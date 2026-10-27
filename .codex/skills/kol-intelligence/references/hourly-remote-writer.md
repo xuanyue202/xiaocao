@@ -133,6 +133,8 @@ receipt; `acked|already_acked` is `全部完成`, never handoff creation alone.
 
 ### Narrow repair resume
 
+Keep packet-bound contracts unchanged while an analyst is working. If a contract changes, preserve the original packet, prepare an immutable context revision, deliver its exact prompt to the same analyst and record that delivery. A rejected delegated bundle remains an exact `bundle_path` input wait; revalidate the revised output and parent review before the narrow continuation.
+
 ```bash
 PYTHONPATH=src .venv/bin/python scripts/kol_daily.py validate-repair --mailbox-message-id <exact-64-hex-message-id>
 PYTHONPATH=src .venv/bin/python scripts/kol_daily.py resume-mailbox \
