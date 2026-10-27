@@ -69,7 +69,11 @@ from xiaocao.kol.semantic_bundle import (
     validate_receipt_bindings,
 )
 from xiaocao.kol.semantic_delegation import verify_result as verify_delegated_result
-from xiaocao.kol.subscription_video import LV_SOURCE, SubscriptionVideoService
+from xiaocao.kol.subscription_video import (
+    LV_SOURCE,
+    SubscriptionVideoService,
+    is_retryable_lv_transfer_timeout,
+)
 from xiaocao.kol.wechat_official import (
     DEFAULT_PUBLISHERS as DEFAULT_WECHAT_OFFICIAL_PUBLISHERS,
     DEFAULT_WITHIN as DEFAULT_WECHAT_OFFICIAL_WITHIN,
@@ -4043,6 +4047,24 @@ class DailyRuntime:
                 )
                 if request is not None and _persisted_validated_bundle(request) is not None:
                     retained.append(str(item["identity"]))
+                if item.get("source") != LV_SOURCE:
+                    continue
+                claim_path = (self.args.video_output_dir / "claims"
+                              / f"lv_transfer_{item['version_key']}.json")
+                if not claim_path.is_file():
+                    continue
+                claim = json.loads(claim_path.read_text(encoding="utf-8"))
+                if not is_retryable_lv_transfer_timeout(claim):
+                    continue
+                if (
+                    claim.get("source_identity") != item["identity"]
+                    or claim.get("source_version_key") != item["version_key"]
+                    or claim.get("source_size") != item.get("size")
+                    or not claim.get("triggered_at")
+                ):
+                    raise DailyError("video timeout claim binding changed")
+                retained.append(str(item["identity"]))
+            retained = list(dict.fromkeys(retained))
             if len(retained) > 1:
                 raise DailyError("video source resume has multiple retained bundles")
             if retained:

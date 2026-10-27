@@ -42,6 +42,8 @@ LV_DESTINATION_PARENT = "/课程/自己的课"
 LV_DESTINATION_DIRECTORY = "/课程/自己的课/吕晓彤"
 LV_TRANSFER_CONFIRMATION_WINDOW = timedelta(minutes=30)
 LV_TRANSFER_MAX_TRIGGER_ATTEMPTS = 2
+
+
 VIDEO_SUFFIXES = {".avi", ".flv", ".m4v", ".mkv", ".mov", ".mp4"}
 MAX_EPISODE_SPEC_BYTES = 16 * 1024 * 1024
 MAX_EPISODE_REVIEW_SPEC_BYTES = 2 * 1024 * 1024
@@ -73,6 +75,21 @@ FULL_CONTRACT_PATH = (
     / "references"
     / "full-contract.md"
 )
+
+
+def is_retryable_lv_transfer_timeout(claim: Mapping[str, Any]) -> bool:
+    """Recognize only the observed, explicit temporary transfer response."""
+    return (
+        claim.get("provider_trigger_status") == "cloud_transfer_rejected"
+        and claim.get("provider_outcome") == "rejected"
+        and claim.get("provider_request_observed") is True
+        and claim.get("provider_response_observed") is True
+        and claim.get("provider_http_status") == 200
+        and claim.get("provider_errno") == 4
+        and str(claim.get("provider_message") or "").strip()
+        == "请求超时，请稍后再试"
+    )
+
 
 
 def analysis_contract_binding() -> dict[str, str]:
@@ -4598,7 +4615,11 @@ class SubscriptionVideoService:
                 raise EnrichmentError(
                     "Lv recovery correction is not the exact proven inactive-tab claim"
                 )
-            if claim.get("provider_trigger_status") == "cloud_transfer_rejected":
+            temporary_timeout = is_retryable_lv_transfer_timeout(claim)
+            if (
+                claim.get("provider_trigger_status") == "cloud_transfer_rejected"
+                and not temporary_timeout
+            ):
                 self._record_transfer_blocker(
                     receipt_name,
                     claim,
@@ -4641,8 +4662,18 @@ class SubscriptionVideoService:
                         else "pending_exact_reconciliation"
                     ),
                 }
+                if temporary_timeout:
+                    waiting["user_action_required"] = False
+                    waiting["provider_retry_reason"] = "temporary_transfer_timeout"
+                    for field in ("blocker_key", "blocked_at", "failure_reason"):
+                        waiting.pop(field, None)
                 if not readback_only:
                     _atomic_write_json(self._claim_path(receipt_name), waiting)
+                    if temporary_timeout and claim.get("status") == "blocked":
+                        _append_jsonl(self.events_path, {
+                            **waiting,
+                            "event": "lv_transfer_timeout_blocker_reclassified",
+                        })
                 return waiting
             if not reconciled_absent:
                 return {

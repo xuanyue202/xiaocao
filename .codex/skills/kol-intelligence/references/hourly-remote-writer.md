@@ -61,6 +61,15 @@ the first destination folder to appear. This repairs a stale expanded root;
 it never confirms a save or creates another transfer attempt. Populated or
 ambiguous trees retain the existing fail-closed path selection.
 
+An observed transfer response with HTTP 200, errno 4 and the exact message
+`请求超时，请稍后再试` is a temporary provider failure, not proof of a capacity or
+membership blocker. Preserve the original response and 30-minute exact-copy
+confirmation window. After exact directory and settled search readback, only
+the existing per-object attempt budget may continue. A legacy source-scoped
+blocker may select one uniquely bound timeout claim without refreshing source
+discovery; multiple retained continuations fail closed. Other rejections retain
+their existing stop boundary.
+
 This sole writer consumes Xiaocao `scope=post_handoff` and URL-only
 `wechat_official_article` LiangHuiMCP capsules as discovery metadata, not full
 articles: each is not the full article. It never scans the local
