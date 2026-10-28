@@ -47,6 +47,17 @@ message must be reconciled before creating another capture.
 `wechat_official_accounts`; it never scans Lv, analyzes, publishes, or writes
 Book. Do not substitute the remote coordinator.
 
+New course discovery is inventory, not replay readiness. Apply the human-assisted
+reference's replay-readiness gate before any bridge edit/proof/entry or human
+playback notice. Known unstarted/live/generating courses remain pending without
+launch. First opaque shares use its conservative Beijing checking windows
+(morning publication: 11:00; afternoon/evening: 21:00), subject to announced later
+sessions or known not-ready evidence. These times permit checking, never prove
+replay availability. When a browser request is emitted too early, stop only that idle
+invocation, verify guardian restoration and retain its original IDs for later
+readiness reconciliation. This does not interrupt an active download/upload or
+the required same-process polling after a justified entry.
+
 For a validated local `wechat_official_accounts` repair, use
 `resume-source-repair --source-adapter wechat_official_accounts
 --failure-fingerprint <exact fingerprint> --local-capture`.
