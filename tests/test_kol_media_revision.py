@@ -295,7 +295,7 @@ def test_original_checkpoint_backend_repair_is_exact_and_unpublished(tmp_path,bl
         assert (cache/'binding.json').read_text()=='{"original":true}'
 
 
-@pytest.mark.parametrize('blocked', ['', 'bytes', 'cache', 'query', 'host', 'published', 'active', 'media_changed', 'install_failed', 'output_after'])
+@pytest.mark.parametrize('blocked', ['', 'bytes', 'cache', 'query', 'host', 'published', 'active', 'media_changed', 'install_failed', 'output_after', 'restored_labels'])
 def test_precheckpoint_public_task_repair_preserves_identity(tmp_path, blocked):
     from xiaocao.kol.media_revision import install_stopped_checkpoint_repair, resume_checkpoint_download
     ledger, capture, media, _ = _capture_fixture(tmp_path)
@@ -307,7 +307,9 @@ def test_precheckpoint_public_task_repair_preserves_identity(tmp_path, blocked):
     task['meta']['req'] = {'url':'https://live-ex-speed.xiaoeknow.com/replay.m3u8'}
     task['meta']['labels'].update(hls_finite='true', compress_inline='true')
     store.transition(current, 'failed', status='download_failed', download_task=deepcopy(task),
-        native_media_lineage={'media_resource_sha256':hashlib.sha256(task['meta']['req']['url'].encode()).hexdigest()})
+        native_media_lineage={'media_resource_sha256':hashlib.sha256(task['meta']['req']['url'].encode()).hexdigest(),
+            'finite_playlist':{'ended':True,'candidate_id':current['candidate']['id'],
+                'media_resource_sha256':hashlib.sha256(task['meta']['req']['url'].encode()).hexdigest()}})
     calls = []
     def resume(task_id):
         calls.append(task_id)
@@ -318,6 +320,7 @@ def test_precheckpoint_public_task_repair_preserves_identity(tmp_path, blocked):
     binary = tmp_path/'candidate'; binary.write_bytes(b'tested')
     def replace(row, **kwargs):
         task['status'] = 'pause'
+        if blocked == 'restored_labels':task['meta']['labels'].pop('hls_finite')
         if blocked != 'install_failed':
             store.transition(row, 'native_backend_repaired', repaired_binary_sha256=hashlib.sha256(binary.read_bytes()).hexdigest())
         return {'capture_job_id':capture}
@@ -334,7 +337,7 @@ def test_precheckpoint_public_task_repair_preserves_identity(tmp_path, blocked):
         task['meta']['opts']['name']='other-compressed.mp4'
         with pytest.raises(EnrichmentError):resume_checkpoint_download(service,capture)
         assert calls == []
-    elif blocked:
+    elif blocked and blocked != 'restored_labels':
         with pytest.raises(EnrichmentError):install_stopped_checkpoint_repair(service,capture,replacement_binary=binary)
         if blocked == 'install_failed':
             with pytest.raises(EnrichmentError):resume_checkpoint_download(service,capture)

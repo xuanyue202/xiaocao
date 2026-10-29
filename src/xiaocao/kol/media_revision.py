@@ -141,7 +141,11 @@ def _unstarted_finite_task(task: dict, media: Path, current: dict) -> bool:
     req = (task.get('meta') or {}).get('req') or {}
     from urllib.parse import urlsplit
     url = urlsplit(str(req.get('url') or ''))
-    return (labels.get('hls_finite') == 'true' and not labels.get('checkpoint_basis')
+    finite = (current.get('native_media_lineage') or {}).get('finite_playlist') or {}
+    finite_verified = (labels.get('hls_finite') == 'true' or (finite.get('ended') is True
+        and finite.get('candidate_id') == (current.get('candidate') or {}).get('id')
+        and finite.get('media_resource_sha256') == (current.get('native_media_lineage') or {}).get('media_resource_sha256')))
+    return (finite_verified and not labels.get('checkpoint_basis')
         and int((task.get('progress') or {}).get('downloaded') or 0) == 0
         and not media.exists() and not Path(str(media) + '.hls-cache').exists()
         and url.scheme == 'https' and url.netloc == 'live-ex-speed.xiaoeknow.com'
