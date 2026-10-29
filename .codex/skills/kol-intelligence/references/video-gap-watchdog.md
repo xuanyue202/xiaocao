@@ -19,6 +19,10 @@ without a recorded Handoff also triggers. The diagnostic window starts after the
 preceding third trading day, including intervening weekend/holiday backlog;
 recently changed older items remain visible without reviving all legacy history.
 Explicit user exclusions remain excluded; they never become completion.
+This includes `human_playback_deferred=true`: retain the original item and
+claims in `items`, expose the deferral, and exclude it from actionable gaps and
+expected acquisition days until a direct human resume clears that flag. A
+deferred `awaiting_playback` status alone must never trigger another reminder.
 
 Separate acquisition, local Handoff and remote ACK: a complete media receipt can
 exist while upload/mailbox is unfinished. ACK is recorded only from the matching

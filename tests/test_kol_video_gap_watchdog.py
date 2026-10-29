@@ -83,6 +83,34 @@ def test_rejected_bytes_and_changed_history_do_not_count_as_success(tmp_path):
         inspect_video_gaps(tmp_path,["2026-10-19","2026-10-20"],NOW,history)
 
 
+def test_deferred_original_is_retained_without_gap_and_resume_restores_monitoring(tmp_path):
+    history, item = _fixture(tmp_path)
+    item.update(status="awaiting_playback", capture_job_id="kol-retained",
+                human_playback_deferred=True, human_playback_deferral_reason="direct_user_defer")
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(json.dumps({"items": {item["identity"]: item}}))
+    before = manifest.read_bytes()
+    deferred = inspect_video_gaps(tmp_path, ["2026-10-19", "2026-10-20"], NOW, history)
+    assert deferred["gaps"] == []
+    assert deferred["consecutive_no_video"] is False
+    assert deferred["explicitly_excluded_days"] == ["2026-10-19"]
+    assert deferred["items"][0]["human_playback_deferred"] is True
+    assert deferred["items"][0]["capture_job_id"] == "kol-retained"
+    assert deferred["items"][0]["handoff_recorded"] is False
+    assert manifest.read_bytes() == before
+
+    # A separate original still alerts while the first remains deferred.
+    history["messages"].append("[2026-10-20 08:00] #小程序://见势擒龙团/AnotherToken")
+    other, = [r for r in parse_xiaocao_live_messages(history) if r["identity"] != item["identity"]]
+    checked = inspect_video_gaps(tmp_path, ["2026-10-19", "2026-10-20"], NOW, history)
+    assert [r["identity"] for r in checked["gaps"]] == [other["identity"]]
+
+    item["human_playback_deferred"] = False
+    manifest.write_text(json.dumps({"items": {item["identity"]: item}}))
+    resumed = inspect_video_gaps(tmp_path, ["2026-10-19", "2026-10-20"], NOW, history)
+    assert {r["identity"] for r in resumed["gaps"]} == {item["identity"], other["identity"]}
+
+
 def test_weekend_pending_original_is_not_hidden_by_trade_day_window(tmp_path):
     history, item = _fixture(tmp_path)
     item["published_at"] = "2026-10-18T16:00:00+08:00"

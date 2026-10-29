@@ -87,7 +87,9 @@ def _item_state(root: Path, item: dict[str, Any], acknowledgments: list[dict[str
             "media_receipted": acquired, "handoff_recorded": handoff,
             "media_received_at": media.get("updated_at") if acquired else None,
             "remote_ack_recorded": bool(handoff and ack),
-            "user_excluded": item.get("manual_backfill_excluded") is True}
+            "human_playback_deferred": item.get("human_playback_deferred") is True,
+            "user_excluded": (item.get("manual_backfill_excluded") is True
+                              or item.get("human_playback_deferred") is True)}
 
 
 def inspect_video_gaps(root: Path, trade_days: list[str], now: datetime,
