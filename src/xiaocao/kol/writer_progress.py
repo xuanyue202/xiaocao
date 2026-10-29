@@ -1292,6 +1292,7 @@ _LV_TEXT_IMAGE_SOURCE_REPAIR_PROFILE = "kol_lv_text_image_source_run"
 _LV_TEXT_IMAGE_SOURCE_REPAIR_FAILURES = frozenset({
     ("source_error", "source_temporarily_unavailable"),
     ("internal_state_error", "progress_deadline_missing"),
+    ("code_error", "unhandled_source_exception"),
 })
 
 
@@ -1584,6 +1585,7 @@ def _canonical_subscription_video_source_repair_profile(
         in _SUBSCRIPTION_VIDEO_SOURCE_REPAIR_PROFILE_ALIASES
         and failure
         in {
+            ("code_error", "unhandled_source_exception", "source_run"),
             (
                 "source_error",
                 "source_temporarily_unavailable",

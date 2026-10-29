@@ -505,6 +505,7 @@ def test_repair_validation_accepts_exact_lv_download_recovery_profile(
     [
         ("source_error", "source_temporarily_unavailable"),
         ("internal_state_error", "progress_deadline_missing"),
+        ("code_error", "unhandled_source_exception"),
     ],
 )
 def test_repair_validation_accepts_lv_text_image_source_run_profile(
@@ -1652,6 +1653,13 @@ def test_repair_validation_accepts_xiaocao_wechat_source_profile(
 @pytest.mark.parametrize(
     ("category", "code", "stage", "declared_profile", "changed_source"),
     (
+        (
+            "code_error",
+            "unhandled_source_exception",
+            "source_run",
+            "kol_subscription_video_source_run",
+            "src/xiaocao/kol/writer_progress.py",
+        ),
         (
             "source_error",
             "source_temporarily_unavailable",
