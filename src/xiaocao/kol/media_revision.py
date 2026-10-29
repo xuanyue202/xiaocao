@@ -136,6 +136,27 @@ def resume_media_revision(service: Any, capture_job_id: str, *, user_resume_auth
         status='downloading', media_repair={**repair, 'state': 'running', 'resume_receipt': receipt})
 
 
+def _unstarted_finite_task(task: dict, media: Path, current: dict) -> bool:
+    labels = _labels(task)
+    req = (task.get('meta') or {}).get('req') or {}
+    from urllib.parse import urlsplit
+    url = urlsplit(str(req.get('url') or ''))
+    finite = (current.get('native_media_lineage') or {}).get('finite_playlist') or {}
+    finite_verified = (labels.get('hls_finite') == 'true' or (finite.get('ended') is True
+        and finite.get('candidate_id') == (current.get('candidate') or {}).get('id')
+        and finite.get('media_resource_sha256') == (current.get('native_media_lineage') or {}).get('media_resource_sha256')))
+    return (finite_verified and not labels.get('checkpoint_basis')
+        and int((task.get('progress') or {}).get('downloaded') or 0) == 0
+        and not media.exists() and not Path(str(media) + '.hls-cache').exists()
+        and url.scheme == 'https' and url.netloc == 'live-ex-speed.xiaoeknow.com'
+        and not url.query and not url.fragment and url.username is None
+        and hashlib.sha256((url.scheme + '://' + url.netloc + url.path).encode()).hexdigest()
+            == (current.get('native_media_lineage') or {}).get('media_resource_sha256')
+        and all(((task.get('meta') or {}).get('opts') or {}).get(key)
+            == (((current.get('download_task') or {}).get('meta') or {}).get('opts') or {}).get(key)
+            for key in ('path', 'name')))
+
+
 def resume_checkpoint_download(service: Any, capture_job_id: str, *,
                                user_resume_authorized: bool = False) -> dict[str, Any]:
     """Resume one observed checkpoint failure, without any new task creation."""
@@ -148,7 +169,15 @@ def resume_checkpoint_download(service: Any, capture_job_id: str, *,
     task = _task(service, task_id)
     labels = _labels(task)
     candidate = current.get('candidate') or {}
-    if (labels.get('checkpoint_basis') != 'verified_hls_segments'
+    opts = (task.get('meta') or {}).get('opts') or {}
+    media = Path(str(opts.get('path') or '')) / str(opts.get('name') or '')
+    repair_claim = current.get('checkpoint_backend_repair_claim') or {}
+    prestart_repair = (current.get('checkpoint_backend_repair_verified') == repair_claim
+        and repair_claim.get('task_id') == task_id and repair_claim.get('candidate_id') == candidate.get('id')
+        and _unstarted_finite_task(task, media, current))
+    if prestart_repair and any(t.get('status') in {'running', 'ready', 'wait'} for t in service.sniffer.tasks()):
+        raise EnrichmentError('active task blocks precheckpoint resume')
+    if (labels.get('checkpoint_basis') != 'verified_hls_segments' and not prestart_repair
         or labels.get('capture_id') != candidate.get('id') or labels.get('live_id') != candidate.get('live_id')
         or labels.get('type') != 'live_capture' or labels.get('compress_inline') != 'true'):
         raise EnrichmentError('checkpoint does not bind the original compressed task')
@@ -180,14 +209,15 @@ def install_stopped_checkpoint_repair(service: Any, capture_job_id: str, *, repl
     task = _task(service, str(current.get('download_task_id') or ''))
     labels = _labels(task)
     candidate = current.get('candidate') or {}
+    opts = (task.get('meta') or {}).get('opts') or {}
+    media = Path(str(opts.get('path') or '')) / str(opts.get('name') or '')
+    prestart = _unstarted_finite_task(task, media, current)
     if (task.get('status') not in {'pause', 'error'} or task.get('protocol') != 'stream'
-        or labels.get('checkpoint_basis') != 'verified_hls_segments'
+        or (labels.get('checkpoint_basis') != 'verified_hls_segments' and not prestart)
         or labels.get('capture_id') != candidate.get('id') or labels.get('live_id') != candidate.get('live_id')
         or labels.get('compress_inline') != 'true' or labels.get('type') != 'live_capture'
         or any(t.get('status') in {'running', 'ready', 'wait'} for t in service.sniffer.tasks())):
         raise EnrichmentError('checkpoint backend repair lacks exact stopped singleton task binding')
-    opts = (task.get('meta') or {}).get('opts') or {}
-    media = Path(str(opts.get('path') or '')) / str(opts.get('name') or '')
     repair = current.get('media_repair') or {}
     if repair:
         output_bound = (media.name == repair.get('media_basename')
@@ -205,17 +235,17 @@ def install_stopped_checkpoint_repair(service: Any, capture_job_id: str, *, repl
         raise EnrichmentError('checkpoint backend repair output revision changed')
     cache = Path(str(media) + '.hls-cache')
     binding = cache / 'binding.json'
-    if not binding.is_file() or (cache / 'terminal.json').exists():
+    if (not prestart and not binding.is_file()) or (cache / 'terminal.json').exists():
         raise EnrichmentError('checkpoint backend repair requires a non-terminal bound cache')
     claim = {'task_id':task['id'], 'candidate_id':candidate['id'],
-             'binding_sha256':hashlib.sha256(binding.read_bytes()).hexdigest(),
+             'binding_sha256':hashlib.sha256(binding.read_bytes()).hexdigest() if not prestart else None,
              'replacement_sha256':hashlib.sha256(replacement_binary.read_bytes()).hexdigest()}
     if current.get('checkpoint_backend_repair_claim') == claim:
         raise EnrichmentError('checkpoint backend replacement already claimed; reconcile before replay')
     current = service.capture_store.transition(current,'checkpoint_backend_repair_claimed',
         checkpoint_backend_repair_claim=claim)
     result = service._replace_sniffer_for_repair(current,replacement_binary=replacement_binary,preserve_native_arm=True)
-    if hashlib.sha256(binding.read_bytes()).hexdigest() != claim['binding_sha256']:
+    if (prestart and (cache.exists() or media.exists())) or (not prestart and hashlib.sha256(binding.read_bytes()).hexdigest() != claim['binding_sha256']):
         raise EnrichmentError('checkpoint binding changed across backend repair')
     restored = _task(service, task['id'])
     restored_labels = _labels(restored)
@@ -227,4 +257,12 @@ def install_stopped_checkpoint_repair(service: Any, capture_job_id: str, *, repl
         or restored_opts.get('name') != opts.get('name')
         or restored_opts.get('path') != opts.get('path')):
         raise EnrichmentError('checkpoint task changed across backend repair')
+    if prestart:
+        if not _unstarted_finite_task(restored, media, current):
+            raise EnrichmentError('precheckpoint media changed across repair')
+        fresh = service.capture_store.latest(capture_job_id)
+        if fresh.get('repaired_binary_sha256') != claim['replacement_sha256']:
+            raise EnrichmentError('precheckpoint installed binary unverified')
+        service.capture_store.transition(fresh, 'checkpoint_backend_repair_verified',
+            checkpoint_backend_repair_verified=claim)
     return result

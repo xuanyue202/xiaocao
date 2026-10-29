@@ -622,3 +622,12 @@ same stopped task, then `resume_checkpoint_download` and continue the original
 item PTY through validation and handoff. Never use this path for a user-paused
 capture, auth-terminal cache, unknown binding, active download or new native
 launch. A backend swap alone is not segment-resume or Handoff acceptance.
+
+For the verified credential-free public `live-ex-speed.xiaoeknow.com` replay
+whose manifest names HTTPS `encrypt-k-vod.xet.tech` segments, the checkpoint
+backend supports exactly that CDN pair without forwarding custom headers across
+origins. DNS/public-address, finite duration, segment integrity and decode gates
+remain. A stopped original task that failed before any output/cache/bytes may
+use `install_stopped_checkpoint_repair` and `resume_checkpoint_download` after
+exact identity/output/public-URL reconciliation; the installer records the repair
+claim first. Preserve its task/capture and native arm; no new entry or download.
