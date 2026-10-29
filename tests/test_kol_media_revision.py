@@ -293,3 +293,53 @@ def test_original_checkpoint_backend_repair_is_exact_and_unpublished(tmp_path,bl
         assert install_stopped_checkpoint_repair(service,capture,replacement_binary=binary)['capture_job_id']==capture
         assert calls==[provider['id']]
         assert (cache/'binding.json').read_text()=='{"original":true}'
+
+
+@pytest.mark.parametrize('blocked', ['', 'bytes', 'cache', 'query', 'host', 'published', 'active', 'media_changed', 'install_failed', 'output_after'])
+def test_precheckpoint_public_task_repair_preserves_identity(tmp_path, blocked):
+    from xiaocao.kol.media_revision import install_stopped_checkpoint_repair, resume_checkpoint_download
+    ledger, capture, media, _ = _capture_fixture(tmp_path)
+    store = CaptureJobStore(ledger)
+    current = store.latest(capture)
+    media.unlink()
+    task = deepcopy(current['download_task'])
+    task.update(status='error', protocol='stream', updatedAt='2026-10-29T21:09:06+08:00', progress={'downloaded':0})
+    task['meta']['req'] = {'url':'https://live-ex-speed.xiaoeknow.com/replay.m3u8'}
+    task['meta']['labels'].update(hls_finite='true', compress_inline='true')
+    store.transition(current, 'failed', status='download_failed', download_task=deepcopy(task),
+        native_media_lineage={'media_resource_sha256':hashlib.sha256(task['meta']['req']['url'].encode()).hexdigest()})
+    calls = []
+    def resume(task_id):
+        calls.append(task_id)
+        task['status'] = 'running'
+        return {'id':task_id}
+    sniffer = SimpleNamespace(tasks=lambda:[deepcopy(task)], resume_task=resume)
+    service = XiaocaoLiveService(tmp_path/'live', capture_ledger=ledger, sniffer_client=sniffer)
+    binary = tmp_path/'candidate'; binary.write_bytes(b'tested')
+    def replace(row, **kwargs):
+        task['status'] = 'pause'
+        if blocked != 'install_failed':
+            store.transition(row, 'native_backend_repaired', repaired_binary_sha256=hashlib.sha256(binary.read_bytes()).hexdigest())
+        return {'capture_job_id':capture}
+    service._replace_sniffer_for_repair = replace
+    if blocked == 'bytes':task['progress']['downloaded']=1
+    if blocked == 'cache':Path(str(media)+'.hls-cache').mkdir()
+    if blocked == 'query':task['meta']['req']['url']+='?ticket=secret'
+    if blocked == 'host':task['meta']['req']['url']='https://other.test/replay.m3u8'
+    if blocked == 'published':service._append('cloud_handoff_published',capture_job_id=capture)
+    if blocked == 'media_changed':task['meta']['req']['url']='https://live-ex-speed.xiaoeknow.com/another.m3u8'
+    if blocked == 'active':sniffer.tasks=lambda:[deepcopy(task),{'id':'other','status':'running'}]
+    if blocked == 'output_after':
+        install_stopped_checkpoint_repair(service,capture,replacement_binary=binary)
+        task['meta']['opts']['name']='other-compressed.mp4'
+        with pytest.raises(EnrichmentError):resume_checkpoint_download(service,capture)
+        assert calls == []
+    elif blocked:
+        with pytest.raises(EnrichmentError):install_stopped_checkpoint_repair(service,capture,replacement_binary=binary)
+        if blocked == 'install_failed':
+            with pytest.raises(EnrichmentError):resume_checkpoint_download(service,capture)
+        assert calls == []
+    else:
+        install_stopped_checkpoint_repair(service,capture,replacement_binary=binary)
+        resume_checkpoint_download(service,capture)
+        assert calls == [task['id']]

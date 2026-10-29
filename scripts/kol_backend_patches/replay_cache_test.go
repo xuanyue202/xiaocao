@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -306,5 +307,37 @@ func TestReplayManifestAuthTerminalDoesNotRefetch(t *testing.T) {
 	}
 	if calls.Load() != 1 {
 		t.Fatal("terminal manifest authentication retried")
+	}
+}
+
+func TestObservedXiaoetongCrossOriginSegments(t *testing.T) {
+	origin, _ := url.Parse("https://live-ex-speed.xiaoeknow.com/replay.m3u8")
+	for _, test := range []struct {
+		target  string
+		headers map[string]string
+		allowed bool
+	}{
+		{"https://encrypt-k-vod.xet.tech/part.ts", nil, true},
+		{"https://encrypt-k-vod.xet.tech/part.ts?provider=issued", nil, true},
+		{"https://encrypt-k-vod.xet.tech/part.ts#fragment", nil, false},
+		{"https://encrypt-k-vod.xet.tech/part.ts", map[string]string{"Cookie": "private"}, false},
+		{"https://encrypt-k-vod.xet.tech.evil.test/part.ts", nil, false},
+		{"http://encrypt-k-vod.xet.tech/part.ts", nil, false},
+		{"https://encrypt-k-vod.xet.tech:444/part.ts", nil, false},
+		{"https://127.0.0.1/part.ts", nil, false},
+	} {
+		target, _ := url.Parse(test.target)
+		if allowedReplayResource(origin, target, test.headers) != test.allowed {
+			t.Fatal(test.target)
+		}
+	}
+	origin.RawQuery = "ticket=private"
+	if allowedReplayResource(origin, origin.ResolveReference(&url.URL{Scheme: "https", Host: "encrypt-k-vod.xet.tech", Path: "/part.ts"}), nil) {
+		t.Fatal("signed origin")
+	}
+	other, _ := url.Parse("https://other.test/replay.m3u8")
+	target, _ := url.Parse("https://encrypt-k-vod.xet.tech/part.ts")
+	if allowedReplayResource(other, target, nil) {
+		t.Fatal("unverified origin")
 	}
 }

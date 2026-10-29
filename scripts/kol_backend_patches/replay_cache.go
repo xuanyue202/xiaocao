@@ -100,7 +100,6 @@ func newReplayCache(rawURL string, headers map[string]string, root, binding stri
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	c := &replayCache{root: root, headers: headers, resources: map[string]*replayResource{}, verified: map[string]bool{}, client: &http.Client{Timeout: replayRequestTimeout}, context: ctx, cancel: cancel}
-	originalOrigin := base.Scheme + "://" + base.Host
 	initialIP := net.ParseIP(base.Hostname())
 	allowLocal := initialIP != nil && initialIP.IsLoopback()
 	transport := http.DefaultTransport.(*http.Transport).Clone()
@@ -131,7 +130,7 @@ func newReplayCache(rawURL string, headers map[string]string, root, binding stri
 	}
 	c.client.Transport = transport
 	c.client.CheckRedirect = func(next *http.Request, prior []*http.Request) error {
-		if len(prior) >= 5 || next.URL.Scheme+"://"+next.URL.Host != originalOrigin {
+		if len(prior) >= 5 || next.URL.Scheme+"://"+next.URL.Host != prior[0].URL.Scheme+"://"+prior[0].URL.Host {
 			return fmt.Errorf("cross-origin media redirect rejected")
 		}
 		return nil
@@ -184,7 +183,7 @@ func newReplayCache(rawURL string, headers map[string]string, root, binding stri
 			return "", fmt.Errorf("invalid replay resource")
 		}
 		absolute := base.ResolveReference(parsed)
-		if (absolute.Scheme != "http" && absolute.Scheme != "https") || absolute.User != nil || absolute.Scheme+"://"+absolute.Host != originalOrigin {
+		if (absolute.Scheme != "http" && absolute.Scheme != "https") || absolute.User != nil || !allowedReplayResource(base, absolute, headers) {
 			return "", fmt.Errorf("invalid replay resource scheme")
 		}
 		extension := filepath.Ext(absolute.Path)
@@ -621,4 +620,12 @@ func validateReplayReservation(name string, labels map[string]string) error {
 		}
 	}
 	return nil
+}
+
+// Only the observed unsigned Xiaoetong manifest may name exact provider-issued CDN URLs.
+func allowedReplayResource(origin, resource *url.URL, headers map[string]string) bool {
+	if origin.Scheme+"://"+origin.Host == resource.Scheme+"://"+resource.Host {
+		return true
+	}
+	return len(headers) == 0 && origin.RawQuery == "" && origin.Fragment == "" && resource.Fragment == "" && origin.Scheme == "https" && origin.Host == "live-ex-speed.xiaoeknow.com" && resource.Scheme == "https" && resource.Host == "encrypt-k-vod.xet.tech" && resource.User == nil
 }
