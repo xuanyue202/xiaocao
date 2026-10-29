@@ -849,6 +849,13 @@ class XiaocaoLiveCaptureDriver:
             raise EnrichmentError("native capture could not bind its candidate")
         return bound
 
+    def require_idle_human_entry(self, identity: str, capture_job_id: str) -> None:
+        capture = self._service(identity).capture_store.latest(capture_job_id)
+        if not capture or capture.get("status") != "awaiting_capture" or any(
+            capture.get(key) for key in ("expected_source", "candidate", "source_job_id", "task_id", "download_task_id")
+        ):
+            raise EnrichmentError("human entry refresh requires the same unbound idle capture")
+
     def prepare_human_playback(self, identity: str, capture_job_id: str) -> dict[str, Any]:
         service = self._service(identity)
         capture = service.capture_store.latest(capture_job_id)
@@ -1101,6 +1108,7 @@ class XiaocaoWechatLiveSubscription:
         password: str = "666",
         playback_route: str = XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM,
         clock: Callable[[], datetime] | None = None,
+        human_entry_session_id: str | None = None,
     ):
         self.output_dir = Path(output_dir).expanduser().resolve()
         self.manifest_path = self.output_dir / "manifest.json"
@@ -1117,6 +1125,9 @@ class XiaocaoWechatLiveSubscription:
                 "Xiaocao web playback is sunset; use the WeChat mini-program route"
             )
         self.clock = clock or (lambda: datetime.now(BEIJING))
+        self.human_entry_session_id = human_entry_session_id or uuid4().hex
+        if not re.fullmatch(r"[0-9a-f]{32}", self.human_entry_session_id):
+            raise ValueError("invalid human entry collaboration session")
 
     def _now(self) -> str:
         value = self.clock()
@@ -2288,75 +2299,103 @@ class XiaocaoWechatLiveSubscription:
     def _check_human_playback(self, manifest: dict, item: dict, *, reason: str) -> dict:
         from .human_playback import (
             enable_capture_listener_pac, launch_verified_caoliao,
-            next_human_poll, request_human_action_once,
+            next_human_poll, request_human_action_once, read_launched_human_entry,
         )
         from xiaocao.yangsheng.capture import lifecycle_lease
         # Closure is human-owned. Never claim it was verified or invoke native UI.
-        if reason == "captured_window_cleanup" or item.get("activated") is True:
+        if (reason == "captured_window_cleanup" or item.get("activated") is True
+            or item.get("human_playback_deferred") is True):
             return item
         if item.get("mini_program_name") != "见势擒龙团":
             raise EnrichmentError("human Caoliao playback requires the original branded entry")
-        # A process can exit after saving the launched entry but before emitting
-        # its action request. Reconcile that receipt even before the next poll.
-        if item.get("human_playback_started_at") and not item.get("human_confirmed_source_identity"):
+        now = self.clock()
+        started = item.get("human_playback_active_entry_started_at") or item.get("human_playback_started_at")
+        published = datetime.fromisoformat(item["published_at"]).astimezone(BEIJING)
+        check_after = published.replace(hour=11 if published.hour < 12 else 21, minute=0, second=0, microsecond=0)
+        unbound = not any(item.get(key) for key in (
+            "source_identity", "human_confirmed_source_identity", "source_job_id", "candidate_id", "task_id", "handoff_id",
+        ))
+        refresh = bool(started and unbound and now >= check_after and (
+            item.get("human_playback_active_entry_session_id") != self.human_entry_session_id
+            or datetime.fromisoformat(started) < check_after
+        ))
+        if started and not refresh and unbound and now >= check_after:
+            # Reconcile a crash after dispatch and before its one notice. The receipt
+            # proves dispatch only; it never proves a visible WeChat window.
             nonce = str(item.get("human_playback_nonce") or "")
             if not re.fullmatch(r"[0-9a-f]{32}", nonce):
                 raise EnrichmentError("human playback reminder lost its entry identity")
-            folder = self.output_dir / "items" / item["identity"]
-            folder.mkdir(parents=True, exist_ok=True)
-            request_human_action_once(folder / f"human-notification-{nonce}.json",
-                published_at=item["published_at"], identity=item["identity"], capture_job_id=item["capture_job_id"])
-        now = self.clock()
+            receipt = Path(item.get("human_playback_active_entry_receipt") or item["human_playback_entry_receipt"])
+            notice = receipt.with_name(receipt.name.replace("human-entry-", "human-notification-"))
+            request_human_action_once(notice, published_at=item["published_at"], identity=item["identity"],
+                capture_job_id=item["capture_job_id"], entry_receipt=receipt)
         due = item.get("human_playback_next_poll_at")
-        if due and now < datetime.fromisoformat(due):
+        if not refresh and due and now < datetime.fromisoformat(due):
             return item
-        if not item.get("human_playback_started_at"):
+        if not item.get("human_playback_started_at") or refresh:
             with lifecycle_lease():
                 self.capture_driver.prepare_human_playback(item["identity"], item["capture_job_id"])
+                if refresh:
+                    self.capture_driver.require_idle_human_entry(item["identity"], item["capture_job_id"])
                 enable_capture_listener_pac()
                 nonce = item.get("human_playback_nonce") or uuid4().hex
+                if not re.fullmatch(r"[0-9a-f]{32}", nonce):
+                    raise EnrichmentError("human playback entry lost its original identity")
                 item = self._transition(manifest, item, item["status"], human_playback_nonce=nonce)
                 folder = self.output_dir / "items" / item["identity"]
                 folder.mkdir(parents=True, exist_ok=True)
-                receipt = folder / f"human-entry-{nonce}.json"
+                suffix = f"-resume-{self.human_entry_session_id}" if refresh else ""
+                receipt = folder / f"human-entry-{nonce}{suffix}.json"
+                if refresh:
+                    # Scan every previous same-original continuation, not just this
+                    # invocation's filename: an uncertain effect survives restarts.
+                    read_launched_human_entry(Path(item["human_playback_entry_receipt"]),
+                        identity=item["identity"], capture_job_id=item["capture_job_id"])
+                    for previous in sorted(folder.glob(f"human-entry-{nonce}-resume-*.json")):
+                        read_launched_human_entry(previous, identity=item["identity"], capture_job_id=item["capture_job_id"])
                 if receipt.exists():
-                    launched = json.loads(receipt.read_text())
-                    if (launched.get("entry_launched") is not True
-                        or launched.get("identity") != item["identity"]
-                        or launched.get("capture_job_id") != item["capture_job_id"]):
-                        raise EnrichmentError("human entry outcome unresolved; do not relaunch")
+                    launched = read_launched_human_entry(receipt,
+                        identity=item["identity"], capture_job_id=item["capture_job_id"])
                 else:
                     request = {
                         "event": "daily_browser_input_required", "adapter": "xiaocao_wechat_live",
                         "action": "prepare_xiaoetong_human_entry", "subscription_id": item["identity"],
                         "capture_job_id": item["capture_job_id"], "operator": "human",
+                        "entry_reason": "resume_human_cooperation" if refresh else "initial_human_cooperation",
                         "mini_program_name": item["mini_program_name"],
                         "mini_program_token": item["mini_program_token"],
                         "native_bridge_config_path": str(self.output_dir.parent / "native_share_bridge.json"),
                         "instructions": (
-                            "仅用已绑定Browser核验原草料编辑器保存的当前小程序链接；不同则按原流程"
-                            "更新保存并重开组件核验。把真实新鲜的核验JSON保存到本机，返回browser_proof_path。"
+                            "先核对原课时间和回放检查门槛，仅用已绑定Browser核验草料保存的原小程序链接；"
+                            "不同则更新保存并重开组件核验。保存真实新鲜核验JSON，返回browser_proof_path。"
                             "不要读取/截图/绑定微信，不执行打开、允许、口令、协议、播放或关闭。"
-                            "程序会在收到来源凭证后只唤起草料一次，之后由人类全程操作，后台仅轮询下载器。"
+                            "程序先为本次协作唤起草料一次，再提醒人类操作，后台持续轮询。旧入口回执不等于当前窗口可用。"
                         ),
                         "required_response": {"action": "prepare_xiaoetong_human_entry",
                             "subscription_id": item["identity"], "browser_proof_path": "absolute local JSON path"},
                     }
                     response = self._exchange_browser(request, item)
                     self._validate_browser_response(request, response)
+                    if refresh:
+                        self.capture_driver.require_idle_human_entry(item["identity"], item["capture_job_id"])
                     launched = launch_verified_caoliao(
                         config_path=self.output_dir.parent / "native_share_bridge.json", item=item,
                         proof_path=Path(str(response.get("browser_proof_path") or "")),
                         receipt_path=receipt, now=self.clock())
-                item = self._transition(manifest, item, "awaiting_playback",
-                    human_playback_started_at=launched["armed_at"], human_playback_poll_attempt=0,
-                    human_playback_next_poll_at=next_human_poll(self.clock(), 0).isoformat(),
-                    human_playback_entry_receipt=str(receipt), playback_operator="human",
+                fields = dict(
+                    human_playback_active_entry_session_id=self.human_entry_session_id,
+                    human_playback_active_entry_started_at=launched["armed_at"],
+                    human_playback_active_entry_receipt=str(receipt), playback_operator="human",
                     observed_page_state="human_playback_pending", activated=False,
-                    playback_window_closed=False, playback_window_cleanup_owner="human",
-                    user_action_required=False)
-                request_human_action_once(folder / f"human-notification-{nonce}.json",
-                    published_at=item["published_at"], identity=item["identity"], capture_job_id=item["capture_job_id"])
+                    playback_window_closed=False, playback_window_cleanup_owner="human", user_action_required=False)
+                if not refresh:
+                    fields.update(human_playback_started_at=launched["armed_at"], human_playback_poll_attempt=0,
+                        human_playback_next_poll_at=next_human_poll(self.clock(), 0).isoformat(),
+                        human_playback_entry_receipt=str(receipt))
+                item = self._transition(manifest, item, "awaiting_playback", **fields)
+                request_human_action_once(folder / f"human-notification-{nonce}{suffix}.json",
+                    published_at=item["published_at"], identity=item["identity"], capture_job_id=item["capture_job_id"],
+                    entry_receipt=receipt)
                 return item
         from urllib.error import URLError
         try:

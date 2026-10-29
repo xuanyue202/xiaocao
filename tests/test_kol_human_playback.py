@@ -25,9 +25,11 @@ def test_native_action_notice_is_exact_once_without_required_reply_or_local_popu
     monkeypatch.setattr(human.subprocess, 'run', lambda *a, **kw: pytest.fail('no custom notifier'))
     monkeypatch.setattr(human.subprocess, 'Popen', lambda *a, **kw: pytest.fail('no custom popup'))
     receipt = tmp_path / 'notification.json'
+    entry = tmp_path / 'entry.json'
+    entry.write_text(json.dumps(dict(identity='original',capture_job_id='capture-original',entry_launched=True,armed_at=NOW.isoformat())))
     for _ in range(2):
         human.request_human_action_once(receipt, published_at='今天早场',
-                                        identity='original', capture_job_id='capture-original')
+                                        identity='original', capture_job_id='capture-original',entry_receipt=entry)
     events = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
     assert len(events) == 1
     assert events[0]['event'] == 'daily_human_action_required'
@@ -232,3 +234,21 @@ def test_real_binder_rejects_candidate_before_human_entry_despite_old_capture(mo
     with pytest.raises(EnrichmentError, match='predates its arm'):
         driver.bind_mini_program_capture('original',job['job_id'],source_identity='xiaoetong:apporiginal:l_original',candidate_id='fresh',observed_after=NOW)
     assert not store.latest(job['job_id']).get('expected_source')
+
+
+@pytest.mark.parametrize('launched,identity', [(False,'original'),(True,'other')])
+def test_notice_requires_exact_successful_entry(tmp_path,launched,identity):
+    entry=tmp_path/'entry.json'
+    entry.write_text(json.dumps(dict(identity=identity,capture_job_id='capture-original',entry_launched=launched)))
+    with pytest.raises(EnrichmentError,match='outcome unresolved'):
+        human.request_human_action_once(tmp_path/'notice.json',published_at='original session',
+            identity='original',capture_job_id='capture-original',entry_receipt=entry)
+    assert not (tmp_path/'notice.json').exists()
+
+
+@pytest.mark.parametrize('capture', [None,dict(status='downloading'),dict(status='awaiting_capture',candidate={'id':'accepted'}),dict(status='awaiting_capture',expected_source={'live_id':'bound'})])
+def test_entry_refresh_refuses_capture_effects(monkeypatch,capture):
+    driver=object.__new__(XiaocaoLiveCaptureDriver)
+    monkeypatch.setattr(driver,'_service',lambda _:SimpleNamespace(capture_store=SimpleNamespace(latest=lambda _:capture)))
+    with pytest.raises(EnrichmentError,match='unbound idle capture'):
+        driver.require_idle_human_entry('original','capture-original')

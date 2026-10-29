@@ -2712,7 +2712,7 @@ def test_native_hold_prevents_browser_and_readiness_without_mutating_original(tm
 
 
 @pytest.mark.parametrize("first_observation", ["empty", "transport", "health_transport"])
-def test_human_playback_restart_preserves_entry_and_backoff_and_never_uses_native_ui(tmp_path, monkeypatch, first_observation):
+def test_human_playback_polling_preserves_entry_and_backoff_and_never_uses_native_ui(tmp_path, monkeypatch, first_observation):
     from contextlib import nullcontext
     import xiaocao.yangsheng.capture as shared
     monkeypatch.setattr(shared, "lifecycle_lease", lambda: nullcontext())
@@ -2747,7 +2747,7 @@ def test_human_playback_restart_preserves_entry_and_backoff_and_never_uses_nativ
         return dict(observed=True, source_identity='xiaoetong:apporiginal:l_original', live_id='l_original', candidate_id='fresh')
     driver.observe_human_playback = observe
     def subscription():
-        return XiaocaoWechatLiveSubscription(tmp_path/'wechat', history_reader=lambda: {}, browser_exchange=browser, capture_driver=driver, clock=lambda: now)
+        return XiaocaoWechatLiveSubscription(tmp_path/'wechat', history_reader=lambda: {}, browser_exchange=browser, capture_driver=driver, clock=lambda: now,human_entry_session_id='b'*32)
     sub = subscription(); manifest = sub._load()
     item = parse_xiaocao_live_messages(_history('[2026-10-26 08:00] 小花: #小程序://见势擒龙团/original'))[0]
     item.update(capture_job_id='kol-original', status='awaiting_playback')
@@ -2797,6 +2797,10 @@ def test_human_source_uses_machine_evidence_without_confirmation(tmp_path, monke
     item = parse_xiaocao_live_messages(_history('[2026-10-26 08:32] 小花: #小程序://见势擒龙团/original'))[0]
     item.update(status='awaiting_playback',capture_job_id='kol-original',
                 human_playback_started_at=(now-timedelta(minutes=1)).isoformat(),human_playback_nonce='f'*32)
+    entry=tmp_path/'entry.json'
+    entry.write_text(json.dumps(dict(identity=item['identity'],capture_job_id='kol-original',entry_launched=True,armed_at=item['human_playback_started_at'])))
+    item['human_playback_entry_receipt']=str(entry)
+    item['human_playback_active_entry_session_id']=sub.human_entry_session_id
     manifest['items'][item['identity']] = item; sub._save(manifest)
     item = sub._check_mini_program_playback(manifest,item,reason='awaiting_playback')
     assert bool(item.get('activated')) is verified
@@ -2880,6 +2884,10 @@ def test_human_restart_recovers_missing_action_request_without_relaunch_or_early
     item=parse_xiaocao_live_messages(_history('[2026-10-26 08:32] 小花: #小程序://见势擒龙团/original'))[0]
     item.update(status='awaiting_playback',capture_job_id='kol-original',human_playback_started_at=now.isoformat(),
         human_playback_nonce='a'*32,human_playback_next_poll_at=(now+timedelta(seconds=20)).isoformat(),human_playback_poll_attempt=1)
+    entry=tmp_path/'human-entry-original.json'
+    entry.write_text(json.dumps(dict(identity=item['identity'],capture_job_id='kol-original',entry_launched=True,armed_at=now.isoformat())))
+    item['human_playback_entry_receipt']=str(entry)
+    item['human_playback_active_entry_session_id']=sub.human_entry_session_id
     manifest['items'][item['identity']]=item;sub._save(manifest)
     for _ in range(2):
         assert sub._check_mini_program_playback(manifest,item,reason='awaiting_playback')==item
@@ -2888,3 +2896,67 @@ def test_human_restart_recovers_missing_action_request_without_relaunch_or_early
     assert events[0]['identity']==item['identity'] and events[0]['capture_job_id']=='kol-original'
     assert driver.playback_preparations==[]
     assert item['human_playback_poll_attempt']==1
+
+
+@pytest.mark.parametrize('case', ['next_day', 'same_day', 'premature_entry', 'uncertain', 'earlier_uncertain', 'bound_capture'])
+def test_human_resume_opens_entry_before_notice_without_replacing_original(tmp_path,monkeypatch,case):
+    from contextlib import nullcontext
+    from datetime import timedelta
+    import xiaocao.yangsheng.capture as shared
+    from xiaocao.kol import human_playback as human
+    monkeypatch.setattr(shared,'lifecycle_lease',lambda:nullcontext())
+    monkeypatch.setattr(human,'enable_capture_listener_pac',lambda:None)
+    now=datetime.fromisoformat('2026-10-28T22:00:00+08:00')
+    started=datetime.fromisoformat('2026-10-28T17:08:00+08:00') if case=='premature_entry' else now-timedelta(days=1)
+    if case=='same_day':started=now-timedelta(minutes=5)
+    driver=_CaptureDriver();driver.prepare_human_playback=driver.prepare_playback
+    order=[]
+    def idle(*args):
+        if case=='bound_capture':raise EnrichmentError('human entry refresh requires the same unbound idle capture')
+    driver.require_idle_human_entry=idle
+    driver.observe_human_playback=lambda *a,**kw:pytest.fail('not due; first restore usable entry')
+    def browser(request):
+        order.append('browser')
+        assert request['entry_reason']=='resume_human_cooperation'
+        return dict(action=request['action'],subscription_id=request['subscription_id'],browser_proof_path='proof.json')
+    def launch(**kw):
+        order.append('launch')
+        result=dict(identity=kw['item']['identity'],capture_job_id='kol-original',armed_at=now.isoformat(),entry_launched=True)
+        kw['receipt_path'].write_text(json.dumps(result));return result
+    monkeypatch.setattr(human,'launch_verified_caoliao',launch)
+    monkeypatch.setattr(human,'request_human_action_once',lambda *a,**kw:order.append('notice'))
+    sub=XiaocaoWechatLiveSubscription(tmp_path/'wechat',history_reader=lambda:{},browser_exchange=browser,capture_driver=driver,clock=lambda:now)
+    manifest=sub._load()
+    item=parse_xiaocao_live_messages(_history('[2026-10-27 16:41] 小花: #小程序://见势擒龙团/original'))[0]
+    if case=='premature_entry':item['published_at']='2026-10-28T16:41:00+08:00'
+    folder=tmp_path/'wechat'/'items'/item['identity'];folder.mkdir(parents=True)
+    nonce='a'*32;original=folder/f'human-entry-{nonce}.json'
+    original.write_text(json.dumps(dict(identity=item['identity'],capture_job_id='kol-original',armed_at=started.isoformat(),entry_launched=True)))
+    item.update(status='awaiting_playback',capture_job_id='kol-original',human_playback_nonce=nonce,
+        human_playback_started_at=started.isoformat(),human_playback_entry_receipt=str(original),
+        human_playback_next_poll_at=(now+timedelta(minutes=5)).isoformat(),human_playback_poll_attempt=20)
+    original_bytes=original.read_bytes()
+    manifest['items'][item['identity']]=item;sub._save(manifest)
+    if case in {'uncertain','earlier_uncertain'}:
+        claim_session=sub.human_entry_session_id if case=='uncertain' else 'c'*32
+        (folder/f'human-entry-{nonce}-resume-{claim_session}.json').write_text(json.dumps(dict(entry_launched=False)))
+    if case in {'uncertain','earlier_uncertain','bound_capture'}:
+        with pytest.raises(EnrichmentError):sub._check_human_playback(manifest,item,reason='awaiting_playback')
+        assert order==[]
+    else:
+        result=sub._check_human_playback(manifest,item,reason='awaiting_playback')
+        assert order==['browser','launch','notice']
+        for key in ('human_playback_started_at','human_playback_entry_receipt','human_playback_nonce','human_playback_next_poll_at','human_playback_poll_attempt','capture_job_id'):
+            assert result[key]==item[key]
+        assert result['human_playback_active_entry_started_at']==now.isoformat()
+        # Reconstructing the subscription in the same invocation cannot reopen.
+        sub2=XiaocaoWechatLiveSubscription(tmp_path/'wechat',history_reader=lambda:{},browser_exchange=browser,capture_driver=driver,clock=lambda:now,human_entry_session_id=sub.human_entry_session_id)
+        sub2._check_human_playback(manifest,result,reason='awaiting_playback')
+        assert order.count('launch')==1
+        now+=timedelta(days=1)
+        driver.observe_human_playback=lambda *a,**kw:dict(observed=False,reason='media_pending')
+        sub3=XiaocaoWechatLiveSubscription(tmp_path/'wechat',history_reader=lambda:{},browser_exchange=browser,capture_driver=driver,clock=lambda:now,human_entry_session_id=sub.human_entry_session_id)
+        manifest=sub3._load();result=manifest['items'][item['identity']]
+        sub3._check_human_playback(manifest,result,reason='awaiting_playback')
+        assert order.count('launch')==1  # A retained invocation crossing midnight keeps polling.
+    assert original.read_bytes()==original_bytes

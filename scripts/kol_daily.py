@@ -18,6 +18,7 @@ from collections.abc import Collection
 from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from uuid import uuid4
 from pathlib import Path
 from time import sleep as _cloud_handoff_sleep, sleep as _household_retry_sleep
 from time import monotonic
@@ -4564,6 +4565,8 @@ class DailyRuntime:
             self.args.xiaocao_wechat_output_dir,
             decision_output=self.args.decision_output_dir,
         )
+        if not hasattr(self, "_human_entry_session_id"):
+            self._human_entry_session_id = uuid4().hex
         subscription = XiaocaoWechatLiveSubscription(
             self.args.xiaocao_wechat_output_dir,
             history_reader=history,
@@ -4572,6 +4575,7 @@ class DailyRuntime:
             capture_driver=capture,
             contact=self.args.xiaocao_wechat_contact,
             password=self.args.xiaocao_live_password,
+            human_entry_session_id=self._human_entry_session_id,
             playback_route=XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM,
         )
         if discovery_only:

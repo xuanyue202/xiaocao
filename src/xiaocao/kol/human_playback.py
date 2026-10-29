@@ -95,13 +95,28 @@ def next_human_poll(now: datetime, attempt: int) -> datetime:
     return now + timedelta(seconds=min(300, 10 * 2 ** min(attempt, 5)))
 
 
+def read_launched_human_entry(path: Path, *, identity: str, capture_job_id: str) -> dict:
+    """An unresolved dispatch remains blocking across all later continuations."""
+    try:
+        launched = json.loads(path.read_text())
+        armed_at = datetime.fromisoformat(launched["armed_at"])
+        valid = (launched.get("entry_launched") is True and launched.get("identity") == identity
+            and launched.get("capture_job_id") == capture_job_id and armed_at.tzinfo is not None)
+    except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+        raise EnrichmentError("human entry outcome unresolved; do not relaunch") from exc
+    if not valid:
+        raise EnrichmentError("human entry outcome unresolved; do not relaunch")
+    return launched
+
+
 def request_human_action_once(path: Path, *, published_at: str,
-                              identity: str, capture_job_id: str) -> None:
+                              identity: str, capture_job_id: str, entry_receipt: Path) -> None:
     """Emit one action notice while the owning runner keeps polling.
 
     This is an event, not proof that the chat/OS displayed a notification.
     The notice requires no reply and must not block downloader polling.
     """
+    launched = read_launched_human_entry(entry_receipt, identity=identity, capture_job_id=capture_job_id)
     try:
         _claim_json(path, {"state": "request_claimed"})
     except FileExistsError:
@@ -110,6 +125,7 @@ def request_human_action_once(path: Path, *, published_at: str,
         "event": "daily_human_action_required", "action": "manual_xiaoetong_playback",
         "identity": identity, "capture_job_id": capture_job_id,
         "published_at": published_at,
+        "entry_dispatched_at": launched["armed_at"], "entry_display_verified": False,
         "response_required": False,
         "instructions": "向人类发一次普通操作提醒，不使用 request_user_input_async，不等待已播放回复。"
             "请人类在已唤起草料手动打开、允许并播放本发布时间的原课，可在捕获请求后关闭。"

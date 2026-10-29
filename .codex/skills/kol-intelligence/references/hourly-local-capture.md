@@ -56,7 +56,12 @@ sessions or known not-ready evidence. These times permit checking, never prove
 replay availability. When a browser request is emitted too early, stop only that idle
 invocation, verify guardian restoration and retain its original IDs for later
 readiness reconciliation. This does not interrupt an active download/upload or
-the required same-process polling after a justified entry.
+the required same-process polling after a justified entry. A later continuation must
+provide a usable Caoliao entry before asking the human to play: follow the
+human-assisted reference's bounded entry restoration for an interrupted or premature
+entry. Preserve the original successful dispatch and all IDs, use a separate
+nonce/session-bound receipt, and never restart a capture or reopen on each poll.
+A historical launch is not proof of a current visible window.
 
 For a validated local `wechat_official_accounts` repair, use
 `resume-source-repair --source-adapter wechat_official_accounts

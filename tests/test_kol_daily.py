@@ -1626,6 +1626,7 @@ def test_xiaocao_completed_handoff_requires_hash_bound_terminal(
 
 def test_daily_runtime_runs_xiaocao_wechat_subscription(tmp_path, monkeypatch):
     calls: list[tuple[str, object]] = []
+    sessions = []
 
     class FakeHistoryReader:
         def __init__(self, contact, *, executable, limit):
@@ -1650,7 +1651,9 @@ def test_daily_runtime_runs_xiaocao_wechat_subscription(tmp_path, monkeypatch):
             contact,
             password,
             playback_route,
+            human_entry_session_id,
         ):
+            sessions.append(human_entry_session_id)
             assert callable(history_reader)
             assert callable(browser_exchange)
             assert callable(handoff_exchange)
@@ -1709,6 +1712,9 @@ def test_daily_runtime_runs_xiaocao_wechat_subscription(tmp_path, monkeypatch):
         ),
         ("run", ("xiaocao-lv-subscription", None)),
     ]
+
+    assert runtime.xiaocao_wechat() == {"status": "no_update"}
+    assert len(sessions) == 2 and sessions[0] == sessions[1]
 
 
 def test_source_cli_narrow_runner_supports_xiaocao_wechat_live_in_local_capture(
