@@ -10,6 +10,7 @@ import json
 import os
 import re
 import select
+import shutil
 import stat
 import subprocess
 import sys
@@ -2593,8 +2594,31 @@ def _follow_cloud_handoff(
         _cloud_handoff_sleep(CLOUD_HANDOFF_POLL_SECONDS)
 
 
+def _remote_runtime_path() -> str:
+    """Find installed browser tools without depending on a login shell."""
+    path = capture_runtime_environment()["PATH"]
+    if shutil.which("npx", path=path) is not None:
+        return path
+    paths = path.split(os.pathsep)
+    versions = []
+    for directory in (Path.home() / ".nvm/versions/node").glob("v*/bin"):
+        version = directory.parent.name.removeprefix("v").split(".")
+        if not all(part.isdigit() for part in version):
+            continue
+        if all(
+            (directory / name).is_file() and os.access(directory / name, os.X_OK)
+            for name in ("node", "npx")
+        ):
+            versions.append((tuple(map(int, version)), directory))
+    for _, directory in sorted(versions, reverse=True):
+        if str(directory) not in paths:
+            paths.append(str(directory))
+    return os.pathsep.join(paths)
+
+
 class DailyRuntime:
     def __init__(self, args: argparse.Namespace):
+        os.environ["PATH"] = _remote_runtime_path()
         self.args = args
         self._client: LiangHuiMcpClient | None = None
         self.publications = PublicationLedger(args.output_dir / "publications")

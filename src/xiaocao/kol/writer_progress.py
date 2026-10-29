@@ -711,6 +711,7 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
         "-q",
         "-k",
         (
+            "remote_source_runtime_restores_opencli_without_login_shell or "
             "analysis_request_replay_backfills_first_observed_at or "
             "builder_allows_episode_relationship_source_binding or "
             "repair_validation_accepts_lv_text_image_source_run_profile or "
@@ -839,6 +840,7 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
         "-q",
         "-k",
         (
+            "remote_source_runtime_restores_opencli_without_login_shell or "
             "write_status_retries or "
             "subscription_video_source_resume_reuses or "
             "transfer_activation_falls_back_for_bound_user_tab or "
@@ -1290,6 +1292,7 @@ _LV_TEXT_IMAGE_SOURCE_REPAIR_PROFILE = "kol_lv_text_image_source_run"
 _LV_TEXT_IMAGE_SOURCE_REPAIR_FAILURES = frozenset({
     ("source_error", "source_temporarily_unavailable"),
     ("internal_state_error", "progress_deadline_missing"),
+    ("code_error", "unhandled_source_exception"),
 })
 
 
@@ -1582,6 +1585,7 @@ def _canonical_subscription_video_source_repair_profile(
         in _SUBSCRIPTION_VIDEO_SOURCE_REPAIR_PROFILE_ALIASES
         and failure
         in {
+            ("code_error", "unhandled_source_exception", "source_run"),
             (
                 "source_error",
                 "source_temporarily_unavailable",

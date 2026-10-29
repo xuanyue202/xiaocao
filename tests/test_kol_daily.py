@@ -75,6 +75,48 @@ from xiaocao.kol.writer_progress import (
 )
 
 
+@pytest.mark.parametrize("inherited_tool", ["none", "opencli", "npx"])
+def test_remote_source_runtime_restores_opencli_without_login_shell(
+    tmp_path, monkeypatch, inherited_tool,
+):
+    from xiaocao.kol.lv_subscription import LvSubscriptionService
+
+    home = tmp_path / "home"
+    node_bin = home / ".nvm/versions/node/v20.3.1/bin"
+    node_bin.mkdir(parents=True)
+    for name in ("node", "npx"):
+        tool = node_bin / name
+        tool.write_text('#!/bin/sh\necho \'{"origin":"nvm"}\'\n')
+        tool.chmod(0o755)
+    for version, names in (("v9.0.0", ("node", "npx")), ("v99.0.0", ("node",))):
+        candidate = home / ".nvm/versions/node" / version / "bin"
+        candidate.mkdir(parents=True)
+        for name in names:
+            tool = candidate / name
+            tool.write_text('#!/bin/sh\necho \'{"origin":"wrong-runtime"}\'\n')
+            tool.chmod(0o755)
+    inherited = tmp_path / "inherited"
+    inherited.mkdir()
+    if inherited_tool != "none":
+        tool = inherited / inherited_tool
+        tool.write_text('#!/bin/sh\necho \'{"origin":"inherited"}\'\n')
+        tool.chmod(0o755)
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+    monkeypatch.setenv("PATH", str(inherited))
+    monkeypatch.setattr(
+        kol_daily_script, "capture_runtime_environment", lambda: {"PATH": str(inherited)},
+    )
+    monkeypatch.setenv("CODEX_THREAD_ID", "runtime-thread-unchanged")
+    monkeypatch.setenv("CODEX_AUTOMATION_ID", "xiaocao-kol-hourly-low-bandwidth-operation")
+    runtime = DailyRuntime(SimpleNamespace(output_dir=tmp_path / "daily"))
+    runtime._lv_service = LvSubscriptionService(tmp_path / "lv")
+    result = runtime._lv_service_for_sweep()._opencli_json("fixture", "state", profile=None)
+    assert result == {"origin": "nvm" if inherited_tool == "none" else "inherited"}
+    assert os.environ["PATH"].split(os.pathsep)[0] == str(inherited)
+    assert os.environ["CODEX_THREAD_ID"] == "runtime-thread-unchanged"
+    assert os.environ["CODEX_AUTOMATION_ID"] == "xiaocao-kol-hourly-low-bandwidth-operation"
+
+
 class Clock:
     def __init__(self, value: str):
         self.value = datetime.fromisoformat(value)
@@ -4900,6 +4942,32 @@ def test_daily_resume_wait_projects_each_identity_when_source_has_multiple_waits
     ]
     assert first["source_result"]["writer_progress"]["status"] == "terminal"
     assert service.status()["last_sweep"]["health"] == "healthy"
+
+
+def test_daily_source_repair_keeps_unchanged_blocker_notification_dedup(tmp_path):
+    clock = Clock("2026-10-29T17:00:00+08:00")
+    service = DailyCoordinator(tmp_path / "daily", now=clock)
+    notices = []
+
+    def blocked():
+        raise UserActionBlocker("lv-cloud-transfer-not-materialized", "保留原转存对账边界")
+
+    source = {"name": "subscription_video", "priority": 20, "run": blocked}
+    sender = lambda title, body: notices.append((title, body))
+    service.run([source], blocker_sender=sender)
+
+    def broken():
+        raise FileNotFoundError("npx")
+
+    clock.value = datetime.fromisoformat("2026-10-29T18:00:00+08:00")
+    repaired = service.run([{**source, "run": broken}], blocker_sender=sender)
+    assert repaired["source_results"][0]["writer_progress"]["status"] == "repair_required"
+    assert not any(row["event"] == "blocker_cleared" for row in service.events())
+    assert service.notify_user_action(
+        source="subscription_video", blocker_key="lv-cloud-transfer-not-materialized",
+        action="保留原转存对账边界", blocker_sender=sender,
+    ) is False
+    assert len(notices) == 1
 
 
 def test_daily_resume_user_action_runs_only_exact_blocked_source(tmp_path):
