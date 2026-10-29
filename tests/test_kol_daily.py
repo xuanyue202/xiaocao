@@ -4944,6 +4944,32 @@ def test_daily_resume_wait_projects_each_identity_when_source_has_multiple_waits
     assert service.status()["last_sweep"]["health"] == "healthy"
 
 
+def test_daily_source_repair_keeps_unchanged_blocker_notification_dedup(tmp_path):
+    clock = Clock("2026-10-29T17:00:00+08:00")
+    service = DailyCoordinator(tmp_path / "daily", now=clock)
+    notices = []
+
+    def blocked():
+        raise UserActionBlocker("lv-cloud-transfer-not-materialized", "保留原转存对账边界")
+
+    source = {"name": "subscription_video", "priority": 20, "run": blocked}
+    sender = lambda title, body: notices.append((title, body))
+    service.run([source], blocker_sender=sender)
+
+    def broken():
+        raise FileNotFoundError("npx")
+
+    clock.value = datetime.fromisoformat("2026-10-29T18:00:00+08:00")
+    repaired = service.run([{**source, "run": broken}], blocker_sender=sender)
+    assert repaired["source_results"][0]["writer_progress"]["status"] == "repair_required"
+    assert not any(row["event"] == "blocker_cleared" for row in service.events())
+    assert service.notify_user_action(
+        source="subscription_video", blocker_key="lv-cloud-transfer-not-materialized",
+        action="保留原转存对账边界", blocker_sender=sender,
+    ) is False
+    assert len(notices) == 1
+
+
 def test_daily_resume_user_action_runs_only_exact_blocked_source(tmp_path):
     service = DailyCoordinator(
         tmp_path / "daily",

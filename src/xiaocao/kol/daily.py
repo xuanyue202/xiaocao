@@ -3634,7 +3634,8 @@ class DailyCoordinator:
                     and row.get("source") == name
                 ]
                 if (
-                    not outcome.get("user_action_required")
+                    progress.status == "terminal"
+                    and not outcome.get("user_action_required")
                     and len(prior_blockers) > len(prior_clears)
                 ):
                     self._append(
