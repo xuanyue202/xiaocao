@@ -46,7 +46,8 @@ def verify_course_metadata(candidate: dict, lineage: dict, published_at: str) ->
         or (started.hour < 12) != (published.hour < 12)):
         raise EnrichmentError("course session conflicts with original publication")
     morning = published.hour < 12
-    if ((morning and "盘前大师班" not in title_key)
+    dated_morning_title = re.fullmatch(r"大师班直播\d{1,2}月\d{1,2}日", title_key) is not None
+    if ((morning and "盘前大师班" not in title_key and not dated_morning_title)
         or (not morning and ("大师班专场" not in title_key or "盘前" in title_key))):
         raise EnrichmentError("course title does not match the original Xiaocao session")
     # A title with an explicit date cannot contradict the actual merchant date.
