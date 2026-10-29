@@ -711,6 +711,7 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
         "-q",
         "-k",
         (
+            "remote_source_runtime_restores_opencli_without_login_shell or "
             "analysis_request_replay_backfills_first_observed_at or "
             "builder_allows_episode_relationship_source_binding or "
             "repair_validation_accepts_lv_text_image_source_run_profile or "
@@ -839,6 +840,7 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
         "-q",
         "-k",
         (
+            "remote_source_runtime_restores_opencli_without_login_shell or "
             "write_status_retries or "
             "subscription_video_source_resume_reuses or "
             "transfer_activation_falls_back_for_bound_user_tab or "
