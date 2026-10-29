@@ -24,6 +24,16 @@ the whole version. A source-gap event names the exact missing codes; inspect it
 promptly instead of waiting for shell termination. An unchecked price count is
 unknown. Preserve the existing producer and completed-day no-replay boundary.
 
+## APP account permission selection
+
+For future primary APP new BUY, consume Contract §4's permission filter and
+BOOK_B_WORKFLOW's recorded skips/reseating. STAR stocks leave the APP candidate
+pool before seats are chosen; scan only subsequent qualified original frozen
+candidates. Use the pinned implementation and its final-plan permission receipt;
+keep ordinary COLD/UNKNOWN, risk/capital and original-order fences. Permission
+confirmation does not prove an older submitted order rejected. Paper and already
+registered authority=0 model protocols retain their own candidate rules.
+
 ## Source capture recovery and end-to-end readback
 
 On a forwarded source or price dependency, inspect the exact evidence and
@@ -104,13 +114,18 @@ evidence; it does not start another funded experiment or replay a terminal day.
 
 Before changing entry pricing or interpreting a Paper/APP return gap, read
 Operating Contract §5's 2026-10-26 user decision. Preserve the verified
-first-minute HIGH cost and its raw-bar/hash evidence; missing evidence is a
-reported no-buy. This intentionally adverse benchmark is not an execution
+first-minute HIGH cost and its raw source/hash evidence. This intentionally adverse benchmark is not an execution
 error to optimise away. Keep the original writer and historical receipts;
 Book A pairs with B, while APP, T and funded experiments retain their own rules.
-The current source is explicitly unproved: new A/B entries are data-blocked
-until a real full-minute source is validated. See Contract §5 and its linked
-source diagnosis; never treat a mocked cost test as market-source acceptance.
+The original Paper B process captures the native cumulative-HIGH bracket under
+Contract §5 outside the ledger lock, bound to the original immutable freeze and
+Automation/Thread/run. Consume its saved boundary quotes after the existing
+09:32:05 gate. Read the separate capture artifact and final B receipt; capture
+readiness is not a buy. `source_blocked` / `bought_source_blocked` are source
+failures with actual fill counts, not ordinary successful strategy no-buys.
+Repair future pinned runs without replaying the original terminal. Native
+minute_line alone remains unproved; independent T and APP retain their rules.
+See Contract §5's linked repair note for natural proof still pending.
 
 ## Execute
 
@@ -700,3 +715,27 @@ Historical correction inputs are research rehearsals and are excluded from
 both 5/20-day natural acceptance and strategy promotion; report their count
 separately. Missing/corrupt registration is a binding failure. Do not regenerate
 history from current market facts or rerun the formal T writer to repair it.
+
+## 2026-10-29 deterministic preparation and evidence fixes
+
+The original producer batches the same proprietary realtime-open endpoint in
+groups of at most eight and retains raw batch hashes and individual symbol/date
+proof. Missing or invalid symbols use the existing individual fallback. Missing
+source observations bypass their own cached empty/partial response on the next
+original two-second retry; proved current inputs retain their original expiry.
+No new provider, partial freeze, extra producer or lower qualification threshold.
+Source events still identify the exact original request; a signal is not ready.
+
+Paper KOL resolves only its manifest-bound shared output mount to the canonical
+deployment root before the existing cache guard. Arbitrary/nested symlinks remain
+rejected. Both original consumers assemble an authority=0 `dispatch_path` at the
+review event; immediately read it and forward its exact `tool_arguments` to the
+same warm worker. Actual dispatch, independent review, publication and adoption
+remain separate receipts under the original 09:27 cutoff. Do not repeat old full
+projection/schema scans in this final handoff; no late publication or replay.
+
+A source-blocked immutable Paper receipt remains a failure on duplicate readback
+as well as on first completion; its recorded buy count is retained. No positive
+exit code, empty ledger or ready bundle substitutes for actual B/T/APP receipts.
+Native incidents deferred to the consolidated morning result remain local-only
+through later generic notice retries. Delivered/uncertain claims remain untouched.

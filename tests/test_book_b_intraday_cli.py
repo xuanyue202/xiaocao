@@ -18,6 +18,9 @@ def entry(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, "ROOT", tmp_path)
     monkeypatch.setenv("CODEX_AUTOMATION_ID", "xiaocao-daily-eod")
     monkeypatch.setenv("CODEX_THREAD_ID", "intraday-fixture")
+    # These callback tests isolate identity; separate cases exercise the real pre-effect gate.
+    import xiaocao.automation_run as automation_identity
+    monkeypatch.setattr(automation_identity, "validate_monitor_scheduler", lambda **kwargs: None)
     class Keychain:
         def run(self, **kwargs):
             return dict.fromkeys(("trade_item_present", "trade_account_present",
@@ -225,3 +228,12 @@ def test_sell_result_notification_follows_original_archive_and_cannot_change_res
     output = capsys.readouterr()
     assert json.loads(output.out)["status"] == "executed"
     assert "notice unavailable" in output.err and calls == []
+
+
+@pytest.mark.app_simulation
+def test_wrong_opening_owner_is_rejected_before_calendar_or_app(tmp_path, monkeypatch, capsys):
+    cli=importlib.import_module("scripts.book_b_live_intraday")
+    monkeypatch.setenv("CODEX_AUTOMATION_ID", "xiaocao-daily-eod")
+    monkeypatch.setattr(cli.monitor,"_client",lambda:pytest.fail("identity must precede calendar"))
+    assert cli.main(["--phase","opening"])==2
+    assert "AUTOMATION_ENTRYPOINT_ID_MISMATCH" in capsys.readouterr().err

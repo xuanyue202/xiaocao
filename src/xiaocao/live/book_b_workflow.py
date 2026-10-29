@@ -116,13 +116,17 @@ def _row_explanation(row: dict, selected: bool, policy: dict) -> dict:
     }
 
 
+def explain_selection_rows(rows: list[dict], policy: dict) -> list[dict]:
+    selected = {id(row) for row in eligible_buy_rows(rows)}
+    return [_row_explanation(row, id(row) in selected, policy) for row in rows]
+
+
 def adjudicate_book_b(rows: list[dict], policy: dict, *, freeze: dict,
                       runtime: str, support_receipt: dict | None = None) -> BookBAdjudication:
     """Derive once from validated original bundle and fresh runtime policy.
 
-    APP uses frozen ★E; paper may use its existing ranked eligible reserve pool
-    for board-lot allocation. These are different allocation adapters, not new
-    semantic decisions. This receipt describes the common preceding stage.
+    Account-specific permission filtering belongs to the APP morning caller.
+    Paper and model accounts retain their registered candidate rules.
     """
     if runtime not in {"live", "paper"}:
         raise ValueError("BOOK_B_RUNTIME_REQUIRED")
@@ -189,6 +193,7 @@ def summarize_adjudication(value: object, *, runtime: str) -> dict:
             "star_candidate_count": len(value["strategy_codes"]),
             "selection_reasons": dict(Counter(row["selection_reason"] for row in value["rows"])),
             "allocation_adapter": value["allocation_adapter"],
+            "app_buy_permissions": value.get("app_buy_permissions", {"profile": "legacy_unrecorded"}),
         }
     except (ValueError, KeyError, TypeError):
         return {"status": "unproved"}
@@ -224,6 +229,7 @@ def final_plan_receipt(adjudication: dict, allocation: dict | None, orders: list
               "freeze": adjudication["freeze"], "adjudication_sha256": adjudication["receipt_sha256"],
               "strategy_semantics_sha256": adjudication["strategy_semantics_sha256"],
               "runtime": runtime, "execution_model": execution_model,
+              "app_buy_permissions": adjudication.get("app_buy_permissions", {"profile": "legacy_unrecorded"}),
               "allocation": allocation, "decisions": decisions, "orders": orders,
               "accounting_basis": "fills_and_funding_required_not_plan_profit"}
     result["receipt_sha256"] = kol_policy.decision_sha256(result)
@@ -238,6 +244,7 @@ def compare_final_plans(left: dict, right: dict) -> dict:
             raise ValueError("BOOK_B_FINAL_PLAN_HASH_MISMATCH")
     stages = (("source", "freeze"), ("rules", "rule_profile"),
               ("policy_and_selection", "strategy_semantics_sha256"),
+              ("account_permissions", "app_buy_permissions"),
               ("account_allocation", "allocation"), ("execution_model", "execution_model"))
     first = next((name for name, field in stages if left.get(field) != right.get(field)), None)
     economics = lambda value: [{k: order.get(k) for k in ("code", "shares", "limit_price")}

@@ -144,6 +144,7 @@ def _paper_support_claim(a, risk: dict, decision: dict, baseline: list[dict],
         "baseline_codes": [row["code"] for row in baseline], "slots": slots,
         "strategy_adjudication": strategy_adjudication,
         "experiment_capture": experiment_capture,
+        "entry_source_failures": getattr(a, "_entry_source_failures", []),
     })
 
 
@@ -683,6 +684,7 @@ def _attach_fill_prices(
     end_hhmm: str,
     limit_premium_pct: float,
     conservative_entry: bool = False,
+    opening_high_proofs: dict[str, dict] | None = None,
 ) -> tuple[list[dict], list[dict]]:
     """Returns (fillable, skipped). Skipped picks (limit never reached) are
     surfaced for audit, never silently dropped."""
@@ -708,6 +710,8 @@ def _attach_fill_prices(
             limit_premium_pct=limit_premium_pct,
         )
         if conservative_entry:
+            if window is not None and opening_high_proofs and code in opening_high_proofs:
+                window["opening_high_proof"] = opening_high_proofs[code]
             # User's adverse-cost benchmark, not an execution optimisation.
             # Preserve eligibility; never lower verified HIGH to VWAP or a cap.
             high, evidence = verified_first_minute_high(
@@ -1065,19 +1069,35 @@ def _main_locked(a=None):
         raw = selection_source.read_bytes() if selection_source.exists() else b""
         snapshot_sha256 = hashlib.sha256(raw).hexdigest() if raw else ""
         snaps = [json.loads(line) for line in raw.decode().splitlines() if line.strip()]
+    if getattr(a, "_opening_high_snapshot_sha256", snapshot_sha256) != snapshot_sha256:
+        raise ValueError("FIRST_MINUTE_PROOF_BATCH_MISMATCH")
+    if getattr(a, "_opening_high_capture_path", None):
+        captured = json.loads(a._opening_high_capture_path.read_bytes())
+        digest = captured.pop("sha256")
+        if digest != a._opening_high_capture_sha256 or canonical_sha256(captured) != digest:
+            raise ValueError("FIRST_MINUTE_CAPTURE_HASH_MISMATCH")
+        binding = captured["binding"]
+        expected = {"automation_id": os.environ.get("CODEX_AUTOMATION_ID"),
+                    "thread_id": os.environ.get("CODEX_THREAD_ID"),
+                    "run_dir": os.environ.get("XIAOCAO_DAILY_RUN_DIR"),
+                    "snapshot_raw_sha256": snapshot_sha256,
+                    "checkpoint_sha256": (frozen_receipt or {}).get("checkpoint_sha256")}
+        if captured.get("date") != a.date or binding != expected:
+            raise ValueError("FIRST_MINUTE_CAPTURE_OWNER_MISMATCH")
+        a._opening_high_proofs = captured["proofs"]
 
     strategy_adjudication = None
     experiment_capture = None
     policy_fence = {}
 
-    def no_buy_support(reason: str, *, context=None) -> None:
+    def no_buy_support(reason: str, *, context=None, source_blocked=False) -> None:
         if a.pick != "mode_exec_star":
             return
         risk, decision = context or _paper_support_context(account, paper_positions, policy_fence=policy_fence)
         _paper_support_claim(a, risk, decision, [], [], reason=reason, snapshot_sha256=snapshot_sha256,
                              strategy_adjudication=strategy_adjudication,
                              experiment_capture=experiment_capture)
-        paper_support.complete_consumption(ROOT, a.date, a.pick, entries=[])
+        paper_support.complete_consumption(ROOT, a.date, a.pick, entries=[], source_blocked=source_blocked)
         print(f"{a.date}: paper policy no-buy receipt: {reason}; risk={risk['status']}; KOL={decision['status']}")
 
     if frozen_receipt is None and not selection_source.exists():
@@ -1204,7 +1224,11 @@ def _main_locked(a=None):
         end_hhmm=a.fill_window_end,
         limit_premium_pct=a.limit_premium_pct,
         conservative_entry=True,
+        opening_high_proofs=getattr(a, "_opening_high_proofs", None),
     )
+    a._entry_source_failures = [{"code": row.get("code"),
+        "reason": row["_paper_fill"].get("skip_detail")} for row in skipped
+        if row["_paper_fill"].get("skip_reason") == "FIRST_MINUTE_HIGH_UNPROVEN"]
     for r in skipped:
         meta = r.get("_paper_fill") or {}
         print(
@@ -1245,7 +1269,10 @@ def _main_locked(a=None):
             "ai_hard_veto": bool(r.get("ai_hard_veto")),
         })
     if not buyable:
-        no_buy_support("ALL_FILL_GUARDS_SKIPPED")
+        source_blocked = any((r.get("_paper_fill") or {}).get("skip_reason") ==
+                             "FIRST_MINUTE_HIGH_UNPROVEN" for r in skipped)
+        no_buy_support("FIRST_MINUTE_SOURCE_BLOCKED" if source_blocked else "ALL_FILL_GUARDS_SKIPPED",
+                       source_blocked=source_blocked)
         print(f"{a.date}: all {a.pick} picks skipped (entry eligibility or cost evidence unproven)")
         return
     if not a.no_book_a and a.pick != "mode_exec_star":
@@ -2309,8 +2336,60 @@ def _load_positions_from_file(path: Path) -> list[dict]:
     return accounts.load_positions(path)
 
 
+def _prepare_opening_high(a) -> None:
+    """Collect source proof outside the ledger lock, then reload under it.
+
+    The original immutable producer batch supplies the code universe only;
+    adjudication, allocation, risk and consumption still run once under lock.
+    """
+    from xiaocao.live.morning_bundle import acquire_bundle, resolve_receipt, read_consumed_rows
+    from xiaocao.live.paper_opening_high import capture_opening_high
+    live_dir = ROOT / "output/live"
+    receipt = (json.loads(a.morning_freeze_receipt.read_bytes()) if a.morning_freeze_receipt
+               else acquire_bundle(live_dir, a.date))
+    receipt = resolve_receipt(receipt, a.date, live_dir=live_dir)
+    rows = read_consumed_rows(receipt, a.date, live_dir=live_dir)
+    codes = sorted({row["code"] for row in rows if row.get("date") == a.date
+                    and row.get("is_live") and row.get("book", "B") == "B"})
+    client = XiaocaoClient(minimum_request_interval=1, timeout=3, retries=0)
+    proofs = capture_opening_high(client, codes, a.date)
+    a._opening_high_snapshot_sha256 = receipt["snapshot_raw_sha256"]
+    a._opening_high_proofs = proofs
+    binding = {"automation_id": os.environ.get("CODEX_AUTOMATION_ID"),
+               "thread_id": os.environ.get("CODEX_THREAD_ID"),
+               "run_dir": os.environ.get("XIAOCAO_DAILY_RUN_DIR"),
+               "snapshot_raw_sha256": receipt["snapshot_raw_sha256"],
+               "checkpoint_sha256": receipt.get("checkpoint_sha256")}
+    for proof in proofs.values():
+        proof["binding"] = binding
+    artifact = {"schema_version": "paper-opening-high-capture.v1", "date": a.date,
+                "binding": binding, "proofs": proofs}
+    artifact["sha256"] = canonical_sha256(artifact)
+    directory = Path(os.environ.get("XIAOCAO_DAILY_RUN_DIR") or live_dir / "paper_opening_high")
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / f"paper-opening-high-{a.date}.json"
+    with path.open("x", encoding="utf-8") as handle:
+        json.dump(artifact, handle, ensure_ascii=False, sort_keys=True, allow_nan=False)
+        handle.write("\n")
+    a._opening_high_capture_path = path
+    a._opening_high_capture_sha256 = artifact["sha256"]
+    print(f"{a.date}: opening HIGH capture -> {path}; sha256={artifact['sha256']}")
+
+
 def main() -> None:
     args = _parse_args()
+    # Retain original exact-once ownership before any timed source collection.
+    already_consumed = (not args.trend_only and args.pick == "mode_exec_star"
+                        and paper_support.read_consumption(ROOT, args.date, args.pick) is not None)
+    if not args.trend_only and args.pick == "mode_exec_star" and not args.no_wait_fill_window and not already_consumed:
+        if (args.fill_window_start, args.fill_window_end) != ("0930", "0931"):
+            raise ValueError("FIRST_MINUTE_WINDOW_REQUIRED")
+        if args.allow_legacy_snapshots:
+            raise ValueError("FIRST_MINUTE_CAPTURE_REQUIRES_IMMUTABLE_BUNDLE")
+        _prepare_opening_high(args)
+        if args._opening_high_proofs:
+            _wait_until_fill_window_complete(args.date, args.fill_window_end, args.fill_settle_seconds)
+        args.no_wait_fill_window = True
     if args.trend_only and not args.no_wait_fill_window:
         _parse_hhmm(args.fill_window_start)
         _parse_hhmm(args.fill_window_end)
@@ -2320,6 +2399,10 @@ def main() -> None:
     with accounts.ledger_lock(accounts.ledger_lock_path(POS.parent)):
         accounts.recover_ledger_transaction(POS.parent)
         _main_locked(args)
+    if not args.trend_only and args.pick == "mode_exec_star" and os.environ.get("CODEX_AUTOMATION_ID"):
+        terminal = paper_support.read_consumption_result(ROOT, args.date, args.pick)
+        if terminal and terminal["status"] in {"source_blocked", "bought_source_blocked"}:
+            raise RuntimeError("FIRST_MINUTE_SOURCE_BLOCKED: original result is terminal; repair next run, never replay")
 
 
 if __name__ == "__main__":

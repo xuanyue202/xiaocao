@@ -38,15 +38,14 @@ def verified_first_minute_high(
     end_hhmm: str,
     observed_at: datetime,
 ) -> tuple[float | None, dict]:
-    """Retain candidate evidence, but never certify an unproved source interval.
+    """Verify HIGH using an independent native cumulative-quote bracket.
 
     A 09:31 label and plausible OHLC cannot establish whether a provider labels
     the start or end of a minute. The current minute_line source is a point
     series; its first-minute HIGH contract has NOT been established. Even a
-    structurally valid response therefore remains unproven. See
-    docs/reviews/2026-10-26-paper-first-minute-source.md for the provider probes
-    needed before implementing an accepting source adapter. No runtime flag or
-    payload assertion may bypass that missing contract.
+    structurally valid response alone remains unproven. A bracket of unchanged
+    true cumulative quote HIGHs can instead prove this precise interval without
+    assuming minute_line provides a complete minute OHLC bar.
     """
     evidence = {
         "schema_version": "paper-first-minute-high.v1",
@@ -92,6 +91,22 @@ def verified_first_minute_high(
         last = _positive(bar["trade"])
         if last is None or not lo <= last <= hi:
             return reject("FIRST_MINUTE_TRADE_INCONSISTENT")
-    # Do not turn synthetic test OHLC or future non-null fields into authority.
-    # The provider's actual full interval/finality semantics need proof first.
-    return reject("FIRST_MINUTE_SOURCE_INTERVAL_UNPROVEN")
+    proof = window.get("opening_high_proof")
+    if not isinstance(proof, dict):
+        return reject("FIRST_MINUTE_SOURCE_INTERVAL_UNPROVEN")
+    try:
+        proof_bytes = json.dumps(proof, ensure_ascii=False, sort_keys=True,
+                                 separators=(",", ":"), allow_nan=False).encode()
+    except (ValueError, TypeError):
+        return reject("FIRST_MINUTE_QUOTE_INVALID_JSON")
+    evidence.update({"opening_high_proof": proof,
+                     "opening_high_proof_sha256": hashlib.sha256(proof_bytes).hexdigest()})
+    from xiaocao.live.paper_opening_high import prove_cumulative_high
+    try:
+        high, proof_hash = prove_cumulative_high(
+            proof, code=code, trade_date=trade_date, now=observed_at, bar=bar)
+    except (ValueError, TypeError, KeyError, OverflowError) as exc:
+        return reject(str(exc) if isinstance(exc, ValueError) else "FIRST_MINUTE_QUOTE_PROOF_INVALID")
+    return high, {**evidence, "status": "verified",
+                  "source_interval_status": "proved_by_cumulative_high_bracket",
+                  "opening_high_proof": proof, "opening_high_proof_sha256": proof_hash}

@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo
 
 from .book_b_allocation import allocate_policy_rows, BookBAllocationFacts, allocate_frozen_rows, validate_allocation_rows
 from .account_risk import AccountRiskReceipt
-from .book_b_workflow import adjudicate_book_b, eligible_buy_rows, final_plan_receipt
+from .book_b_workflow import BookBAdjudication, adjudicate_book_b, eligible_buy_rows, explain_selection_rows, final_plan_receipt
 from .live_decision_support import (
     bind_plan_audit, buy_cap, digest, evaluate_live_risk, read_plan_audit, read_policy,
 )
@@ -983,6 +983,9 @@ def _materialize_or_restore_plans(
             strategy_sha=strategy_sha,
         )
         if restored is None:
+            permission_reason = app_buy_permission_reason(row.get("code"))
+            if permission_reason:
+                raise ValueError(permission_reason)
             materialized_row = dict(row)
             if policy_evidence is not None:
                 # Selection is made on the entire original batch first. A
@@ -1194,6 +1197,84 @@ def reconcile_prior_day_canary_unknowns(
             raise ValueError("LIVE_PRIOR_UNKNOWN_RECONCILE_REQUIRED")
         receipts.append(reconciled.as_dict())
     return tuple(receipts)
+
+
+APP_BUY_PERMISSION_PROFILE = "primary-no-star-market-v1"
+
+
+def app_buy_permission_reason(code: object) -> str | None:
+    """Current primary APP account excludes Shanghai STAR stocks from new BUY."""
+    normalized = str(code or "").strip().upper()
+    return ("APP_STAR_MARKET_PERMISSION_UNAVAILABLE"
+            if re.fullmatch(r"68[89]\d{3}\.XSHG", normalized) else None)
+
+
+def _app_permitted_rows(rows: list[dict], policy: dict, slots: int) -> list[dict]:
+    """Reseat only permission-blocked slots in original frozen candidate order."""
+    from . import kol_policy
+    from xiaocao.strategy.mode_switch import target_weights
+    allowed = [row for row in rows if app_buy_permission_reason(row.get("code")) is None]
+    derived = kol_policy.prioritize_xiaocao_modes(allowed, policy)
+    candidates = [row for row in derived if row.get("book") == "B" and row.get("is_live") is True
+                  and row.get("mode_state") in {"ACTIVE", "PROVISIONAL"}
+                  and row.get("mode_trade_eligible") is True
+                  and not str(row.get("code") or "").endswith(".BJSE")
+                  and ("executable_fillable" not in row or row.get("executable_fillable") is True)]
+    candidates.sort(key=lambda row: (
+        0 if row.get("mode_exec_star") is True else 1,
+        int(row.get("mode_exec_rank") or 9999),
+        int(row.get("mode_exec_candidate_rank") or 9999),
+        -float(row.get("mode_exec_score") or 0.0), str(row.get("code") or ""),
+    ))
+    selected, codes, modes = [], set(), set()
+    for row in candidates:
+        code, mode = row.get("code"), row.get("mode")
+        if not mode or code in codes or mode in modes or len(selected) >= min(3, slots):
+            continue
+        selected.append(row)
+        codes.add(code)
+        modes.add(mode)
+    for row in derived:
+        row.update(mode_exec_star=False, mode_exec_rank=9999, mode_exec_target_weight=0.0)
+    for rank, (row, weight) in enumerate(zip(selected, target_weights([row["mode_state"] for row in selected])), 1):
+        row.update(mode_exec_star=True, mode_exec_rank=rank, mode_exec_target_weight=weight)
+    by_key = {(row.get("code"), row.get("mode")): row for row in derived}
+    result = []
+    for original in rows:
+        if app_buy_permission_reason(original.get("code")):
+            result.append({**original, "mode_exec_star": False, "mode_exec_target_weight": 0.0})
+        else:
+            result.append(by_key[(original.get("code"), original.get("mode"))])
+    selected_keys = {(row.get("code"), row.get("mode")) for row in selected}
+    return selected + [row for row in result if (row.get("code"), row.get("mode")) not in selected_keys]
+
+
+
+def apply_app_buy_permissions(adjudication: BookBAdjudication, frozen_rows: list[dict], policy: dict) -> BookBAdjudication:
+    """Primary APP new-BUY permissions; paper/model and old intents bypass it."""
+    from copy import deepcopy
+    from . import kol_policy
+    derived = adjudication.rows
+    common_codes = [row.get("code") for row in eligible_buy_rows(derived)]
+    if any(app_buy_permission_reason(row.get("code")) for row in eligible_buy_rows(derived)):
+        derived = _app_permitted_rows(frozen_rows, policy, len(common_codes))
+    receipt = deepcopy(adjudication.receipt)
+    explanations = explain_selection_rows(derived, policy)
+    for row in explanations:
+        reason = app_buy_permission_reason(row["code"])
+        if reason:
+            row.update(star_selected=False, selection_reason=reason)
+            row["execution_restrictions"].append(reason)
+        elif row["star_selected"] and row["code"] not in common_codes and not row["mode_follow"]:
+            row["selection_reason"] = "APP_PERMISSION_REPLACEMENT"
+    receipt.update(rows=explanations, common_strategy_codes=common_codes,
+        strategy_codes=[row.get("code") for row in eligible_buy_rows(derived)],
+        app_buy_permissions={"profile": APP_BUY_PERMISSION_PROFILE, "skipped": [
+            {"code": row.get("code"), "mode": row.get("mode"), "reason": app_buy_permission_reason(row.get("code"))}
+            for row in frozen_rows if app_buy_permission_reason(row.get("code"))]})
+    receipt.pop("receipt_sha256", None)
+    receipt["receipt_sha256"] = kol_policy.decision_sha256(receipt)
+    return BookBAdjudication(derived, receipt)
 
 
 def _eligible_buy_rows(rows: list[dict]) -> list[dict]:
@@ -2012,6 +2093,8 @@ def run_book_b_live_morning(
                     freeze=dated_freeze_receipt, runtime="live",
                     support_receipt=review_receipt,
                 )
+                if not config.resume_plan_id:
+                    adjudication = apply_app_buy_permissions(adjudication, frozen_rows, selection_decision)
                 strategy_adjudication = adjudication.receipt
                 rows = _eligible_buy_rows(adjudication.rows)
                 if not rows:

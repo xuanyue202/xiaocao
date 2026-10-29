@@ -222,3 +222,102 @@ def test_actual_paper_no_buy_binds_canonical_batch_and_does_not_replay(tmp_path,
         key: value for key, value in app_explanation.items() if key != "receipt_sha256"})
     app_path.write_text(json.dumps(app_receipt))
     assert pipeline_status(live, day)["book_b_strategy_comparison"][0]["status"] == "unproved"
+
+
+def app_adjudication(rows, policy):
+    from xiaocao.live.book_b_live_morning import apply_app_buy_permissions
+    return apply_app_buy_permissions(adjudicate_book_b(rows, policy, freeze=freeze(rows), runtime="live"), rows, policy)
+
+
+def test_app_star_permission_reseats_original_rank_without_restoring_cold_or_unknown(tmp_path):
+    rows = [row("688028.XSHG", "ACTIVE", mode_exec_candidate_rank=1),
+            row("000002.XSHE", "COLD", mode_exec_candidate_rank=2),
+            row("000003.XSHE", "UNKNOWN", mode_exec_candidate_rank=3),
+            row("000004.XSHE", "ACTIVE", mode_exec_star=False, mode_exec_candidate_rank=4),
+            row("000005.XSHE", "ACTIVE", mode_exec_star=False, mode_exec_candidate_rank=5),
+            row("000006.XSHE", "ACTIVE", mode_exec_star=False, executable_fillable=False)]
+    original = copy.deepcopy(rows)
+    policy = kol_policy.load_decision(tmp_path, "B", "live", NOW)
+    result = app_adjudication(rows, policy)
+    assert result.receipt["common_strategy_codes"] == ["688028.XSHG"]
+    assert result.receipt["strategy_codes"] == ["000004.XSHE"]
+    assert rows == original
+    selected = [r for r in result.rows if r["mode_exec_star"]]
+    assert len(selected) == 1 and selected[0]["mode_exec_target_weight"] == 0.5
+    skipped = result.receipt["app_buy_permissions"]["skipped"]
+    assert skipped == [{"code": "688028.XSHG", "mode": "标杆短线起爆",
+                        "reason": "APP_STAR_MARKET_PERMISSION_UNAVAILABLE"}]
+
+
+def test_permission_replacement_keeps_three_slots_and_one_code_per_mode(tmp_path):
+    rows = [row("688028.XSHG", "ACTIVE", mode_exec_rank=1),
+            row("000002.XSHE", "ACTIVE", mode="红盘起爆", mode_exec_rank=2),
+            row("000003.XSHE", "ACTIVE", mode="绿断低吸", mode_exec_rank=3),
+            row("000004.XSHE", "ACTIVE", mode_exec_star=False, mode_exec_candidate_rank=4),
+            row("000005.XSHE", "ACTIVE", mode="另一模式", mode_exec_star=False, mode_exec_candidate_rank=5)]
+    policy = kol_policy.load_decision(tmp_path, "B", "live", NOW)
+    result = app_adjudication(rows, policy)
+    assert result.receipt["strategy_codes"] == ["000002.XSHE", "000003.XSHE", "000004.XSHE"]
+    selected = [r for r in result.rows if r["mode_exec_star"]]
+    assert len({r["mode"] for r in selected}) == 3
+    assert sum(r["mode_exec_target_weight"] for r in selected) == pytest.approx(.5)
+
+
+def test_star_permission_is_app_only_and_model_protocol_remains_explicit(tmp_path):
+    from xiaocao.research.book_b_forward import adjudicate_variant
+    from xiaocao.live.book_b_workflow import final_plan_receipt, compare_final_plans
+    rows = [row("688028.XSHG", "ACTIVE"), row("000002.XSHE", "COLD")]
+    published(tmp_path, runtime="both")
+    live = kol_policy.load_decision(tmp_path, "B", "live", NOW)
+    paper = kol_policy.load_decision(tmp_path, "B", "paper", NOW)
+    app = app_adjudication(rows, live)
+    paper_result = adjudicate_book_b(rows, paper, freeze=freeze(rows), runtime="paper")
+    _, model, _ = adjudicate_variant(rows, freeze(rows), live, "app_b_control")
+    assert app.receipt["strategy_codes"] == []
+    assert paper_result.receipt["strategy_codes"] == model["strategy_codes"] == ["688028.XSHG"]
+    assert "app_buy_permissions" not in model
+    assert adjudicate_book_b(rows, live, freeze=freeze(rows), runtime="live").receipt["strategy_codes"] == ["688028.XSHG"]
+    assert app.receipt["strategy_semantics_sha256"] == model["strategy_semantics_sha256"]
+    left = final_plan_receipt(app.receipt, None, [])
+    right = final_plan_receipt(model, None, [])
+    assert compare_final_plans(left, right)["first_divergence"] == "account_permissions"
+
+
+def test_app_permission_applies_before_authorized_mode_follow(tmp_path):
+    rows = [row("688028.XSHG", mode_exec_score=100), row("000002.XSHE", mode_exec_score=10)]
+    policy = published(tmp_path, override=True)
+    result = app_adjudication(rows, policy)
+    assert result.receipt["strategy_codes"] == ["000002.XSHE"]
+    assert result.rows[0]["kol_mode_override"]["mode"] == "标杆短线起爆"
+
+
+def test_new_app_intent_cannot_bypass_star_filter(monkeypatch):
+    from xiaocao.live import book_b_live_morning as morning
+    monkeypatch.setattr(morning, "_restore_durable_plan_for_row", lambda *a, **kw: None)
+    with pytest.raises(ValueError, match="APP_STAR_MARKET_PERMISSION_UNAVAILABLE"):
+        morning._materialize_or_restore_plans(None, [row("688028.XSHG", "ACTIVE")],
+                                              strategy_sha="a" * 40, allocation=None, now=NOW)
+
+
+def test_exact_star_intent_resume_reaches_selection_without_new_buy_filter(tmp_path, monkeypatch):
+    from xiaocao.live import book_b_live_morning as morning
+    rows = [row("688028.XSHG", "ACTIVE")]
+    binding = freeze(rows)
+    monkeypatch.setattr(morning, "_assert_dated_freeze", lambda *a: binding)
+    monkeypatch.setattr(morning, "_read_completed_freeze", lambda *a: rows)
+    monkeypatch.setattr(morning, "_restore_durable_plan_for_row", lambda *a, **kw: object())
+    actual = morning.adjudicate_book_b
+    monkeypatch.setattr(morning, "apply_app_buy_permissions", lambda *a: pytest.fail("old intent must not enter new BUY filter"))
+    observed = []
+    def stop_after_selection(*args, **kwargs):
+        result = actual(*args, **kwargs)
+        observed.append(result.receipt["strategy_codes"])
+        raise ValueError("STOP_AFTER_ORIGINAL_INTENT_SELECTION")
+    monkeypatch.setattr(morning, "adjudicate_book_b", stop_after_selection)
+    calls = []
+    config = morning.BookBLiveMorningConfig(trade_date=NOW.date().isoformat(),
+        freeze_path=tmp_path/"freeze.jsonl", allocation_facts_path=tmp_path/"allocation.json",
+        state_dir=tmp_path/"state", resume_plan_id=f"book-b:{NOW.date().isoformat()}:688028.XSHG:BUY")
+    receipt = morning.run_book_b_live_morning(config, execute=lambda p: calls.append(p), now=lambda: NOW)
+    assert observed == [["688028.XSHG"]]
+    assert receipt.reason == "STOP_AFTER_ORIGINAL_INTENT_SELECTION" and calls == []

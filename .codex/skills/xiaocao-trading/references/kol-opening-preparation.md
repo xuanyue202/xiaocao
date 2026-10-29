@@ -73,7 +73,11 @@ Seal through `kol_trading_prepare.py accept --input <input> --draft <worker JSON
 APP worker loading receipt contains `worker_id`, `loaded_viewpoint_ids`,
 `dispatch_path`, **`preparation_path`**. Acknowledge it using the original
 `morning_checklist.py --checklist <path> --input <input> --loaded <receipt>` under
-its exact Automation/Thread. For Paper, pass the original manifest `execution_root` as `--root` to both
+its exact Automation/Thread. Paper resolves its original manifest-bound shared output mount to the canonical
+deployment state root for context caches; foreign/nested cache symlinks remain
+blocked. An early preparation failure is explicit and must be repaired before
+09:20 where possible; do not summarize it as successfully prepared.
+For Paper, pass the original manifest `execution_root` as `--root` to both
 inputs and accept. Accept registers the sealed reference in the original run
 directory after matching Automation/Thread/run identity; the supervisor reads
 that reference, and the pinned runtime includes the same rule bytes. Keep the worker warm. Pre-read the final schema below now.
@@ -81,8 +85,12 @@ that reference, and the pinned runtime includes the same rule bytes. Keep the wo
 ## At the original freeze: apply and verify changes
 
 APP's original request contains `kol_inputs.packet_path/packet_sha256` produced
-by the shared assembler. Read brief and packet and immediately dispatch them to
-the same warm worker. Do not open the complete old projection again. Paper's original
+by the shared assembler. When the event includes `dispatch_path`, read that
+one immutable handoff file and immediately send its exact `tool_arguments` to
+the same warm worker. It includes the brief, hash-bound packet and actual assembly
+clock; `actual_dispatch=not_observed` must be replaced only by a real tool receipt.
+Do not add separate brief/schema/full-projection reads before dispatch. If no
+accepted warm preparation exists, preserve the explicit degradation. Do not open the complete old projection again. Paper's original
 `wait_for_agent_reviews.py` starts its KOL support branch independently of the
 structured intelligence queue. It emits `paper_kol_review_requested` with a real
 immutable request/hash, fresh cache-only input and assembled packet. Dispatch

@@ -39,8 +39,9 @@ private func AXUIElementCopyAttributeValue(_ e:Element,_ key:CFString,_ value:in
  let k=key as String
  if mode=="frame-unreadable-title" && e.values["fixture-frame-button"] as? Bool == true && k=="title" {return .failure}
  if mode=="frame-nonstring-title" && e.values["fixture-frame-button"] as? Bool == true && k=="title" {value=NSNumber(value:7);return .success}
- if (mode=="failed-children" || presses>0 && mode=="late-read-failed") && e===login && k=="children" {return .failure}
+ if (mode=="failed-children" || presses>0 && mode=="late-read-failed" || mode=="late-read-transient" && observations==2) && e===login && k=="children" {return .failure}
  if mode=="wrong-array-type" && e===login && k=="AXSheets" {value="invalid" as NSString;return .success}
+ if mode=="late-empty-role" && presses>0 && e===login && k=="role" {value="" as NSString;return .success}
  if k=="children" {value=e.children as NSArray;return .success}
  if k=="AXSheets" {value=e.sheets as NSArray;return .success}
  guard let v=e.values[k] else {return .attributeUnsupported}
@@ -67,7 +68,7 @@ private func observe(command:String)->Observation {
  if late && (mode=="late-account" || mode=="fresh-account") {r.tradeAccountFingerprint="999******999"}
  if mode=="fresh-budget" {r.unlockRemainingAttempts=1}
  if mode=="fresh-locked" {r.screenLocked=true}
- return Observation(applicationElement:app,primaryWindow:late && mode=="late-window" ? other:primary,
+ return Observation(applicationElement:app,primaryWindow:late && mode=="late-window" ? other:(mode=="late-primary-transient" && observations==2 ? nil:primary),
  runningApplication:Running(late && mode=="late-pid" ? 22:11),receipt:r)
 }
 private func dismissLoginSuccessNotice(_ o:Observation,expected:String,allowDismiss:Bool,clearedResetLoginWindow:Element?=nil)->(Bool,Bool,String) {
@@ -99,7 +100,7 @@ if mode=="truncated" {var node=login;for _ in 0..<15 {let child=Element("AXGroup
     harness += r'''
 private let initial=Observation(applicationElement:app,primaryWindow:primary,runningApplication:Running(11),receipt:Receipt())
 private let result=prepareRejectedSession(initial,expected:"263******022")
-print(String(data:try! JSONSerialization.data(withJSONObject:["prepared":result.0 != nil,"attempted":result.1,"acknowledged":resetAlertAcknowledged,"presses":presses]),encoding:.utf8)!)
+print(String(data:try! JSONSerialization.data(withJSONObject:["prepared":result.0 != nil,"attempted":result.1,"acknowledged":resetAlertAcknowledged,"presses":presses,"diagnostic":resetPreparationDiagnostic]),encoding:.utf8)!)
 '''
     folder=tmp_path_factory.mktemp('native-reset-preparation')
     path=folder/'fixture.swift';binary=folder/'fixture';path.write_text(harness)
@@ -113,16 +114,18 @@ print(String(data:try! JSONSerialization.data(withJSONObject:["prepared":result.
     ('wrong-array-type',False,0),('truncated',False,0),('fresh-account',False,0),
     ('fresh-budget',False,0),('fresh-locked',False,0),('press-failed',False,1),
     ('persistent',False,1),('nested-persistent',False,1),('new-modal',False,1),
-    ('late-read-failed',False,1),('late-account',False,1),('late-window',False,1),
+    ('late-empty-role',False,1),('late-read-failed',False,1),('late-read-transient',True,1),('late-primary-transient',True,1),('late-account',False,1),('late-window',False,1),
     ('late-pid',False,1),('unknown-window',False,1)])
 def test_actual_scanner_and_preparation(preparation_executable,mode,prepared,presses):
     result=subprocess.run([str(preparation_executable),mode],capture_output=True,text=True,check=True,timeout=4)
     value=json.loads(result.stdout)
     assert value['prepared'] is prepared
     assert value['presses']==presses
+    if mode=="late-empty-role":
+        assert value["diagnostic"]=="empty_role"
 
 
 def test_failed_ax_press_preserves_request_without_ack_proof(preparation_executable):
     result=subprocess.run([str(preparation_executable),"press-failed"],capture_output=True,text=True,check=True,timeout=4)
     value=json.loads(result.stdout)
-    assert value=={"prepared":False,"attempted":True,"acknowledged":False,"presses":1}
+    assert value=={"prepared":False,"attempted":True,"acknowledged":False,"presses":1,"diagnostic":"alert_press_result_unproven"}

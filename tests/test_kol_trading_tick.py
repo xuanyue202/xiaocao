@@ -564,3 +564,54 @@ def test_tampered_prior_day_sell_still_fails_closed(tmp_path):
     write_json(path, payload)
     assert tick.poll(tmp_path, now=NOW)["reason"] == "LOCAL_GATE_READBACK_REQUIRED"
     assert not (tmp_path / tick.STATE_RELATIVE_PATH / "state.json").exists()
+
+
+@pytest.mark.app_simulation
+def test_original_archive_supplies_exact_owner_without_granting_recovery(tmp_path):
+    plan,_=open_live_plan(tmp_path,side='BUY',day='2026-09-07',lot_id=None)
+    archive=tmp_path/'output/live/book_b_live_execution/runs/history/2026-09-07-original.json'
+    value={'run_id':archive.stem,'trade_date':plan.trade_date,'persisted_plan_ids':[plan.plan_id],
+        'runner_identity':{'automation_id':'xiaocao-book-b-live-morning','owner_thread_id':'original','runner_pid':123},
+        'execution_receipts':[{'plan_id':plan.plan_id,'plan_hash':plan.plan_hash}],
+        'status':'unresolved','preparation_deadline':'2026-09-07T09:35:00+08:00'}
+    write_json(archive,value)
+    result=tick.poll(tmp_path,now=NOW)
+    assert result['owner_thread_id']=='original' and result['recovery_action']=='reconcile_only'
+    assert result['original_owner_evidence'][0]['archive_sha256']==tick.hashlib.sha256(archive.read_bytes()).hexdigest()
+    value['execution_receipts'][0]['plan_hash']='f'*64;write_json(archive,value)
+    assert tick.poll(tmp_path,now=NOW)['owner_identity_status']=='unavailable'
+
+
+@pytest.mark.app_simulation
+def test_app_fence_runs_independent_paper_once_without_app_kol_or_tick_ack(tmp_path,monkeypatch):
+    open_live_plan(tmp_path,side='BUY',day='2026-09-07',lot_id=None)
+    import xiaocao.automation_run as identity
+    monkeypatch.setattr(identity,'validate_scheduler_header',lambda *a,**k:{'thread_id':'owner'})
+    calls=[]
+    class Done:returncode=0
+    monkeypatch.setattr(tick.subprocess,'run',lambda command,**kw:calls.append(command) or Done())
+    result=tick.run_independent_paper(tmp_path,tick.poll(tmp_path,now=NOW),now=NOW)
+    assert result['checkpoint_coverage']=={'paper':'completed','app':'blocked'}
+    assert len(calls)==1 and calls[0][-2:]==[str(tmp_path/'scripts/live_monitor.py'),'--execute-sells']
+    claim=json.loads(Path(result['paper_checkpoint_path']).read_text())
+    assert claim['kol']==claim['research']=='not_run'
+    next_poll=tick.poll(tmp_path,now=NOW)
+    assert next_poll['reason']=='PAPER_ONLY_CHECKPOINT_RECORDED'
+    assert tick.run_independent_paper(tmp_path,next_poll,now=NOW)==next_poll
+    assert len(calls)==1 and not (tmp_path/tick.STATE_RELATIVE_PATH/'state.json').exists()
+
+
+@pytest.mark.app_simulation
+def test_paper_checkpoint_fenced_identity_or_interrupted_claim_never_replays(tmp_path,monkeypatch):
+    open_live_plan(tmp_path,side='BUY',day='2026-09-07',lot_id=None)
+    import xiaocao.automation_run as identity
+    def denied(*a,**k):raise ValueError('INITIAL_SCHEDULER_ID_MISMATCH')
+    monkeypatch.setattr(identity,'validate_scheduler_header',denied)
+    monkeypatch.setattr(tick.subprocess,'run',lambda *a,**k:pytest.fail('must not start child'))
+    result=tick.poll(tmp_path,now=NOW)
+    with pytest.raises(ValueError,match='SCHEDULER'):
+        tick.run_independent_paper(tmp_path,result,now=NOW)
+    monkeypatch.setattr(identity,'validate_scheduler_header',lambda *a,**k:{'thread_id':'owner'})
+    path=tmp_path/tick.STATE_RELATIVE_PATH/'paper_checkpoints'/ (NOW.isoformat().replace(':','')+'.json')
+    write_json(path,{'status':'claimed'})
+    assert tick.poll(tmp_path,now=NOW)['checkpoint_coverage']['paper']=='claimed'

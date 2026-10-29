@@ -398,7 +398,8 @@ def write_consumption(root: Path, date: str, pick: str, payload: dict) -> dict:
         return result
 
 
-def complete_consumption(root: Path, date: str, pick: str, *, entries: list[dict]) -> dict:
+def complete_consumption(root: Path, date: str, pick: str, *, entries: list[dict],
+                         source_blocked: bool = False) -> dict:
     """Bind a separate immutable terminal result to the durable consumption.
 
     An interrupted claimed writer is not replayed. Its existing claim remains
@@ -411,10 +412,13 @@ def complete_consumption(root: Path, date: str, pick: str, *, entries: list[dict
         path = consumption_path(root, date, pick).with_suffix(".result.json")
         if path.exists():
             return _read_bound(path)
+        source_blocked = source_blocked or bool(claim.get("entry_source_failures"))
         result = {"schema_version": "paper-policy-result.v1", "book": "B", "runtime": "paper",
                   "date": date, "pick": pick, "consumption_sha256": claim["receipt_sha256"],
-                  "status": "bought" if entries else "no_buy", "buy_count": len(entries),
-                  "entries": entries}
+                  "status": ("bought_source_blocked" if entries else "source_blocked") if source_blocked
+                            else ("bought" if entries else "no_buy"),
+                  "buy_count": len(entries),
+                  "entries": entries, "entry_source_failures": claim.get("entry_source_failures", [])}
         result["receipt_sha256"] = _digest(result)
         _atomic_json(path, result)
         return result

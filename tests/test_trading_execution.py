@@ -2347,7 +2347,7 @@ def test_legacy_pending_order_incident_cannot_gain_retry_proof(tmp_path):
 
 
 @pytest.mark.app_simulation
-def test_morning_local_incident_deferral_keeps_later_delivery_available(tmp_path):
+def test_morning_local_incident_deferral_is_durable_audit_only(tmp_path):
     plan = _plan()
     receipt = ExecutionReceipt(plan_id=plan.plan_id, plan_hash=plan.plan_hash,
                                state=ExecutionState.UNKNOWN, reason="response_lost")
@@ -2359,7 +2359,10 @@ def test_morning_local_incident_deferral_keeps_later_delivery_available(tmp_path
                              notifier=lambda *args: (messages.append(args) or "ok"))
     later._incident(plan, receipt)
     later._incident(plan, receipt)
-    assert len(messages) == 1
+    assert messages == []
+    from xiaocao.live.incident_delivery import pending_notices
+    assert pending_notices(deferred.outbox.path) == []
+    assert deferred.outbox._rows()[0]["status"] == "pending"  # retained, never falsely delivered
 
 
 @pytest.mark.app_simulation
@@ -2972,3 +2975,40 @@ def test_reconcile_existing_unclaimed_plan_cannot_start_execution(tmp_path):
     with pytest.raises(ValueError, match="SUBMIT_CLAIM_REQUIRED"):
         execution.reconcile_existing(_plan())
     assert broker.prepare_calls == broker.submit_calls == broker.cancel_calls == broker.reconcile_calls == 0
+
+
+@pytest.mark.app_simulation
+def test_same_unknown_claim_internal_errors_are_one_plain_result_notice(tmp_path):
+    plan = _plan()
+    receipt = ExecutionReceipt(plan_id=plan.plan_id,plan_hash=plan.plan_hash,
+        state=ExecutionState.UNKNOWN,reason='NATIVE_SUBMIT_CLICKED_READBACK_UNPROVEN',
+        submit_claim_id='same-claim',submit_chain_uncertain=True,
+        locator_proof={'private_diagnostic':'retained-in-event'})
+    messages = []
+    engine = TradingExecution(store=InMemoryExecutionStore(tmp_path/'events.jsonl'),
+        notifier=lambda *args:messages.append(args) or 'ok')
+    engine._incident(plan,receipt)
+    engine._incident(plan,replace(receipt,reason='NATIVE_EXACT_ORDER_DELTA_NOT_UNIQUE'))
+    assert len(messages) == 1
+    body = messages[0][1]
+    assert '无需你操作' in body and '未确认' in body
+    assert plan.plan_hash not in body and 'private_diagnostic' not in body
+    assert 'filled=0' not in body and '需要确认' not in body
+    # A concrete user-only dependency is a material changed result.
+    engine._incident(plan,replace(receipt,reason='NATIVE_AX_KEYCHAIN_READ_DENIED'))
+    assert len(messages) == 2 and '授权' in messages[-1][1]
+
+
+@pytest.mark.app_simulation
+def test_incident_reports_proved_partial_fill_without_claiming_unknown_zero(tmp_path):
+    from dataclasses import replace
+    messages=[]
+    plan=_plan()
+    engine=TradingExecution(broker=FakeBroker(),store=InMemoryExecutionStore(tmp_path/"events.jsonl"),notifier=lambda title,body: messages.append(body) or "ok")
+    receipt=ExecutionReceipt(plan.plan_id,plan.plan_hash,state=ExecutionState.PARTIAL,
+        reason="FILL_LEDGER_WRITE_PENDING",filled_shares=100,remaining_shares=plan.shares-100,broker_order_id="6000123",
+        receipt_mapping=True,locator_proof={"fill_observation_pending":False})
+    engine._incident(plan,receipt)
+    assert "已确认成交100股" in messages[-1] and f"剩余{plan.shares-100}股" in messages[-1]
+    engine._incident(plan,replace(receipt,state=ExecutionState.UNKNOWN,filled_shares=0))
+    assert "已确认成交0股" not in messages[-1]

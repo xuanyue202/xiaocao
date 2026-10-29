@@ -983,6 +983,7 @@ def test_production_morning_cli_passes_real_rendezvous_callback(tmp_path, monkey
         with kwargs["submission_scope"](["bound-plan"]):
             assert scoped == [["bound-plan"]]
         request = {"test": "production-wiring", "freeze_path": "fixture-freeze",
+            "policy_root": str(config.policy_root), "max_wait_seconds": 60,
             "freeze_sha256": "a" * 64, "strategy_sha": "b" * 40,
             "allocation_facts_path": "fixture-allocation", "allocation_capsule_sha256": "c" * 64,
             "account_risk": {"deploy_factor": 1},
@@ -1058,3 +1059,16 @@ def test_reserved_batch_reuses_risk_but_rechecks_policy_before_each_order(tmp_pa
     assert receipt.status == "completed", receipt.reason
     assert len(calls) == (1 if tighten else 2)
     assert risk_reads and not active
+
+
+@pytest.mark.app_simulation
+def test_optional_warm_handoff_failure_degrades_without_blocking_baseline(tmp_path,monkeypatch,capsys):
+    cli=_morning_cli(monkeypatch)
+    import xiaocao.live.morning_dispatch as dispatch
+    def unavailable(*a,**k):raise ValueError('MORNING_DISPATCH_ORIGINAL_CUTOFF')
+    monkeypatch.setattr(dispatch,'write_warm_dispatch',unavailable)
+    request=_review_request(tmp_path,budget=0)
+    result=cli._review_rendezvous(request,now=lambda:MORNING,monotonic=lambda:0)
+    assert result['status']=='timed_out' and result['fallback']=='neutral'
+    assert result['dispatch']['error']=='MORNING_DISPATCH_ORIGINAL_CUTOFF'
+    assert json.loads(capsys.readouterr().out)['dispatch_error']=='MORNING_DISPATCH_ORIGINAL_CUTOFF'

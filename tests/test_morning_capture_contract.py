@@ -240,3 +240,53 @@ def test_pipeline_rejects_wrong_day_and_missing_app_identity_without_writes(tmp_
     assert result['bundle']['status']=='unproved' and result['bundle']['checkpoint_sha256'] is None
     assert result['app']==[]
     assert before=={str(p):p.read_bytes() for p in tmp_path.rglob('*') if p.is_file()}
+
+
+def test_entry_prices_batch_complete_identity_and_fallback(tmp_path, monkeypatch):
+    import scripts.live_recommend as recommend
+    day = recommend._today_iso()
+    monkeypatch.setattr(recommend, 'OUT_DIR', tmp_path)
+    calls = []
+    class Client:
+        def second_line_detail_info(self, codes):
+            calls.append(codes)
+            return {code:{'code':code,'tradeDate':day.replace('-',''),'open':10.,'preClose':9.}
+                    for code in codes.split(',') if code != '000009.XSHE'}
+    fallback = []
+    monkeypatch.setattr(recommend, '_entry_price', lambda client,code,date:
+                        fallback.append(code) or (11.,'fallback',9.))
+    codes = [f'{i:06d}.XSHE' for i in range(1,20)]
+    result, evidence = recommend._batch_entry_prices(Client(),codes,day)
+    assert len(calls) == 3 and len(result) == 19
+    assert fallback == ['000009.XSHE']
+    assert result['000009.XSHE']['value'][0] == 11.
+    assert all(row['value'][0] == 10. for code,row in result.items() if code != '000009.XSHE')
+    assert sum(len(row['request_codes']) for row in evidence) == 19
+    for row in evidence:
+        assert hashlib.sha256(Path(row['raw_path']).read_bytes()).hexdigest() == row['raw_sha256']
+
+
+def test_missing_price_retry_and_fallback_bypass_empty_http_cache(tmp_path,monkeypatch):
+    import scripts.live_recommend as recommend
+    from xiaocao.api.client import XiaocaoClient
+    from xiaocao.api.cache import SQLiteCache
+    from xiaocao.api.errors import ApiAuthError
+    day=recommend._today_iso();code='000001.XSHE'
+    monkeypatch.setattr(recommend,'OUT_DIR',tmp_path)
+    client=XiaocaoClient(cache=SQLiteCache(tmp_path/'cache.sqlite3'))
+    calls=[]
+    def post(path,payload):
+        calls.append(path)
+        if len(calls)<3:return []
+        return {code:{'code':code,'tradeDate':day.replace('-',''),'open':10.,'preClose':9.}}
+    monkeypatch.setattr(client,'_do_post',post)
+    monkeypatch.setattr(client,'second_line_detail_info',lambda codes:client.post('/stock/detail',{'codes':codes}))
+    monkeypatch.setattr(recommend,'_entry_price',lambda c,code,date:
+                        (c.post('/stock/fallback',{'code':code}) and 11. or None,'fallback',9.))
+    first,_=recommend._batch_entry_prices(client,[code],day)
+    second,_=recommend._batch_entry_prices(client,[code],day)
+    assert first[code]['value'][0] is None and second[code]['value'][0]==10.
+    assert calls==['/stock/detail','/stock/fallback','/stock/detail']
+    def rejected(*args):raise ApiAuthError('auth failed')
+    monkeypatch.setattr(client,'second_line_detail_info',rejected)
+    with pytest.raises(ApiAuthError):recommend._batch_entry_prices(client,[code],day)

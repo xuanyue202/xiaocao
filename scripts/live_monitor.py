@@ -948,8 +948,14 @@ def main() -> None:
                         help="触发 T+1 止损时执行模拟卖出，更新 positions/account/trades")
     args = parser.parse_args()
 
-    client = _client()
     today_iso = _date.today().isoformat()
+    from xiaocao.automation_run import validate_monitor_scheduler
+    try:
+        validate_monitor_scheduler(date=today_iso)
+    except ValueError as exc:
+        print(json.dumps({"status":"blocked", "reason":str(exc)}, sort_keys=True), file=sys.stderr)
+        raise SystemExit(2)
+    client = _client()
     try:
         is_trading_day, latest_trading_day = _is_trading_day(today_iso, client)
     except TradingCalendarLookupError as exc:

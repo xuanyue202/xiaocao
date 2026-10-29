@@ -590,6 +590,22 @@ def test_swift_summary_parser_pairs_shuffled_vision_tokens() -> None:
     assert json.loads(ambiguous.stdout) == {}
 
 
+@pytest.mark.app_simulation
+@pytest.mark.parametrize("text,expected", [
+    ("人民币：余额；：76395.98", {"余额": "76395.98"}),
+    ("余额:76395.98", {"余额": "76395.98"}),
+    ("余额；：未知", {}),
+    ("余额；X：76395.98", {}),
+])
+def test_swift_summary_parser_preserves_number_after_ocr_separator(text, expected):
+    package = Path(__file__).resolve().parents[1] / "native/foundersc_ax_executor"
+    result = _run_parser(["swift", "run", "--package-path", str(package),
+                          "foundersc-native-ax", "parse-query-summary-stdin"],
+                         [{"text": text, "confidence": 0.5,
+                           "bounds": {"x": 69, "y": 110, "width": 168, "height": 21}}])
+    assert json.loads(result.stdout) == expected
+
+
 @pytest.mark.parametrize(
     ("overrides", "expected"),
     [

@@ -18,9 +18,12 @@ Usage:
 """
 from __future__ import annotations
 
+from contextlib import nullcontext
+
 import argparse
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import hashlib
 import json
 import math
 import os
@@ -916,6 +919,48 @@ def _entry_price(client: XiaocaoClient, code: str, date_iso: str) -> tuple[float
     return price, source, pre_close
 
 
+def _batch_entry_prices(client: XiaocaoClient, codes: list[str], date_iso: str) -> tuple[dict, list[dict]]:
+    """Batch the same realtime-open source, validating every symbol separately."""
+    prices, evidence = {}, []
+    # Only missing/stale prices reach this helper; all existing fallbacks share
+    # the exact uncached scope and retain endpoint rate limits/cache writes.
+    with client.uncached_reads() if isinstance(client, XiaocaoClient) else nullcontext():
+        for index in range(0, len(codes), 8):
+            batch = codes[index:index + 8]
+            started = datetime.now(A_SHARE_TZ).isoformat()
+            start_tick = _time.monotonic()
+            try:
+                payload = client.second_line_detail_info(",".join(batch))
+            except (ApiAuthError, ApiSchemaError, ApiNotFoundError):
+                raise
+            except Exception:
+                payload = None
+            raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str).encode()
+            raw_hash = hashlib.sha256(raw).hexdigest()
+            path = OUT_DIR / "morning_sources/entry_prices" / (raw_hash + ".json")
+            atomic_write(path, raw, immutable=True)
+            completed = datetime.now(A_SHARE_TZ).isoformat()
+            fallback = []
+            for code in batch:
+                detail = _extract_realtime_detail_row(payload, code)
+                price = _to_float((detail or {}).get("open"))
+                if (detail and detail.get("code") == code and _normal_date(detail.get("tradeDate")) == date_iso
+                        and price is not None and math.isfinite(price) and price > 0):
+                    _ENTRY_DETAIL_CACHE[(date_iso, code)] = detail
+                    value = price, "realtime_open", _to_float(detail.get("preClose"))
+                    observation = started
+                    tick = start_tick
+                else:
+                    fallback.append(code)
+                    observation = datetime.now(A_SHARE_TZ).isoformat()
+                    tick = _time.monotonic()
+                    value = _entry_price(client, code, date_iso)
+                prices[code] = {"value": value, "observed_at": observation, "tick": tick}
+            evidence.append({"request_codes": batch, "observed_at": started, "completed_at": completed,
+                             "raw_sha256": raw_hash, "raw_path": str(path.resolve()), "fallback_codes": fallback})
+    return prices, evidence
+
+
 def _basket_params(
     mode: str,
     confidence: float = 50.0,
@@ -1298,21 +1343,24 @@ def _main() -> None:
     entry_prices = {}
     entry_price_times = {}
     entry_price_observations = {}
+    price_batch_observations = []
     def price_probe(active_rows):
-        missing = []
-        for row in active_rows:
-            code = str(row.get("code") or "")
-            if not code:
-                raise RuntimeError("MORNING_CAPTURE_CODE_MISSING")
-            if code not in entry_prices or not entry_prices[code][0] or _time.monotonic() - entry_price_times[code] > 60:
+        codes = list(dict.fromkeys(str(row.get("code") or "") for row in active_rows))
+        if "" in codes:
+            raise RuntimeError("MORNING_CAPTURE_CODE_MISSING")
+        needed = [code for code in codes if code not in entry_prices or not entry_prices[code][0]
+                  or _time.monotonic() - entry_price_times[code] > 60]
+        if needed:
+            for code in needed:
                 _ENTRY_DETAIL_CACHE.pop((date_iso, code), None)
-                entry_price_times[code] = _time.monotonic()
-                entry_price_observations[code] = {"code": code,
-                    "observed_at": datetime.now(A_SHARE_TZ).isoformat()}
-                entry_prices[code] = _entry_price(client, code, date_iso)
-            if not entry_prices[code][0]:
-                missing.append(code)
-        return sorted(set(missing))
+            values, observations = _batch_entry_prices(client, needed, date_iso)
+            price_batch_observations.extend(observations)
+            for code, value in values.items():
+                entry_prices[code] = value["value"]
+                entry_price_times[code] = value["tick"]
+                entry_price_observations[code] = {"code": code, "observed_at": value["observed_at"]}
+        source.readiness["entry_price_batches"] = list(price_batch_observations)
+        return sorted(code for code in codes if not entry_prices[code][0])
     capture_deadline = None if args.ready_timeout_sec < 0 else _time.monotonic() + args.ready_timeout_sec
     while True:
         try:

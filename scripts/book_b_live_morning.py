@@ -282,6 +282,19 @@ def _claim_preflight_continuation(state_dir: Path, binding: dict) -> None:
     })
 
 
+
+def _normalized_review_request(request: dict) -> dict:
+    """Use identical immutable facts for packet assembly and rendezvous identity."""
+    from xiaocao.kol.opening_preparation import normalized_review_facts
+    payload = normalized_review_facts(request)
+    budget = float(payload["max_wait_seconds"])
+    if not math.isfinite(budget) or budget < 0:
+        raise ValueError("LIVE_REVIEW_WAIT_BUDGET_INVALID")
+    payload["max_wait_seconds"] = min(120.0, budget)
+    for field in ("freeze_path", "policy_root"):
+        payload[field] = str(Path(payload[field]).resolve())
+    return payload
+
 def _review_rendezvous(request: dict, *, now=None, sleep=None, monotonic=None,
                        poll_seconds: float = 1.0) -> dict:
     """Expose one read-only request and wait for independently published policy.
@@ -295,8 +308,7 @@ def _review_rendezvous(request: dict, *, now=None, sleep=None, monotonic=None,
     sleep = sleep or time.sleep
     monotonic = monotonic or time.monotonic
     started = monotonic()
-    from xiaocao.kol.opening_preparation import normalized_review_facts
-    payload = normalized_review_facts(request)
+    payload = _normalized_review_request(request)
     requested = datetime.fromisoformat(payload["requested_at"])
     entry_deadline = datetime.fromisoformat(payload["entry_deadline"])
     if requested.utcoffset() is None or entry_deadline.utcoffset() is None:
@@ -324,7 +336,20 @@ def _review_rendezvous(request: dict, *, now=None, sleep=None, monotonic=None,
                 or receipt.get("request_id") != identifier):
             raise ValueError("LIVE_REVIEW_RECEIPT_BINDING_MISMATCH")
         return receipt
-    _emit_json(review_notice(artifact, request_path, receipt_path, brief_path))
+    from xiaocao.live.morning_dispatch import write_warm_dispatch
+    dispatch_path, dispatch_error = None, None
+    try:
+        dispatch_path = write_warm_dispatch(artifact, request_path, now=now())
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        # Optional handoff assembly cannot turn a deadline/quality gap into a
+        # deterministic trading failure. Existing policy validation still runs.
+        dispatch_error = (str(exc) if str(exc).startswith("MORNING_DISPATCH_") else type(exc).__name__)
+    notice = review_notice(artifact, request_path, receipt_path, brief_path)
+    if dispatch_path:
+        notice["dispatch_path"] = str(dispatch_path)
+    if dispatch_error:
+        notice["dispatch_error"] = dispatch_error
+    _emit_json(notice)
     latest: dict = {}
     status, reason = "timed_out", "LIVE_REVIEW_TIMEOUT_NEUTRAL_FALLBACK"
     while True:
@@ -354,6 +379,8 @@ def _review_rendezvous(request: dict, *, now=None, sleep=None, monotonic=None,
         "waited_seconds": max(0.0, monotonic() - started), "status": status, "reason": reason,
         "supporting_health": "healthy" if status == "validated" else "degraded",
         "fallback": "neutral" if status == "timed_out" else None,
+        "dispatch": {"path": str(dispatch_path) if dispatch_path else None, "error": dispatch_error,
+                     "status": "assembled_not_dispatched" if dispatch_path else "unavailable"},
         "last_policy_status": latest.get("status"), "decision_id": latest.get("decision_id"),
         "decision_sha256": latest.get("decision_sha256"),
     }
@@ -753,6 +780,7 @@ def _run(args, notices):
         record_checklist("account_risk", "blocked" if request["account_risk"]["deploy_factor"] <= 0 else "passed", evidence={"allocation_facts_path": request["allocation_facts_path"],
             "allocation_capsule_sha256": request["allocation_capsule_sha256"], "account_risk": request["account_risk"]})
         try:
+            request = _normalized_review_request(request)
             fresh = prepare_inputs(checklist, repo_root=ROOT)
             loaded = checklist.read()["items"]["kol_inputs_loaded"]
             changed = kol_inputs is None or fresh["source_fingerprint"] != kol_inputs["source_fingerprint"]

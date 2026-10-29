@@ -4,6 +4,8 @@ import threading
 import time
 import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Any, Iterable
 from urllib.parse import urlsplit
@@ -80,6 +82,17 @@ class XiaocaoClient:
         self._session.headers.update(DEFAULT_HEADERS)
         self._rate_limit_lock = threading.Lock()
         self._last_rate_limited_request: dict[str, float] = {}
+        self._uncached_read_scope = ContextVar("xiaocao_uncached_read", default=False)
+
+    @contextmanager
+    def uncached_reads(self):
+        """One caller's missing-data retry bypasses cache; writes/rate limits remain."""
+        flag = self._uncached_read_scope
+        token = flag.set(True)
+        try:
+            yield
+        finally:
+            flag.reset(token)
 
     def post(self, path: str, params: dict[str, Any]) -> Any:
         return self._post_json(path, {"params": params})
@@ -88,7 +101,8 @@ class XiaocaoClient:
         return self._post_json(path, payload)
 
     def _post_json(self, path: str, payload: dict[str, Any]) -> Any:
-        if self.cache is not None:
+        bypass = getattr(self, "_uncached_read_scope", None)
+        if self.cache is not None and not (bypass is not None and bypass.get()):
             cached = self.cache.get(path, payload)
             if cached is not None:
                 return cached

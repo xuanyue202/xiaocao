@@ -179,3 +179,44 @@ def test_readiness_records_and_propagates_provider_error():
     assert source.readiness["sources"][0]["status"] == "error"
     source.begin_observation(3)
     assert source.readiness["sources"] == []
+
+
+def test_retry_missing_bypasses_cached_empty_without_refetching_valid_requests(tmp_path, monkeypatch):
+    from xiaocao.api.client import XiaocaoClient
+    from xiaocao.api.cache import SQLiteCache
+    client = XiaocaoClient(base_url='https://example.invalid', cache=SQLiteCache(tmp_path/'cache.db'))
+    calls = []
+    def upstream(path, payload):
+        calls.append((path, payload))
+        return [] if len(calls) == 1 else ['000001.XSHE']
+    monkeypatch.setattr(client, '_do_post', upstream)
+    monkeypatch.chdir(tmp_path)
+    source = ApiDataSource(client)
+    source.begin_observation(1)
+    assert source.get_direction_codes('2026-10-29') == []
+    source.begin_observation(2, retry_missing=True)
+    assert source.get_direction_codes('2026-10-29') == ['000001.XSHE']
+    assert len(calls) == 2
+    source.begin_observation(3, retry_missing=True)
+    assert source.get_direction_codes('2026-10-29') == ['000001.XSHE']
+    assert len(calls) == 2
+
+
+def test_old_day_successful_http_response_retries_exact_key_uncached(tmp_path,monkeypatch):
+    from xiaocao.api.client import XiaocaoClient
+    from xiaocao.api.cache import SQLiteCache
+    from xiaocao.api.errors import ApiSourceNotReadyError
+    import pytest
+    client=XiaocaoClient(cache=SQLiteCache(tmp_path/'cache.sqlite3'))
+    calls=[]
+    def post(path,payload):
+        calls.append(path)
+        return [{'code':'000001.XSHE','tradeDate':'20261028' if len(calls)==1 else '20261029'}]
+    monkeypatch.setattr(client,'_do_post',post)
+    source=ApiDataSource(client)
+    source.begin_observation(1)
+    fetch=lambda:client.post('/stock/test-source',{'date':'20261029'})
+    with pytest.raises(ApiSourceNotReadyError):source._observe('fixture','2026-10-29',fetch)
+    source.begin_observation(2,retry_missing=True)
+    assert source._observe('fixture','2026-10-29',fetch)[0]['tradeDate']=='20261029'
+    assert len(calls)==2

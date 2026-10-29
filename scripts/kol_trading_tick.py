@@ -31,6 +31,8 @@ import fcntl
 import hashlib
 import json
 import os
+import subprocess
+import sys
 import tempfile
 import uuid
 from contextlib import contextmanager
@@ -234,6 +236,32 @@ def _decision_inputs(root: Path, now: datetime) -> tuple[str, list[str]]:
     return _digest(sorted(fingerprints)), expired
 
 
+def _recorded_plan_owners(state_root: Path, plans: dict) -> list[dict]:
+    """Original archives supply provenance, never a new writer or order terminal."""
+    evidence = []
+    for plan_id, plan in plans.items():
+        matches = []
+        for path in (state_root / "runs/history").glob(plan.trade_date + "-*.json"):
+            if path.is_symlink():
+                continue
+            raw = path.read_bytes()
+            row = json.loads(raw)
+            identity = row.get("runner_identity") or {}
+            receipts = [*row.get("execution_receipts", []), *row.get("open_plan_reconciliations", [])]
+            if (not row.get("recovery_of") and row.get("run_id") == path.stem
+                    and plan_id in row.get("persisted_plan_ids", [])
+                    and identity.get("automation_id") == "xiaocao-book-b-live-morning"
+                    and identity.get("owner_thread_id")
+                    and any(r.get("plan_id")==plan_id and r.get("plan_hash")==plan.plan_hash for r in receipts)):
+                matches.append({"plan_id":plan_id,"plan_hash":plan.plan_hash,
+                    "owner_thread_id":identity["owner_thread_id"],"runner_pid":identity.get("runner_pid"),
+                    "original_runner_status":row.get("status"),"original_deadline":row.get("preparation_deadline"),
+                    "archive_path":str(path.resolve()),"archive_sha256":hashlib.sha256(raw).hexdigest()})
+        if len(matches) == 1:
+            evidence.extend(matches)
+    return evidence
+
+
 def _live_owner(root: Path, *, trade_date: str) -> dict | None:
     """Read existing local fences only; never create locks in business stores."""
     state_root = root / "output/live/book_b_live_execution"
@@ -272,9 +300,15 @@ def _live_owner(root: Path, *, trade_date: str) -> dict | None:
                            deferred_reconcile_plan_ids=deferred)
         # Old plans do not contain a task ID. Return their exact durable IDs
         # rather than implying an owner lookup is possible or inventing one.
+        evidence = _recorded_plan_owners(state_root, {p:intents[p] for p in blocking if p in intents})
+        owners = {row["owner_thread_id"] for row in evidence}
+        proved = len(evidence) == len(blocking) and len(owners) == 1
         return _result("reconcile_required", "EXISTING_LIVE_PLAN_REQUIRES_OWNER",
                        plan_ids=blocking, state_dir=str(state_root),
-                       owner_thread_id=None, owner_identity_status="unavailable",
+                       owner_thread_id=next(iter(owners)) if proved else None,
+                       owner_identity_status="recorded_original_owner" if proved else "unavailable",
+                       original_owner_evidence=evidence, checkpoint_coverage={"paper":"not_run","app":"blocked"},
+                       independent_paper_monitor="allowed_only_through_owned_paper_checkpoint",
                        recovery_action="reconcile_only")
     return None
 
@@ -303,6 +337,12 @@ def poll(root: Path = ROOT, *, now: datetime | None = None,
             cursor = state["cursor"]
             if cursor["slot"] is not None and slot <= cursor["slot"]:
                 return _result("no_op", "SLOT_ALREADY_ACKNOWLEDGED")
+            paper_path = directory / "paper_checkpoints" / (slot.replace(":", "") + ".json")
+            if paper_path.exists():
+                prior = _json(paper_path)
+                return _result("reconcile_required", "PAPER_ONLY_CHECKPOINT_RECORDED",
+                    paper_checkpoint_path=str(paper_path),
+                    checkpoint_coverage={"paper":prior.get("status", "unproved"), "app":"blocked"})
             owner = _live_owner(root, trade_date=local.date().isoformat())
             if owner is not None and owner["status"] != "deferred":
                 return owner
@@ -367,6 +407,61 @@ def reconcile(root: Path, *, token: str, outcome: str, confirmed_by: str,
     return _finish(root, token, outcome, now, {"confirmed_by": confirmed_by, "evidence_ref": evidence_ref})
 
 
+
+def run_independent_paper(root: Path, result: dict, *, now: datetime | None = None) -> dict:
+    """One durable Paper checkpoint; an APP order fence grants no APP/KOL action."""
+    if result.get("reason") != "EXISTING_LIVE_PLAN_REQUIRES_OWNER":
+        return result
+    from xiaocao.automation_run import validate_scheduler_header
+    root, current = Path(root).resolve(), _clock(now)
+    local = current.astimezone(_CHINA)
+    identity = validate_scheduler_header("xiaocao-intraday-monitor-05", date=local.date().isoformat())
+    if local.weekday() > 4 or local.replace(minute=local.minute // 5 * 5).strftime("%H:%M") not in _REGULAR:
+        raise TickError("PAPER_CHECKPOINT_EXACT_SLOT_REQUIRED")
+    slot = local.replace(minute=local.minute // 5 * 5, second=0, microsecond=0).isoformat()
+    with _locked(root) as directory:
+        state = _state(root, directory)
+        if state["claim"] is not None:
+            raise TickError("PAPER_CHECKPOINT_TICK_CLAIM_CONFLICT")
+        # Recheck the fence after the model/tool gap; no effects if it changed.
+        fresh = _live_owner(root, trade_date=local.date().isoformat())
+        if not fresh or fresh.get("reason") != result["reason"] or fresh.get("plan_ids") != result.get("plan_ids"):
+            raise TickError("PAPER_CHECKPOINT_APP_FENCE_CHANGED")
+        if state["cursor"]["slot"] is not None and slot <= state["cursor"]["slot"]:
+            raise TickError("PAPER_CHECKPOINT_SLOT_ALREADY_ACKNOWLEDGED")
+        path = directory / "paper_checkpoints" / (slot.replace(":", "") + ".json")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if path.parent.resolve() != path.parent:
+            raise TickError("SYMLINK_PAPER_CHECKPOINT_DIRECTORY")
+        claim = {"schema_version":1, "status":"claimed", "slot":slot, "identity":identity,
+                 "plan_ids":fresh["plan_ids"], "app":"blocked", "kol":"not_run", "research":"not_run",
+                 "claimed_at":current.isoformat()}
+        try:
+            with path.open("x", encoding="utf-8") as handle:
+                handle.write(_canonical(claim).decode()+"\n"); handle.flush(); os.fsync(handle.fileno())
+            _sync(path.parent)
+        except FileExistsError:
+            return {**result, "paper_checkpoint_path":str(path),
+                    "checkpoint_coverage":{"paper":"already_claimed", "app":"blocked"}}
+    # The original paper monitor independently enforces calendar and ledger gates.
+    # No native command, semantic worker or tick ACK is reachable here.
+    log_path = path.with_suffix(".log")
+    try:
+        with log_path.open("x", encoding="utf-8") as output:
+            completed = subprocess.run([sys.executable, str(root/"scripts/live_monitor.py"), "--execute-sells"],
+                cwd=root, stdout=output, stderr=subprocess.STDOUT, check=False)
+        claim.update(status="completed" if completed.returncode == 0 else "failed",
+                     exit_code=completed.returncode, completed_at=_clock(None).isoformat(), log_path=str(log_path))
+    except Exception as exc:
+        claim.update(status="unproved", reason=type(exc).__name__, completed_at=_clock(None).isoformat())
+    # Retain the claim, including interruptions; never use its age to replay.
+    temporary = path.with_suffix(".tmp")
+    with temporary.open("x", encoding="utf-8") as handle:
+        handle.write(_canonical(claim).decode()+"\n"); handle.flush(); os.fsync(handle.fileno())
+    os.replace(temporary, path); _sync(path.parent)
+    return {**result, "paper_checkpoint_path":str(path),
+            "checkpoint_coverage":{"paper":claim["status"], "app":"blocked"}}
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -374,6 +469,8 @@ def main(argv: list[str] | None = None) -> int:
         sub = commands.add_parser(command)
         sub.add_argument("--root", type=Path, default=ROOT)
         sub.add_argument("--now", help="Aware ISO clock; tests only, requires a separate --root")
+        if command == "poll":
+            sub.add_argument("--monitor-paper-on-app-fence", action="store_true")
         if command != "poll":
             sub.add_argument("--token", required=True)
             sub.add_argument("--outcome", choices=("completed", "degraded"), required=True)
@@ -386,11 +483,16 @@ def main(argv: list[str] | None = None) -> int:
             raise TickError("TEST_CLOCK_REQUIRES_SEPARATE_ROOT")
         now = _time(args.now) if args.now is not None else None
         if args.command == "poll":
+            if os.environ.get("CODEX_AUTOMATION_ID") is not None:
+                from xiaocao.automation_run import validate_scheduler_header
+                validate_scheduler_header("xiaocao-intraday-monitor-05", date=_clock(now).astimezone(_CHINA).date().isoformat())
             result = poll(
                 args.root,
                 now=now,
                 owner_thread_id=os.environ.get("CODEX_THREAD_ID"),
             )
+            if args.monitor_paper_on_app_fence:
+                result = run_independent_paper(args.root, result, now=now)
         elif args.command == "ack":
             result = ack(args.root, token=args.token, outcome=args.outcome, now=now)
         else:

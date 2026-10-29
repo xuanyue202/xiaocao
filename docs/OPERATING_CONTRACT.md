@@ -1,6 +1,6 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：4.51
+**版本**：4.53
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
 **关联实现**：`src/xiaocao/live/{safety,capital_keychain,foundersc_native_ax,foundersc_native_broker,trading_execution,book_b_live_lifecycle,book_b_live_intraday}.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`native/foundersc_ax_executor/`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{book_b_live_morning,book_b_live_intraday,live_monitor,research_mode_switch_replay}.py`
@@ -120,6 +120,15 @@ remote writer 对新报告只做一次完整语义工作：同一经校验的 se
 来源的日期、观察时点、行数、hash、缺失/空响应和有界确认窗口继续保留；不把稳定结果冒充数据齐全。remote writer 的语义输入仍完整读取正文；交易消费者的 `projection` 只含已发布观点、评估、关系、必要历史端点与覆盖质量，不含正文。正式决策发布仍绑定当前完整context/hash，并仅对被引用报告精确补读和远端验证，不以投影代替来源证明。
 
 **2026-10-12 用户明确修订旧 SELL 依赖**：当前 APP 动态资金政策的晨间独立 BUY，以新鲜账户绑定的可用资金、当前已证明自有 lot 标记和原分配/风险/行情/订单门推进。前日 SELL 的历史零成交或终态查询不再是其他代码新 BUY 的前置依赖，晨间在回执列出 `deferred_prior_day_sell_plan_ids`；原任务在本批终态后精确回读，EOD 仍核验全部未终态计划。旧 SELL 始终保留 UNKNOWN/reconcile_only、原 claim 和订单身份；同代码新 BUY 在 intent 绑定前禁止。当前 BUY、同日 SELL、不明意图及不确定资金预留仍阻断，禁止以可用资金为由重放旧单、扩大授权、解除实际风险暂停或伪造结算。
+
+2026-10-29 晨间机制修复：原生事故因晨间汇总而延迟时，其投递状态为
+`consolidated_only` 本地审计，不进入事后通用重试；已投递或不确定声明不重发。
+同一 submit claim 的 UNKNOWN 内部读回错误变化不重复报警；新用户必需依赖或
+真实订单/成交状态变化分别保留。通知写普通中文，技术证据留在本地。
+稀疏监控遇 APP 当前未决单时，APP/KOL/research 仍受原 fence 约束；原 task 可在
+精确初始 scheduler 身份和日期通过、同一 checkpoint durable claim 成功后，脚本
+自动执行独立 Paper B 一次。它不产生 tick ACK、不接管 APP，也不消费 KOL 变化；
+claimed/unproved 从不按时间清除。实际 Paper/APP 覆盖必须分开报告。
 
 ### 1c. 开盘准备与上下文预算（2026-09-17）
 
@@ -311,6 +320,18 @@ APP 在用户明确批准的动态资金政策下，以账户绑定的资金划�
 - **A/B 归因口径**：累计 account realized 差只是一条会计信息，样本数/仓位/结算进度不同时不得解释为止损帮助或伤害。退出层描述性比较只纳入同 `code+entry_date+entry_price+shares` 且 A/B 均已 closed 的逐仓配对，以 `realized_pnl / entry_cash_out` 的归一化收益计算 B-A pp，并同时披露 eligible n 与 share/price/open/missing 排除数；统计本身不构成因果结论。
 
 ## 4. Book B — 实盘策略口径（分阶段出场）
+
+
+- **APP 买入权限过滤（2026-10-29 用户确认）**：当前 primary APP 仿真账户未开通科创板。
+  新 BUY 在选席位前跳过沪市 688/689 证券，记录 `APP_STAR_MARKET_PERMISSION_UNAVAILABLE`；
+  只在原不可变候选中，按原排名及已有效的精确 KOL 模式跟随顺位检查后续合格候选。
+  补位沿用原批次最多三席、每模式一只和权重规则，不增加原可选席位数；普通
+  COLD/UNKNOWN、明确不可成交、资金/风险/市场/同代码原单门保持。账户过滤及补位
+  单独进入 final-plan 权限归因，共同策略选择指纹保留过滤前语义。已有 SELL/原单
+  reconcile 不受新 BUY 过滤影响；权限不足不能改写已提交原单的 UNKNOWN。
+  Paper A/B/T 保留各自规则；已登记的 authority=0 APP 前向模型保留原协议和科创板候选，
+  回执显式记录权限过滤未应用，APP/model 对比先报告账户权限差异。任何模型协议变更
+  另行登记，不改写旧账户或历史结果。
 
 - **阶段一执行缝**：`src/xiaocao/live/trading_execution.py`、
   `scripts/book_b_execute.py` 与独立的 `scripts/book_b_live_morning.py` 提供
@@ -599,17 +620,31 @@ no-KOL三项纸盘挑战，共同风险与B退出，仅前向独立账本。原�
   向下截断。既有入场资格、市场、basket 放弃、资金/仓位/风险限制继续检查；
   较高模型成本参与整手和含费预算。它可以高于模拟买单限价或 basket，表示
   压力成本，不能成为 APP 下单价格、成交证明或放宽交易权限的理由。
-- 首分钟固定为 09:30–09:31；必须先证明来源提供该完整区间的真实 OHLCV、
-  时间戳代表区间起点还是终点，以及何时完成。`tradeTime=0931`、
+- 首分钟固定为 09:30–09:31；必须证明来源提供该完整区间的真实 HIGH。
+  完整分钟 OHLCV 路径须证明时间戳代表起点还是终点及何时完成；下述专有
+  累计极值夹证为另一条等价 HIGH 证明，不宣称取得整根真实分钟 OHLCV。
+  `tradeTime=0931`、
   `tradeMinutes=1`、`freq=1min` 和格式正确的 OHLC **本身不证明这些语义**。
   再检查代码/交易日、唯一 bar、有限正数和自洽价格范围，保留原始 bar、
   SHA-256、请求身份、观察时间及结果。09:32:05 后读取也不能替代来源语义证明。
-- **当前来源阻塞**：2026-10-26 的专有接口诊断尚未取得合格首分钟来源；
-  `minute_line` 是分时点，`minute_kline` 的 `1min` 请求被服务端拒绝。
-  因此当前验证器不会把任何 `minute_line` 响应认证为首分钟 HIGH，新 B/A
-  买入会因缺证跳过；接受路径及自然运行仍待真实来源验证，不能称已完成上线。
-  原始实验、可证伪条件与后续接入要求见
-  [首分钟来源诊断](reviews/2026-10-26-paper-first-minute-source.md)。
+- **专有累计极值夹证**：原 Paper B 进程在账本锁外批量读取
+  `second_line_detail_info`，保留 09:30:50–09:31 前实际收到的原始当日日高
+  quote；09:31 起有界等待首条源时点已跨过边界的 quote，最后的新请求须在
+  09:31:10 前发起，单请求沿用 3 秒超时。前后源时点/接收时点、代码、交易日、日内累计量额与
+  未复权开盘价均须一致自洽。前后 HIGH 相等且高于已证明竞价价，则 HIGH 已
+  在首分钟出现，且后读覆盖全分钟仍未超过它，故为首分钟真实 HIGH；等于竞价价
+  时还须有首分钟内正成交量的原始 `each_trade` 末价达到 HIGH 的见证。
+  不取采样末价最大值。前读源/接收时点均须在 [09:30,09:31)，后读二者均须
+  不早于 09:31；源时点不得晚于接收或滞后超过 10 秒。最终消费仍不早于 09:32:05。
+  原始 quote/请求/实际时钟/hash 与原 Automation/Thread/run、原冻结 raw hash
+  和 checkpoint 一起留存并在同批次消费。后续日高不能覆盖已留存的边界证据。
+- **接入故障与验收**：`minute_line` 单独不能认证 HIGH，`minute_kline/1min`
+  仍被服务端拒绝。漏采、前后 HIGH 变化、错日、冲突或鉴权失败继续缺证阻断，
+  不能假定高点发生时段。全阻断写 `source_blocked`，部分成交同时缺证写
+  `bought_source_blocked`，保留真实成交数和失败代码；原自动化非零结束，T 独立
+  继续。原终态永不重放。原始诊断及修复/自然验收状态见
+  [来源诊断](reviews/2026-10-26-paper-first-minute-source.md)及
+  [夹证修复](reviews/2026-10-29-paper-first-minute-repair.md)。
 - 缺少 high/真实 OHLCV、分钟身份不明、重复冲突、过早读取或来源不匹配时，
   记 `FIRST_MINUTE_HIGH_UNPROVEN` 和精确原因，不补记买入。`trade` 点位最大值、
   VWAP、限价、日内最高价和事后新快照都不能冒充首分钟最高价。
@@ -790,6 +825,8 @@ no-KOL三项纸盘挑战，共同风险与B退出，仅前向独立账本。原�
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| 4.53 | 2026-10-29 | 原晨间根因修复：Paper首分钟来源接受/故障终态，APP morning专属权限过滤、会话读恢复/摘要解析、同源批量取价/缺失缓存重试、KOL快照和交接、通知本地收敛、稀疏Paper独立覆盖及前置身份校验。 |
+| 4.52 | 2026-10-29 | 用户确认 APP 科创板权限不足：新 BUY 选席位前排除并按原冻结排序检查合格候选；保留策略/风险门、原单与 Paper/已登记模型协议，独立记录账户权限归因。 |
 | 4.51 | 2026-10-26 | 用户明确恢复 Paper B 首分钟真实最高价保守成本，保存验证证据；Book A 同价，禁止将保守性当误差优化，历史账本与 APP/T/独立实验保持原口径。 |
 | 4.50 | 2026-10-23 | 用户允许午休APP工程测试：北京时间工作日11:30（含）至13:00（不含）开放；13:00起停止新测试操作，保留原锁、逐次检查和同批次收尾。 |
 | 4.49 | 2026-10-23 | 用户批准KOL盘前条件准备与开盘增量复核：完整覆盖/独立接受、引用预备和相关性组装；保留原政策发布、COLD及所有交易门，paper预唤醒提前至09:10。 |

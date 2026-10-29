@@ -30,6 +30,8 @@ class ApiDataSource:
         self._observe_enabled = False
         self._requests = {}
         self._validated = {}
+        self._fresh_keys = set()
+        self._failed_keys = set()
         # Enable only for current capture: today's directory cannot filter history.
         self.resolve_security_universe = resolve_security_universe
         self._security_codes: set[str] | None = None
@@ -39,6 +41,9 @@ class ApiDataSource:
         retained = {k:v for k,v in self._validated.items()
                     if v[1].get("status") in {"populated", "empty_confirmed"}
                     and observation_current(v[1], now=datetime.now(timezone.utc))} if retry_missing else {}
+        self._fresh_keys = self._failed_keys | {k for k, v in self._validated.items()
+                            if v[1].get("status") not in {"populated", "empty_confirmed"}}
+        self._failed_keys = set()
         self._observe_enabled = True
         self.observations = []
         self.readiness = {"attempt": attempt, "sources": self.observations}
@@ -101,7 +106,13 @@ class ApiDataSource:
             return copy.deepcopy(rows)
         started = time.monotonic()
         try:
-            rows = fetch()
+            # A known empty/partial live observation must not read the same
+            # cached failure for ten seconds. Only its exact request bypasses.
+            if key in self._fresh_keys and isinstance(self.client, XiaocaoClient):
+                with self.client.uncached_reads():
+                    rows = fetch()
+            else:
+                rows = fetch()
             for row in rows:
                 if not isinstance(row, dict):
                     continue
@@ -116,6 +127,7 @@ class ApiDataSource:
                         raise ApiSourceNotReadyError("MORNING_SOURCE_DATE_MISMATCH:" + kind)
                     raise ApiSchemaError("MORNING_SOURCE_DATE_MISMATCH:" + kind)
         except Exception as exc:
+            self._failed_keys.add(key)
             self.observations.append({"source": kind, "requested_date": date,
                                       "observed_at": stamp, "status": "error",
                                       "error_type": type(exc).__name__})

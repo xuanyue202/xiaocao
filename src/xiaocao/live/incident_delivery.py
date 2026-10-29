@@ -73,6 +73,14 @@ def enqueue_notice(path: Path, *, identifier: str, title: str, body: str):
         outbox.enqueue(incident_id=identifier, title=title, body=body)
 
 
+def _consolidated_only(path: Path, identifier: str) -> bool:
+    try:
+        receipt = json.loads(_attempt_path(path, identifier).read_bytes())
+    except (OSError, ValueError):
+        return False
+    return receipt.get("incident_id") == identifier and receipt.get("status") == "consolidated_only"
+
+
 def pending_notices(path: Path) -> list[dict]:
     """Return each undelivered claim once, retaining its original exact body."""
     if not path.is_file():
@@ -95,7 +103,8 @@ def pending_notices(path: Path) -> list[dict]:
         else:
             raise ValueError("TRADING_CHANGE_NOTICE_STATUS_INVALID")
     return [row for identifier, row in claims.items()
-            if identifier not in delivered and not notice_retired(path, identifier)]
+            if identifier not in delivered and not notice_retired(path, identifier)
+            and not _consolidated_only(path, identifier)]
 
 
 def deliver_pending(path: Path, *, sender=notify_detailed, readiness=wecom_transport_readiness,
@@ -142,8 +151,8 @@ def _deliver_pending_locked(path: Path, *, sender, readiness, incident_ids) -> l
         if isinstance(sent, dict) and sent.get("wecom") == "deferred_to_morning_result":
             # The morning owner deliberately performs no transport call here;
             # its consolidated result has a separate durable delivery claim.
-            _attempt(path, identifier, "not_sent")
-            results.append({"incident_id": identifier, "delivery": "deferred"})
+            _attempt(path, identifier, "consolidated_only")
+            results.append({"incident_id": identifier, "delivery": "local_only"})
         elif isinstance(sent, dict) and sent.get("wecom") == "ok":
             outbox.mark_delivered(identifier, {"wecom": "ok"})
             _attempt(path, identifier, "delivered")

@@ -34,3 +34,26 @@ def freeze_runtime(root: Path, destination: Path, hashes: dict[str, str]) -> Pat
         if hashlib.sha256((root / relative).read_bytes()).hexdigest() != expected:
             raise ValueError("RUNTIME_SNAPSHOT_SOURCE_CHANGED")
     return destination
+
+
+def operational_root(root: Path) -> Path:
+    """Resolve only a manifest-bound snapshot's explicit shared output mount."""
+    import json
+    root = Path(root).resolve()
+    output = root / "output"
+    if not output.is_symlink():
+        return root
+    manifest_path = root.parent / "manifest.json"
+    if manifest_path.is_symlink():
+        raise ValueError("RUNTIME_SHARED_STATE_BINDING_INVALID")
+    try:
+        manifest = json.loads(manifest_path.read_bytes())
+        deployment = Path(manifest["deployment_root"]).resolve()
+        run = deployment / "output/live/auto/runs" / manifest["run_id"]
+        if (root != run / "runtime" or manifest["execution_root"] != str(root)
+                or root.parent != run or output.resolve() != deployment / "output"
+                or (deployment / "output").is_symlink()):
+            raise ValueError("RUNTIME_SHARED_STATE_BINDING_INVALID")
+    except (OSError, KeyError, TypeError) as exc:
+        raise ValueError("RUNTIME_SHARED_STATE_BINDING_INVALID") from exc
+    return deployment

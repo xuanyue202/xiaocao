@@ -33,7 +33,7 @@ runs. Wait for the original shell to terminate, then inspect both branch results
 do not invoke either monitor separately or restart the launcher.
 
 The existing sparse task runs only at 10:25, 10:55, 13:25 and 13:55, and starts
-with the local `scripts/kol_trading_tick.py poll` gate. On this remote host the
+with the local `scripts/kol_trading_tick.py poll --monitor-paper-on-app-fence` gate. On this remote host the
 remote writer is the sole KOL write ingress; cross-machine capture is only an
 upstream capsule, never a local Automation. The sparse task discovers no source
 and must not create a five-minute Codex polling loop. Read
@@ -62,7 +62,15 @@ paper/live monitors once; the live consumer proves fresh APP ownership,
 sellable quantity and execution eligibility. The tick does not reconcile or
 terminalize the old orders. Current/future SELL, BUY, missing or invalid intent
 and active economic writer locks retain their existing fences.
-Legacy plans may have `owner_identity_status=unavailable`; do not invent a
+The script checks initial Automation/Thread/date before business effects. An
+original morning archive bound to the exact plan hash supplies recorded owner
+provenance, never a new lease or terminal order proof. On this exact APP fence,
+`--monitor-paper-on-app-fence` claims a separate dated sparse Paper checkpoint
+and runs Paper B once automatically; it retains APP blocked, KOL/research not run,
+and emits actual separate coverage plus a durable receipt/log path. It neither
+creates nor ACKs a KOL tick. Repeated/interrupted claims are readback-only. Do not
+launch either checkpoint again after that receipt. Other reconcile/no-op reasons
+retain their existing stop rules. Legacy plans may have `owner_identity_status=unavailable`; do not invent a
 task ID, wait on an unspecified owner, clear the plan, or rerun the checkpoint.
 Perform one bounded exact-plan receipt/event read under `book-b-live-repair.md`.
 Only its proved same-plan recovery action may continue; UNKNOWN remains

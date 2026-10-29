@@ -3140,28 +3140,28 @@ class TradingExecution:
         return recorded
 
     def _incident(self, plan: TradePlan, receipt: ExecutionReceipt) -> None:
+        from .morning_observability import dependency_user_action, fill_quantity_proven
+        action = dependency_user_action(receipt.reason)
         incident_id = hashlib.sha256(
             _canonical({
                 "plan_hash": plan.plan_hash,
                 "state": receipt.state.value,
-                "reason": receipt.reason,
+                "reason": ("UNPROVED_ORDER_RESULT" if receipt.state == ExecutionState.UNKNOWN else receipt.reason),
+                "submit_claim_id": receipt.submit_claim_id, "user_action": action,
                 "order_id": receipt.broker_order_id,
                 "filled": receipt.filled_shares,
                 "remaining": receipt.remaining_shares,
             })
         ).hexdigest()
-        body = (
-            "交易异常，需要确认\n"
-            f"操作：{plan.describe()}\n"
-            f"state={receipt.state.value} reason={receipt.reason} order_id={receipt.broker_order_id or '-'}\n"
-            f"filled={receipt.filled_shares} remaining={receipt.remaining_shares} next={receipt.next_action}\n"
-            f"template={receipt.template_name or '-'}@{receipt.template_version or '-'} "
-            f"account_binding={receipt.account_binding or '-'} locator_proof={json.dumps(_safe_evidence(receipt.locator_proof), ensure_ascii=False, sort_keys=True)}\n"
-            "已完成安全检查：Book B 身份、计划哈希、账户/环境绑定、价格/数量回读、"
-            f"real-capital Keychain两条件资金门={'已通过' if plan.environment == 'live' else '不适用（mock）'}\n"
-            f"是否需要用户介入：{'是' if receipt.next_action == 'human_review' or receipt.state == ExecutionState.UNKNOWN else '否（继续安全对账）'}\n"
-            "未知状态只允许继续对账，不会盲目重发。"
-        )
+        side = "买入" if plan.side.upper() == "BUY" else "卖出"
+        body = (f"APP仿真 Book B：{plan.name or plan.code}（{plan.code}）{side}计划{plan.shares}股，限价{plan.limit_price:.2f}元。\n"
+                + ("提交或成交结果尚未确认，保留原单继续对账。" if receipt.state == ExecutionState.UNKNOWN
+                   else "执行或对账尚未完成，已保留当前订单证据。")
+                + (f"\n已确认成交{receipt.filled_shares}股，剩余{receipt.remaining_shares}股。"
+                   if receipt.filled_shares > 0 and fill_quantity_proven(receipt.as_dict()) else "")
+                + (f"\n委托号：{receipt.broker_order_id}" if receipt.broker_order_id else "")
+                + (f"\n需要你操作：{action['request']}" if action.get("required")
+                   else "\n无需你操作；系统保留原单，不重复提交。"))
         self.takeovers.write(plan, receipt, incident_id=incident_id)
         from .incident_delivery import deliver_pending, enqueue_notice
 

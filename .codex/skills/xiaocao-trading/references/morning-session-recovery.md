@@ -14,8 +14,9 @@ Founder APP restart, saved trade-account login and routine visual CAPTCHA.
    The request's `.session-reset-termination.json` preserves the native action
    and result, with its hash in the reset claim. An unproved termination stays
    readback-only; do not reconstruct an older missing reply or repeat the exit.
-2. Fresh bootstrap/screenshot; explicitly select **交易账户** and reprove the
-   same saved masked account on the login surface. Then invoke the same command
+2. Fresh bootstrap/screenshot; select the saved trade account's login mode
+   (this APP may label it **客户号**) and reprove that same saved masked account
+   on the login surface. Then invoke the same command
    with `--phase fill`. It claims one new password fill, stores native evidence
    and leaves the original credential fence claimed until actual readiness.
 3. Read a fresh CAPTCHA image, recognize exactly four digits, enter only its
@@ -26,6 +27,14 @@ Founder APP restart, saved trade-account login and routine visual CAPTCHA.
    the finish claim and signals
    the original request once. A signal is not the original runner's ready result;
    consume its next event. Budget, order claims and UNKNOWN records remain intact.
+
+After acknowledging the uniquely bound stale login alert, the helper spends its
+existing bounded read budget on temporarily missing AX identity/window/graph
+attributes. It re-proves the same account, process and window before termination;
+a changed account/process/window or locked machine stops. These are read-only
+checks within the original call, with one alert press and no password/exit replay.
+The account selector may say 客户号; use the proved account binding rather than
+inferring failure from the diagnostic trade_account_mode label alone.
 
 Keep GUI steps under the shared APP session guard. If another writer owns it,
 wait for that lease rather than bypassing it. Treat a known empty-password

@@ -98,7 +98,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.phase in start_times:
         wait_for_business_time(trade_date, start_times[args.phase])
         current = _china_now()
-    identity = None
+    from xiaocao.automation_run import validate_monitor_scheduler
+    try:
+        identity = validate_monitor_scheduler(date=trade_date, phase=args.phase)
+    except ValueError as exc:
+        print(json.dumps({"status":"blocked", "reason":str(exc)}, sort_keys=True), file=sys.stderr)
+        return 2
     if args.phase == "eod":
         try:
             identity = claim_eod_slot(ROOT, "app", trade_date)

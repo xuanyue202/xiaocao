@@ -83,20 +83,26 @@ def dependency_user_action(reason: object, health: dict | None = None) -> dict:
     return {'required': False, 'request': None}
 
 
-def _compact_order(row: dict) -> dict:
-    result = {k: row.get(k) for k in ('plan_id', 'state', 'broker_order_id',
-        'filled_shares', 'fill_price', 'remaining_shares', 'reason', 'next_action',
-        'submit_chain_uncertain', 'cancel_chain_uncertain')}
+def fill_quantity_proven(row: dict) -> bool:
+    """Use the same broker evidence for operator counts and durable notices."""
     proof = row.get('locator_proof')
     proof = proof if isinstance(proof, dict) else {}
-    result['fill_quantity_proven'] = not (row.get('submit_chain_uncertain') or row.get('cancel_chain_uncertain')) and ((
+    proven = not (row.get('submit_chain_uncertain') or row.get('cancel_chain_uncertain')) and ((
         row.get('state') in {'filled', 'partial', 'cancelled', 'rejected'}
         and row.get('receipt_mapping') is True
         and proof.get('fill_observation_pending') is False
     ) or (proof.get('fill_aggregate_proven') is True
           and proof.get('fill_observation_pending') is False))
     if row.get('notification_durable_only') is True:
-        result['fill_quantity_proven'] = False
+        proven = False
+    return bool(proven)
+
+
+def _compact_order(row: dict) -> dict:
+    result = {k: row.get(k) for k in ('plan_id', 'state', 'broker_order_id',
+        'filled_shares', 'fill_price', 'remaining_shares', 'reason', 'next_action',
+        'submit_chain_uncertain', 'cancel_chain_uncertain')}
+    result['fill_quantity_proven'] = fill_quantity_proven(row)
     return result
 
 

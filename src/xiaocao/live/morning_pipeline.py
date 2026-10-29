@@ -123,6 +123,8 @@ def pipeline_status(live_dir: Path, date: str) -> dict:
         result["paper_b_result"]["strategy_adjudication"] = summarize_adjudication(
             consumption.get("strategy_adjudication") if consumption else None, runtime="paper")
         result["paper_b_result"]["experiment_capture"] = consumption.get("experiment_capture") if consumption else None
+        result["paper_b_result"]["buy_count"] = terminal.get("buy_count") if terminal else None
+        result["paper_b_result"]["entry_source_failures"] = terminal.get("entry_source_failures", []) if terminal else []
     except (OSError, ValueError, TypeError, KeyError):
         result["paper_b_result"] = {"status": "unproved"}
     paper = result["paper_b_result"].get("strategy_adjudication", {})

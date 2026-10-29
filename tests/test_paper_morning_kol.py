@@ -162,3 +162,59 @@ p.account_preview(Path(sys.argv[1]), deadline=datetime.now(p.A_SHARE_TZ)+timedel
                 if owner_process.poll() is None:
                     owner_process.kill()
                     owner_process.communicate()
+
+
+def test_original_request_assembles_exact_ready_to_send_warm_handoff(owner):
+    review = start(owner)
+    event = owner[4][0]
+    from pathlib import Path
+    import json
+    handoff = json.loads(Path(event['dispatch_path']).read_bytes())
+    assert handoff['authority'] == 0 and handoff['actual_dispatch'] == 'not_observed'
+    assert handoff['request_sha256'] == review.request['request_sha256']
+    assert handoff['packet']['packet_sha256'] == review.request['kol_inputs']['packet_sha256']
+    assert handoff['tool_arguments']['target'] == handoff['packet']['worker_id']
+    assert handoff['brief']['account_risk'] == review.request['account_risk']
+    assert handoff['cutoff'] == review.cutoff.isoformat()
+    assert not (owner[0]['root']/'output/live/kol_policy/decisions').exists()
+
+
+def test_warm_handoff_rejects_stale_account_facts_and_late_dispatch(owner,monkeypatch):
+    from copy import deepcopy
+    from xiaocao.live.morning_dispatch import write_warm_dispatch
+    review=start(owner)
+    request=deepcopy(review.request)
+    request['account_facts']['changed_after_packet']=True
+    with pytest.raises(ValueError,match='PACKET_BINDING_MISMATCH'):
+        write_warm_dispatch(request,owner[1]/'changed.request.json',now=owner[3][0])
+    with pytest.raises(ValueError,match='ORIGINAL_CUTOFF'):
+        write_warm_dispatch(review.request,owner[1]/'late.request.json',now=review.cutoff)
+
+
+@pytest.mark.app_simulation
+def test_app_relative_default_paths_use_same_real_packet_facts(owner,monkeypatch):
+    from datetime import timedelta
+    from pathlib import Path
+    import importlib,json
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1]/'scripts'))
+    cli=importlib.import_module('scripts.book_b_live_morning')
+    case,run,freeze,clock,events=owner
+    monkeypatch.chdir(case['root'])
+    original={'trade_date':'2026-10-23','runtime':'live','book':'B',
+        'requested_at':clock[0].isoformat(),'review_wait_until':(clock[0]+timedelta(seconds=10)).isoformat(),
+        'entry_deadline':(clock[0]+timedelta(minutes=5)).isoformat(),'max_wait_seconds':10,
+        'freeze_path':'output/live/freeze.jsonl','policy_root':'output/live/kol_policy/decisions',
+        'freeze_sha256':freeze['snapshot_sha256'],'strategy_sha':freeze['strategy_sha'],
+        'candidates':[{'code':'002172','mode':'N字低吸'}],'account_facts':{'cash':1000},'account_risk':{'deploy_factor':1}}
+    normalized=cli._normalized_review_request(original)
+    ready=json.loads((run/'kol-preparation.json').read_text())
+    packet=prep.opening_packet(Path(ready['preparation_path']),case['path'],normalized,now=clock[0])
+    packet_path=save(run/'app-packet.json',packet)
+    normalized['kol_inputs']={'packet_path':str(packet_path),'packet_sha256':packet['packet_sha256'],
+                              'warm_worker':packet['worker_id']}
+    elapsed=[0.]
+    result=cli._review_rendezvous(normalized,now=lambda:clock[0]+timedelta(seconds=elapsed[0]),
+        monotonic=lambda:elapsed[0],sleep=lambda seconds:elapsed.__setitem__(0,elapsed[0]+seconds))
+    assert result['dispatch']['status']=='assembled_not_dispatched' and result['dispatch']['error'] is None
+    handoff=json.loads(Path(result['dispatch']['path']).read_bytes())
+    assert handoff['packet']['request_facts_sha256']==prep.canonical_sha256(cli._normalized_review_request(original))

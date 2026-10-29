@@ -11,12 +11,13 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from xiaocao.kol import opening_preparation as preparation
-from xiaocao.kol.trading_context import build_trading_context, write_trading_projection
+from xiaocao.kol.trading_context import TradingContextError, build_trading_context, write_trading_projection
 from xiaocao.kol.trading_decision import read_json
 from xiaocao.runner_recovery import _write
 from xiaocao.utils.trading_session import A_SHARE_TZ
 from . import kol_policy, paper_decision_support as paper
 from .morning_bundle import read_consumed_rows
+from .runtime_snapshot import operational_root
 
 
 def owner_binding(run_dir: Path, date: str) -> dict:
@@ -152,7 +153,7 @@ class PaperKolReview:
         try:
             self._start(preview)
         except (OSError, ValueError, KeyError, TypeError, RuntimeError) as exc:
-            reason = str(exc) if str(exc).startswith(("PAPER_KOL_", "KOL_PREPARATION_")) else type(exc).__name__
+            reason = str(exc) if isinstance(exc, TradingContextError) or str(exc).startswith(("PAPER_KOL_", "KOL_PREPARATION_")) else type(exc).__name__
             self._finish("deferred", "PAPER_KOL_SUPPORT_UNAVAILABLE:" + reason)
 
     def _start(self, preview):
@@ -164,10 +165,11 @@ class PaperKolReview:
         if (ready["binding"] != self.binding or prepared["binding"] != self.binding
                 or ready["preparation_sha256"] != prepared["preparation_sha256"]):
             raise ValueError("PAPER_KOL_PREPARATION_OWNER_MISMATCH")
-        summary = write_trading_projection(build_trading_context(repo_root=self.root,
+        state_root = operational_root(self.root)
+        summary = write_trading_projection(build_trading_context(repo_root=state_root,
             read_report_ids=[], include_report_bodies=False,
-            history_fresh_through=self.date + "T11:30:00+08:00"), repo_root=self.root)
-        inputs = preparation.input_payload(summary, binding=self.binding, repo_root=self.root)
+            history_fresh_through=self.date + "T11:30:00+08:00"), repo_root=state_root)
+        inputs = preparation.input_payload(summary, binding=self.binding, repo_root=state_root)
         input_path = preparation.write_artifact(self.run_dir, inputs, ".kol-inputs.json")
         facts, risk = preview(self.root, deadline=self.cutoff)
         if self.now() >= self.cutoff:
@@ -194,8 +196,11 @@ class PaperKolReview:
         self.request = {**request, "request_sha256": digest}
         path = self.run_dir / (digest + ".paper-kol-request.json")
         write_once(path, self.request)
+        from .morning_dispatch import write_warm_dispatch
+        dispatch_path = write_warm_dispatch(self.request, path, now=self.now())
         self.emit({"event": "paper_kol_review_requested", "trade_date": self.date,
-                   "request_path": str(path), "request_sha256": digest})
+                   "request_path": str(path), "request_sha256": digest,
+                   "dispatch_path": str(dispatch_path) if dispatch_path else None})
 
     def _finish(self, status: str, reason: str, policy=None):
         completed = self.now()

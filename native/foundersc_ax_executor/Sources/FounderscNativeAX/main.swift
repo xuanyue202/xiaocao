@@ -638,7 +638,7 @@ private func querySummaryValues(_ tokens: [OCRToken]) -> [String: String] {
     for label in labels {
         let escaped = NSRegularExpression.escapedPattern(for: label)
         guard let embeddedRegex = try? NSRegularExpression(
-            pattern: "\(escaped)(?:资金)?\\s*[:：]?\\s*([+-]?\\d+(?:\\.\\d+)?)"
+            pattern: "\(escaped)(?:资金)?\\s*[:：;；]{0,2}\\s*([+-]?\\d+(?:\\.\\d+)?)"
         ) else { continue }
         for token in tokens {
             let rendered = token.text.replacingOccurrences(of: ",", with: "")
@@ -3850,9 +3850,10 @@ private func resetGraphIsModalFree(_ roots: [AXUIElement], allowedLoginWindows: 
             guard error == .success, let result = value as? String else { rejected("unreadable_" + key); return nil }
             return result
         }
-        guard let role = text(kAXRoleAttribute, required: true), !role.isEmpty,
-              let subrole = text(kAXSubroleAttribute), let description = text(kAXDescriptionAttribute)
-        else { return false }
+        guard let role = text(kAXRoleAttribute, required: true) else { return false }
+        guard !role.isEmpty else { rejected("empty_" + kAXRoleAttribute); return false }
+        guard let subrole = text(kAXSubroleAttribute),
+              let description = text(kAXDescriptionAttribute) else { return false }
         let allowedLoginRoot = depth == 0 && role == "AXWindow"
             && allowedLoginWindows.contains(where: { CFEqual($0, node) })
         guard role != "AXSheet", role != "AXDialog",
@@ -3931,25 +3932,49 @@ private func prepareRejectedSession(_ original: Observation, expected: String) -
         RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05))
         let after = observe(command: "terminate-rejected-session")
         guard after.runningApplication?.processIdentifier == pid,
-              after.receipt.screenLocked == false,
+              after.receipt.screenLocked == false else {
+            resetPreparationDiagnostic = "post_alert_process_or_machine_changed"
+            return (nil, true)
+        }
+        if after.receipt.tradeAccountFingerprintCount > 0,
+           (after.receipt.tradeAccountFingerprintCount != 1
+                || after.receipt.tradeAccountFingerprint != expected) {
+            resetPreparationDiagnostic = "post_alert_account_changed"
+            return (nil, true)
+        }
+        if let afterPrimary = after.primaryWindow, !CFEqual(afterPrimary, primary) {
+            resetPreparationDiagnostic = "post_alert_window_changed"
+            return (nil, true)
+        }
+        // Closing a sheet can briefly hide AX attributes. Spend the existing
+        // read budget on fresh proof without pressing the alert again.
+        guard after.receipt.tradeAccountFingerprintCount == 1,
               after.receipt.tradeAccountFingerprint == expected,
-              after.receipt.tradeAccountFingerprintCount == 1,
-              after.primaryWindow.map({ CFEqual($0, primary) }) == true,
-              let afterApp = after.applicationElement else { return (nil, true) }
-        guard let afterWindows = elements(afterApp, kAXWindowsAttribute, optional: false) else { return (nil, true) }
+              after.primaryWindow != nil, let afterApp = after.applicationElement,
+              let afterWindows = elements(afterApp, kAXWindowsAttribute, optional: false) else {
+            resetPreparationDiagnostic = "post_alert_identity_or_graph_pending"
+            continue
+        }
         // Re-classify the same login window with no sheet, and recursively
         // check all windows/attachments before accepting disappearance.
         let clear = secondaryClientLoginNotices(afterWindows, primary: primary,
             expected: expected, allowClearedLogin: true).0
-        if resetGraphIsModalFree(afterWindows,
+        guard resetGraphIsModalFree(afterWindows,
             allowedLoginWindows: [notices[0].window] + (after.receipt.surfaceState == "client_login_required" ? [primary] : [])
-                + resetFrameChromeWindows(afterWindows, primary: primary), rejected: { resetPreparationDiagnostic = $0 }), clear.count == 1,
-           clear[0].sheet == nil, CFEqual(clear[0].window, notices[0].window),
-           dismissLoginSuccessNotice(after, expected: expected, allowDismiss: false,
-               clearedResetLoginWindow: clear[0].window).0 {
-            resetClearedLoginWindow = clear[0].window
-            return (after, true)
+                + resetFrameChromeWindows(afterWindows, primary: primary), rejected: { resetPreparationDiagnostic = $0 }) else { continue }
+        guard clear.count == 1, clear[0].sheet == nil,
+              CFEqual(clear[0].window, notices[0].window) else {
+            resetPreparationDiagnostic = "post_alert_login_window_not_uniquely_cleared"
+            continue
         }
+        let notice = dismissLoginSuccessNotice(after, expected: expected, allowDismiss: false,
+            clearedResetLoginWindow: clear[0].window)
+        guard notice.0 else {
+            resetPreparationDiagnostic = "post_alert_notice_check:" + notice.2
+            continue
+        }
+        resetClearedLoginWindow = clear[0].window
+        return (after, true)
     }
     return (nil, true)
 }
