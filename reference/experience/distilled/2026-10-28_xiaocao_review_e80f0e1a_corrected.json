@@ -1,0 +1,584 @@
+{
+  "schema_version": 1,
+  "kind": "xiaocao_kol_durable_knowledge_draft",
+  "knowledge_status": "reusable_knowledge",
+  "authority": 0,
+  "author": "小草",
+  "source": "小草直播",
+  "date": "2026-10-28",
+  "summary": "本场可复用的增量主要是模式启用门槛、弱势股条件化退出、早盘回落执行边界和盲化统计方法。它们均来自讲师口述，未经过系统样本外验证，只能作为权威等级为0的研究候选。与既有命题局部重合的内容只登记部分支持，不把来源未说出的固定风险预算、板块阈值或两段买入整句复现为新知识。",
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_netdisk_enrichment/artifacts/kol-netdisk-7d9271311f7178fc/20261028 大师班专场(18：00开播)-compressed.txt",
+      "sha256": "e80f0e1add370c8c0b8a46944bb0d28c6fafc2ed41134e59f041e08078fd3e06",
+      "size": 37542
+    },
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261030/market_evidence_xiaocao.json",
+      "sha256": "a33f132b38b12e58c31ef1472d395fb9395018ea4eb86b48cd4de7abc8c44cbd",
+      "size": 19581,
+      "role": "仅用于28日与29日事实核验，不作为30日实时行情"
+    },
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261029_01a184d7/video_local_signal_snapshots.json",
+      "sha256": "409aee966a5584d009ac8f8f6abcd6a099b8d26b9ba195c51ba2bab63d7f1f47",
+      "size": 44165,
+      "role": "仅含2026年10月27日7条本地信号快照；不证明28日发射、买入或教师收益"
+    },
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261029_01a184d7/video_local_paper_trades.json",
+      "sha256": "58b21d7ef08ea8efb0ed4c455992fc0d3c4c927993e28343eb548a9b88b88b1b",
+      "size": 336,
+      "role": "仅含2026年10月27日Book T京东方A卖出，与教师28日点名赢家无同日命中关系"
+    },
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261029_01a184d7/video_local_decision_journal.json",
+      "sha256": "91d99e38e56262b021da1a160a24af27eadeb610f0f03e1f11fed69c6b2baf6f",
+      "size": 7508,
+      "role": "仅含2026年10月27日11条决策日志；Book B无触发动作，不证明28日模式或收益"
+    },
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261029_01a184d7/video_local_positions.json",
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "size": 2,
+      "role": "2026年10月27日本地仓位读回为空；不证明家庭持仓，也不证明28日未发射"
+    }
+  ],
+  "posture": {
+    "regime": "讲师把10月28日定义为指数反弹但模型环境仍偏空、尚未正式转入轮动的弱反弹阶段",
+    "dominant_style": "下跌低吸环境为空且短线评分为负时，短期偏向高位辨识度、人气股低吸与盘中紫薇模式",
+    "risk": "把指数上涨误当环境转强、把主观挑选替代完整统计、把无分模式硬做，以及弱股反弹后继续拖延退出",
+    "style_ranking": [
+      "满足双评分门槛的盘中紫薇与高位辨识度",
+      "满足门槛的人气股低吸",
+      "当时为空且短线评分为负的下跌低吸",
+      "尚未得分并已撤回关注的趋势抱团竞价"
+    ],
+    "boundary": "来源中的明天是2026年10月29日；这些姿态不能直接外推为2026年10月30日指令"
+  },
+  "regime_call": {
+    "source_view": "大阳线后的回落与反弹可能继续磨，轮动尚未确认；只有高位短期分数改善提供了局部转势迹象。",
+    "conditions": [
+      "模式评分与短线评分都大于零",
+      "高位短期分数继续改善",
+      "趋势或环境分数真正转正，而不是仅指数上涨"
+    ],
+    "falsifiers": [
+      "高位短期分数重新转负",
+      "所有候选模式继续无分或空仓",
+      "盘中高分样本不能在完整样本中复现优势"
+    ],
+    "horizon": "来源动作窗口为2026年10月28日至29日；双评分、无分禁入和盲化统计仅作为持续方法候选",
+    "what_would_falsify": "同口径历史检验显示双评分门槛、模式切换或条件化退出没有增量，或原始私有评分记录否定本次语义还原。",
+    "confidence": "低；模式分数、买卖和收益均由来源口述，系统证据只核到部分价格路径"
+  },
+  "directions": [
+    {
+      "name": "盘中紫薇与高位辨识度",
+      "stance": "仅在高位短期环境改善且具体模式有分时研究",
+      "horizon": "来源所说的10月28日至29日两天",
+      "conditions": [
+        "模式评分和短线评分至少同时大于零",
+        "盘中排名出现高分并且仍处早盘"
+      ],
+      "risks": [
+        "讲师举例收益未被交易账本核验",
+        "高位模式不等于低风险"
+      ]
+    },
+    {
+      "name": "下跌低吸",
+      "stance": "当时环境空仓且短线评分为负，暂不作为主要模式",
+      "horizon": "截至来源当日及次日计划",
+      "conditions": [
+        "环境与短线评分重新转正后再评估"
+      ],
+      "risks": [
+        "用指数反弹替代模式资格"
+      ]
+    },
+    {
+      "name": "趋势抱团竞价",
+      "stance": "讲师最终明确撤回关注；没有分就不关注",
+      "horizon": "来源当日",
+      "conditions": [
+        "后续真实分数上来后才可重新研究"
+      ],
+      "risks": [
+        "只记住前一句密切关注而漏掉当场纠正"
+      ]
+    }
+  ],
+  "stocks": [
+    {
+      "surface_form": "大业股份",
+      "official_name": "大业股份",
+      "code": "603278.XSHG",
+      "role": "10月28日人气股低吸唯一候选",
+      "action": "只作已过期当日候选审计",
+      "source_basis": "来源第17、42段明确说出大业股份；证券目录证明正式实体存在，不证明榜单、买入或成交。"
+    },
+    {
+      "surface_form": "冰山冷热",
+      "official_name": "冰山冷热",
+      "code": "000530.XSHE",
+      "role": "弱股高抛退出问答",
+      "action": "按弱股条件讨论退出，不构成当前卖出",
+      "source_basis": "来源第27段点名；没有28日持仓、买价或成交证据。"
+    },
+    {
+      "surface_form": "正宗设计、设中设计",
+      "official_name": null,
+      "code": null,
+      "role": "六票组合结果回顾中的设计股",
+      "action": "无",
+      "source_basis": "证券目录同时存在郑中设计002811.XSHE与中衡设计603017.XSHG；目录只证明实体存在，原始转写无法唯一选择。"
+    },
+    {
+      "surface_form": "奥雅",
+      "official_name": "奥雅股份",
+      "code": "300949.XSHE",
+      "role": "红盘起爆与六票组合赢家案例",
+      "action": "只作来源口述赢家和开盘边界审计",
+      "source_basis": "来源多次点名，28日日线高开约4.10%、收涨4.74%；不证明老师买入或25至30点收益。"
+    },
+    {
+      "surface_form": "大风",
+      "official_name": "大丰实业（可能）",
+      "code": "603081.XSHG（候选）",
+      "role": "来源称前一日第二候选、28日涨停",
+      "action": "无",
+      "source_basis": "28日大丰实业收盘涨停与音近名称相符，但目录与价格只能支持候选映射，不能消除转写歧义。"
+    },
+    {
+      "surface_form": "大叶、大爷",
+      "official_name": null,
+      "code": null,
+      "role": "来源在回看昨日候选时的自我纠正片段",
+      "action": "无",
+      "source_basis": "证券目录同时存在大叶股份300879.XSHE和大业股份603278.XSHG；该段说话人反复纠正，不能把目录存在当成最终映射。"
+    },
+    {
+      "surface_form": "大雁、博会",
+      "official_name": null,
+      "code": null,
+      "role": "同一模式第一名与第二名都买的组合举例",
+      "action": "无",
+      "source_basis": "证券目录存在博汇股份300839.XSHE和博汇科技688004.XSHG等音近对象，来源不足以唯一解析；不以27日本地博汇科技行强配28日口述。"
+    },
+    {
+      "surface_form": "恒博股份",
+      "official_name": "恒勃股份（可能）",
+      "code": "301225.XSHE（候选）",
+      "role": "紫薇早盘高分赢家案例",
+      "action": "无",
+      "source_basis": "目录唯一近音候选为恒勃股份；28日日线有价格弹性，但27日本地COLD快照不是28日发射、买入或教师成交。"
+    },
+    {
+      "surface_form": "恒通",
+      "official_name": "世纪恒通（可能）",
+      "code": "301428.XSHE（候选）",
+      "role": "紫薇早盘高分赢家案例",
+      "action": "无",
+      "source_basis": "连续语境与28日日线更支持世纪恒通，但市场另有恒通股份603223.XSHG，仍保留候选身份。"
+    },
+    {
+      "surface_form": "果麦文化、国脉、国卖",
+      "official_name": "果麦文化",
+      "code": "301052.XSHE",
+      "role": "约500分且9:35前的紫薇赢家案例",
+      "action": "无",
+      "source_basis": "连续问答先明确说果麦文化，后续国脉、国卖视为同段错音；分数、时点、买卖与收益均未核。"
+    },
+    {
+      "surface_form": "星云科技",
+      "official_name": null,
+      "code": null,
+      "role": "八月紫薇历史案例",
+      "action": "无",
+      "source_basis": "目录存在星云股份与诺瓦星云等候选，不能唯一映射。"
+    },
+    {
+      "surface_form": "五洲医疗、泛微网络、富汉威、万邦医药、搏际",
+      "official_name": "五洲医疗、泛微网络、富瀚微、万邦医药、博济医药",
+      "code": "301234.XSHE、603039.XSHG、300613.XSHE、301520.XSHE、300404.XSHE",
+      "role": "八月紫薇历史赢家与收益案例",
+      "action": "无",
+      "source_basis": "证券目录支持正式实体映射；来源只作历史回顾，未提供事件日榜单、成交或完整收益。"
+    }
+  ],
+  "method_principles": [
+    "模式启用至少同时满足模式评分和短线评分大于零；稳定性评分是另一维度，不能替代这两个门槛。",
+    "研究选股时遮蔽涨幅、盈亏和结果图，按当时可见信息做选择，以减少后见偏差。",
+    "主观二选一经常与规则相反时，先做完整统计，再决定是否覆盖模型，不以单次结果改规则。",
+    "组合偏好是不同模式各取第一名；来源也允许同一模式第一、第二名都买，或在模式之间无冲突时两只都买，但没有给总风险预算或等权要求。",
+    "盘中等待回落必须限定在早盘；来源允许等更低价，但明确反对拖到下午。",
+    "无分模式不得因为与历史相似或主观想看而提前启用；当场看错应当公开撤回。"
+  ],
+  "exit_lessons": [
+    "弱股随大盘反弹且下午给出高抛机会时，来源倾向退出。",
+    "从早盘就保持强势的股票可以先卖一半以保留后续上涨可能；这不适用于原本就弱、只跟随大盘的股票。",
+    "单票焦虑可用组合分散，但来源没有给出总风险预算、等权规则或家庭资金比例。"
+  ],
+  "decision_trace": [
+    {
+      "observation": "指数上涨，但来源模型里的整体环境和下跌低吸仍为空仓，且下跌低吸短线评分为负。",
+      "inference": "指数反弹不足以证明交易环境转强。",
+      "decision": "当时少看下跌低吸，转向有高位短期分数支持的盘中模式。",
+      "uncertainty": "系统仅能核验指数涨跌，不能复现讲师私有评分。"
+    },
+    {
+      "observation": "讲师称多数盘中候选早盘会先下杀，立即买入常比稍等买得高。",
+      "inference": "早盘执行可能存在等待回落的价格改善空间。",
+      "decision": "把等待限制在早盘，不延后到下午。",
+      "uncertainty": "80%至90%、15点与18点均是来源口述，缺完整样本和成交证据。"
+    },
+    {
+      "observation": "趋势抱团分数尚未上来，讲师先说密切关注，随即发现看错。",
+      "inference": "历史类比和主观预期不能替代当前评分。",
+      "decision": "撤回关注，明确无分一律不关注。",
+      "uncertainty": "未来分数若重新上来，需要新证据重新评估，不能沿用本场结论。"
+    }
+  ],
+  "judgment_heuristics": [
+    "指数与模型环境分开看：指数涨不等于可交易环境已经转强。",
+    "模式评分和短线评分是启用门槛，稳定性是不同问题。",
+    "弱股反弹退出、强股分半退出应按相对强弱分支处理，不能合成统一卖法。",
+    "早盘等回落是执行优化，不是无限期等待，也不是下午追补。",
+    "当场纠正优先于先前口述：趋势抱团的最终结论是无分不关注。"
+  ],
+  "hypotheses": [
+    {
+      "claim": "只有模式评分与短线评分同时大于零时启用短线模式，可能比用单一稳定性标签或主观环境感受更能减少无效交易。",
+      "implied_rule": "按模式逐日冻结模式评分、短线评分与稳定性评分，双门槛未通过时保持空仓；稳定性只作附加维度。",
+      "falsifiable_test": "对历史候选按双门槛、单门槛和稳定性单门槛分组，比较费用后收益、胜率、最大回撤和空仓率，并按市场阶段分层。",
+      "expected_effect": "若双门槛有效，通过组的费用后收益或尾部风险应优于其他组；若只提高空仓率而不改善风险收益，则否定或收窄。",
+      "category": "mode_activation_gate",
+      "provenance": "system_research_synthesis",
+      "source_basis": "小草2026年10月28日完整来源第10至11段明确排除稳定性替代，并说模式评分与短线评分至少都大于零；第82至84段用无分不关注完成当场纠正。来源证明门槛口述，不证明预期收益。",
+      "related_existing_ids": [
+        "XH-061",
+        "XH-178",
+        "XH-223"
+      ],
+      "dedup_boundary": "既有命题分别覆盖全负空仓、无资格保持空仓和短线分数正值；本候选新增的是模式评分与短线评分同时为正且稳定性另列的联合门槛，不把局部支持整句复现为既有claim recurrence。"
+    },
+    {
+      "claim": "在整体与下跌低吸环境为空、但高位短期分数改善时，阶段性切换到高位辨识度盘中模式可能优于继续做下跌低吸。",
+      "implied_rule": "先冻结环境状态和模式分数，再比较同日高位盘中模式与下跌低吸模式；不得用事后赢家挑样本。",
+      "falsifiable_test": "收集整体环境空仓且高位短期分数为正的交易日，比较两类模式的费用后收益、左尾和次日回撤。",
+      "expected_effect": "若切换有效，高位盘中模式在该条件组应有更高风险调整收益；若优势只来自少数极端涨停则不成立。",
+      "category": "regime_mode_switch",
+      "provenance": "system_research_synthesis",
+      "source_basis": "小草2026年10月28日完整来源第12至16、68至76段把整体与下跌低吸空仓、高位短期分数改善和盘中紫薇选择连成条件链。作者口述只提供候选机制，不证明相对收益。",
+      "related_existing_ids": [
+        "XH-154",
+        "XH-178"
+      ],
+      "dedup_boundary": "XH-154是环境切换的一般框架，XH-178是无资格空仓；本候选限定整体/低吸为空且高位短期分数为正的交叉状态，并要求与下跌低吸同日对照。"
+    },
+    {
+      "claim": "弱股随大盘反弹时在下午高抛退出，而从早盘就保持相对强势时只先减半，可能比统一全卖或统一持有更适应轮动弱市。",
+      "implied_rule": "卖出前标注早盘相对强弱、是否仅随大盘反弹和高抛时点，按弱股全退、强股减半两个分支执行。",
+      "falsifiable_test": "在相同入场和风险预算下，对比条件化退出、首次高抛全退、固定收盘退出的费用后收益、卖飞率和尾部损失。",
+      "expected_effect": "条件化退出应降低弱股尾部损失，并保留强股部分上行；若总收益和回撤均无改善则否定。",
+      "category": "conditional_exit",
+      "provenance": "system_research_synthesis",
+      "source_basis": "小草2026年10月28日完整来源第26至36段明确区分弱股下午高抛全退、早盘强股先减半和逆势强例外。作者口述不证明该分支优于统一退出。",
+      "related_existing_ids": [
+        "XH-074",
+        "XH-289",
+        "XH-305"
+      ],
+      "dedup_boundary": "既有命题覆盖轮动高抛、停用模式旧仓和高抛区域/信号区分；本候选新增早盘相对强弱与是否仅随大盘反弹的双分支，不把来源的局部支持并入旧claim recurrence。"
+    },
+    {
+      "claim": "在回测或人工选样时遮蔽涨幅、盈亏和结果图，可能降低后见偏差并提高规则的样本外稳定性。",
+      "implied_rule": "保存按当时可见信息生成的盲选结果，再与查看结果后的选择对照；所有失败样本保留。",
+      "falsifiable_test": "让同一研究者对同一历史候选做盲化与非盲化两轮选择，以未来未见样本比较两套规则的退化幅度。",
+      "expected_effect": "若盲化有效，盲化规则的样本内表现可能较低，但样本外衰减和人工选择波动应更小。",
+      "category": "research_bias_control",
+      "provenance": "system_research_synthesis",
+      "source_basis": "小草2026年10月28日完整来源第43至48、58至61段要求先做统计，并建议关掉涨幅、盈亏和结果图以避免看到结果后的选择倾向。作者没有给出盲化对照收益。",
+      "related_existing_ids": [
+        "XH-218"
+      ],
+      "dedup_boundary": "XH-218强调模式盈利后的规则一致性；本候选专门研究遮蔽结果信息能否降低后见偏差和样本外衰减，研究处理和因变量均不同。"
+    }
+  ],
+  "existing_hypothesis_feedback": [
+    {
+      "hypothesis_id": "XH-276",
+      "relationship": "partial_support",
+      "feedback": "来源用六票组合说明分散单票焦虑和概率波动，但没有陈述固定总风险预算，不能复现既有命题的完整条件。"
+    },
+    {
+      "hypothesis_id": "XH-286",
+      "relationship": "partial_support",
+      "feedback": "来源明确偏好高开不超过6%，并把7%案例视为偏高；没有给出主板5%、创业板6%的板块拆分。"
+    },
+    {
+      "hypothesis_id": "XH-068",
+      "relationship": "partial_support",
+      "feedback": "来源支持早盘先等回落再买，但没有提出首次买入后再补仓的两段式结构。"
+    },
+    {
+      "hypothesis_id": "XH-207",
+      "relationship": "partial_support",
+      "feedback": "来源强调盘中等待更低价，但没有要求出现明确价格转强信号后才进场。"
+    },
+    {
+      "hypothesis_id": "XH-134",
+      "relationship": "partial_support",
+      "feedback": "果麦文化约500分和9:35前的例子支持高分早出现值得研究，但只是单场口述，没有对照组。"
+    },
+    {
+      "hypothesis_id": "XH-235",
+      "relationship": "partial_support",
+      "feedback": "9:31附近的恒勃股份与世纪恒通、9:35前的果麦文化是早盘高分案例，但不能整句复现为已验证的早晚阈值。"
+    },
+    {
+      "hypothesis_id": "XH-289",
+      "relationship": "partial_support",
+      "feedback": "来源支持弱股反弹退出，但条件是相对弱势和高抛机会，不是所有停用模式旧仓的统一规则。"
+    },
+    {
+      "hypothesis_id": "XH-305",
+      "relationship": "partial_support",
+      "feedback": "来源反复说高抛机会，但没有把价格区域与私有高抛信号做完整定义，只能保留语义边界。"
+    }
+  ],
+  "strategy_hit_audit": {
+    "allowed_classifications": [
+      "emitted_strategy_hit",
+      "emitted_qibao_hit",
+      "raw_pool_only",
+      "cohort_benchmark",
+      "cohort_watchlist",
+      "not_emitted",
+      "no_evidence"
+    ],
+    "audit_scope": {
+      "source_review_date": "2026-10-28",
+      "local_readback_date": "2026-10-27",
+      "source_segment_count": 98,
+      "local_signal_rows": 7,
+      "local_paper_trade_rows": 1,
+      "local_decision_rows": 11,
+      "local_position_rows": 0,
+      "rule": "四份本地日志只有2026年10月27日记录，不能把缺少28日行写成not_emitted，也不能把27日同名COLD候选当作28日老师点名、买入、成交或收益；因此28日点名赢家统一按no_evidence处理。"
+    },
+    "teacher_named_winners": [
+      {
+        "surface_form": "奥雅",
+        "official_name": "奥雅股份",
+        "code": "300949.XSHE",
+        "source_role": "红盘起爆与六票组合的大肉案例，口述接近25点、有人卖到30点",
+        "source_segment_ids": [
+          "e42046f235523e4cb686c10245b9c087cb20cb3fa4b9912d6056abd67a0bcac9",
+          "7dc3b0983da288000b81cc0e2a553df356ad4f7ebf99cf40262319a885e69455"
+        ],
+        "classification": "no_evidence",
+        "evidence_range": "28日日线支持高开约4.10%、收涨4.74%，但四份本地日志只有27日且没有奥雅股份。",
+        "boundary": "日线与老师口述都不是本地发射、老师买入、成交或25至30点收益证明。"
+      },
+      {
+        "surface_form": "大风",
+        "official_name": "大丰实业（可能）",
+        "code": "603081.XSHG（候选）",
+        "source_role": "来源称前一日第二候选、28日涨停",
+        "source_segment_ids": [
+          "3f9cc59fbe975843f666a296391af650441fd69a98dd5430fbd5dc7853c2e524"
+        ],
+        "classification": "no_evidence",
+        "evidence_range": "28日大丰实业日线收涨停，四份本地日志只有27日且没有603081。",
+        "boundary": "音近候选和价格路径不能消除名称歧义，也不证明老师或本地策略买入。"
+      },
+      {
+        "surface_form": "恒博股份",
+        "official_name": "恒勃股份（可能）",
+        "code": "301225.XSHE（候选）",
+        "source_role": "28日紫薇约9:31的早盘高分赢家案例",
+        "source_segment_ids": [
+          "49d8bc4e521176a1f92561a09c9d142d736383567bc869a27d4209309db167dd",
+          "d1604b320577c62bffecacb09572cb06b4db7513cb4ab05036475a6ed2c8fbc9"
+        ],
+        "classification": "no_evidence",
+        "evidence_range": "27日本地信号快照有恒勃股份，但模式状态为COLD、不可交易且日期早一天；28日日线只支持价格弹性。",
+        "boundary": "27日COLD快照不是28日同日发射、推荐、买入或教师成交，不能登记为local_strategy_benchmark_hit。"
+      },
+      {
+        "surface_form": "恒通",
+        "official_name": "世纪恒通（可能）",
+        "code": "301428.XSHE（候选）",
+        "source_role": "28日紫薇约9:31且一路接近涨停的赢家案例",
+        "source_segment_ids": [
+          "49d8bc4e521176a1f92561a09c9d142d736383567bc869a27d4209309db167dd",
+          "d1604b320577c62bffecacb09572cb06b4db7513cb4ab05036475a6ed2c8fbc9"
+        ],
+        "classification": "no_evidence",
+        "evidence_range": "28日世纪恒通日线有较强弹性，但四份本地日志只有27日且没有301428；另有恒通股份603223这一正式证券。",
+        "boundary": "不以价格表现强配身份，不把老师口述当发射、买入、成交或收益。"
+      },
+      {
+        "surface_form": "果麦文化、国脉、国卖",
+        "official_name": "果麦文化",
+        "code": "301052.XSHE",
+        "source_role": "28日约500分、9:35前并一度涨停的紫薇赢家案例",
+        "source_segment_ids": [
+          "d57e82f7a4b32935c1bdc76dab9ab3ad8b228eb203c5256c818096a454200301",
+          "14c85fecdfb2c171be3652dfe6330480a315202020012e99642a46bddc57676e"
+        ],
+        "classification": "no_evidence",
+        "evidence_range": "连续语境支持果麦文化身份，四份本地日志只有27日且没有301052。",
+        "boundary": "没有原始榜单、500分、9:35、买入、成交或15至19点收益证据。"
+      },
+      {
+        "surface_form": "星云科技",
+        "official_name": null,
+        "code": null,
+        "source_role": "八月紫薇历史赢家案例：来源称首日约亏0.78点、次日涨停，后续约30点收益",
+        "source_segment_ids": [
+          "990cc6109907a82757c3999b2fedfa188dbfef52513e0f3a14b0d85240e0c61c"
+        ],
+        "classification": "no_evidence",
+        "evidence_range": "来源只以八月历史阶段回看且未给唯一证券身份、精确事件日、原始榜单或成交；四份本地日志仅覆盖2026年10月27日。",
+        "boundary": "保留原始名称与历史赢家角色；不能在星云股份、诺瓦星云等候选间硬配，也不能把口述收益当本地发射、老师买入、成交或fills。"
+      },
+      {
+        "surface_form": "五洲医疗、泛微网络、富汉威、万邦医药、搏际",
+        "official_name": "五洲医疗、泛微网络、富瀚微、万邦医药、博济医药",
+        "code": "301234.XSHE、603039.XSHG、300613.XSHE、301520.XSHE、300404.XSHE",
+        "source_role": "八月紫薇模式历史赢家和大肉案例",
+        "source_segment_ids": [
+          "990cc6109907a82757c3999b2fedfa188dbfef52513e0f3a14b0d85240e0c61c",
+          "8a2f67327267d70198db4d54a09c7d05df03be44efcf8989ff48acfa0255201f",
+          "5dedc6dd2d74581bc75517b69924567f7e82c53ba8c7dc7c8a90328903a55d6a"
+        ],
+        "classification": "no_evidence",
+        "evidence_range": "来源未给完整事件日与榜单；四份本地日志仅覆盖10月27日，不能审计八月发射或成交。",
+        "boundary": "只保留为老师历史口述案例，不登记本地策略命中或fills。"
+      }
+    ],
+    "local_strategy_benchmark_hits": [],
+    "direction_core_observations": [
+      {
+        "direction": "高位短期分数改善时偏向盘中紫薇和高辨识度核心",
+        "classification": "no_evidence",
+        "reason": "28日私有分数没有原始表，27日本地日志不能证明28日方向确认。"
+      },
+      {
+        "direction": "红盘起爆高开6%以内",
+        "classification": "cohort_benchmark",
+        "reason": "27日7条本地信号均带raw_top10_elec20_open_le6_red_notlimit基准标签，但全部COLD且不可交易；它只说明前一日方向级基准存在，不是28日同日命中、发射或成交。"
+      },
+      {
+        "direction": "同一模式第一、第二名或不同模式第一名的组合",
+        "classification": "no_evidence",
+        "reason": "四份本地日志没有28日榜单排序与组合记录，不能证明老师举例对应本地候选或成交。"
+      }
+    ],
+    "bounded_local_readback": [
+      {
+        "file": "video_local_signal_snapshots.json",
+        "result": "7条均为2026年10月27日、模式状态COLD且mode_trade_eligible=false；含恒勃股份和博汇科技，但均非28日同日证据。"
+      },
+      {
+        "file": "video_local_paper_trades.json",
+        "result": "仅1条2026年10月27日Book T京东方A卖出，与本场点名赢家无关。"
+      },
+      {
+        "file": "video_local_decision_journal.json",
+        "result": "11条均为2026年10月27日；Book B动作和触发为空。"
+      },
+      {
+        "file": "video_local_positions.json",
+        "result": "空列表，只是27日本地账本读回，不证明28日或家庭持仓。"
+      }
+    ],
+    "classification_counts": {
+      "teacher_named_winners_no_evidence": 7,
+      "local_strategy_benchmark_hits": 0,
+      "direction_core_cohort_benchmark": 1,
+      "direction_core_no_evidence": 2
+    },
+    "teacher_mode_boundary": "老师点名赢家、系统候选、可交易发射、纸面成交和收益是五类证据；日线只支持价格路径，不能替代榜单或fills。",
+    "paper_ledger_boundary": "唯一纸面成交是27日Book T京东方A卖出；不得把它与28日老师口述赢家或Book B联系。",
+    "date_boundary": "缺少28日本地记录只能写no_evidence，不能从27日记录推断28日not_emitted。"
+  },
+  "timing_notes": [
+    "来源讲述日为2026年10月28日，来源中的明天是2026年10月29日。",
+    "来源提出的两天高位模式窗口、29日低开后反弹猜想与当日股票机会在2026年10月30日已过期。",
+    "29日指数收跌可作为来源次日下跌猜想的事实后验，但不能证明模式交易，也不能生成30日动作。"
+  ],
+  "typo_corrections": [
+    {
+      "raw": "大叶、大爷",
+      "normalized": null,
+      "basis": "昨日候选回看位于第37至38段，说话人先后说“大叶”“大爷”，随即自我否定并转到“大风”，不能映射为大业股份或大叶股份；今日第17、42段是原文明确说出的“大业股份”，属于段内直接实体，不依赖该全局纠错。证券目录只证明300879大叶股份与603278大业股份均存在。"
+    },
+    {
+      "raw": "正宗设计、设中设计",
+      "normalized": null,
+      "basis": "可能对应郑中设计或中衡设计，转写与上下文不足以唯一解析"
+    },
+    {
+      "raw": "大风",
+      "normalized": "大丰实业（可能）",
+      "basis": "证券目录和28日涨停路径支持音近候选603081.XSHG，但仍保留概率表述"
+    },
+    {
+      "raw": "恒博股份",
+      "normalized": "恒勃股份（可能）",
+      "basis": "证券目录中301225.XSHE为唯一近音公司，仍不替代原始转写"
+    },
+    {
+      "raw": "恒通",
+      "normalized": "世纪恒通（可能）",
+      "basis": "同句称两个恒且28日价格路径支持301428.XSHE，但不能排除其他恒通公司"
+    },
+    {
+      "raw": "国脉、国卖",
+      "normalized": "果麦文化",
+      "basis": "前一句明确问答为果麦文化，后续错音在同一连续语境"
+    },
+    {
+      "raw": "星云科技",
+      "normalized": null,
+      "basis": "证券目录存在星云股份和诺瓦星云等候选，来源不足以唯一映射"
+    },
+    {
+      "raw": "黄金、白黄",
+      "normalized": null,
+      "basis": "语境更像环境曲线或黄线，但原始转写不足以确认，不按黄金资产解读"
+    }
+  ],
+  "action_summary": {
+    "posture_update": "不直接更新；只保留为28日至29日的来源姿态和待验证研究输入。",
+    "playbook_update": "不直接更新；双评分门槛、条件化退出和盲化统计先进入权威等级0的候选研究。",
+    "hypothesis_update": "提出四条可证伪候选；对八条既有命题仅登记部分支持，不声称整句复现。",
+    "audit_evidence": "保留98段完整来源、28日至29日指数与环境事实、证券目录及四份仅覆盖27日的本地日志；strategy_hit_audit将教师点名赢家、本地方向基准和非入场核心观察分开，未核对象均为no_evidence。",
+    "instrumentation_todo": "如研究，需冻结完整候选集、私有评分、可见时点、成交价、费用、失败样本和市场阶段。",
+    "routing": [
+      "hypotheses",
+      "existing_hypothesis_feedback",
+      "decision_trace",
+      "exit_lessons",
+      "strategy_hit_audit"
+    ]
+  },
+  "deduplication_review": {
+    "registry": "reference/experience/xiaocao_hypotheses.jsonl",
+    "reviewed_to_eof": true,
+    "new_hypotheses": 4,
+    "partial_support_rows": 8,
+    "reason": "候选双评分门槛、条件化退出和盲化研究具有独立可检验结构；组合、开盘阈值、早盘等待和高分时点只部分支持既有命题，未把来源缺失条件补进复现。"
+  },
+  "limitations": [
+    "讲师私有模式评分、短线评分与稳定性评分没有结构化原始表。",
+    "来源所说的四赚一平一亏、15至19点收益、80%至90%回落和具体买卖没有账本或完整样本核验。",
+    "29日事实只能后验评价28日来源，不得作为30日新鲜行情或交易触发。",
+    "多个证券名和环境术语存在转写歧义；未唯一解析的对象没有硬映射。",
+    "本草稿权威等级为0，不能自动调参、落库、下单或改变家庭组合。"
+  ]
+}
