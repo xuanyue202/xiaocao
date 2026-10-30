@@ -1,0 +1,417 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-30",
+  "kind": "直播复盘与系统方法专场",
+  "summary": "来源主张包括：周一或周二可能修复，弱市不抄科技硬件底并警惕借钱死扛；小草同时称自身低位低吸模式与科技硬件不同，负七、负九个点的标的不必同样担忧，但这不证明低位或便宜天然安全。修复后可能偏高位、红盘起爆持续强可能转向追涨、上海九百周一或反包，三者按不同主体与条件分别保留。系统据此提出家庭风险边界，不把这些分支升级成小草的一条统一确定规则。高抛分层、22天短样本、次日开盘卖、前十代理和参数平台保留为零权威研究知识。",
+  "author": "小草",
+  "source": "小草直播",
+  "authority": 0,
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_netdisk_enrichment/artifacts/kol-netdisk-1ffc343a46d154a7/20261030 抽平板电脑｜大师班回馈专场-compressed.txt",
+      "sha256": "c2f968c3a1cbe43c951ce5a8d64766f8b706df0b49c6b8ed412ed41c32cb7414",
+      "size": 94145
+    }
+  ],
+  "posture": {
+    "provenance": "source_claims_with_explicit_system_synthesis",
+    "source_claims": ["周一或周二可能修复，低开后仍需看情况", "环境差时批评科技抄底与借钱死扛", "作者称自身模式与科技硬件不同，低位低吸到负七、负九个点时不必同样担忧", "修复后可能偏高位；红盘起爆持续强时追涨赚钱效应可能增强", "模式仍赚钱时轻仓组合继续，表现转弱停止"],
+    "system_synthesis": ["在来源条件未获当前盘面确认前不增加高波动风险", "科技与杠杆风险只作家庭边界，不冒充小草统一减仓指令", "作者对自身低位低吸模式的区别描述不构成低位或便宜天然安全的证明"],
+    "regime": "两日急跌后的放量弱市，修复尚未确认",
+    "dominant_style": "科技硬件置后；修复后条件关注高位与红盘起爆",
+    "risk": "科技与杠杆尾部、高位补跌、把宽泛反弹话术当确定预测、把低位或便宜误当自动安全、弱市机械等待收盘卖",
+    "style_ranking": [
+      "等待周一或周二真实修复",
+      "科技硬件与杠杆先降险",
+      "红盘起爆持续强后才看高位追涨",
+      "名称无法确认或高开候选不因单例临时改规则"
+    ]
+  },
+  "regime_call": {
+    "provenance": "system_synthesis",
+    "source_claims": ["周一或周二可能修复", "修复后可能偏高位", "红盘起爆持续强可能增强追涨赚钱效应"],
+    "call": "修复前防守；修复与红盘起爆双确认后才条件参与高位，可信退出信号优先于继续猜反弹。",
+    "horizon": "2026年11月2日至3日，之后必须由新证据替代",
+    "what_would_falsify": [
+      "周二前仍无修复",
+      "科技形成持续广泛主线",
+      "高位亏钱效应扩大",
+      "红盘起爆转弱"
+    ]
+  },
+  "directions": [
+    {
+      "name": "科技硬件",
+      "stance": "弱市回避抄底并限制杠杆",
+      "conditions": [
+        "科技继续弱于市场",
+        "融资、借钱或杠杆暴露存在"
+      ],
+      "boundary": "海外跌幅与爆仓口述未核验；作者称自身低位低吸模式不必同样担忧，但没有证据证明低位或便宜天然安全。"
+    },
+    {
+      "name": "高位与红盘起爆",
+      "stance": "修复后条件偏多",
+      "conditions": [
+        "指数与市场广度修复",
+        "红盘起爆持续强"
+      ],
+      "boundary": "不是无条件追涨；高位风格判断、匿名倒接力判断和上海九百反包观察主体不同，不能合并成一个观点。"
+    },
+    {
+      "name": "弱市短线组合",
+      "stance": "模式仍赚钱时轻仓组合继续，表现转弱停止",
+      "conditions": [
+        "当前表现仍正向",
+        "组合分散有效"
+      ],
+      "boundary": "来源没有固定总风险、单票仓位或完整候选风险调整收益。"
+    },
+    {
+      "name": "退出",
+      "stance": "黄色柱区间、柱子消失、明确信号与弱市早卖分层",
+      "conditions": [
+        "黄色柱消失或明确信号出现",
+        "弱市承接恶化"
+      ],
+      "boundary": "没有逐单成交与统一退出对照。"
+    }
+  ],
+  "stocks": [
+    {
+      "surface_form": "上海九百",
+      "role": "周一低置信反包观察",
+      "lesson": "当日收盘跌近停板使隔夜风险高，不能把“说不定”当保证。",
+      "resolution": "600838.XSHG；未来反包尚未验证。"
+    },
+    {
+      "surface_form": "大业股份、万邦医药、奥雅股份",
+      "role": "10月30日红盘起爆排序与类比",
+      "lesson": "当日排序和涨幅不能延长为次日买单。",
+      "resolution": "同包目录可映射；老师成交与收益未证明。"
+    },
+    {
+      "surface_form": "沃尔德、冰山冷热、百洋股份、凡拓数创",
+      "role": "高开风险与高抛例证",
+      "lesson": "盘中最高、收盘和逐单成交必须分开。",
+      "resolution": "冰山冷热竞价字段冲突；沃尔德盘中约11%与收盘1.38%不直接矛盾。"
+    },
+    {
+      "surface_form": "海洋王、大业股份、凡拓数创",
+      "role": "前十代理演示",
+      "lesson": "人气股标签缺失时用最高十票代理，不代表正式模型业绩。",
+      "resolution": "名称可映射，样本与收益未独立复算。"
+    },
+    {
+      "surface_form": "BEV、查空调、匿名倒接力标的",
+      "role": "未解析候选",
+      "lesson": "保留来源观点但不执行。",
+      "resolution": "无法唯一映射；不得用本地★E688045必易微反推BEV。"
+    },
+    {
+      "surface_form": "英特尔、英伟达、苹果",
+      "role": "海外科技背景",
+      "lesson": "只支持作者风险叙事，不构成KOL-US交易。",
+      "resolution": "公司可识别，直播跌幅未核验。"
+    }
+  ],
+  "method_principles": [
+    "交易处于概率域，不赌单次；规则一致、多次实践和组合平摊必须同时存在。",
+    "弱市默认偏空仓，模式仍赚钱才轻仓组合继续，表现真正转弱时停止。",
+    "区分黄色柱高抛区间、柱子消失和明确高抛信号；当前手工早卖与统计收盘卖不可混为一谈。",
+    "高胜率可能由拖延卖出制造，评估应关注曲线稳定与尾部损失。",
+    "固定时点模式切换先解决执行与算力，不代表信号已经验证。",
+    "短样本、代理标签、卖出规则和参数平台必须完整披露。",
+    "避免精确最优单点，研究参数范围、平台与平均参数。"
+  ],
+  "exit_lessons": [
+    "弱市出现可信退出信号时早点卖，不机械照搬统计收盘卖。",
+    "黄色柱表示高抛区间；柱子消失可卖，区间徘徊后再出现明确信号的口述把握更高。",
+    "不能用美股长期叙事把A股短线亏损无限延长。"
+  ],
+  "hypotheses": [],
+  "timing_notes": [
+    "下一个修复观察窗口是2026年11月2日周一至11月3日周二。",
+    "“七天内必反弹”和“11月必反弹”是现场自嘲话术，不作时间承诺。",
+    "盘中固定时点示例包括9:31、9:31:15和9:30:45。",
+    "系统演示样本22个交易日，按次日开盘卖；未统计次日收盘卖。"
+  ],
+  "typo_corrections": [
+    {
+      "raw": "红盘举报／红盘情报",
+      "corrected": "红盘起爆",
+      "basis": "上下文持续指向同一短线筛选模式。",
+      "uncertainty": "名称归一不代表信号验证。"
+    },
+    {
+      "raw": "冰箱责任",
+      "corrected": "冰山冷热",
+      "basis": "相邻语境与同包行情目录可对应。",
+      "uncertainty": "竞价字段在两个本地文件中冲突。"
+    },
+    {
+      "raw": "防脱速创／繁多数上",
+      "corrected": "凡拓数创",
+      "basis": "同场个股语境与行情目录可对应。"
+    },
+    {
+      "raw": "上海900",
+      "corrected": "上海九百",
+      "basis": "同包行情目录与A股名称可对应。"
+    },
+    {
+      "raw": "奥雅",
+      "corrected": "奥雅股份",
+      "basis": "同包行情目录可对应。"
+    },
+    {
+      "raw": "BEV、查空调",
+      "corrected": "保持未解析",
+      "basis": "来源与绑定证据不足以唯一映射。",
+      "uncertainty": "禁止反推代码。"
+    }
+  ],
+  "decision_trace": [
+    {
+      "provenance": "system_synthesis",
+      "observation": "来源判断两日急跌、当日放量且未修复。",
+      "inference": "系统把作者的周一或周二分支保留为条件窗口，不升级为确定反弹。",
+      "action": "当前建议等待修复事实，并把科技抄底与杠杆暴露作为风险核对项。",
+      "why": "区分作者条件判断与系统家庭边界。",
+      "evidence_claim_ids": [
+        "c01",
+        "c02",
+        "c18"
+      ]
+    },
+    {
+      "provenance": "system_synthesis",
+      "observation": "来源分别提出三类内容：修复后可能偏高位且红盘起爆持续强时追涨效应增强；一只名称无法确认的倒接力标的周一或低开冲高；上海九百周一或反包。",
+      "inference": "系统只把第一类作为条件风格观察；倒接力案例因证券主体无法稳定识别，不形成纵向观点；上海九百另作低置信单票观察，不与风格判断合并。",
+      "action": "市场与风格条件未齐不迁移；名称无法确认的标的不执行；上海九百只观察周一承接，不直接转成买入。",
+      "why": "三个主体、条件与置信度不同，分别保留才能避免误合并。",
+      "evidence_claim_ids": [
+        "c03",
+        "c04",
+        "c05",
+        "c06",
+        "c07"
+      ]
+    },
+    {
+      "provenance": "system_synthesis",
+      "observation": "来源区分黄色柱区间、柱子消失、明确信号与弱市早卖。",
+      "inference": "系统把它们视为不同退出层级，不把统计收盘卖替代当前风险处置。",
+      "action": "只有持仓实际出现对应触发时才评估退出。",
+      "why": "控制浮盈回吐而不制造统一卖出命令。",
+      "evidence_claim_ids": [
+        "c08",
+        "c09"
+      ]
+    },
+    {
+      "provenance": "system_synthesis",
+      "observation": "演示只有22天、次日开盘卖且用前十代理。",
+      "inference": "系统认定业绩边界不足。",
+      "action": "固定标签、样本、卖出和费用后再研究。",
+      "why": "防止短样本和代理口径夸大结果。",
+      "evidence_claim_ids": [
+        "c14",
+        "c15",
+        "c16",
+        "c17"
+      ]
+    }
+  ],
+  "judgment_heuristics": [
+    "市场姿态先于风格，风格先于个股，退出先于继续猜测。",
+    "未解析证券、冲突行情字段和无逐单证明的收益不能跨过执行边界。",
+    "单次盈亏不改变概率规则；只有预定义的表现转弱才停止。",
+    "宽泛时间话术、梦境联想和促销收益承诺不作投资证据。",
+    "研究结论必须携带样本长度、标签代理、卖出规则和参数稳健性。"
+  ],
+  "judgment_heuristics_provenance": "system_synthesis：这些启发式是系统对来源的整理，不是小草逐字给出的统一规则；具体来源主张由decision_trace.evidence_claim_ids反链。",
+  "strategy_hit_audit": {
+    "status": "completed",
+    "scope": "已完成老师口述标的与本地当日快照的benchmark分类；老师逐单成交、退出与收益性能另列unproven，不作为完成条件。",
+    "teacher_named_winners": [
+      {
+        "asset": "沃尔德",
+        "source_date": "2026-10-30",
+        "source_role": "前一日听众误买与当日盘中冲高的一致性案例",
+        "performance_status": "unproven"
+      },
+      {
+        "asset": "冰山冷热",
+        "source_date": "2026-10-30",
+        "source_role": "前一日低评分选择与当日高抛案例",
+        "performance_status": "unproven"
+      },
+      {
+        "asset": "百洋股份",
+        "source_date": "2026-10-30",
+        "source_role": "前一日入选、当日较弱后冲高的高抛案例",
+        "performance_status": "unproven"
+      },
+      {
+        "asset": "凡拓数创",
+        "source_date": "2026-10-30",
+        "source_role": "前一日入选、当日下跌仍按高抛处理的案例",
+        "performance_status": "unproven"
+      },
+      {
+        "asset": "大业股份",
+        "source_date": "2026-10-30",
+        "source_role": "当日红盘起爆首选",
+        "performance_status": "closing_quote_only"
+      },
+      {
+        "asset": "万邦医药",
+        "source_date": "2026-10-30",
+        "source_role": "当日第六名与二十厘米涨停例子",
+        "performance_status": "closing_quote_only"
+      },
+      {
+        "asset": "上海九百",
+        "source_date": "2026-10-30",
+        "source_role": "下周一低置信反包观察",
+        "performance_status": "future_unproven"
+      },
+      {
+        "asset": "奥雅股份",
+        "source_date": "2026-10-30",
+        "source_role": "大业股份连续性类比",
+        "performance_status": "closing_quote_only"
+      },
+      {
+        "asset": "海洋王",
+        "source_date": "2026-10-30",
+        "source_role": "9:31最高十票代理演示",
+        "performance_status": "unproven"
+      }
+    ],
+    "local_strategy_benchmark_hits": [
+      {
+        "asset": "沃尔德",
+        "source_date": "2026-10-29",
+        "local_classification": "emitted_qibao_hit",
+        "evidence": "本地高开标杆起爆★E信号",
+        "limitation": "仅信号，不等于成交；老师口述时点和本地信号不能合并成逐单收益。"
+      },
+      {
+        "asset": "冰山冷热",
+        "source_date": "2026-10-30",
+      "local_classification": "emitted_strategy_hit",
+      "evidence": "10月30日固定推荐中为★B第1、★KP1，并保留模拟影子条目",
+      "limitation": "这是同名推荐与benchmark重合，但mode_trade_eligible=false、非★E；不升级为可执行成交、老师模式收益或APP结果，且开盘相关字段冲突。"
+      },
+      {
+        "asset": "百洋股份",
+        "source_date": "2026-10-30",
+        "local_classification": "emitted_strategy_hit",
+        "evidence": "10月30日video_signal_snapshots存在同名发射，mode为首红断低吸",
+        "limitation": "这是同名候选发射与benchmark重合，但mode_trade_eligible=false、不可执行；不升级为订单、成交、老师模式收益或APP结果。"
+      },
+      {
+        "asset": "万邦医药",
+        "source_date": "2026-10-30",
+        "local_classification": "emitted_strategy_hit",
+        "evidence": "10月30日video_signal_snapshots存在同名发射，mode为标杆短线起爆",
+        "limitation": "这是同名候选发射与benchmark重合，但mode_trade_eligible=false、不可执行；不升级为订单、成交、老师模式收益或APP结果。"
+      },
+      {
+        "asset": "必易微",
+        "source_date": "2026-10-30",
+        "local_classification": "emitted_qibao_hit",
+        "evidence": "本地★E688045",
+        "limitation": "只能确认本地信号，不能反推老师口述的名称无法确认案例。"
+      },
+      {
+        "asset": "大业股份",
+        "source_date": "2026-10-30",
+        "local_classification": "no_evidence",
+        "evidence": "父级已读快照未给同名可执行命中",
+        "limitation": "no_evidence不等于没有交易。"
+      },
+      {
+        "asset": "上海九百",
+        "source_date": "2026-10-30",
+        "local_classification": "no_evidence",
+        "evidence": "仅有行情收盘目录",
+        "limitation": "无本地策略发射或成交证明。"
+      },
+      {
+        "asset": "奥雅股份",
+        "source_date": "2026-10-30",
+        "local_classification": "no_evidence",
+        "evidence": "仅有行情收盘目录",
+        "limitation": "无本地策略发射或成交证明。"
+      },
+      {
+        "asset": "海洋王",
+        "source_date": "2026-10-30",
+        "local_classification": "no_evidence",
+        "evidence": "仅有行情收盘目录",
+        "limitation": "无本地策略发射或成交证明。"
+      },
+      {
+        "asset": "凡拓数创",
+        "source_date": "2026-10-30",
+        "local_classification": "no_evidence",
+        "evidence": "仅有行情收盘目录",
+        "limitation": "无本地策略发射或成交证明。"
+      },
+      {
+        "asset": "中电港",
+        "source_date": "2026-10-30",
+        "local_classification": "cohort_benchmark",
+        "evidence": "Paper B与Paper A实际各买001287",
+        "limitation": "与老师点名标的不同，不能叫老师策略命中。"
+      },
+      {
+        "asset": "京东方",
+        "source_date": "2026-10-29",
+        "local_classification": "cohort_benchmark",
+        "evidence": "Paper T实际买入",
+        "limitation": "与老师点名标的不同，不能叫老师策略命中。"
+      }
+    ],
+    "direction_core_observations": [
+      {
+        "observation": "周一或周二可能修复",
+        "provenance": "source_claim"
+      },
+      {
+        "observation": "弱市批评科技抄底与杠杆死扛",
+        "provenance": "source_claim"
+      },
+      {
+        "observation": "修复后可能偏高位，红盘起爆持续强可能转向追涨",
+        "provenance": "two_source_conditions_not_one_unified_rule"
+      },
+      {
+        "observation": "仍赚钱的模式轻仓组合继续至转弱",
+        "provenance": "source_claim"
+      }
+    ],
+    "unproven": [
+      "老师逐单买入、卖出、高抛与收益",
+      "本地信号到成交的唯一关联",
+      "APP账本结果；继续保持UNKNOWN且未查询"
+    ],
+    "boundary": "同名信号或候选发射重合，与可执行命中、实际成交和收益命中分开记录；mode_trade_eligible=false只说明没有执行资格，不抹去发射层重合。未同名不能叫老师命中；日志缺失是no_evidence；本审计不查询APP、不修交易。"
+  },
+  "action_summary": {
+    "posture_update": "candidate_only：不改写全局姿态；周一至周二条件修复只在当前提醒内有效。",
+    "playbook_update": "proposal_only：一致性、高抛分层、短样本边界和参数平台只作零权威候选。",
+    "hypothesis_update": "no_new_hypothesis：与现有XH-218、XH-276、XH-279、XH-305、XH-324等仅部分重合；来源缺固定总风险、完整候选风险调整收益和主板5%与创业板6%高开边界，不把部分支持合并成完整复现，也不新增近义候选。",
+    "audit_evidence": "完整读取94145字节来源并逐段审计230/230；行情冲突、未解析名称与逐单缺口均保留。",
+    "instrumentation_todo": "固定红盘起爆、黄色柱与高抛版本，补模式全样本、真实标签、成交、费用、融资和退出对照。",
+    "routing": [
+      "research_candidate_only",
+      "no_auto_tune",
+      "no_global_posture_change",
+      "human_gate_required"
+    ]
+  }
+}
