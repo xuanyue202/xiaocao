@@ -474,8 +474,9 @@ session ID to another task is not a handoff. During 09:25–09:30, coordinate
 only a concrete `dependency_recovery_wait` or exact failure needing one bounded
 repair; the runner owner consumes its own next stage event.
 
-Start at 09:00 with the default 2100-second freeze wait and a short initial
-command yield. Runner stage JSON is the event source. Do not model-poll,
+Start the original process at08:53 prewake with a short initial yield. Python
+gates09:00 and starts the default2100-second preparation/freeze budget there.
+Why: scheduler jitter consumes startup margin, not a new model-owned wait. Runner stage JSON is the event source. Do not model-poll,
 repeatedly call `write_stdin`, or emit unchanged status before a stage event or
 the 09:24 recovery boundary. While it waits, build the 11:30-horizon capsule:
 
@@ -708,8 +709,11 @@ Full order/trade/account reconciliation follows the submission pass.
 Before 09:20 retain the immutable viewpoint projection path/hash and its quality
 summary and the reviewed conditional preparation under §1d; source semantics
 remain the published LiangHui records. After 09:24 react
-to runner stage events. Read `brief_path` first, fetch missing fields from
-`request_path` only as needed, and select fields from the terminal artifact.
+to runner stage events. When `dispatch_path` exists, read that one assembled
+handoff and immediately send its exact `tool_arguments` to the accepted warm
+worker. Otherwise read `brief_path` first and fetch exact missing fields only
+as needed. Why: duplicate pre-dispatch reads consume the original support budget.
+Select terminal fields from the original terminal artifact.
 Never print full candidate arrays, account tables, report-id arrays or source
 caches into the operator stream. Full detail stays in immutable artifacts.
 

@@ -38,33 +38,20 @@ All China-market schedules must express the intended China wall-clock time direc
 
 End-to-end path: Codex Automation schedule -> automation prompt -> `xiaocao-trading` skill -> runtime bundle -> CLI/scripts -> `output/live/*` artifacts -> summary. CLI output, live behavior, account files, or Kronos fields require matching skill and automation updates.
 
-### OpenCLI/Microsoft Edge recovery for local KOL capture
+### Local KOL browser recovery
 
-The local hourly KOL node is WeChat-first. After a Xiaocao replay is captured and inline-compressed, local Baidu Netdisk access is transfer-only: upload the exact validated media, publish the credential-free handoff capsule, and let the remote Mac remain the only post-handoff writer. Do not restore local Netdisk subscription scans, transcription, analysis, publication, notification, or Book writes as a fallback.
+For an OpenCLI timeout, unresponsive/absent Edge window or upload continuation,
+read [local capture recovery](docs/agents/local-capture-recovery.md) before acting.
+Keep the exact capture/job/upload claim; restore the existing session locally.
+Why: a closed browser is an owned recoverable dependency, not proof of a user blocker.
 
-An `OpenCLI browser command timed out`, an unresponsive tab, or an absent browser window is not by itself a user blocker. Reconcile the exact capture ID, Netdisk job ID, and upload ledger first, then recover the existing OpenCLI session instead of abandoning the run:
+## Codex Remote collaboration
 
-1. Query the existing session with `npx --yes @jackwener/opencli@1.8.6 browser <session> state` (the repository falls back to this pinned package when no global `opencli` exists).
-2. If Microsoft Edge is not running or the session has no responsive foreground tab, launch Edge with `open -a "Microsoft Edge" "<target_url>"`, then bring the same session to the target URL with `opencli browser <session> open <url> --window foreground` and read `state` again. Edge is the only browser recovery target; reuse the existing session and Netdisk job.
-3. If the session is on a login page, open the login panel and keep the job at `prepared`; request only the irreducible user authentication/phone confirmation. Do not treat a transient redirect through `/disk/main` as authenticated: require the target folder to remain bound and a credentialed `/api/list` readback with `errno=0` before continuing the same job automatically.
-4. Retry an upload only when the ledger proves there is no upload claim. If a claim or `upload_started_at` exists without a conclusive receipt, treat the side effect as uncertain and reconcile the exact target row before retrying.
-
-Do not stop merely because Edge was closed: launch/rebind it, read back the same OpenCLI session, and continue. Report a user-action blocker only when the recovered foreground page requires authentication, consent, CAPTCHA, or another action the agent cannot safely perform.
-
-## Codex Remote Dual-Machine Collaboration
-
-`MacBook-Pro-6.local` is a normal, long-lived Xiaocao collaborator reached through **Codex Remote**, not through local mDNS, LAN SSH, AirDrop, or an ad-hoc filesystem inbox. The local repository is `/Users/bytedance/coding/xiaocao`; the remote repository is `/Users/xuanyue202/Documents/project/xiaocao`. Reuse the registered remote Xiaocao project and its existing cutover/executor task whenever possible.
-
-Keep these connectivity layers separate and report the narrowest failing layer:
-
-1. **Remote device** — the Codex UI showing `MacBook-Pro-6.local` with a green `已连接` status proves the remote-control host is connected.
-2. **Project discovery** — `list_projects` proves whether saved projects were enumerated for that host. An omitted project or `No matching saved project` does not prove the host is offline.
-3. **Task discovery/readback** — `list_threads`, `read_thread`, and `wait_threads` prove whether a particular task can be enumerated and read. `thread_list_unavailable`, `No Codex thread found`, or a stale task handle is a task-service/handler failure, not host-offline evidence.
-4. **Runtime readiness** — Git SHA, worktree state, dependencies, private config, restored state, and Automation readback prove whether Xiaocao may run there. Host connectivity alone never proves runtime readiness.
-
-When the Remote device is connected, continue normal coordination through Codex task messaging and authoritative readback. Do not downgrade the host to “offline” merely because project/thread enumeration fails, and do not use `.local` DNS, `ping`, or SSH failure to contradict a green Codex Remote connection: the normal control plane may be cross-network and independent of LAN discovery. First retry the registered host/task directly, distinguish an accepted-but-unread message from a completed task, and reconcile the exact task identity before retrying any state-changing instruction. Ask the user to reopen Codex, re-register a project, or touch the remote machine only when the Remote device itself is disconnected or the remaining handler failure truly requires user action.
-
-Dual-machine business safety remains fail-closed: GitHub `main` is the code SSOT; WeChat-dependent capture stays local; KOL and simulated-trading writers move only after the remote SHA/runtime/state and authoritative Automation ownership are read back. Never allow active-active writers, never start a remote business writer before state restore, and never infer an Automation switch from checked-in TOML mirrors.
+For remote connectivity, task discovery, deployment or writer cutover, read
+[remote collaboration](docs/agents/remote-collaboration.md) before diagnosing or
+changing ownership. Reuse Codex Remote and the registered project/task.
+Why: connected device, discoverable task and business-ready runtime prove different
+things; keep their evidence and single-writer authority separate.
 
 ## Coding Style & Naming Conventions
 

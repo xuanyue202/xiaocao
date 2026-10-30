@@ -1,115 +1,82 @@
 ---
 name: xiaocao-trading
-description: Use for Xiaocao repository work: live morning, intraday, EOD, weekly and scheduling automations; A-share quotes, market, pools and indicators; reports, strategies, backtests, paper accounts and research flywheels.
+description: Use for Xiaocao repository work: scheduled morning/intraday/EOD/weekly flows; A-share data, strategy, reports, paper/APP simulation and research.
 metadata:
-  short-description: Run Xiaocao trading and market-data workflows
+  short-description: Xiaocao role/phase router
 ---
 
 # Xiaocao Trading
 
-This file is the router. Load one task branch, not the whole operating manual.
+Choose the actual consumer before loading its instructions. Work from the current
+checkout if it has pyproject.toml and src/xiaocao; otherwise use this skill's
+assets/xiaocao-runtime. Prefer PYTHONPATH=src .venv/bin/python where available.
+Keep current role/Automation/Thread, original process, budget and exact inputs.
 
-## Start
+## Scheduled task: start, then load the owned phase
 
-1. Set `SKILL_DIR` to this skill directory.
-2. Select `XIAOCAO_ROOT`:
-   - Use the current checkout when it contains `pyproject.toml` and `src/xiaocao/`.
-   - Otherwise use `$SKILL_DIR/assets/xiaocao-runtime`.
-3. Run from `XIAOCAO_ROOT`. Prefer `.venv/bin/python` for scripts when present; otherwise use `PYTHONPATH=src python3`.
-4. Read only the matching branch below before acting. If the request crosses branches, read each matching file. Do not preload sibling branches.
-5. Apply Operating Contract §1a to this research deployment: the user identifies both local digital simulation and APP-server simulation; the current APP service cannot affect a real brokerage account even where UI/code/history says `live`. Keep the two ledgers separate. For a trading fault, read `references/book-b-live-repair.md`: protect the 09:25–09:30 BUY and each legal SELL window, classify actual dependencies, restore through Python first, and defer full 5 Why until the trade outcome. Current APP sellable can support a new dated owned-lot SELL while an older order remains separately unresolved.
+The scheduler prompt gives the exact first action. Verify its initial header and
+actual runtime identity, then start that action with short yield; read the role
+guide while the original process waits. Closing's first shell call is its startup
+launcher; sparse/hour locks may require immediate quiet stop before any other work.
+Why: context preparation must not consume an irreversible trading window.
 
-Completion means the requested command reached a terminal state and the branch-specific evidence was checked. A command start, intermediate log line, or UI toast is not completion.
-
-## Non-negotiable boundaries
-
-- `docs/OPERATING_CONTRACT.md` is the SSOT for Book A/B/T, ★E authority, fills, exits, allocation, kill-switch, account identity and capital safety. Read it completely before changing or adjudicating those semantics; do not duplicate them here.
-- The deterministic spine owns data, fills, stops, accounting and safety. Never hand-compute a fill, edit an account/ledger, fabricate a trade, or authorize a real order.
-- Xiaocao is paper-only unless both live-capital keys pass `src/xiaocao/live/safety.py`. An automation never creates either key.
-- Judgment artifacts (`XIAOCAO_PLAYBOOK`, posture timeline, candidate hypotheses) are priors only; they cannot tune parameters or validate a strategy. The separately user-authorized bounded KOL decision interface is governed by Operating Contract §2a; never infer its authority from raw source text. Only a validated v2 `kol-xiaocao` explicit mode-follow entry may precede normal Book-B mode rotation, and only inside the immutable same-day frozen candidate set; it never restores UNKNOWN or bypasses execution safety. For posture/exit judgment, start at `reference/experience/README.md` and follow only its relevant pointer.
-- Keep Books A, B and T separate. Same-code overlap is valid. For current truth, prefer `positions.jsonl`, `paper_trades.jsonl` and matching account files over stale holdings snapshots.
-- Book-B live lifecycle is isolated from the paper runtime: the separate
-  09:00 task must never call or wait for the 09:25 `morning-execute`, replace
-  the canonical `paper_record.py` writer, consume a simulated fill, or invent
-  a broker fill. It requires
-  ★E/allocation proof for BUY, monitor-authorized owned-lot evidence for SELL,
-  account-level writer fencing and durable takeover/reconcile evidence. The
-  active write route is Founder `native-app`; a real submit still requires
-  exact App/account binding, native query reconciliation and both capital keys.
-  First-order receipt, UNKNOWN, reconcile, rejection and replacement semantics
-  are governed by `docs/OPERATING_CONTRACT.md` §4/§9. Resolve the exact old
-  claim without blind replay; current APP sellable and owned-lot proof may
-  authorize a separate new-date SELL under §4. Keep each order's identity and
-  later accounting separate.
-  Its non-empty freeze must be hash/count bound to the consumed snapshot; its
-  producer strategy Git SHA must be bound by the freeze manifest; its
-  allocation facts must come from a complete dated live asset readback bound
-  to the logical/fund account and protect the complete economic capsule with a
-  canonical hash. The live logical account is fixed to `primary`. Apply
-  Contract §6 for the approved account-bound dynamic APP capital policy;
-  financial postings and observations use one SQLite journal; accounting,
-  statement export or cash classification work reads `docs/BOOK_B_ACCOUNTING.md`.
-  Small unexplained cash differences follow Contract §6; preserve the raw
-  observation and use conservative proved cash rather than inventing postings.
-  A broker-reconciled
-  settlement is still mandatory after owned fills. Morning fences a code with an
-  unresolved older SELL. Intraday live
-  monitoring reads only broker-proved owned lots, reuses the production exit
-  policy, and hands authorized lot-bound SELL intents to the same exact-once
-  native execution port. It never reads or writes paper account files. The
-  native App has no mock namespace, so
-  exit records `native_environment_restore_not_applicable` rather than claiming
-  a fake environment switch.
-- Before trusting A/B or repaired ledger state, run `scripts/data_doctor.py`. Raw cumulative A-B PnL is accounting information; exit comparison requires the identical-entry paired cohort.
-- Cache first and rate-limit Xiaocao API calls. The market-data branch contains endpoint-specific traps.
-- Daily shell runs retain unique evidence under `output/live/auto/runs/<run_id>`.
-  Read the supervisor's `terminal.json`, manifest and command events before
-  declaring completion; a `done` log line cannot override the process outcome.
-  Source changes require a new legal run, never a replay of completed orders.
-- Book T v2 ETF expressions are paper-only and must use the explicit contract seam in `src/xiaocao/live/instrument_contract.py`; missing lot/T+0-T+1/fees, proprietary quote contract, current trading status, liquidity status or provenance stays fail-closed. See `docs/OPERATING_CONTRACT.md` §4b/§5 for the SSOT.
-- Book T v2 daily stability and formal burn-in are distinct time gates. Run
-  `scripts/book_t_v2_soak.py --gate daily-stability --required-days 5` for the
-  stage-3 soak, and `--gate engineering-burn-in --required-days 20` for stage
-  4. Neither rehearsal evidence nor the five-day acceptance may satisfy or
-  lower the twenty-real-trading-day gate.
-
-## Route by consumer task
-
-| Request branch | Read completely before acting |
+| Actual consumer | Role guide |
 |---|---|
-| Morning automation, 9:25 recommendation, frozen evidence review, ★E paper buys | [`references/automation-morning.md`](references/automation-morning.md) |
-| Opening/sparse monitor, 14:25 precheck, 14:55 discipline, sell or holding audit | [`references/automation-intraday.md`](references/automation-intraday.md) |
-| Daily EOD capture, evaluation, A/B/T settlement and audit | [`references/automation-eod.md`](references/automation-eod.md) |
-| Friday weekly deep review and evidence-gated auto-iteration | [`references/automation-weekly.md`](references/automation-weekly.md) |
-| Automation cadence, RRULE or Codex schedule changes | [`references/scheduling.md`](references/scheduling.md) |
-| Quotes, environment, minute/K-line, pools, sectors, indices or indicators | [`references/market-data.md`](references/market-data.md) |
-| Reports, strategy runs, backtests, cohorts or paper-vs-market research | [`references/strategy-and-backtests.md`](references/strategy-and-backtests.md) |
-| Kronos variants, training rows, research guards, verdict ledger or flywheel states | [`references/research-flywheels.md`](references/research-flywheels.md) |
-| Founder Securities Web/OpenCLI legacy route inspection only; never use it inside `native-app` | [`references/foundersc-opencli.md`](references/foundersc-opencli.md) |
-| Founder Securities macOS native App probe, unlock, prepare, submit, positions/orders/trades plus positions-embedded funds-summary readback or remote runtime preflight | [`references/foundersc-native-ax.md`](references/foundersc-native-ax.md) |
-| Book-B live execution seam, ownership evidence or allocation proof | [`references/automation-morning.md`](references/automation-morning.md), [`references/automation-intraday.md`](references/automation-intraday.md), [`references/foundersc-native-ax.md`](references/foundersc-native-ax.md) |
-| Book-B live non-normal result, self-repair, narrow resume or 5 Why | [`references/book-b-live-repair.md`](references/book-b-live-repair.md), then the owning live branch above |
-| “What should the trading system do?” or a behavior change | `docs/OPERATING_CONTRACT.md`, then the owning code/tests |
-| Posture, discretionary exit triage or distilled 小草 knowledge | `reference/experience/README.md`, then only the routed playbook/timeline artifact |
-| KOL source absorption, reviewed bounded decisions, account-risk overlay | [`references/kol-trading-judgment.md`](references/kol-trading-judgment.md), Operating Contract §2a |
+| APP Book B morning | [morning-app](references/tasks/morning-app.md) |
+| Original recommendation producer | [morning-producer](references/tasks/morning-producer.md) |
+| Original Paper B/T supervisor | [morning-paper](references/tasks/morning-paper.md) |
+| Opening protection /14:25 precheck /14:45 close | [protective monitor](references/tasks/monitor-protective.md) |
+|10:25/10:55/13:25/13:55 claim owner | [sparse monitor](references/tasks/monitor-sparse.md) |
+| EOD post-close business/feedback | [EOD owner](references/tasks/eod.md) |
+| Weekly frozen-plan/repair/research | [weekly owner](references/tasks/weekly.md) |
 
-## Shared evidence tools
+Read the role's current phase, then only references triggered by an emitted event.
+[Shared automation contract](references/automation-context.md) defines identity,
+owned recovery, evidence, financial/notification boundaries. Long automation
+references are detailed lookup contracts, not an instruction to preload every
+consumer or all historical incident narratives. A duplicate/no-op gate stops
+before supporting work; preserve the actual returned branch.
 
-- `python3 scripts/show_journal.py --date today`: same-day cross-run chronology; read first for intraday/EOD.
-- `python3 scripts/status.py --json`: Book A/B paired comparison, Book T valuation, cash/equity, decisions and open holdings.
-- `python3 scripts/data_doctor.py`: ledger/snapshot integrity gate.
-- `python3 scripts/flywheel_selfcheck.py`: capital/capability/strategy-loop health.
-- `python3 scripts/research_run.py --trades <file> --n-tried N`: guarded cache-built research verdict.
+## Repository, strategy and research work
 
-## Response contract
+| Need | Entry |
+|---|---|
+| Strategy consumer/parameter/authority map | docs/STRATEGY_CONSUMPTION.md, then relevant source modules |
+| Change or adjudicate business semantics | Read docs/OPERATING_CONTRACT.md completely before changing them |
+| Market data/auth/history/source issues | [market-data](references/market-data.md) |
+| Backtest/report/current research evidence | [strategy-and-backtests](references/strategy-and-backtests.md) |
+| Hypothesis/verdict/research-promotion loop | [research-flywheels](references/research-flywheels.md) |
+| Posture/exit judgment priors | reference/experience/README.md, then only its relevant artifact |
+| Current KOL applicability/policy | [kol-trading-judgment](references/kol-trading-judgment.md) |
+| Native APP diagnostic/action/recovery | [foundersc-native-ax](references/foundersc-native-ax.md), exact current guidance |
+| Failed or overbroad execution dependency | [book-b-live-repair](references/book-b-live-repair.md) |
+| Create/update/audit scheduling | [scheduling](references/scheduling.md) |
+| Exact historical OpenCLI evidence only | [legacy OpenCLI](references/foundersc-opencli.md); never use inside native-app |
 
-- For automations, reply in concise Chinese and lead with execution/account outcome, not market storytelling.
-- After a high-impact APP-simulation strategy, capital, permanent-parameter or
-  safety-gate change is committed, enqueue and attempt its exact change notice
-  with `PYTHONPATH=src .venv/bin/python scripts/trading_change_notice.py`.
-  After the business window, run its `--retry-pending` mode, report the pending
-  count and repair a failed transport without delaying a legal BUY/SELL.
-- State the actual market/query date. Link the decisive local artifacts and report key rows/counts.
-- Separate deterministic success from supporting-layer degradation such as stale posture, missing reviews or a heavier knowledge backlog.
-- Report `候选股: NONE`, non-trading-day skip, `T+1_blocked` or an unchanged REJECTED research verdict as their actual bounded states, not generic failures.
-- Escalate only branch-defined anomalies; never turn warnings into trades or parameter changes.
+## Authority and completion
+
+Operating Contract is business SSOT; code implements behavior; artifact receipts
+prove outcomes. A mismatch is a repair issue. Apply §1a: local digital simulation
+and APP-server simulation are distinct; APP legacy live labels do not establish
+real brokerage effects. Preserve formal order/claim/accounting rigor because
+false fills or erased failures invalidate the experiment.
+
+Paper A/B/T, APP and independent funded research retain their own writers/fills.
+Published LiangHui meanings are semantic SSOT; trading workers adapt current
+conditions, not re-extract sources. Judgment priors have authority0; only the
+existing reviewed §2a interface may influence current decisions. Parameter/strategy
+promotion uses research_run and §10, not a coherent story or a model result.
+
+Completion requires the owned branch's actual outcomes and evidence, plus any
+remaining authorized local recovery. A recoverable early blocked process is not
+task completion. Use §1e scope/repair; never replay unknown effects, replace an
+active owner, reset a claim or extend the original budget. Genuine current missing
+proof pauses affected new BUY; independent protective exits use their own guards.
+
+For source changes follow AGENTS.md: preserve WIP, minimum urgent validation then
+original continuation, independent Standards/Spec review and affected regression.
+APP engineering tests require the legal test-window gate. Instruction changes
+with hash-bound packets must preserve old exact readback and package closure;
+see docs/CONTEXT_ENGINEERING.md. Do not label instructions or tests as natural
+execution acceptance. Final Chinese output separates deterministic business,
+support degradation, actual orders/fills and delivery. Keep payloads in artifacts.

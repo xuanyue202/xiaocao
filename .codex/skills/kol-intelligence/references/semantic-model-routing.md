@@ -38,6 +38,15 @@ requests. Already-issued packets retain their bound route; schema-v1 Astra
 packets remain valid for exact read-only reconciliation and must not be migrated
 or redispatched.
 
+New schema-v3 packets also bind [semantic-analysis.md](semantic-analysis.md):
+the analyst reads all source evidence and the complete relevant semantic rules,
+while provider acquisition/external-writer recipes stay with the executor.
+Full-contract/durable-knowledge hashes remain bound, as does the new reading map.
+Legacy v1 prepare is rejected as read-only without creating a new profile packet.
+Existing schema-v2 profile packets keep their exact original EOF-reading prompt;
+same-request prepare is idempotent, not an implicit prompt migration. Why:
+reconstructing an old accepted dispatch with today's wording destroys its proof.
+
 ## Prepare and dispatch
 
 1. Keep the same runner stdin open. Bind the immutable analysis request to its

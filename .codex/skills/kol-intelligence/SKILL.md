@@ -60,45 +60,28 @@ one-attempt human authorization limits, revive answered/expired questions, or
 copy temporary waiting/approval states into permanent instructions. Keep stable
 rules in the prompt and current run evidence in memory/ledgers.
 
-## Load only the required contract
+## Load the consumer's current phase
 
-- For an independent missing-video/Handoff health check, read
-  [video-gap-watchdog.md](references/video-gap-watchdog.md). This read-only
-  diagnostic does not run the hourly capture gate or acquire a source slot.
+| Consumer / trigger | First context | Later only when needed |
+|---|---|---|
+| Remote hourly run/status/audit | [remote startup](references/hourly-remote-start.md), original hour gate first | Exact emitted branch in hourly-remote-writer.md |
+| Local capture-local on acquisition host | [local startup](references/hourly-local-start.md) | Native/Edge/provider reference on matching input |
+| Unambiguous Xiaocao replay | [xiaocao-capture-start](references/xiaocao-capture-start.md) completely, start within10s | Ready/native evidence branch; no full contract before Ready |
+| Source semantic analyst | [semantic model routing](references/semantic-model-routing.md) and packet-bound analyst profile | Exact packet's versioned reading instructions; full source to EOF always |
+| Parent publication/viewpoint/reminder/Book executor | full-contract.md completely before external effects | Exact provider/publication/claim branch |
+| Reusable knowledge output | durable-knowledge.md and exact packet | Separate authority0 judgment/ingestion receipt |
+| Human playback selected by private descriptor | [human-assisted playback](references/human-assisted-playback.md) | Explicit same-capture collaboration, not automatic native inputs |
+| Native share entry | native-share-bridge.md and native-course-atomic.md when applicable | Bound Browser proof then exact native SOP |
+| Liuguan local companion | liuguan-local-discovery.md | Private deployed descriptor and real acceptance required |
+| Independent missing-video/Handoff check | video-gap-watchdog.md | Read-only; no hourly/source slot |
+| Remote Baidu player | video-player-safety.md before player work | Pause/close proof bound to exact transcript |
 
-- For the local Liuguan/养生自行车 capture companion, read
-  [liuguan-local-discovery.md](references/liuguan-local-discovery.md). This covers the fixed publisher sweep, cache-only Moments supplement,
-  native connection, accepted-artifact ASR and shared cleanup. Activation still
-  requires the private deployed-binary descriptor and real acceptance.
-
-- For an unambiguous Xiaocao replay capture, read
-  [xiaocao-capture-start.md](references/xiaocao-capture-start.md) completely
-  and start within 10 seconds. Do not read `full-contract.md` before Ready.
-- For local `capture-local`, read
-  [hourly-local-capture.md](references/hourly-local-capture.md) completely; on
-  OpenCLI/Edge failure read
-  [opencli-edge-recovery.md](references/opencli-edge-recovery.md). Skip
-  remote/full contracts.
-- At a native `见势擒龙团` share entry, the native-stage reference routes to
-  [native-share-bridge.md](references/native-share-bridge.md): reuse the configured
-  Caoliao code, obtain its fresh issued entry, and operate the visible brand jump.
-  Its verification boundary includes the outstanding automatic-close failure.
-- For remote hourly `scripts/kol_daily.py run|status|audit`, read
-  [hourly-remote-writer.md](references/hourly-remote-writer.md) completely. Do
-  not read the full contract before starting the runner.
-- Before remote Baidu player work, read
-  [video-player-safety.md](references/video-player-safety.md) completely.
-- For hourly `daily_analysis_input_required`, keep stdin open, read
-  [semantic-model-routing.md](references/semantic-model-routing.md), and use
-  only `config/semantic-analyst.json`.
-- For remote post-handoff, enrichment, subscription, batch, semantic analysis,
-  publication, viewpoint, notification, or Book KOL-US work, read
-  [full-contract.md](references/full-contract.md) completely before acting.
-- Before writing reusable knowledge, also read
-  [durable-knowledge.md](references/durable-knowledge.md) completely.
-
-Do not load unrelated references. Do not make the user invoke another skill
-to complete the current-decision and reusable-knowledge branches.
+Why: source analysts, local capture and remote effect writers have different
+permissions and context. The complete-source requirement is preserved; provider
+acquisition and writer instructions are not generic analyst duties. Versioned
+immutable packets remain exact; a new prompt cannot silently rewrite old dispatch.
+Do not load unrelated references or ask the user to invoke another skill to finish
+the already-authorized decision/knowledge branches.
 
 ## Route Xiaocao recap requests before analysis
 
@@ -113,8 +96,10 @@ evidence ambiguity, requested edits, or explicit historical aggregation.
 
 ## Non-negotiable semantic boundaries
 
-- Xiaocao: native WeChat mini-program only. H5 is a credential-free identity
-  anchor, never a player/login/fallback. Follow the native SOP action table:
+- Automatic local Xiaocao capture uses native WeChat mini-program only. H5 is
+  a credential-free identity anchor, never a player/login/fallback. A configured
+  human-assisted route follows its own same-capture contract; remote Baidu player
+  operations follow video-player-safety.md. For automatic native input follow the SOP:
   after media capture, close the exact course window and verify its absence.
   No Space/pause/mute; keep WeChat running.
   No guessed coordinates, exploratory clicks, CDP/DOM, refresh or relaunch.

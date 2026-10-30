@@ -92,8 +92,7 @@ def test_complete_context_receipt_roundtrip_is_local_and_idempotent(inputs, monk
     request_before = inputs["request"].read_bytes()
     prepared = _prepare(inputs)
     packet = _read(prepared["packet_path"])
-    assert packet["schema_version"] == 2
-    assert packet["analyst_profile"]["value"]["model"] == "gpt-5.6-sol"
+    assert packet["schema_version"] == 3
     assert packet["analyst_profile"]["value"]["objective"]
     assert packet["analyst_profile"]["source"]["sha256"] == prepared["analyst_profile_sha256"]
     assert prepared["analyst_profile_id"] == "kol-semantic-analyst-v1"
@@ -105,10 +104,9 @@ def test_complete_context_receipt_roundtrip_is_local_and_idempotent(inputs, monk
     assert packet["source_metadata"]["author"] == "小草"
     assert all(Path(ref["path"]).is_absolute() for ref in packet["contracts"].values())
     prompt = prepared["spawn_arguments"]["message"]
-    for requirement in ("唯一目标", "必须读到 EOF", "第一遍", "第二遍", "稳定 segment",
-                        "完整灰常亮报告", "验收标准", "停止条件", "禁止网络和外部 writer"):
-        assert requirement in prompt
-    assert prepared["spawn_arguments"]["model"] == "gpt-5.6-sol"
+    assert packet["contracts"]["analyst_reading"]["sha256"] == _sha(
+        delegation.REFERENCES / "semantic-analysis.md")
+    assert prepared["spawn_arguments"]["model"] == packet["analyst_profile"]["value"]["model"]
     assert prepared["spawn_arguments"]["reasoning_effort"] == "xhigh"
     assert prepared["spawn_arguments"]["fork_context"] is False
     dispatch = _dispatch(inputs, prepared)
@@ -270,11 +268,11 @@ def test_missing_dispatch_and_wrong_returned_agent_block(inputs):
     assert Path(prepared["packet_path"]).with_name("dispatch.json").read_bytes() == original
 
 
-@pytest.mark.parametrize("target", ["evidence", "request", "market", "household", "contract", "durable", "prompt", "packet"])
+@pytest.mark.parametrize("target", ["evidence", "request", "market", "household", "contract", "durable", "analyst_reading", "semantic_routing", "prompt", "packet"])
 def test_input_changes_block_without_modifying_sealed_bundle(inputs, monkeypatch, target, tmp_path):
     refs = tmp_path / "contracts"
     refs.mkdir()
-    for name in ("full-contract.md", "durable-knowledge.md"):
+    for name in ("full-contract.md", "durable-knowledge.md", "semantic-analysis.md", "semantic-model-routing.md"):
         (refs / name).write_bytes((delegation.REFERENCES / name).read_bytes())
     monkeypatch.setattr(delegation, "REFERENCES", refs)
     prepared = _prepare(inputs)
@@ -282,6 +280,8 @@ def test_input_changes_block_without_modifying_sealed_bundle(inputs, monkeypatch
     _bundle(inputs)
     before = (inputs["bundle"].read_bytes(), inputs["receipt"].read_bytes())
     paths = {**inputs, "contract": refs / "full-contract.md", "durable": refs / "durable-knowledge.md",
+             "analyst_reading": refs / "semantic-analysis.md",
+             "semantic_routing": refs / "semantic-model-routing.md",
              "prompt": Path(prepared["analyst_prompt_path"]), "packet": Path(prepared["packet_path"])}
     path = paths[target]
     path.write_bytes(path.read_bytes() + b"\n ")

@@ -33,7 +33,7 @@ next-run times through Automation after updates, including actual local time.
 |---|---|---|
 | Remote writer | Atomically publish reports, viewpoints, evaluations and relations | Sole full reader for new/changed report bodies; LiangHui is the semantic SSOT |
 | 09:00 live morning | One native live runner, authentication probe, live current-applicability decision | Consume the compact viewpoint projection; never redo unchanged source semantics |
-| 09:23 prerecommendation | Produce the immutable recommendation/freeze and exit | No KOL semantic work |
+| Original producer (09:18 wake /09:25:01 capture) | Produce the immutable recommendation/freeze and exit | No KOL semantic work |
 | 09:25 paper execution | Keep the original paper shell alive and complete paper current applicability | Consume the compact viewpoint projection; never redo unchanged source semantics or live work |
 | 09:35/09:45/09:55 opening | Protective paper/live checkpoints only | Consume an already-valid decision only; no context, model or publication work |
 | 10:25/10:55/13:25/13:55 sparse | One owner-bound tick claim and paper/live checkpoints | Only the claim owner may adapt the compact projection when its fingerprint changed or the decision expired |

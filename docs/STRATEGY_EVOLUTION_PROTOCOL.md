@@ -34,6 +34,13 @@ Protocols govern research consumption only. They do not block `morning`, `eod`, 
 
 - `shortline-book-b-v1`: Book B short-line paper/simulation hypotheses judged by `research_run.py`.
 - `trend-book-t-v1`: Book T trend paper/simulation hypotheses judged by `trend_guards.py` / `trend_optimize.py`.
+- `app-b-forward-funded-v1`: independent funded control/challenges in the registry;
+  authority0 future-window model evidence, not APP order or strategy-promotion
+  authority. Why: the protocol index must not turn a registered model into either
+  an unregistered account or a supposedly validated execution path.
+
+The registry `reference/experience/research_protocols.yaml` is authoritative for
+current definitions; this index routes consumers, not a second parameter source.
 
 ## Research Run Manifest
 
