@@ -543,11 +543,18 @@ def _consumption_evidence(location: Path, runtime: str) -> tuple[list[dict], dic
                 _require(terminal.get("schema_version") == "paper-policy-result.v1"
                          and terminal.get("consumption_sha256") == claim["receipt_sha256"]
                          and all(terminal.get(key) == claim.get(key) for key in ("date", "pick"))
-                         and terminal.get("status") in ("bought", "no_buy"), "paper_terminal_binding_invalid")
+                         and terminal.get("status") in ("bought", "no_buy", "source_blocked", "bought_source_blocked"),
+                         "paper_terminal_binding_invalid")
                 entries = terminal.get("entries")
+                failures = terminal.get("entry_source_failures", [])
+                blocked = terminal["status"] in ("source_blocked", "bought_source_blocked")
+                _require(isinstance(failures, list) and failures == claim.get("entry_source_failures", [])
+                         and (not failures or blocked), "paper_terminal_source_failures_invalid")
+                expected_status = (("bought_source_blocked" if entries else "source_blocked") if blocked
+                                   else ("bought" if entries else "no_buy"))
                 _require(isinstance(entries, list) and type(terminal.get("buy_count")) is int
                          and terminal["buy_count"] == len(entries)
-                         and terminal["status"] == ("bought" if entries else "no_buy"), "paper_terminal_count_invalid")
+                         and terminal["status"] == expected_status, "paper_terminal_count_invalid")
                 name = terminal["status"]
                 counts = stats["paper_terminal_status_counts"]
                 counts[name] = counts.get(name, 0) + 1
