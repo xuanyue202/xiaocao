@@ -1,0 +1,447 @@
+{
+  "date": "2026-10-29",
+  "kind": "review",
+  "summary": "小草把弱市短线判断拆成环境切换、模式选择、入场边界和退出验证：指数与科技走弱时，资金可能暂时集中到最高位和人气股，但只有模式仍有效、开盘不过高且个股出现可验证的强弱转换时才参与；没有合适模式就空仓。该框架有可复核条件，适合保留为候选知识，不能由单场直播自动升级为策略规则。",
+  "author": "小草",
+  "source": "小草直播",
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_netdisk_enrichment/artifacts/kol-netdisk-63064b84d9bba464/20261029 抽平板抽电脑｜大师班专场(17：30开播)-compressed.txt",
+      "sha256": "859674e1d1c7a578b184f95250628c1ede4de1d518eec0f862806a7748e30fd1",
+      "size": 118055
+    }
+  ],
+  "authority": 0,
+  "posture": {
+    "regime": "弱市中的短线高位赚钱效应切换，等待次日修复验证",
+    "dominant_style": "最高位、人气股低吸与红盘起爆优先，科技与通信设备暂避",
+    "risk": "高位模式可能随修复失败迅速失效；高开追入、把腰斩当安全垫和把个别高点当统计结果都会放大损失",
+    "style_ranking": [
+      "最高位且符合人气股低吸或红盘起爆条件",
+      "其他有分数、有模式约束的短线机会",
+      "科创板零散机会",
+      "中高位泛化追涨与科技股无条件抄底"
+    ]
+  },
+  "regime_call": {
+    "horizon": "下一交易日至随后一段短线周期",
+    "call": "若次日先出现修复且最高位、人气股延续，短线行情可能维持一段时间；若修复失败、高位快速转亏，则该判断失效。",
+    "what_would_falsify": [
+      "次日没有修复且逆势强股普遍低开低走",
+      "最高位环境和人气股模式重新出现连续亏钱效应",
+      "科技与低位风格形成持续、可重复的相对强势并取代高位资金聚集"
+    ]
+  },
+  "directions": [
+    {
+      "name": "最高位与人气股",
+      "stance": "在弱市中暂列短线优先观察方向",
+      "conditions": [
+        "位置环境继续偏强",
+        "个股开盘不过高",
+        "模式分数和触发条件仍成立"
+      ],
+      "boundary": "不是泛化到所有中高位，更不是无条件追涨"
+    },
+    {
+      "name": "科技、通信设备与光模块",
+      "stance": "短线回避无条件抄底",
+      "conditions": [
+        "板块仍处于快速下跌和套牢盘压力中"
+      ],
+      "boundary": "来源没有证明长期价值，也没有给出何时重新转强的量化阈值"
+    },
+    {
+      "name": "AI短剧",
+      "stance": "作为可能冲击真人短剧制作效率和需求的产业观察",
+      "conditions": [
+        "需要收入、订单和平台数据验证"
+      ],
+      "boundary": "来源对凡拓数创是否受益明确表示不知道，不能据此映射交易"
+    }
+  ],
+  "stocks": [
+    {
+      "name": "冰山冷热",
+      "code": "000530.XSHE",
+      "role": "红盘起爆与次日弱转强案例",
+      "boundary": "来源给出条件性续强与正常退出，不是无条件持有"
+    },
+    {
+      "name": "龙溪股份",
+      "code": "600592.XSHG",
+      "role": "逆势快速封板案例",
+      "boundary": "只作当日模式表现证据"
+    },
+    {
+      "name": "大业股份",
+      "code": "603278.XSHG",
+      "role": "人气股低吸和高位案例",
+      "boundary": "只作来源复盘案例"
+    },
+    {
+      "name": "百洋股份",
+      "code": "002696.XSHE",
+      "role": "倒接力案例",
+      "boundary": "来源所说九个点未给比较基准和成交证据；系统相对昨收末点约+4.93%，09:30的11.32至15:00的12.35点对点约+9.1%，三者不能混为实际收益"
+    },
+    {
+      "name": "世纪恒通",
+      "code": "301428.XSHE",
+      "role": "高分股案例",
+      "boundary": "原声前后日期和分数表述含混"
+    },
+    {
+      "name": "所成科技",
+      "code": null,
+      "role": "科创板十九个点赢家例证",
+      "boundary": "来源明确说19个点，但名称、代码、具体交易日和收益口径均未解析，因此只能作为未解析的赢家例证"
+    },
+    {
+      "name": "沃德",
+      "code": null,
+      "candidate_name": "沃尔德",
+      "candidate_code": "688028.XSHG",
+      "role": "高开回避候选映射",
+      "boundary": "原声只说“沃德”，系统候选映射不能替代来源身份确认"
+    },
+    {
+      "name": "房多说创/防透视/团拓数创",
+      "code": null,
+      "candidate_name": "凡拓数创",
+      "candidate_code": "301313.XSHE",
+      "role": "人气股低吸和短剧候选映射",
+      "boundary": "原声多次含混为“房多说创/防透视/团拓数创”，不得视为唯一确认；来源六七个点未给比较基准和成交证据，系统候选相对昨收末点约+2.89%，09:30的60.51至15:00的64.82点对点约+7.1%，三者不能混为实际收益"
+    }
+  ],
+  "method_principles": [
+    "先判断赚钱效应所在的位置和市值环境，再选择与之匹配的模式；环境变化时允许从低位切到最高位，但不得把“高位有效”扩展成所有中高位追涨。",
+    "没有合适模式就空仓；有模式也要同时约束开盘高度、分数和触发条件。",
+    "大幅下跌或腰斩本身不是安全垫，个股可能继续多次腰斩甚至退市；抄底需要独立的基本面和价格验证。",
+    "量化或模式绩效应覆盖全部信号，并使用事先固定的买卖规则；不能挑选单只股票、区间最高价或最优卖点来证明有效。",
+    "真实盘中机会不固定在尾盘某一分钟；入场时间应由信号触发，盘中策略容量更大但波动也更大。",
+    "连板候选通常要尽早表现强度；弱市中拖到下午才封板的对象更容易回落，收盘卖并非天然更优。"
+  ],
+  "exit_lessons": [
+    "冰山冷热只有在次日出现弱转强时才保留继续走强的条件；否则按正常计划退出。",
+    "原声在“百元大哥”之后给出次日高抛或先卖一半，但对象无法唯一确认；这条处理意见不得附着到冰山冷热或百洋股份。",
+    "在弱市中，逆势上涨提供次日延续线索，但若逆势股集体失去强度，应迅速撤销延续假设。"
+  ],
+  "decision_trace": [
+    {
+      "observation": "10月29日大盘和科技方向明显走弱，但来源列举的最高位、人气股低吸与红盘起爆案例仍有正收益。",
+      "inference": "短线资金的相对赚钱效应可能从低位和科技转向最高位与人气股。",
+      "action": "只在最高位且符合模式、开盘不过高的对象中观察机会；不做泛化追高。",
+      "falsifiers": [
+        "最高位连续出现亏钱效应",
+        "次日修复失败",
+        "模式分数与触发条件消失"
+      ]
+    },
+    {
+      "observation": "冰山冷热在弱市中逆势封板，来源称盘中开板后回封且封单较大。",
+      "inference": "若次日由弱转强，强度可能延续；若没有转强，强势逻辑不成立。",
+      "action": "只把弱转强作为冰山冷热的续持条件；否则正常退出，不附加来源没有说过的修复强弱分支。",
+      "falsifiers": [
+        "开盘后不能转强",
+        "回封强度无法延续",
+        "市场修复未发生"
+      ]
+    },
+    {
+      "observation": "在“百元大哥，明天怎么办”的含混问答后，来源说次日高抛或先卖一半，并看早盘情况。",
+      "inference": "这是一条对象未能唯一确认的次日减仓意见，不能自动归给冰山冷热或百洋股份。",
+      "action": "仅保留为原声对象含混的高抛或减半框架；没有身份和持仓绑定时不执行。",
+      "falsifiers": [
+        "原声对象无法补足身份",
+        "次日没有修复",
+        "对象早盘失去强度"
+      ]
+    },
+    {
+      "observation": "科技、通信设备和光模块大幅下跌，来源用多次腰斩和退市案例反驳“跌多即安全”。",
+      "inference": "价格下跌幅度不能单独提供安全边际。",
+      "action": "不因腰斩就抄底，必须等待独立的基本面与价格结构确认。",
+      "falsifiers": [
+        "板块形成持续相对强势",
+        "基本面和价格同时出现可复核反转证据"
+      ]
+    }
+  ],
+  "judgment_heuristics": [
+    "弱市中先找相对赚钱效应，而不是固守原有风格。",
+    "高位有效的边界是“最高位加模式”，不是“所有高位”。",
+    "高开过多会压缩赔率；即使同类个股偶尔上涨，也不推翻回避高开的风险约束。",
+    "预测只能形成待验证基准情形，次日开盘和盘中强弱才决定执行。",
+    "个例只能解释机制，不能证明长期胜率；绩效结论必须接受全样本和固定退出规则检验。"
+  ],
+  "hypotheses": [
+    {
+      "authority": 0,
+      "category": "research_quality",
+      "claim": "用全样本和固定卖出规则评估模式，会显著压低由挑选最高卖点造成的虚高收益。",
+      "implied_rule": "所有模式研究必须预先固定买点、卖点和未成交处理。",
+      "falsifiable_test": "在同一信号全集上比较固定规则结果与事后最优卖点结果的收益差、回撤差和可复制率。",
+      "expected_effect": "减少过拟合和销售展示对决策的误导。",
+      "related_existing_ids": [
+        "XH-282",
+        "XH-266",
+        "XH-074"
+      ],
+      "dedup_boundary": "XH-282是龙虎榜成功样本的幸存者偏差，XH-266是事后低点偏差，XH-074是具体退出策略；本候选限定销售展示中事后挑选最高卖点造成的收益虚高。"
+    }
+  ],
+  "prior_hypothesis_comparison": [
+    {
+      "existing_id": "XH-320",
+      "disposition": "partial_support_only_no_merge",
+      "reason": "10月29日来源再次支持高位分数改善与模式切换，但没有完整重述XH-320所需的“整体与下跌低吸环境为空”交叉条件，也没有证明相对收益；不能把局部支持合并为整条复现。"
+    },
+    {
+      "existing_id": "XH-291",
+      "disposition": "direct_recurrence_candidate",
+      "reason": "来源明确重复“累计跌幅大或腰斩仍可能继续大跌”的同一主张，可在获准候选归档时沿用XH-291原claim，不新建换表述命题。"
+    },
+    {
+      "existing_id": "XH-220",
+      "disposition": "partial_support_with_weak_market_refinement_no_merge",
+      "reason": "来源在弱市语境中再次把快速封板视为相对强、下午才封板视为更易回落，为XH-220提供方向性局部支持并细化其弱市适用场景；但本次没有控制环境与个股强度，也没有核验次日连板率、开盘溢价、收盘收益、最大不利变动和不可成交，不能把局部支持合并成整条复现，更不重复新建命题。"
+    }
+  ],
+  "timing_notes": [
+    "来源发表于2026-10-29盘后附近，对“明天”的判断指向2026-10-30。",
+    "次日修复、冰山冷热弱转强和高抛计划均为短期条件，不能跨越新的市场事实长期沿用。",
+    "方法原则可跨期保留，但任何参数化或策略升级仍需研究工具和人工门禁。"
+  ],
+  "typo_corrections": [
+    {
+      "surface": "房多说创/防透视/团拓数创",
+      "candidate": "凡拓数创",
+      "status": "unresolved",
+      "reason": "多处原声近似且系统目录存在候选，但没有唯一身份凭据"
+    },
+    {
+      "surface": "沃德",
+      "candidate": "沃尔德",
+      "status": "candidate_only",
+      "reason": "当日系统信号存在沃尔德，但原声未给代码"
+    },
+    {
+      "surface": "恒博",
+      "candidate": "恒勃股份",
+      "status": "candidate_only",
+      "reason": "音近且目录有候选，缺少代码或唯一上下文"
+    },
+    {
+      "surface": "东仓机密",
+      "candidate": "东山精密",
+      "status": "candidate_only",
+      "reason": "音近但没有独立确认"
+    },
+    {
+      "surface": "百威存储",
+      "candidate": "佰维存储",
+      "status": "candidate_only",
+      "reason": "音近但没有独立确认"
+    },
+    {
+      "surface": "江西桶",
+      "candidate": "江西铜业",
+      "status": "unresolved",
+      "reason": "音近但价格历史叙述不足以确认同一证券"
+    },
+    {
+      "surface": "北致科技",
+      "candidate": "北自科技",
+      "status": "candidate_only",
+      "reason": "音近且目录有候选，缺少唯一身份凭据"
+    }
+  ],
+  "promotional_performance_claims": [
+    {
+      "mode": "红盘起爆",
+      "period": "来源所称本月，具体起止日未给出",
+      "numbers": [
+        "次日开盘卖约77%",
+        "收盘卖约95%",
+        "最高约160%",
+        "最低或最高约110%"
+      ],
+      "status": "unverified_and_internally_ambiguous",
+      "reason": "来源在最高价卖、最低价卖以及110%和160%的对应关系上多次自纠，不能替他确定唯一最高或最低口径。",
+      "evidence": [
+        {"segment_id": "41fe4357a003b9f75181a5dd4efbf018d9a35cbe3604a26a6f3f5d39ced42aee", "quotes": ["这个月的红盘喜报", "第二天卖出开盘价卖77", "最高价卖160%"]},
+        {"segment_id": "67e895227a82ba90283e73e753004005f83d178e17d91b951522ab4e5f52a271", "quotes": ["最高价的110%", "收盘价95%", "最高价卖和最低价卖，随便瞎卖"]},
+        {"segment_id": "464df22c060b855353b66f9268dbec70d0f19aa7d4438e167e6379c2b93d3104", "quotes": ["应该在百分之呃77和95%之间"]}
+      ],
+      "boundary": "没有完整信号全集、固定卖法、费用、未成交处理或原始统计表，不得作为策略已验证收益。"
+    }
+  ],
+  "strategy_hit_audit": {
+    "teacher_named_winners": [
+      {
+        "surface_name": "冰山冷热",
+        "resolved_name": "冰山冷热",
+        "source_date": "2026-10-29",
+        "source_path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_netdisk_enrichment/artifacts/kol-netdisk-63064b84d9bba464/20261029 抽平板抽电脑｜大师班专场(17：30开播)-compressed.txt",
+        "local_classification": "not_emitted",
+        "reason": "本地10月29日十九条信号没有同票记录；分钟末点只支持当日强势，不是策略命中或成交。"
+      },
+      {
+        "surface_name": "龙溪",
+        "resolved_name": "龙溪股份",
+        "source_date": "2026-10-29",
+        "source_path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_netdisk_enrichment/artifacts/kol-netdisk-63064b84d9bba464/20261029 抽平板抽电脑｜大师班专场(17：30开播)-compressed.txt",
+        "local_classification": "not_emitted",
+        "reason": "本地10月29日十九条信号没有同票记录；分钟末点不能替代模式发出证明。"
+      },
+      {
+        "surface_name": "大业股份/再股份",
+        "resolved_name": "大业股份",
+        "source_date": "2026-10-28",
+        "source_path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_netdisk_enrichment/artifacts/kol-netdisk-63064b84d9bba464/20261029 抽平板抽电脑｜大师班专场(17：30开播)-compressed.txt",
+        "local_classification": "no_evidence",
+        "reason": "来源把它列为10月28日人气股低吸买入例子；10月29日十九条信号不能替代28日历史发出证据。"
+      },
+      {
+        "surface_name": "百洋股份",
+        "resolved_name": "百洋股份",
+        "source_date": "2026-10-29",
+        "source_path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_netdisk_enrichment/artifacts/kol-netdisk-63064b84d9bba464/20261029 抽平板抽电脑｜大师班专场(17：30开播)-compressed.txt",
+        "local_classification": "not_emitted",
+        "reason": "来源明确归为倒接力；本地10月29日十九条信号无同票。来源九个点未给比较基准或成交证据，不能据此确认策略命中。"
+      },
+      {
+        "surface_name": "世纪恒通/设计很通/四季恒通",
+        "resolved_name": "世纪恒通",
+        "source_date": "2026-10-28_or_2026-10-29_ambiguous",
+        "source_path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_netdisk_enrichment/artifacts/kol-netdisk-63064b84d9bba464/20261029 抽平板抽电脑｜大师班专场(17：30开播)-compressed.txt",
+        "local_classification": "no_evidence",
+        "reason": "原声在“今天”和“昨天”之间回摆，不能用10月29日十九条信号替代10月28日历史例证。"
+      },
+      {
+        "surface_name": "房多说创/防透视/团拓数创",
+        "resolved_name": null,
+        "candidate_name": "凡拓数创",
+        "source_date": "2026-10-29",
+        "source_path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_netdisk_enrichment/artifacts/kol-netdisk-63064b84d9bba464/20261029 抽平板抽电脑｜大师班专场(17：30开播)-compressed.txt",
+        "local_classification": "no_evidence",
+        "reason": "身份未唯一确认；来源六七个点未给比较基准或成交证据，即使候选凡拓数创有分钟点位，也不能记为老师同票命中。"
+      },
+      {
+        "surface_name": "所成科技",
+        "resolved_name": null,
+        "source_date": "source_review_window_not_uniquely_dated",
+        "source_path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_netdisk_enrichment/artifacts/kol-netdisk-63064b84d9bba464/20261029 抽平板抽电脑｜大师班专场(17：30开播)-compressed.txt",
+        "local_classification": "no_evidence",
+        "reason": "来源明确说科创板零散案例“所成科技19个点”，但名称、代码、具体交易日和收益基准均未解析，只能归为未解析赢家例证。"
+      }
+    ],
+    "local_strategy_benchmark_hits": [
+      {
+        "name": "沃尔德",
+        "code": "688028.XSHG",
+        "evidence_date": "2026-10-29",
+        "evidence_path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261030/xiaocao_942/market_evidence.json",
+        "classification": "cohort_benchmark",
+        "reason": "本地十九条信号中唯一活跃高开基准；老师原声是含混“沃德”并明确回避，不是点名赢家重合。"
+      }
+    ],
+    "direction_core_observations": [
+      {
+        "name": "冰山冷热",
+        "evidence_date": "2026-10-29",
+        "evidence_path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261030/xiaocao_942/market_evidence.json",
+        "classification": "cohort_benchmark",
+        "reason": "09:30点位约涨0.94%、末点约涨10.03%，只支持当日方向观察，不证明开盘、封单、买入或成交。"
+      },
+      {
+        "name": "龙溪股份",
+        "evidence_date": "2026-10-29",
+        "evidence_path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261030/xiaocao_942/market_evidence.json",
+        "classification": "cohort_benchmark",
+        "reason": "末点约涨9.98%，只支持当日强势观察。"
+      },
+      {
+        "name": "百洋股份",
+        "evidence_date": "2026-10-29",
+        "evidence_path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261030/xiaocao_942/market_evidence.json",
+        "classification": "cohort_benchmark",
+        "reason": "相对昨收末点约+4.93%，09:30的11.32至15:00的12.35点对点约+9.1%；来源九个点未给比较基准，三者不能互相替代，也不证明实际成交收益。"
+      },
+      {
+        "name": "凡拓数创候选",
+        "evidence_date": "2026-10-29",
+        "evidence_path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261030/xiaocao_942/market_evidence.json",
+        "classification": "no_evidence",
+        "reason": "候选证券相对昨收末点约+2.89%，09:30的60.51至15:00的64.82点对点约+7.1%；来源六七个点未给比较基准，三者不能互相替代，且原声身份未唯一确认。"
+      },
+      {
+        "name": "大业股份",
+        "evidence_date": "2026-10-29",
+        "evidence_path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261030/xiaocao_942/market_evidence.json",
+        "classification": "cohort_benchmark",
+        "reason": "只核对10月29日延续观察：末点约跌0.22%，与来源“今天也涨了”冲突；不反推10月28日买入命中。"
+      },
+      {
+        "name": "我爱我家",
+        "code": "000560.XSHE",
+        "evidence_date": "historical_unspecified",
+        "evidence_path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_netdisk_enrichment/artifacts/kol-netdisk-63064b84d9bba464/20261029 抽平板抽电脑｜大师班专场(17：30开播)-compressed.txt",
+        "classification": "no_evidence",
+        "reason": "只作为真正连板快速涨停的历史例子，来源未给本次交易日和本地命中证据。"
+      },
+      {
+        "name": "北致科技",
+        "code": null,
+        "candidate_name": "北自科技",
+        "candidate_code": "603082.XSHG",
+        "evidence_date": "historical_unspecified",
+        "evidence_path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_netdisk_enrichment/artifacts/kol-netdisk-63064b84d9bba464/20261029 抽平板抽电脑｜大师班专场(17：30开播)-compressed.txt",
+        "classification": "no_evidence",
+        "reason": "历史快速封板例子且语音身份未唯一确认，候选代码不能作为命中。"
+      },
+      {
+        "name": "国脉文化/国文化",
+        "code": null,
+        "evidence_date": "2026-10-28",
+        "evidence_path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_netdisk_enrichment/artifacts/kol-netdisk-63064b84d9bba464/20261029 抽平板抽电脑｜大师班专场(17：30开播)-compressed.txt",
+        "classification": "no_evidence",
+        "reason": "原声把它放在昨日高分语境，名称和代码含混；29日信号不能替代28日例证。"
+      },
+      {
+        "name": "恒博",
+        "code": null,
+        "candidate_name": "恒勃股份",
+        "candidate_code": "301225.XSHE",
+        "evidence_date": "2026-10-28_or_2026-10-29_ambiguous",
+        "evidence_path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_netdisk_enrichment/artifacts/kol-netdisk-63064b84d9bba464/20261029 抽平板抽电脑｜大师班专场(17：30开播)-compressed.txt",
+        "classification": "no_evidence",
+        "reason": "竞价或高分例子，日期和语音身份均未唯一确认。"
+      },
+      {
+        "name": "奥雅股份",
+        "code": "300949.XSHE",
+        "evidence_date": "2026-10-29",
+        "evidence_path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_netdisk_enrichment/artifacts/kol-netdisk-63064b84d9bba464/20261029 抽平板抽电脑｜大师班专场(17：30开播)-compressed.txt",
+        "classification": "no_evidence",
+        "reason": "来源说“今天都没问题”的高开对照例子；绑定事实只有10月28日报价，不能替代29日命中。"
+      }
+    ],
+    "audit_boundary": "三桶逐项分开：老师点名赢家、本地策略基准命中、方向核心观察互不替代；10月29日十九条信号不能补写10月28日历史例证，任何本地信号或分钟点位都不是Book成交证明。"
+  },
+  "action_summary": {
+    "posture_update": "candidate_only_no_automatic_posture_change",
+    "playbook_update": "no_change_without_research_and_human_gate",
+    "hypothesis_update": "one_new_authority_zero_candidate_one_existing_recurrence_two_partial_support_audits",
+    "audit_evidence": "source_bound_with_market_and_strategy_boundary",
+    "instrumentation_todo": "test_highest_position_regime_and_existing_XH_220_limit_timing_with_fixed_exit_rules",
+    "routing": [
+      "保留为待验证知识草稿",
+      "允许按授权流程归档或候选入库为authority=0",
+      "不得自动调参",
+      "不得自动晋级正式策略或交易规则",
+      "研究通过后仍需人工门禁"
+    ]
+  }
+}
