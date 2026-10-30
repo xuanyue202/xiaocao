@@ -48,7 +48,7 @@ from xiaocao.live.morning_notifications import AUTOMATION_ID, MorningNotificatio
 from xiaocao.runner_recovery import DependencyRecovery, _hash
 from xiaocao.live.morning_checklist import MorningChecklist
 from xiaocao.live.morning_kol_inputs import prepare_inputs
-from xiaocao.live.morning_order_wait import await_orders
+from xiaocao.live.morning_order_wait import await_claimed_orders
 from xiaocao.live.trading_execution import ExecutionStore
 
 _OUTPUT_LOCK = threading.Lock()
@@ -532,20 +532,23 @@ def _run(args, notices):
         "trade_date": trade_date, "preparation_deadline": absolute_preparation_deadline.isoformat()}
     checklist_root = Path(args.state_dir) / "runs" / "checklists"
     audit_degraded = False
+    from xiaocao.live.bounded_readback import original_readback, ReadbackDeadlineExpired
     def audit_failure():
         nonlocal audit_degraded
         if not audit_degraded:
             _emit_json({"event": "book_b_checklist_degraded", "reason": "CHECKLIST_AUDIT_UNPROVEN"})
             audit_degraded = True
     try:
-        checklist = MorningChecklist.create(checklist_root, checklist_binding)
-    except (OSError, ValueError, TypeError, KeyError):
+        with original_readback(absolute_preparation_deadline):
+            checklist = MorningChecklist.create(checklist_root, checklist_binding, nonblocking=True)
+    except (OSError, ValueError, TypeError, KeyError, ReadbackDeadlineExpired):
         checklist = MorningChecklist(checklist_root / (_hash(checklist_binding) + ".json"), checklist_binding)
         audit_failure()
     def record_checklist(*args, **kwargs):
         try:
-            checklist.record(*args, **kwargs)
-        except (OSError, ValueError, TypeError, KeyError):
+            with original_readback(absolute_preparation_deadline):
+                checklist.record(*args, **{**kwargs, 'nonblocking': True})
+        except (OSError, ValueError, TypeError, KeyError, ReadbackDeadlineExpired):
             # Audit storage cannot stop a valid reserved trade. The normal
             # intent, claim and execution stores remain fail-closed.
             audit_failure()
@@ -596,6 +599,7 @@ def _run(args, notices):
     # with its repair budget, rather than an early setup exit.
     execution, broker = build_native() if args.resume_plan_id else (None, None)
     prior_reconciliations: tuple[dict, ...] = ()
+    canary_preflight_checked = False
     api_settings = load_settings(None)
     market_client = XiaocaoClient(
         base_url=api_settings.base_url,
@@ -605,7 +609,7 @@ def _run(args, notices):
     )
 
     from xiaocao.live.buy_preflight import (
-        allocation_from_buy_preflight, current_owned_book_b_codes,
+        allocation_from_buy_preflight, current_buy_query_codes,
         pretrade_account, validate_buy_preflight,
     )
     from xiaocao.live.book_b_live_lifecycle import ownership_head_sha256
@@ -613,18 +617,23 @@ def _run(args, notices):
     trading_calendar = calendar_provider(market_client)
     buying_snapshot = None
     buying_head = None
+    buying_scope = None
     def current_buy_snapshot():
-        nonlocal buying_snapshot, buying_head
+        nonlocal buying_snapshot, buying_head, buying_scope
         current = datetime.now(ZoneInfo("Asia/Shanghai"))
+        active_batch = broker.submission_buy_snapshot(trade_date=trade_date) if broker is not None else None
+        if active_batch is not None:
+            return active_batch
         head = ownership_head_sha256(Path(args.state_dir))
-        if buying_snapshot is not None and buying_head == head:
+        codes = current_buy_query_codes(Path(args.state_dir), trade_date=trade_date)
+        if buying_snapshot is not None and buying_head == head and buying_scope == frozenset(codes):
             try:
                 return validate_buy_preflight(buying_snapshot, trade_date, current)
             except ValueError:
                 pass
-        codes = current_owned_book_b_codes(Path(args.state_dir))
         buying_snapshot = broker.read_buy_preflight_snapshot(trade_date=trade_date, owned_codes=codes)
         buying_head = head
+        buying_scope = frozenset(codes)
         return buying_snapshot
 
     def current_buy_risk(clock):
@@ -635,13 +644,13 @@ def _run(args, notices):
             receipt_root=Path(args.policy_root).parent / "account_risk")
 
     def read_allocation_facts() -> dict:
-        nonlocal prior_reconciliations
-        # The core reconciles open ordinary intents before this callback.
-        prior_reconciliations = reconcile_prior_day_canary_unknowns(
-            Path(args.state_dir),
-            trade_date=trade_date,
-            execute=lambda plan: execution.execute(plan, broker),
-        )
+        nonlocal prior_reconciliations, canary_preflight_checked
+        # Do not navigate historical canaries inside a prepared native batch.
+        if args.resume_plan_id and not canary_preflight_checked:
+            prior_reconciliations = reconcile_prior_day_canary_unknowns(
+                Path(args.state_dir), trade_date=trade_date,
+                execute=lambda plan: execution.execute(plan, broker))
+            canary_preflight_checked = True
         if not args.resume_plan_id:
             snapshot = current_buy_snapshot()
             current = datetime.now(ZoneInfo("Asia/Shanghai"))
@@ -852,8 +861,9 @@ def _run(args, notices):
             last_order_progress = fingerprint
 
     def await_results(plans, receipts):
-        await_orders(plans, receipts, reconcile=reconcile_claimed, deadline=absolute_preparation_deadline,
-            now=lambda: datetime.now(timezone.utc), sleep=time.sleep, on_progress=order_progress)
+        return await_claimed_orders(plans, receipts, reconcile=reconcile_claimed, deadline=absolute_preparation_deadline,
+            now=lambda: datetime.now(timezone.utc), sleep=time.sleep, on_progress=order_progress,
+            read_existing=lambda plan: ExecutionStore(Path(args.state_dir) / 'events.jsonl').current(plan.plan_id))
 
     receipt = runner(
         config,
@@ -895,6 +905,8 @@ def _run(args, notices):
         on_progress=progress,
         on_check=lambda item, status, evidence: record_checklist(item, status, evidence=evidence),
         on_order_progress=order_progress,
+        **({"on_inherited_incidents": lambda ref: _emit_json({"event": "book_b_inherited_incidents", **ref})}
+           if not args.resume_plan_id else {}),
     )
     receipt = replace(
         receipt,
@@ -910,7 +922,9 @@ def _run(args, notices):
     )
     write_book_b_live_morning_receipt(config, receipt)
     payload = receipt.as_dict()
-    notice = terminal_notice(payload, config.state_dir / "runs" / "history" / f"{receipt.run_id}.json")
+    from xiaocao.live.morning_observability import bounded_terminal_notice
+    notice = bounded_terminal_notice(payload, config.state_dir / "runs" / "history" / f"{receipt.run_id}.json",
+        deadline=absolute_preparation_deadline)
     record_checklist("orders", "passed" if receipt.status in {"completed", "no_action", "skipped"} else
         "degraded" if receipt.status == "unresolved" else "blocked", evidence={"receipt_path": notice.get("receipt_path"),
         "orders": notice.get("orders")}, reason=receipt.reason)
@@ -920,6 +934,18 @@ def _run(args, notices):
         record_checklist("kol_decision", "not_applicable", reason="ACCOUNT_RISK_BLOCKS_NEW_BUY")
     notices.publish("result", notice)
     _emit_json(notice)
+    # The current execution result is already sealed and queued for delivery.
+    # Old queries cannot consume its golden window or alter its result claim.
+    if (not args.resume_plan_id
+            and (receipt.deferred_prior_day_buy_plan_ids or receipt.deferred_prior_day_sell_plan_ids)):
+        from xiaocao.live.morning_deferred_reconciliation import reconcile_deferred
+        try:
+            deferred = reconcile_deferred(config.state_dir,
+                config.state_dir / "runs/history" / f"{receipt.run_id}.json",
+                reconcile=lambda plan: execution.reconcile_existing(plan, broker))
+        except (OSError, ValueError, RuntimeError, KeyError, TypeError) as exc:
+            deferred = {"status": "degraded", "reason": type(exc).__name__}
+        _emit_json({"event": "book_b_deferred_reconciliation", **deferred})
     return 0 if receipt.status in {"completed", "no_action", "skipped"} else 2
 
 

@@ -16,7 +16,8 @@ before this gate. Why: an ineligible tick cannot acquire semantic/writer work.
   that independently claimed Paper checkpoint must not run again. APP fenced,
   no KOL tick claim/ACK/semantic/research. Missing owner is explicit, not takeover.
 - run: retain exact token/fingerprints; original paper monitor once then APP
-  --phase sparse once. Defer old SELL histories, retain actual claim/lot/market
+  --phase sparse once. Consume script-recorded old BUY/SELL deferrals for the
+  owned-SELL checkpoint; retain current account/claim/lot/market
   gates and reconcile both actual branch receipts.
 
 ## Conditional semantic branch

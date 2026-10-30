@@ -30,7 +30,7 @@ from zoneinfo import ZoneInfo
 from .account_risk import AccountRiskReceipt, NAV_BASIS, NavObservation, evaluate_account_risk
 from .book_b_live_lifecycle import (
     BookBLiveAccountState,
-    _load_intent_index,
+    load_execution_intents,
     _read_jsonl_strict,
     project_book_b_live_account,
     settlement_nonterminal_plan_ids,
@@ -279,7 +279,7 @@ def _evaluate_live_risk_locked(state_dir: Path, *, now: datetime,
                 proven_sells = proven_prior_day_zero_fill_sell_ids(
                     root, trade_date=now.astimezone(_CHINA).date().isoformat(), asof=now)
                 if proven_sells:
-                    intents = _load_intent_index(root)
+                    intents = load_execution_intents(root)
                     proven_gap_dates = tuple(str(intents[plan_id]["trade_date"]) for plan_id in proven_sells)
                 history = load_live_nav_history(root, asof=now, trading_dates=days,
                                                 diagnostics=history_diagnostics,
@@ -313,7 +313,11 @@ def _evaluate_live_risk_locked(state_dir: Path, *, now: datetime,
                     if accounting_status == "cash_reserve_reconciliation_required":
                         from .book_b_capital import has_open_buy_with_possible_effect
                         if has_open_buy_with_possible_effect(root):
-                            raise ValueError("LIVE_RISK_ACCOUNTING_CASH_RESERVE_RECONCILIATION_REQUIRED")
+                            from .inherited_execution import verify
+                            isolation = account.accounting.get("inherited_buy_isolation")
+                            if isolation is None:
+                                raise ValueError("LIVE_RISK_ACCOUNTING_CASH_RESERVE_RECONCILIATION_REQUIRED")
+                            verify(root, isolation, now=now)
                         # A bare immutable intent reserves buying power but has
                         # no broker effect. Keep accounting PnL unproved while
                         # verifying this fresh account-bound conservative mark.

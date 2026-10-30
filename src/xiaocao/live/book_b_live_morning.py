@@ -16,6 +16,7 @@ import re
 import uuid
 from contextlib import ExitStack, contextmanager, nullcontext
 from dataclasses import asdict, dataclass, replace
+from decimal import Decimal
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, ContextManager
@@ -122,9 +123,13 @@ class BookBLiveMorningReceipt:
     preparation_budget_seconds: float | None = None
     preparation_deadline: str | None = None
     deferred_prior_day_sell_plan_ids: tuple[str, ...] = ()
+    deferred_prior_day_buy_plan_ids: tuple[str, ...] = ()
     checklist_path: str | None = None
     strategy_adjudication: dict | None = None
     final_plan: dict | None = None
+    inherited_incidents: dict | None = None
+    post_failure_readback: dict | None = None
+    order_wait: dict | None = None
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -1060,13 +1065,12 @@ def reconcile_open_book_b_plans(
     now: datetime | None = None,
     defer_prior_day_sells: bool = False,
     reconcile_proven_prior_day_sells: bool = False,
+    defer_prior_day_buys: bool = False,
     economic_closure_snapshot: dict | None = None,
 ) -> tuple[dict, ...]:
     """Reconcile submitted plans; EOD also refreshes proven zero-fill old SELLs."""
     root = Path(state_dir)
-    intent_dir = root / "plan_intents"
-    if not intent_dir.is_dir():
-        return ()
+    from .book_b_live_lifecycle import load_execution_intents, read_execution_plan
     store = ExecutionStore(root / "events.jsonl")
     open_states = {
         ExecutionState.CLAIMED,
@@ -1084,14 +1088,8 @@ def reconcile_open_book_b_plans(
     proven_old_sells = set(proven_prior_day_zero_fill_sell_ids(
         root, trade_date=trade_date, asof=now,
     )) if now is not None else set()
-    for path in sorted(intent_dir.glob("*.json")):
-        try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
-            raise ValueError("LIVE_PLAN_INTENT_INVALID") from exc
-        if not isinstance(payload, dict):
-            raise ValueError("LIVE_PLAN_INTENT_INVALID")
-        plan = _trade_plan_from_intent(payload)
+    for raw in load_execution_intents(root).values():
+        plan = read_execution_plan(raw)
         if plan.trade_date > trade_date:
             continue
         current = store.current(plan.plan_id)
@@ -1111,6 +1109,8 @@ def reconcile_open_book_b_plans(
         if plan.plan_id in proven_old_sells and not reconcile_proven_prior_day_sells:
             continue
         if defer_prior_day_sells and plan.side == "SELL" and plan.trade_date < trade_date:
+            continue
+        if defer_prior_day_buys and plan.side == "BUY" and plan.trade_date < trade_date:
             continue
         reconciled = execute(plan)
         durable = store.current(plan.plan_id)
@@ -1133,13 +1133,17 @@ def _plan_requires_prepare(config: BookBLiveMorningConfig, plan: TradePlan) -> b
 
 def _uncertain_execution_plan_ids(state_dir: Path, *, trade_date: str | None = None,
                                   asof: datetime | None = None,
-                                  defer_prior_day_sells: bool = False) -> tuple[str, ...]:
+                                  defer_prior_day_sells: bool = False,
+                                  defer_prior_day_buys: bool = False) -> tuple[str, ...]:
     """Prepared/unclaimed intents reserve plans but are not UNKNOWN effects."""
     store = ExecutionStore(Path(state_dir) / "events.jsonl")
     excluded = set(proven_prior_day_zero_fill_sell_ids(state_dir, trade_date=trade_date,
         asof=asof)) if trade_date else set()
     if defer_prior_day_sells and trade_date:
         excluded.update(deferred_prior_day_sell_ids(state_dir, trade_date=trade_date))
+    if defer_prior_day_buys and trade_date:
+        from .inherited_execution import prior_day_buy_ids
+        excluded.update(prior_day_buy_ids(state_dir, trade_date=trade_date))
     return tuple(plan_id for plan_id in open_execution_plan_ids(state_dir)
                  if plan_id not in excluded
                  if (receipt := store.current(plan_id)) is not None
@@ -1324,6 +1328,8 @@ def _load_allocation(
     payload: dict | None = None,
     *,
     restoring_only: bool = False,
+    asof: datetime | None = None,
+    unclaimed_batch: tuple[TradePlan, ...] = (),
 ) -> BookBAllocationFacts:
     if payload is None:
         try:
@@ -1369,7 +1375,25 @@ def _load_allocation(
         "foundersc_native_app",
     }:
         raise ValueError("LIVE_ALLOCATION_SOURCE_UNPROVEN")
+    permitted_unclaimed = set()
+    for plan in unclaimed_batch:
+        persisted = _trade_plan_from_intent(json.loads(_plan_intent_path(config.state_dir, plan.plan_id).read_text()))
+        current = ExecutionStore(config.state_dir / "events.jsonl").current(plan.plan_id)
+        if (persisted.plan_hash != plan.plan_hash or (current is not None and (
+                current.plan_hash != plan.plan_hash or current.state not in {
+                    ExecutionState.PLANNED, ExecutionState.VALIDATED, ExecutionState.PREPARED}
+                or current.submit_claim_id or current.cancel_claim_id or current.broker_order_id
+                or current.submit_chain_uncertain or current.cancel_chain_uncertain or current.filled_shares))):
+            raise ValueError("LIVE_ALLOCATION_BATCH_ALREADY_CLAIMED")
+        permitted_unclaimed.add(plan.plan_id)
     capital_basis_source = str(payload.get("capital_basis_source") or "").strip()
+    isolation = (payload.get("accounting") or {}).get("inherited_buy_isolation")
+    if isolation is not None:
+        from .inherited_execution import verify
+        verify(config.state_dir, isolation, current=not restoring_only, now=asof)
+        if (isolation["trade_date"] != config.trade_date
+                or isolation["broker_snapshot_sha256"] != (payload.get("accounting") or {}).get("broker_snapshot_sha256")):
+            raise ValueError("LIVE_ALLOCATION_INHERITED_BUY_BINDING_MISMATCH")
     if capital_basis_source not in {
         "initial_book_b_capital",
         "broker_reconciled_book_b_nav",
@@ -1439,10 +1463,12 @@ def _load_allocation(
                 or capital_basis_receipt != basis.receipt_sha256
                 or payload.get("settled_nav") != basis.settled_nav
                 or payload.get("current_open_exposure") != basis.current_open_exposure
-                or (_uncertain_execution_plan_ids(config.state_dir, trade_date=config.trade_date, asof=observed,
-                        defer_prior_day_sells=capital_basis_source == "broker_reconciled_book_b_dynamic_nav") if restoring_only
+                or (set(_uncertain_execution_plan_ids(config.state_dir, trade_date=config.trade_date, asof=observed,
+                        defer_prior_day_sells=capital_basis_source == "broker_reconciled_book_b_dynamic_nav",
+                        defer_prior_day_buys=isolation is not None) if restoring_only
                     else blocking_open_execution_plan_ids(config.state_dir, trade_date=config.trade_date, asof=observed,
-                        defer_prior_day_sells=capital_basis_source == "broker_reconciled_book_b_dynamic_nav"))):
+                        defer_prior_day_sells=capital_basis_source == "broker_reconciled_book_b_dynamic_nav",
+                        defer_prior_day_buys=isolation is not None)) - permitted_unclaimed)):
             raise ValueError("LIVE_ALLOCATION_CAPITAL_BASIS_RECEIPT_MISMATCH")
     if capital_basis_source == "initial_book_b_capital" and capital_basis_receipt:
         raise ValueError("LIVE_ALLOCATION_CAPITAL_BASIS_RECEIPT_UNEXPECTED")
@@ -1524,6 +1550,10 @@ def _load_allocation(
     ):
         raise ValueError("LIVE_ALLOCATION_ECONOMIC_BINDING_MISMATCH")
     facts = BookBAllocationFacts.from_dict(payload)
+    if isolation is not None:
+        # Reserve uncertain economic effects in allocation, never in PnL/NAV.
+        facts = replace(facts, available_cash=min(facts.available_cash, float(isolation["new_buy_cash_limit"])),
+            current_open_exposure=facts.current_open_exposure + float(isolation["potential_exposure_upper_bound"]))
     return facts
 
 
@@ -1809,6 +1839,7 @@ def run_book_b_live_morning(
     on_progress: Callable[[str, datetime], None] | None = None,
     on_check: Callable[[str, str, dict], None] | None = None,
     on_order_progress: Callable[[list[ExecutionReceipt]], None] | None = None,
+    on_inherited_incidents: Callable[[dict], None] | None = None,
 ) -> BookBLiveMorningReceipt:
     """Consume one dated freeze and advance immutable live plans exactly once.
 
@@ -1825,8 +1856,13 @@ def run_book_b_live_morning(
     environment_restoration: dict | None = None
     preparation_receipts: list[dict] = []
     deferred_sells: tuple[str, ...] = ()
+    deferred_buys: tuple[str, ...] = ()
+    from .book_b_capital import policy as capital_policy
+    isolate_prior_buys = False
     plans: list[TradePlan] = []
     execution_receipts: list[ExecutionReceipt] = []
+    order_wait_attempted = False
+    order_wait = None
     receipt: BookBLiveMorningReceipt
     restore_failure: str | None = None
     policy_consumptions: list[dict] = []
@@ -1922,18 +1958,39 @@ def run_book_b_live_morning(
             batch_risk = support()[1]
         try:
             with submission_scope(batch_plans):
+                if deferred_buys:
+                    if read_allocation_facts is None:
+                        raise ValueError("LIVE_INHERITED_BUY_ACTION_READBACK_REQUIRED")
+                    fresh_payload = read_allocation_facts()
+                    fresh = _load_allocation(config, fresh_payload, asof=now(),
+                        unclaimed_batch=tuple(batch_plans))
+                    from .account_risk import tighten_conservative_new_risk_cap
+                    lower_nav = Decimal(fresh_payload['accounting']['conservative_risk_nav'])
+                    cap = tighten_conservative_new_risk_cap(batch_risk, lower_nav) if batch_risk is not None else 0.0
+                    original = BookBAllocationFacts.from_dict(final_allocation)
+                    current = replace(fresh, batch_ratio=original.batch_ratio,
+                        total_exposure_ratio=original.total_exposure_ratio,
+                        fee_rate=max(fresh.fee_rate, original.fee_rate),
+                        deploy_factor=min(fresh.deploy_factor, original.deploy_factor, cap))
+                    cost = sum(Decimal(str(p.limit_price))*p.shares*(1+Decimal(str(current.fee_rate)))
+                               for p in batch_plans)
+                    if cost > Decimal(str(current.cash_limit)):
+                        raise ValueError("LIVE_INHERITED_BUY_ACTION_BUDGET_CHANGED")
                 yield
         finally:
             batch_risk = None
             snapshot_cache = None
 
     def allow_new_risk(plan: TradePlan, original: dict | None = None) -> bool:
-        if plan.code in unresolved_prior_sell_codes(config.state_dir,
+        from .inherited_execution import query_codes
+        prior_buy_codes = query_codes(config.state_dir, trade_date=config.trade_date)
+        if plan.code in prior_buy_codes or plan.code in unresolved_prior_sell_codes(config.state_dir,
                 trade_date=config.trade_date):
             policy_consumptions.append({
                 "plan_id": plan.plan_id, "plan_hash": plan.plan_hash,
                 "stage": "new_intent" if original is not None else "before_action",
-                "allowed": False, "reason": "PRIOR_OPEN_SELL_SAME_CODE",
+                "allowed": False, "reason": ("PRIOR_OPEN_BUY_SAME_CODE" if plan.code in prior_buy_codes
+                                              else "PRIOR_OPEN_SELL_SAME_CODE"),
             })
             return False
         if config.policy_root is None or not _plan_requires_prepare(config, plan):
@@ -1959,8 +2016,22 @@ def run_book_b_live_morning(
                                     **adjustment})
         return allowed
 
+    inherited_incidents = None
     try:
         try:
+            # A malformed financial policy must still get the original dated
+            # blocked receipt/budget, before any APP action is attempted.
+            isolate_prior_buys = capital_policy(config.state_dir) is not None
+            # Derived planning is loaded by the actual owner before APP waits;
+            # it never grants financial authority or replaces fresh admission.
+            from .incident_dispositions import consume
+            try:
+                inherited_incidents = consume(config.state_dir, trade_date=config.trade_date,
+                    run_id=run_id, now=now())
+            except (OSError, ValueError, KeyError, TypeError, RuntimeError) as exc:
+                inherited_incidents = {"status": "degraded", "reason": str(exc), "admission_authority": "none"}
+            if on_inherited_incidents is not None:
+                on_inherited_incidents(inherited_incidents)
             if preflight is not None:
                 preflight_attempted = True
                 environment_receipt = preflight()
@@ -1968,13 +2039,16 @@ def run_book_b_live_morning(
                     raise ValueError("LIVE_ENVIRONMENT_NOT_PROVEN")
             if config.policy_root is not None:
                 deferred_sells = deferred_prior_day_sell_ids(config.state_dir, trade_date=config.trade_date)
+                if isolate_prior_buys:
+                    from .inherited_execution import prior_day_buy_ids
+                    deferred_buys = prior_day_buy_ids(config.state_dir, trade_date=config.trade_date)
                 if not config.resume_plan_id:
                     open_reconciliations = reconcile_open_book_b_plans(
                         config.state_dir, trade_date=config.trade_date, execute=execute_plan, now=now(),
-                        defer_prior_day_sells=True,
+                        defer_prior_day_sells=True, defer_prior_day_buys=isolate_prior_buys,
                     )
                 if _uncertain_execution_plan_ids(config.state_dir, trade_date=config.trade_date, asof=now(),
-                        defer_prior_day_sells=True):
+                        defer_prior_day_sells=True, defer_prior_day_buys=isolate_prior_buys):
                     raise ValueError("LIVE_BOOK_B_OPEN_EXECUTION_RECONCILE_REQUIRED")
             allocation: BookBAllocationFacts | None = None
             enter("freeze_wait")
@@ -2011,7 +2085,7 @@ def run_book_b_live_morning(
                     config.state_dir / "account_writer_locks", config.logical_account_id,
                 ))
                 if config.policy_root is not None and _uncertain_execution_plan_ids(config.state_dir, trade_date=config.trade_date, asof=now(),
-                        defer_prior_day_sells=True):
+                        defer_prior_day_sells=True, defer_prior_day_buys=isolate_prior_buys):
                     raise ValueError("LIVE_BOOK_B_OPEN_EXECUTION_RECONCILE_REQUIRED")
                 review_candidates = [
                     row for row in frozen_rows
@@ -2031,7 +2105,7 @@ def run_book_b_live_morning(
                         enter("review_account")
                         allocation_payload = (read_allocation_facts() if read_allocation_facts is not None
                                               else json.loads(config.allocation_facts_path.read_text(encoding="utf-8")))
-                        allocation = _load_allocation(config, allocation_payload)
+                        allocation = _load_allocation(config, allocation_payload, asof=now())
                         _write_json_atomic(config.allocation_facts_path, allocation_payload)
                         review_risk = support()[1]
                         if on_check:
@@ -2106,9 +2180,13 @@ def run_book_b_live_morning(
                             config, row, strategy_sha=str(dated_freeze_receipt["strategy_sha"]),
                         ) is not None for row in rows)
                     enter("allocation")
+                    if deferred_buys and not all_restoring and read_allocation_facts is not None:
+                        allocation_payload = read_allocation_facts()
+                        allocation = _load_allocation(config, allocation_payload, asof=now())
+                        _write_json_atomic(config.allocation_facts_path, allocation_payload)
                     if allocation is None and read_allocation_facts is not None and not all_restoring:
                         allocation_payload = read_allocation_facts()
-                        allocation = _load_allocation(config, allocation_payload)
+                        allocation = _load_allocation(config, allocation_payload, asof=now())
                         _write_json_atomic(config.allocation_facts_path, allocation_payload)
                     allocation = allocation or _load_allocation(config, restoring_only=all_restoring)
                     effective_allocation = allocation
@@ -2196,7 +2274,8 @@ def run_book_b_live_morning(
                         # batch lease is held while resting orders wait.
                         batch_fence.close()
                         enter("awaiting_fill")
-                        await_order_results(execution_plans, execution_receipts)
+                        order_wait_attempted = True
+                        order_wait = await_order_results(execution_plans, execution_receipts)
                     stage_times["batch_observed"] = now().isoformat()
                     status, reason = _rollup(execution_receipts)
                     if not execution_receipts:
@@ -2212,8 +2291,13 @@ def run_book_b_live_morning(
                         allocation_facts_path=str(config.allocation_facts_path),
                         state_path=str(config.state_dir),
                     )
-        except (OSError, ValueError, RuntimeError) as exc:
+        except Exception as exc:
             failed_stage = stage
+            if (not isinstance(exc, (OSError, ValueError, RuntimeError))
+                    and not execution_receipts and stage not in {'execution', 'awaiting_fill'}):
+                # Before any possible order claim, preserve programmer-error
+                # propagation and the environment-restoration finally block.
+                raise
             stage_times["failed"] = now().isoformat()
             # Materialization can persist an intent before returning its list.
             # Report those files without overwriting the original failure.
@@ -2221,11 +2305,36 @@ def run_book_b_live_morning(
                                   if _plan_intent_path(config.state_dir, plan_id).is_file())
             receipt = _blocked_receipt(
                 config,
-                str(exc),
+                str(exc) if isinstance(exc, (OSError, ValueError, RuntimeError)) else
+                    'UNEXPECTED_EXECUTION_FAILURE:' + type(exc).__name__,
                 tuple(preparation_receipts),
                 plan_count=max(len(plans), len(persisted_ids)),
                 execution_receipts=tuple(item.as_dict() for item in execution_receipts),
             )
+            from .trading_execution import TERMINAL_STATES
+            if await_order_results and (any(item.state not in TERMINAL_STATES for item in execution_receipts)
+                    or failed_stage == 'execution' and persisted_ids):
+                # A later batch failure does not abandon already claimed
+                # orders. Release the batch fences and use the same callback,
+                # original claims and absolute deadline before any old history.
+                batch_fence.close()
+                failure_readback = {'actions': 'current_claim_readback_only',
+                    'original_failure': receipt.reason, 'started_at': now().isoformat()}
+                if order_wait_attempted:
+                    failure_readback.update(status='unproven', failure_category=type(exc).__name__)
+                else:
+                    try:
+                        enter('awaiting_fill')
+                        order_wait_attempted = True
+                        order_wait = await_order_results(plans, execution_receipts)
+                        failure_readback['status'] = ('terminal' if all(item.state in TERMINAL_STATES
+                            for item in execution_receipts) and (order_wait or {}).get('discovery_complete', True)
+                            else 'pending_original_deadline')
+                    except Exception as read_error:
+                        failure_readback.update(status='unproven', failure_category=type(read_error).__name__)
+                failure_readback['completed_at'] = now().isoformat()
+                receipt = replace(receipt, post_failure_readback=failure_readback,
+                    execution_receipts=tuple(item.as_dict() for item in execution_receipts))
     finally:
         if preflight_attempted and restore_environment is not None:
             try:
@@ -2255,8 +2364,11 @@ def run_book_b_live_morning(
             receipt,
             environment_restoration=environment_restoration,
         )
-    receipt = replace(receipt, policy_consumptions=tuple(policy_consumptions),
+    receipt = replace(receipt, inherited_incidents=inherited_incidents,
+                      order_wait=order_wait,
+                      policy_consumptions=tuple(policy_consumptions),
                       deferred_prior_day_sell_plan_ids=deferred_sells,
+                      deferred_prior_day_buy_plan_ids=deferred_buys,
                       open_plan_reconciliations=open_reconciliations or receipt.open_plan_reconciliations,
                       review_rendezvous=review_receipt,
                       strategy_adjudication=strategy_adjudication,

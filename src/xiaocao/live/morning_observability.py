@@ -106,6 +106,17 @@ def _compact_order(row: dict) -> dict:
     return result
 
 
+def bounded_terminal_notice(payload: dict, receipt_path: Path, *, deadline: datetime) -> dict:
+    """A supporting pending-order lookup cannot outlive the original budget."""
+    from .bounded_readback import original_readback, ReadbackDeadlineExpired
+    try:
+        with original_readback(deadline):
+            return terminal_notice(payload, receipt_path)
+    except ReadbackDeadlineExpired:
+        return terminal_notice({**payload, 'pending_evidence_unproven': True}, receipt_path,
+            include_durable_pending=False, include_incidents=False)
+
+
 def terminal_notice(payload: dict, receipt_path: Path, *, include_durable_pending=True,
                     include_incidents=True) -> dict:
     from .book_b_workflow import summarize_adjudication
@@ -133,6 +144,10 @@ def terminal_notice(payload: dict, receipt_path: Path, *, include_durable_pendin
     current_ids = {r.get('plan_id') for r in receipts}
     pending = list({r.get('plan_id'): r for r in pending if r.get('plan_id') not in current_ids}.values())
     action = payload.get('user_action') or dependency_user_action(payload.get('reason'))
+    current_unproved = (payload.get('current_order_evidence_unproven') is True
+        or (payload.get('order_wait') or {}).get('discovery_complete') is False
+        or payload.get('failed_stage') == 'execution' and not payload.get('order_wait')
+            and bool(set(payload.get('persisted_plan_ids', [])) - {r.get('plan_id') for r in receipts}))
     for request in (payload.get('dependency_recovery') or {}).get('requests', []):
         if request.get('status') == 'recovered':
             continue
@@ -144,6 +159,7 @@ def terminal_notice(payload: dict, receipt_path: Path, *, include_durable_pendin
     return {**{k: payload.get(k) for k in ('run_id', 'trade_date', 'status', 'reason', 'failed_stage', 'runner_identity')},
             'user_action_required': payload.get('user_action_required') is True or action.get('required') is True,
             'user_action': action, 'pending_evidence_unproven': payload.get('pending_evidence_unproven', False),
+            'current_order_evidence_unproven': current_unproved,
             'pending_orders': [_compact_order(r) for r in pending],
             'incident_notifications': _incident_notifications(receipt_path, receipts + pending) if include_incidents else [],
             'receipt_path': str(receipt_path.resolve()),

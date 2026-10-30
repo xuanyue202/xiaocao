@@ -34,6 +34,10 @@ EOD authority. Independent lots/new dated legal SELL are not automatically stopp
 by a historical order; old UNKNOWN remains original claim/no replay. Inspect real
 failure and diagnostic evidence, not an assumed missing port. Use owned repair
 and exact original-plan continuation; no cancel/replacement/submit replay.
+The original non-EOD runner classifies canonical prior-day BUYs for deferred
+readback before APP reads, then checks current owned/sellable proof. This grants
+only the owned-SELL checkpoint; same-day BUY uncertainty and missing/tampered
+sources remain explicit gates. EOD and new-BUY capital admission stay separate.
 
 Original APP keeps claimed SELL progress/terminal observation within original
 120s budget capped14:57; ACK/PARTIAL/UNKNOWN are pending. Keep raw evidence and

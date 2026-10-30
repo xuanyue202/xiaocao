@@ -25,6 +25,11 @@ Before09:20 inspect yesterday's dispositions and actual deployed guards; known
 permission exclusions, repaired code, old order audit, current economic impact
 and next-window readiness are separate. Early recoverable blocked starts owned
 repair, not closeout. Actual isolation capability must be proved, not presumed.
+On `book_b_inherited_incidents`, read its exact consumption receipt and derived
+view; this is the original owner's actual EOD-input consumption, with no financial
+admission authority. Follow [inherited-order admission](../../../../../docs/BOOK_B_WORKFLOW.md#遗留订单如何进入当天准入)
+when old BUY uncertainty is present; its current snapshot bound and same-code
+fence decide independent admission, rather than a historical status list.
 
 At09:00 run one market_data_preflight.py --date today --scope authentication
 and one morning_preflight_alert.py --date today --kind transport. Save/checklist
@@ -91,6 +96,10 @@ Refresh morning_pipeline_status.py --date <date> after dependency/terminal event
 producer, Paper B, Paper T and APP need separate receipts. Read final_plan and
 strategy_adjudication separately from execution/accounting. After business,
 original owner handles bounded deferred history/accounting and notices.
+On `book_b_deferred_reconciliation`, read that separate artifact after the
+sealed result. It records actual old-claim readbacks and exact unread work under
+the same deadline; keep UNKNOWN and missing empty-response completion explicit.
+The opening result/notification claim stays bound to its original receipt.
 If terminal blocked at preflight, --kind book-b --receipt <exact terminal> reuses
 its result delivery claim; repair first, then only a legally available original
 zero-effect continuation under its saved budget. A consumed claim cannot chain.

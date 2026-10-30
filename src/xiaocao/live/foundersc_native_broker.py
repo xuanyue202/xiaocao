@@ -328,10 +328,14 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
         scoped_buy_preflight: bool = False,
         scoped_sell_preflight: bool = False,
         credential_health_path: Path | None = None,
+        clock: Callable[[], datetime] | None = None,
+        buying_codes_provider: Callable[[], set[str]] | None = None,
     ) -> None:
         expected = str(expected_fund_account_fingerprint or "").strip()
         if _ACCOUNT_FINGERPRINT_PATTERN.fullmatch(expected) is None:
             raise ValueError("Founder fund-account fingerprint is required")
+        self.buying_codes_provider = buying_codes_provider
+        self._clock = clock or (lambda: datetime.now(ZoneInfo("Asia/Shanghai")))
         self.scoped_buy_preflight = scoped_buy_preflight
         self.scoped_sell_preflight = scoped_sell_preflight
         self.native = native
@@ -453,7 +457,10 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             ).as_dict()
             if dialogs.get("status") != "dialogs_clear":
                 raise FounderscNativeAXError("NATIVE_BATCH_DIALOGS_UNPROVEN")
-            capability = (self.probe(plans[0], buy_codes={p.code.split(".")[0] for p in plans})
+            codes = {p.code.split(".")[0] for p in plans}
+            if self.buying_codes_provider is not None:
+                codes.update(c.split('.')[0] for c in self.buying_codes_provider())
+            capability = (self.probe(plans[0], buy_codes=codes)
                           if self.scoped_buy_preflight else self.probe(plans[0]))
             if not capability.ready or not capability.supports_submit:
                 raise ValueError("NATIVE_BATCH_PREFLIGHT_UNPROVEN")
@@ -477,6 +484,14 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                 self._submission_batch = None
                 for plan in plans:
                     self._prepared.pop(plan.plan_id, None)
+
+    def submission_buy_snapshot(self, *, trade_date: str) -> dict | None:
+        """Read the active batch's proved capture without navigating again."""
+        if self._submission_batch is None:
+            return None
+        if self._submission_batch['used'] or time.monotonic() >= self._submission_batch['expires']:
+            raise FounderscNativeAXError('NATIVE_BATCH_SNAPSHOT_ALREADY_CONSUMED_OR_EXPIRED')
+        return self._buy_snapshot(self._submission_batch['positions'], trade_date=trade_date)
 
     def _batch_for(self, plan: TradePlan) -> dict[str, Any] | None:
         batch = self._submission_batch
@@ -702,6 +717,9 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             "observed_at": datetime.now(timezone.utc).isoformat(),
         }
         if unlock_once and surface == "authentication_required":
+            from .bounded_readback import active
+            if active():
+                raise FounderscNativeAXError("ORIGINAL_READBACK_AUTHENTICATION_REQUIRED_NO_ATTEMPT")
             prior = self._previous_credential_health()
             if prior.get("state") in {"attempt_claimed", "unproven_no_retry"}:
                 evidence = prior.get("unlock_evidence") or {}
@@ -1067,11 +1085,14 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             read_once, reset_query_surface=self._reset_query_surface_for_read_retry)
         if _parse_timestamp(positions["observed_at"]).astimezone(ZoneInfo("Asia/Shanghai")).date().isoformat() != trade_date:
             raise FounderscNativeAXError("NATIVE_BUY_QUERY_DATE_MISMATCH")
+        return self._buy_snapshot(positions, trade_date=trade_date, recovery=recovery)
+
+    def _buy_snapshot(self, positions: dict, *, trade_date: str, recovery: dict | None = None) -> dict:
         body = {"schema_version": "book-b-buy-preflight.v1", "trade_date": trade_date,
                 "logical_account_id": "primary", "account_binding": "proven",
                 "fund_account_binding_sha256": hashlib.sha256(self.expected_fund_account_fingerprint.encode()).hexdigest(),
                 "observed_at": positions["observed_at"], "positions": positions,
-                "read_recovery": recovery,
+                "read_recovery": recovery or {},
                 "available_cash": float(_decimal(positions["summary_values"]["可用"], field="AVAILABLE_CASH"))}
         body["snapshot_sha256"] = hashlib.sha256(json.dumps(body, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
         return body
@@ -1297,6 +1318,8 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
         result = dict(result) if isinstance(result, dict) else {}
         return {
             "native_helper_status": str(payload.get("status") or ""),
+            "native_order_readback": {key: value for key, value in dict(payload.get("order_readback") or {}).items()
+                if key in {"code", "side", "price", "quantity", "field_mapping_proven"}},
             "native_action": {
                 key: action.get(key)
                 for key in (
@@ -2226,7 +2249,8 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
         plan: TradePlan,
         *,
         requested_shares: int,
-        expected_order_id: str,
+        expected_order_id: str | None,
+        baseline_order_ids: set[str] | None = None,
     ) -> BrokerReceipt:
         """Reconcile an exact prior-day order from refreshed native history.
 
@@ -2291,6 +2315,9 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             == requested_shares
             and "撤" not in str(row.get("委托类别") or "")
         ]
+        if expected_order_id is None and baseline_order_ids is not None:
+            order_matches = [row for row in order_matches
+                            if str(row.get("委托编号") or "").strip() not in baseline_order_ids]
         position = self._position_for(plan, positions["rows"])
         target_holding_shares = (
             _integer(position.get("证券数量"), field="POSITION_QUANTITY")
@@ -2329,6 +2356,10 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             "position_observed_at": positions.get("observed_at"),
         }
         if len(order_matches) != 1:
+            # A complete empty response is evidence about this query, not a
+            # service rejection/cancellation. The original claim stays unknown.
+            reason = ("NATIVE_HISTORICAL_ORDER_ABSENCE_OBSERVED" if not order_matches
+                      else "NATIVE_HISTORICAL_EXACT_ORDER_NOT_UNIQUE")
             return BrokerReceipt(
                 status=BrokerStatus.UNKNOWN,
                 order_id=expected_order_id,
@@ -2338,8 +2369,8 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                 account_binding="proven",
                 locator_proof=locator,
                 template_name="foundersc-native-ax",
-                reason="NATIVE_HISTORICAL_EXACT_ORDER_NOT_UNIQUE",
-                error_code="NATIVE_HISTORICAL_EXACT_ORDER_NOT_UNIQUE",
+                reason=reason,
+                error_code=reason,
                 conclusive=False,
                 retry_allowed=False,
                 echoed=self._echo(plan, requested_shares),
@@ -2348,6 +2379,16 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
         native_order_id = str(order.get("委托编号") or "").strip()
         locator["native_order_id"] = native_order_id
         locator["historical_order_status"] = str(order.get("状态说明") or "")
+        if expected_order_id is None:
+            if (baseline_order_ids is None or native_order_id in baseline_order_ids
+                    or re.fullmatch(r"\d{1,32}", native_order_id) is None):
+                return BrokerReceipt(status=BrokerStatus.UNKNOWN, requested_shares=requested_shares,
+                    remaining_shares=requested_shares, account_binding="proven", retry_allowed=False,
+                    conclusive=False, locator_proof=locator,
+                    reason="NATIVE_HISTORICAL_DURABLE_DELTA_UNPROVEN",
+                    error_code="NATIVE_HISTORICAL_DURABLE_DELTA_UNPROVEN")
+            expected_order_id = native_order_id
+            locator["historical_baseline_exclusion_proven"] = True
         if native_order_id != expected_order_id:
             locator["order_id_mapping"] = "mismatch"
             return BrokerReceipt(
@@ -2708,7 +2749,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                 retry_allowed=False,
             )
         try:
-            now = datetime.now(ZoneInfo("Asia/Shanghai"))
+            now = self._clock().astimezone(ZoneInfo("Asia/Shanghai"))
             if plan.trade_date < now.date().isoformat():
                 continuity_time = self._midnight_order_time(plan, previous, now)
                 if continuity_time is not None:
@@ -3066,9 +3107,10 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             and proof.get("submit_claim_id") == claim
             and proof.get("tuple_proven") is True
             and _parse_timestamp(proof.get("observed_at")) is not None)
+        from .bounded_readback import known_rejection_ack_allowed
         payload = read(code=plan.code, side=plan.side, price=plan.limit_price,
             quantity=plan.shares, expected_fingerprint=self.expected_fund_account_fingerprint,
-            acknowledge=persisted).as_dict()
+            acknowledge=persisted and known_rejection_ack_allowed()).as_dict()
         result = dict(payload.get("result_readback") or {})
         fields, matched = self._native_order_readback(plan, payload, plan.shares)
         proven = bool(matched and self._account_bound(payload)
@@ -3102,7 +3144,13 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
     @serialized_app_operation
     def recover(self, plan: TradePlan, previous: dict[str, Any]) -> BrokerReceipt:
         """Recover an unknown submit only from its durable pre-submit delta."""
-        rejection = self._recover_server_rejection(plan, previous)
+        current = self._clock().astimezone(ZoneInfo("Asia/Shanghai"))
+        prior_day_recovery = plan.trade_date < current.date().isoformat()
+        # A current notice cannot prove an unrelated prior-date submit. Only
+        # already persisted exact-claim rejection evidence may finish that path.
+        has_persisted_rejection = bool((previous.get("locator_proof") or {}).get("server_rejection"))
+        rejection = (self._recover_server_rejection(plan, previous)
+                     if not prior_day_recovery or has_persisted_rejection else None)
         if rejection is not None:
             return rejection
         shares = int(previous.get("requested_shares") or plan.shares)
@@ -3130,6 +3178,10 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
             and locator.get("baseline_order_count") == len(baseline_ids)
             and _parse_timestamp(locator.get("baseline_observed_at")) is not None
         )
+        if prior_day_recovery and context_proven:
+            baseline_time = _parse_timestamp(locator['baseline_observed_at'])
+            context_proven = (baseline_time.astimezone(ZoneInfo('Asia/Shanghai')).date().isoformat()
+                == plan.trade_date and shares == plan.shares)
         native_result = dict(locator.get("native_result_readback") or {})
         native_action = dict(locator.get("native_action") or {})
         terminal_identity_mismatch_allowed = bool(
@@ -3161,20 +3213,22 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
         recovered: BrokerReceipt | None = None
         last_error: Exception | None = None
         read_attempts = 0
-        for delay in self.reconcile_delays or (0.0,):
+        continuity_time = self._midnight_order_time(plan, previous, current) if prior_day_recovery else None
+        historical = prior_day_recovery and continuity_time is None
+        # A proved historical query is one bounded read, not repeated current-day
+        # delta polling. Incomplete/absent results retain the exact original claim.
+        for delay in ((0.0,) if historical else self.reconcile_delays or (0.0,)):
             if delay:
                 time.sleep(delay)
             read_attempts += 1
             try:
-                candidate = self._reconcile_rows(
-                    plan,
-                    requested_shares=shares,
-                    baseline_order_ids=set(baseline_ids),
-                    expected_order_id=expected_order_id,
-                    allow_terminal_identity_mismatch=(
-                        terminal_identity_mismatch_allowed
-                    ),
-                )
+                candidate = (self._reconcile_prior_day_rows(plan, requested_shares=shares,
+                    expected_order_id=expected_order_id, baseline_order_ids=set(baseline_ids))
+                    if historical else self._reconcile_rows(
+                        plan, requested_shares=shares, baseline_order_ids=set(baseline_ids),
+                        expected_order_id=expected_order_id,
+                        **({"expected_order_time": continuity_time} if continuity_time is not None else {}),
+                        allow_terminal_identity_mismatch=terminal_identity_mismatch_allowed))
             except Exception as exc:
                 last_error = exc
                 continue
@@ -3201,7 +3255,7 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                     **baseline_locator,
                     "recovery_read_attempts": read_attempts,
                     "recovery_expected_order_id": expected_order_id,
-                    **self._failed_read_evidence(last_error),
+                    **self._failed_read_evidence(last_error, include_history_captures=historical),
                 },
                 template_name="foundersc-native-ax",
                 reason=(
@@ -3247,14 +3301,15 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                 "reason": (
                     "native_acknowledged_wrong_identity_order_terminally_rejected"
                     if specially_terminal
-                    else "native_unknown_submit_recovered_by_durable_exact_order_delta"
+                    else ("native_unknown_submit_recovered_by_durable_historical_exact_order_delta"
+                          if historical else "native_unknown_submit_recovered_by_durable_exact_order_delta")
                 ),
                 "locator_proof": {
                     **recovered.locator_proof,
                     "recovery_mode": (
                         "acknowledged_order_id_terminal_identity_mismatch"
                         if specially_terminal
-                        else "durable_exact_order_delta"
+                        else ("durable_historical_exact_order_delta" if historical else "durable_exact_order_delta")
                     ),
                 },
                 "field_readback": {

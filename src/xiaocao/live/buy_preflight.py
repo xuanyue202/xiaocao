@@ -109,6 +109,11 @@ def current_owned_book_b_codes(state_dir: Path) -> set[str]:
     return {str(lot['code']) for lot in lots.values() if lot['shares'] > 0}
 
 
+def current_buy_query_codes(state_dir: Path, *, trade_date: str) -> set[str]:
+    from .inherited_execution import query_codes
+    return current_owned_book_b_codes(state_dir) | query_codes(state_dir, trade_date=trade_date)
+
+
 def pretrade_account(state_dir: Path, snapshot: dict, *, trade_date: str, now: datetime,
                      sync_capital: bool = True, historical_capital: bool = False,
                      capital_flow_head: str | None = None,
@@ -118,9 +123,13 @@ def pretrade_account(state_dir: Path, snapshot: dict, *, trade_date: str, now: d
     state_dir = Path(state_dir)
     cash, owned, head = _replay_owned_book(state_dir)
     from .book_b_live_morning import _uncertain_execution_plan_ids
+    from .book_b_capital import policy
+    dynamic = policy(state_dir) is not None
     if _uncertain_execution_plan_ids(state_dir, trade_date=trade_date, asof=now,
-            defer_prior_day_sells=True):
+            defer_prior_day_sells=True, defer_prior_day_buys=dynamic):
         raise ValueError('BUY_PREFLIGHT_OWNED_ORDER_RECONCILE_REQUIRED')
+    from .inherited_execution import prove
+    isolation = prove(state_dir, snapshot, now=now) if dynamic else None
     settlement = load_latest_book_b_live_settlement(state_dir)
     if settlement is None and owned:
         raise ValueError('BUY_PREFLIGHT_SETTLEMENT_REQUIRED')
@@ -178,7 +187,8 @@ def pretrade_account(state_dir: Path, snapshot: dict, *, trade_date: str, now: d
         raise ValueError('BUY_PREFLIGHT_SUBACCOUNT_CASH_NEGATIVE')
     from .book_b_accounting import observe_account
     accounting = (observe_account(state_dir, cash=cash, market_value=exposure,
-        liquidation_value=liquidation, snapshot=snapshot, capital_state=funding, now=now)
+        liquidation_value=liquidation, snapshot=snapshot, capital_state=funding, now=now,
+        inherited_buy_isolation=isolation)
         if sync_capital else None)
     if accounting is not None:
         cash = Decimal(accounting['cash'])

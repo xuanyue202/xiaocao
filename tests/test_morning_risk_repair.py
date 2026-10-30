@@ -200,7 +200,7 @@ def test_legacy_unrelated_prior_sell_day_cannot_bridge_missing_latest(tmp_path, 
     days = _history(tmp_path)
     (tmp_path / "settlements/2026-08-31.json").unlink()
     monkeypatch.setattr(support, "proven_prior_day_zero_fill_sell_ids", lambda *a, **k: ("unrelated",))
-    monkeypatch.setattr(support, "_load_intent_index", lambda *a: {"unrelated": {"trade_date": "2026-08-28"}})
+    monkeypatch.setattr(support, "load_execution_intents", lambda *a: {"unrelated": {"trade_date": "2026-08-28"}})
     receipt = support.evaluate_live_risk(tmp_path, now=NOW, account=_mark(tmp_path, 30000), trading_dates_provider=lambda _: days)
     assert receipt.status == "BLOCKED" and receipt.deploy_factor == 0
     assert "LIVE_RISK_LATEST_SETTLEMENT_REQUIRED:2026-08-31" in receipt.reasons

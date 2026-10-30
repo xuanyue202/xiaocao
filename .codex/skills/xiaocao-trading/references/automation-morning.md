@@ -11,7 +11,10 @@ not task closeout. Prove which current cash/exposure/code is affected; a status
 list is not economic evidence. Preserve old claims and original budgets, repair
 the dependency before claiming a permitted continuation, and disclose a missing
 recovery capability as an implementation gap. Keep source, APP and paper owners.
-The current-window rules do not themselves implement a new execution path.
+For the implemented inherited-order branch and its actual consumption/readback
+receipts, use [APP morning phases](tasks/morning-app.md) and
+[inherited-order admission](../../../../docs/BOOK_B_WORKFLOW.md#遗留订单如何进入当天准入).
+Deployment, fresh admission and a natural execution outcome remain separate.
 
 ## Unified APP B lifecycle (2026-10-22)
 

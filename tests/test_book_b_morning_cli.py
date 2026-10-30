@@ -103,6 +103,7 @@ def test_morning_entry_dispatches_without_reproducing_recovery_candidates(tmp_pa
         read_live_allocation_facts=lambda **kw: account_call("allocation", **kw),
         read_live_account_snapshot=lambda **kw: account_call("snapshot", **kw),
         read_buy_preflight_snapshot=lambda **kw: {"trade_date": "2026-09-11"},
+        submission_buy_snapshot=lambda **kw: None,
         prepare_readonly=lambda plan, **kw: account_call("prepare", **kw),
         submission_batch=lambda: None,
     )

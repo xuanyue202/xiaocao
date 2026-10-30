@@ -36,6 +36,7 @@ from .book_b_pricing import initial_limit_price
 from .buy_guards import evaluate_buy_market_guard
 from .safety import DEFAULT_AUTH_PATH, DEFAULT_AUDIT_PATH, require_capital_action
 from .capital_keychain import CapitalRuntimeUnavailable
+from .bounded_readback import mutex, file_lock, open_locked_file
 
 
 class ExecutionState(str, Enum):
@@ -779,10 +780,7 @@ class ExecutionStore:
         self.lock_path = self.path.with_suffix(self.path.suffix + ".lock")
 
     def _locked(self):
-        self.lock_path.parent.mkdir(parents=True, exist_ok=True)
-        handle = self.lock_path.open("a+", encoding="utf-8")
-        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-        return handle
+        return open_locked_file(self.lock_path)
 
     @staticmethod
     def _read_event(line: str) -> dict[str, Any]:
@@ -922,10 +920,7 @@ class BookBOwnershipEvidence:
         self.lock_path = self.path.with_suffix(self.path.suffix + ".lock")
 
     def _locked(self):
-        self.lock_path.parent.mkdir(parents=True, exist_ok=True)
-        handle = self.lock_path.open("a+", encoding="utf-8")
-        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-        return handle
+        return open_locked_file(self.lock_path)
 
     def _rows(self) -> list[dict[str, Any]]:
         if not self.path.exists():
@@ -1135,8 +1130,7 @@ class TradingIncidentOutbox:
 
     def enqueue(self, *, incident_id: str, title: str, body: str) -> bool:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        handle = self.lock_path.open("a+", encoding="utf-8")
-        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        handle = open_locked_file(self.lock_path)
         try:
             rows = self._rows()
             matching = [row for row in rows if row.get("incident_id") == incident_id]
@@ -1166,8 +1160,7 @@ class TradingIncidentOutbox:
 
     def mark_delivered(self, incident_id: str, result: object) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        handle = self.lock_path.open("a+", encoding="utf-8")
-        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        handle = open_locked_file(self.lock_path)
         try:
             row = {
                 "schema_version": 1,
@@ -1186,8 +1179,7 @@ class TradingIncidentOutbox:
 
     def delivered(self, incident_id: str) -> bool:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        handle = self.lock_path.open("a+", encoding="utf-8")
-        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        handle = open_locked_file(self.lock_path)
         try:
             return any(
                 row.get("incident_id") == incident_id and row.get("status") == "delivered"
@@ -1269,8 +1261,7 @@ class TradingTakeoverStore:
             "created_at": _iso(_utcnow()),
         }
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        handle = self.lock_path.open("a+", encoding="utf-8")
-        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        handle = open_locked_file(self.lock_path)
         try:
             if any(row.get("capsule_id") == capsule_id for row in self._rows()):
                 return capsule
@@ -1315,13 +1306,13 @@ def account_writer_lock(account_lock_dir: Path, logical_account_id: str):
     lock_dir = Path(account_lock_dir)
     lock_dir.mkdir(parents=True, exist_ok=True)
     path = str((lock_dir / f"account-{digest}.lock").resolve())
-    with _account_mutex:
+    with mutex(_account_mutex):
         if path in _account_descriptors:
             yield
             return
         descriptor = os.open(path, os.O_CREAT | os.O_RDWR, 0o600)
         try:
-            fcntl.flock(descriptor, fcntl.LOCK_EX)
+            file_lock(descriptor)
             _account_descriptors[path] = descriptor
             yield
         finally:

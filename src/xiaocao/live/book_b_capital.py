@@ -154,8 +154,8 @@ def _net_cash(root: Path, state: dict, *, as_of: str | None = None) -> Decimal:
 
 
 def has_open_buy(root: Path) -> bool:
-    from .book_b_live_lifecycle import _load_intent_index, open_execution_plan_ids
-    intents = _load_intent_index(Path(root))
+    from .book_b_live_lifecycle import open_execution_plan_ids, load_execution_intents
+    intents = load_execution_intents(Path(root))
     return any(intents[p].get("side") == "BUY" for p in open_execution_plan_ids(Path(root)))
 
 
@@ -167,10 +167,10 @@ def has_open_buy_with_possible_effect(root: Path) -> bool:
     validation and preparation events are still side-effect free. Any other
     event or incomplete receipt stays conservative.
     """
-    from .book_b_live_lifecycle import _load_intent_index, _read_jsonl_strict, open_execution_plan_ids
+    from .book_b_live_lifecycle import _read_jsonl_strict, open_execution_plan_ids, load_execution_intents
 
     root = Path(root)
-    intents = _load_intent_index(root)
+    intents = load_execution_intents(root)
     open_buys = {p for p in open_execution_plan_ids(root) if intents[p].get("side") == "BUY"}
     for event in _read_jsonl_strict(root / "events.jsonl"):
         if event.get("plan_id") not in open_buys:

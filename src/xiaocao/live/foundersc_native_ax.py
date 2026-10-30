@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .foundersc_session import app_session
+from .bounded_readback import require_read_command, remaining
 from .app_test_window import app_test_context_active, require_app_test_window
 from .authentication_test_scope import authentication_test_mode, require_authentication_command
 from .foundersc_keychain import (
@@ -395,6 +396,7 @@ class FounderscNativeAXClient:
 
     def _run(self, command: str, args: list[str] | None = None, *,
              secret_input: bytes | bytearray | None = None) -> NativeAXReceipt:
+        require_read_command(command)
         require_authentication_command(command)
         started = time.monotonic()
         started_at = datetime.now(timezone.utc).isoformat()
@@ -430,13 +432,14 @@ class FounderscNativeAXClient:
         if not self.helper_path.is_file() or not os.access(self.helper_path, os.X_OK):
             raise FounderscNativeAXError("NATIVE_AX_HELPER_MISSING")
         argv = [str(self.helper_path), command, *(args or [])]
+        seconds = remaining()
         try:
             result = self.runner(
                 argv,
                 input=None if secret_input is None else bytes(secret_input),
                 capture_output=True,
                 check=False,
-                timeout=self.timeout_seconds,
+                timeout=min(self.timeout_seconds, seconds) if seconds is not None else self.timeout_seconds,
                 pass_fds=(session_descriptor,),
             )
         except subprocess.TimeoutExpired as exc:
@@ -556,6 +559,8 @@ class FounderscNativeAXClient:
         keychain_runner: Runner | None = None,
         keychain_timeout_seconds: float = 12.0,
     ) -> NativeAXReceipt:
+        # Reject before the Keychain boundary, as well as before the helper.
+        require_read_command(command)
         if not explicitly_enabled:
             raise FounderscNativePreSecretError(enablement_error)
         runner = keychain_runner or self.runner

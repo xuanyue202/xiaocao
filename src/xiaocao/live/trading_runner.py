@@ -206,11 +206,16 @@ def build_foundersc_native_execution(
     if native is None:
         build_helper()
         native = FounderscNativeAXClient()
+    from .buy_preflight import current_buy_query_codes
+    from zoneinfo import ZoneInfo
     adapter = FounderscNativeAXBrokerAdapter(
         native=native,
         scoped_buy_preflight=scoped_buy_preflight,
         scoped_sell_preflight=scoped_sell_preflight,
         expected_fund_account_fingerprint=expected_fund_account_fingerprint,
+        clock=now,
+        buying_codes_provider=(lambda: current_buy_query_codes(root, trade_date=(now() if now else datetime.now(ZoneInfo('Asia/Shanghai'))).astimezone(ZoneInfo('Asia/Shanghai')).date().isoformat()))
+            if scoped_buy_preflight else None,
         credential_health_path=root / "credential_health" / (
             hashlib.sha256(expected_fund_account_fingerprint.encode()).hexdigest() + ".json"),
     )

@@ -32,7 +32,6 @@ from .book_b_live_lifecycle import (
 )
 from .book_b_live_morning import (
     bind_durable_live_plan_intents,
-    read_durable_live_plan_intent,
     reconcile_open_book_b_plans,
 )
 from .trading_execution import ExecutionReceipt, TradePlan
@@ -332,6 +331,7 @@ class BookBLiveIntradayReceipt:
     settlement: dict[str, Any] | None = None
     risk_receipt: dict[str, Any] | None = None
     deferred_buy_plan_ids: tuple[str, ...] = ()
+    deferred_monitor_lots: tuple[dict, ...] = ()
     broker_snapshot: dict[str, Any] | None = None
     eod_review: dict[str, Any] | None = None
     order_wait: dict[str, Any] | None = None
@@ -347,51 +347,36 @@ def _existing_sell_plan_for_lot(
     trade_date: str,
     owned_lot_id: str,
 ) -> TradePlan | None:
-    intent_dir = Path(state_dir) / "plan_intents"
-    if not intent_dir.is_dir():
-        return None
-    for path in sorted(intent_dir.glob("*.json")):
-        try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
-            raise ValueError("LIVE_PLAN_INTENT_INVALID") from exc
-        plan = read_durable_live_plan_intent(payload)
+    # Every accepted original family participates in same-lot deduplication;
+    # admitting its financial evidence must never create a second SELL claim.
+    from .book_b_live_lifecycle import load_execution_intents, read_execution_plan
+    matches = []
+    for raw in load_execution_intents(Path(state_dir)).values():
+        plan = read_execution_plan(raw)
         if (
             plan.trade_date == trade_date
             and plan.side.upper() == "SELL"
             and plan.owned_lot_id == owned_lot_id
         ):
-            return plan
-    return None
+            matches.append(plan)
+    if len(matches) > 1:
+        raise ValueError("LIVE_BOOK_B_SAME_LOT_SELL_INTENT_CONFLICT")
+    return matches[0] if matches else None
 
 
 def _prior_open_sell_for_lot(
     state_dir: Path, *, trade_date: str, owned_lot_id: str,
 ) -> str | None:
     """Keep an earlier unresolved SELL visible when a fresh lot is assessed."""
-    intent_dir = Path(state_dir) / "plan_intents"
+    from .book_b_live_lifecycle import load_execution_intents, read_execution_plan
+    intents = load_execution_intents(Path(state_dir))
     for plan_id in open_execution_plan_ids(state_dir):
-        path = _intent_path(state_dir, plan_id)
-        if not path.is_file():
-            # Intent filenames are not an authority; find the validated plan below.
-            paths = intent_dir.glob("*.json")
-        else:
-            paths = (path,)
-        matched_intent = False
-        for candidate in paths:
-            try:
-                payload = json.loads(candidate.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError) as exc:
-                raise ValueError("LIVE_PLAN_INTENT_INVALID") from exc
-            plan = read_durable_live_plan_intent(payload)
-            if plan.plan_id == plan_id:
-                matched_intent = True
-            if (plan.plan_id == plan_id and plan.side.upper() == "SELL"
-                    and plan.trade_date < trade_date
-                    and plan.owned_lot_id == owned_lot_id):
-                return plan_id
-        if not matched_intent:
+        if plan_id not in intents:
             raise ValueError("LIVE_PLAN_INTENT_MISSING")
+        plan = read_execution_plan(intents[plan_id])
+        if (plan.side.upper() == 'SELL' and plan.trade_date < trade_date
+                and plan.owned_lot_id == owned_lot_id):
+            return plan_id
     return None
 
 
@@ -518,12 +503,18 @@ def _run_book_b_live_intraday_locked(
     if normalized_phase == "eod" and not _eod_settlement_window(current, trade_date):
         raise ValueError("LIVE_BOOK_B_EOD_SETTLEMENT_WINDOW_NOT_OPEN")
     initial_snapshot = account_snapshot_provider() if normalized_phase == "eod" else None
+    if initial_snapshot is not None:
+        if initial_snapshot.get("schema_version") == "book-b-sellable-only.v1":
+            raise ValueError("LIVE_BOOK_B_EOD_FULL_ACCOUNT_REQUIRED")
+        if not _eod_settlement_window(_snapshot_observed_at(initial_snapshot), trade_date):
+            raise ValueError("LIVE_BOOK_B_EOD_BROKER_SNAPSHOT_PRE_CLOSE")
     reconciled = reconcile_open_book_b_plans(
         state_root,
         trade_date=trade_date,
         execute=execute,
         now=current,
         defer_prior_day_sells=normalized_phase != "eod",
+        defer_prior_day_buys=normalized_phase != "eod",
         reconcile_proven_prior_day_sells=normalized_phase == "eod",
         economic_closure_snapshot=initial_snapshot,
     )
@@ -532,6 +523,7 @@ def _run_book_b_live_intraday_locked(
         # Pending SELLs must not suppress a read-only post-close observation.
         # The settlement writer below independently requires every plan terminal.
         allow_open_sells=True,
+        defer_prior_day_buys_for_owned_exit=True,
     )
     phase_now = now()
     if phase_now.tzinfo is None:
@@ -548,6 +540,7 @@ def _run_book_b_live_intraday_locked(
     deferred_buys = () if normalized_phase == "eod" else check_monitor_pending_plans(
         state_root, trade_date=trade_date, asof=now(),
         allow_open_sells=True,
+        defer_prior_day_buys_for_owned_exit=True,
     )
     current = now()
     if current.tzinfo is None:
@@ -565,8 +558,23 @@ def _run_book_b_live_intraday_locked(
     provisional = project()
     if provisional.lots and normalized_phase != "eod" and freeze_dir is None:
         raise ValueError("LIVE_BOOK_B_MONITOR_FREEZE_DIR_REQUIRED")
-    contexts = (load_monitor_contexts(Path(freeze_dir), provisional.lots)
-                if freeze_dir is not None and provisional.lots and normalized_phase != "eod" else {})
+    deferred_monitor_lots = []
+    contexts = {}
+    if freeze_dir is not None and provisional.lots and normalized_phase != 'eod':
+        try:
+            contexts = load_monitor_contexts(Path(freeze_dir), provisional.lots)
+        except (OSError, ValueError) as original_error:
+            # Preserve the strict source validator. One unavailable old lot's
+            # strategy context cannot suppress another independently proved
+            # protective exit; the unproved lot acquires no decision authority.
+            for lot in provisional.lots:
+                try:
+                    contexts.update(load_monitor_contexts(Path(freeze_dir), [lot]))
+                except (OSError, ValueError) as exc:
+                    deferred_monitor_lots.append({'owned_lot_id': lot.owned_lot_id,
+                        'code': lot.code, 'reason': str(exc), 'scope': 'strategy_source_unproven'})
+            if not contexts:
+                raise original_error
     account = project(contexts)
     risk_receipt = None
 
@@ -645,13 +653,15 @@ def _run_book_b_live_intraday_locked(
             risk_receipt=risk_receipt,
             deferred_buy_plan_ids=deferred_buys,
         )
-    statuses = status_provider(account.lots)
+    ready_lots = tuple(lot for lot in account.lots if lot.owned_lot_id in contexts)
+    statuses = status_provider(ready_lots)
     deferred_buys = check_monitor_pending_plans(
         state_root, trade_date=trade_date, asof=now(),
         allow_open_sells=True,
+        defer_prior_day_buys_for_owned_exit=True,
     )
     by_lot = {str(status.get("owned_lot_id") or ""): status for status in statuses}
-    if set(by_lot) != {lot.owned_lot_id for lot in account.lots}:
+    if set(by_lot) != {lot.owned_lot_id for lot in ready_lots}:
         raise ValueError("LIVE_BOOK_B_STATUS_COVERAGE_MISMATCH")
     ledger = BookBLiveDecisionLedger(state_root / "book_b_live_decisions.jsonl")
     decisions: list[dict[str, Any]] = []
@@ -662,6 +672,8 @@ def _run_book_b_live_intraday_locked(
     try:
         for lot in account.lots:
             active_plan = None
+            if lot.owned_lot_id not in contexts:
+                continue
             decision_now = now()
             if decision_now.tzinfo is None:
                 raise ValueError("LIVE_BOOK_B_NOW_NOT_TZ_AWARE")
@@ -860,6 +872,7 @@ def _run_book_b_live_intraday_locked(
         reconciliation_receipts=tuple(reconciled),
         risk_receipt=risk_receipt,
         deferred_buy_plan_ids=deferred_buys,
+        deferred_monitor_lots=tuple(deferred_monitor_lots),
     )
 
 

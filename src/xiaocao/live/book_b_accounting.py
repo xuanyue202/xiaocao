@@ -72,11 +72,11 @@ class OwnedBook:
 def replay_owned(root: Path, *, initial_capital=30000, fee_rate=.0001) -> OwnedBook:
     """The shared legacy-compatible cash/gross-cost and financial-cost replay."""
     from .book_b_live_lifecycle import (_read_jsonl_strict, _validate_ownership_chain,
-        _validate_execution_fill_coverage, _load_intent_index, _sha256)
+        _validate_execution_fill_coverage, load_execution_intents, _sha256)
     rows, _ = _validate_ownership_chain(_read_jsonl_strict(
         Path(root) / "book_b_ownership_evidence.jsonl"))
     _validate_execution_fill_coverage(Path(root), rows)
-    intents = _load_intent_index(Path(root))
+    intents = load_execution_intents(Path(root))
     cash = number(initial_capital)
     if cash <= 0:
         raise ValueError("LIVE_BOOK_B_INITIAL_CAPITAL_INVALID")
@@ -383,7 +383,7 @@ def _cash_snapshot_integrity(root: Path, snapshot: dict, book: OwnedBook,
 
 def observe_account(root: Path, *, cash, market_value, liquidation_value, snapshot: dict,
                     capital_state: dict, initial_capital=30000,
-                    now: datetime | None = None) -> dict:
+                    now: datetime | None = None, inherited_buy_isolation: dict | None = None) -> dict:
     """Store a hash-bound valuation; unclassified cash makes total PnL N/A."""
     root = Path(root)
     with _database(root) as db:
@@ -429,6 +429,14 @@ def observe_account(root: Path, *, cash, market_value, liquidation_value, snapsh
             # A bare intent has no APP reserve; a lower fresh available cash
             # is a real conservative loss until its economic source is known.
             risk_cash = min(risk_cash, broker_available)
+        if inherited_buy_isolation is not None:
+            from .inherited_execution import verify
+            verify(root, inherited_buy_isolation, now=now)
+            if inherited_buy_isolation["broker_snapshot_sha256"] != snapshot["snapshot_sha256"]:
+                raise ValueError("LIVE_INHERITED_BUY_SNAPSHOT_MISMATCH")
+            # Cash held at the broker is still cash. Cap uncertain valuations
+            # conservatively; never turn a reserve into an economic drawdown.
+            risk_cash = min(risk_cash, cents(inherited_buy_isolation["gross_cash_lower_bound"]))
         difference = observed_cash - totals.get("cash", 0)
         contributed = -totals.get("capital", 0)
         realized, unrealized = -totals.get("pnl", 0), exposure - inventory
@@ -474,6 +482,8 @@ def observe_account(root: Path, *, cash, market_value, liquidation_value, snapsh
             "lots": [{"owned_lot_id": k, "code": v["code"], "shares": v["shares"],
                       "remaining_cost": money(fees["lots"][k]["cost"])}
                      for k, v in book.lots.items() if v["shares"] > 0]}
+        if inherited_buy_isolation is not None:
+            body["inherited_buy_isolation"] = inherited_buy_isolation
         body["receipt_sha256"] = digest(body)
         encoded = json.dumps(body, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
         old = db.execute("SELECT body FROM observations WHERE receipt_sha256=?", (body["receipt_sha256"],)).fetchone()

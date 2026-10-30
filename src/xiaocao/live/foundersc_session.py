@@ -6,7 +6,6 @@ individual adapter operations and raw helper invocations nest in that session.
 """
 from __future__ import annotations
 
-import fcntl
 import os
 import threading
 from contextlib import contextmanager
@@ -16,6 +15,7 @@ from pathlib import Path
 from time import monotonic
 from .authentication_test_scope import authentication_test_mode
 from .app_test_window import app_test_context_active, require_app_test_window
+from .bounded_readback import mutex, file_lock
 
 
 _mutex = threading.RLock()
@@ -50,7 +50,7 @@ kills and waits for the helper before releasing the session.
     global _descriptor
     if app_test_context_active() and not authentication_test_mode():
         require_app_test_window()
-    with _mutex:
+    with mutex(_mutex):
         if app_test_context_active() and not authentication_test_mode():
             require_app_test_window()
         if _descriptor is not None:
@@ -60,7 +60,7 @@ kills and waits for the helper before releasing the session.
         path.parent.mkdir(parents=True, exist_ok=True)
         descriptor = os.open(path, os.O_CREAT | os.O_RDWR, 0o600)
         try:
-            fcntl.flock(descriptor, fcntl.LOCK_EX)
+            file_lock(descriptor)
             if app_test_context_active() and not authentication_test_mode():
                 require_app_test_window()
             _descriptor = descriptor
