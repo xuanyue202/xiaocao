@@ -6,8 +6,12 @@ Promoted (not rewritten) from the validated research scripts:
   - scripts/research_rotation_mainline.py (rotation-frequency persistence)
 
 Cache-only by construction: reads block_category_rank_v3 (model=0) from the SQLite
-cache; the per-concept daily return is `prePctChangeRate` (verified sane —
-算力芯片 cumulates +75%/yr). No live API, backtest-safe — same as state.py.
+cache; the per-concept daily return is `prePctChangeRate`. Before approximately
+2024-05-13 this field is historical zero, not a verified return series. Cross-cycle
+research must filter that interval as research_trend_crosscycle._real_return_panel
+does, or use proved stock-level returns; rankings alone cannot certify returns.
+Why: zero-filled history can inflate apparent cross-cycle alpha. Cache-only does
+not by itself establish point-in-time or return-data validity.
 
 Two selectors are exposed (both pure):
   - `select_by_trend_strength` : top-M concepts by trailing-L return (XH-018 signal)

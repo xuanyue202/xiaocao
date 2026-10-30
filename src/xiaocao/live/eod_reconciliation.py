@@ -22,7 +22,7 @@ def historical_sell_resolutions(root: Path, snapshot: dict, *, now: datetime) ->
     from .book_b_accounting import replay_owned
     from .book_b_capital import policy
     from .book_b_live_lifecycle import (validate_broker_account_snapshot,
-        open_execution_plan_ids, _load_intent_index, _post_close_timestamp,
+        open_execution_plan_ids, load_execution_intents, _post_close_timestamp,
         _read_jsonl_strict, _validate_execution_fill_coverage, _validate_same_day_broker_fill_coverage, _broker_side)
 
     snapshot = validate_broker_account_snapshot(snapshot,
@@ -39,7 +39,7 @@ def historical_sell_resolutions(root: Path, snapshot: dict, *, now: datetime) ->
     if binding and binding != snapshot["fund_account_binding_sha256"]:
         raise ValueError("BOOK_B_CAPITAL_ACCOUNT_BINDING_MISMATCH")
     book = replay_owned(root)
-    intents = _load_intent_index(root)
+    intents = load_execution_intents(root)
     events = _read_jsonl_strict(root / "events.jsonl")
     _validate_execution_fill_coverage(root, book.rows, execution_events=events)
     _validate_same_day_broker_fill_coverage(snapshot, book.rows, trade_date=snapshot["trade_date"])
@@ -135,6 +135,14 @@ def assess_eod(root: Path, account: dict, snapshot: dict | None = None,
     if persist:
         events = _read_jsonl_strict(Path(root) / "events.jsonl")
         body["execution_evidence"] = {"event_count": len(events), "events_sha256": _digest(events)}
+        from .incident_dispositions import refresh
+        try:
+            body["incident_dispositions"] = refresh(Path(root), trade_date=account["trade_date"],
+                stage="eod", now=now, account=account)
+        except (OSError, ValueError, TypeError, KeyError) as exc:
+            # A derived planning view cannot invalidate otherwise proved EOD
+            # accounting; raw financial/order validators remain authoritative.
+            body["incident_dispositions"] = {"status": "degraded", "reason": str(exc), "admission_authority": "none"}
         document = {**body, "broker_snapshot": snapshot}
         digest = _digest(document)
         path = Path(root) / "eod_reviews" / f"{account['trade_date']}-{digest}.json"

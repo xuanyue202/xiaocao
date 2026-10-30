@@ -1,11 +1,11 @@
 """Original-owner audit checklist; evidence never grants trading authority."""
 from __future__ import annotations
 
-import fcntl
 import json
 import os
 from datetime import datetime, timezone
 from pathlib import Path
+from .bounded_readback import file_lock
 
 from xiaocao.runner_recovery import _hash, _write
 
@@ -34,13 +34,13 @@ class MorningChecklist:
         self.path, self.binding = Path(path).resolve(), dict(binding)
 
     @classmethod
-    def create(cls, root: Path, binding: dict):
+    def create(cls, root: Path, binding: dict, *, nonblocking: bool = False):
         if not binding.get("owner_thread_id") or not binding.get("trade_date"):
             raise ValueError("MORNING_CHECKLIST_OWNER_REQUIRED")
         checklist = cls(root / (_hash(binding) + ".json"), binding)
         checklist.path.parent.mkdir(parents=True, exist_ok=True)
         with checklist.path.with_suffix(".lock").open("a+") as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX)
+            file_lock(lock.fileno(), wait=not nonblocking)
             if checklist.path.exists():
                 checklist.read()
             else:
@@ -77,7 +77,8 @@ class MorningChecklist:
         return payload
 
     def record(self, item: str, status: str, *, evidence=None, reason=None,
-               observed_at: datetime | None = None, valid_until: datetime | None = None):
+               observed_at: datetime | None = None, valid_until: datetime | None = None,
+               nonblocking: bool = False):
         if item not in ITEMS or status not in STATUSES:
             raise ValueError("MORNING_CHECKLIST_ITEM_STATUS_INVALID")
         clock = observed_at or datetime.now(timezone.utc)
@@ -87,7 +88,7 @@ class MorningChecklist:
         if status in {"passed", "recovered"} and not evidence:
             raise ValueError("MORNING_CHECKLIST_EVIDENCE_REQUIRED")
         with self.path.with_suffix(".lock").open("a+") as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX)
+            file_lock(lock.fileno(), wait=not nonblocking)
             payload = self.read()
             entry = payload["items"][item]
             if entry.get("first_observed_at") is None and evidence:

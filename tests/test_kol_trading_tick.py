@@ -532,7 +532,7 @@ def test_prior_day_sell_allows_current_monitors_without_replaying_old_claim(tmp_
 @pytest.mark.parametrize("side,day,lot_id", [
     ("SELL", "2026-09-07", "owned-buy"),
     ("SELL", "2026-09-08", "owned-buy"),
-    ("BUY", "2026-09-04", None),
+    ("BUY", "2026-09-07", None),
     ("SELL", "2026-09-04", None),
 ])
 def test_current_future_buy_or_unbound_plan_still_fences_tick(tmp_path, side, day, lot_id):

@@ -106,6 +106,8 @@ def message(kind: str, trade_date: str, facts: dict) -> tuple[str, str]:
     else:
         if preflight:
             lines.append("结果：未进入开盘交易，本次没有新增委托。")
+        elif facts.get('current_order_evidence_unproven') is True:
+            lines.append("结果：本次委托和成交回执尚未齐全；以下仅列已证明记录。")
         elif orders:
             lines.append(f"结果：本次 {len(orders)} 笔委托；逐单确认情况如下。")
         else:
@@ -150,6 +152,8 @@ def result_fingerprint(facts: dict) -> str:
     content.update(user_action_required=facts.get("user_action_required") is True,
                    user_action={"required": action.get("required") is True, "request": action.get("request")},
                    pending_evidence_unproven=facts.get("pending_evidence_unproven") is True)
+    # A newly explained uncertainty is not a changed broker outcome. Keep this
+    # diagnostic flag out of identity, including on legacy receipt readback.
     return hashlib.sha256(json.dumps(content, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
 
 

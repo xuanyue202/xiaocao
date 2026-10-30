@@ -280,13 +280,11 @@ def _live_owner(root: Path, *, trade_date: str) -> dict | None:
                 return _result("no_op", "LIVE_WRITER_OWNS_CHECKPOINT")
     plans = open_execution_plan_ids(state_root)
     if plans:
-        intents = {}
-        for path in (state_root / "plan_intents").glob("*.json"):
-            plan = read_durable_live_plan_intent(_json(path))
-            if plan.plan_id in intents:
-                raise TickError("DUPLICATE_LIVE_INTENT")
-            intents[plan.plan_id] = plan
-        deferred = []
+        from xiaocao.live.book_b_live_lifecycle import load_execution_intents, read_execution_plan
+        from xiaocao.live.book_b_live_recovery import prior_day_buy_exit_deferrals
+        intents = {key: read_execution_plan(raw) for key, raw in load_execution_intents(state_root).items()}
+        prior_buys = set(prior_day_buy_exit_deferrals(state_root, trade_date=trade_date))
+        deferred = list(prior_buys)
         for plan_id in plans:
             plan = intents.get(plan_id)
             if (plan is not None and plan.side == "SELL" and plan.owned_lot_id
@@ -296,8 +294,9 @@ def _live_owner(root: Path, *, trade_date: str) -> dict | None:
         if not blocking:
             # Claim only the current monitors. They must obtain fresh APP facts
             # before evaluating an exit; these old claims remain untouched.
-            return _result("deferred", "PRIOR_DAY_SELL_RECONCILE_ONLY",
-                           deferred_reconcile_plan_ids=deferred)
+            return _result("deferred", "PRIOR_DAY_EXECUTION_RECONCILE_ONLY" if prior_buys
+                           else "PRIOR_DAY_SELL_RECONCILE_ONLY",
+                           deferred_reconcile_plan_ids=sorted(deferred), app_scope="owned_sell_only")
         # Old plans do not contain a task ID. Return their exact durable IDs
         # rather than implying an owner lookup is possible or inventing one.
         evidence = _recorded_plan_owners(state_root, {p:intents[p] for p in blocking if p in intents})

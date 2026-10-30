@@ -1,0 +1,348 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-29",
+  "kind": "盘中大师班直播",
+  "summary": "小草在10月29日下跌环境中主张保守，并把连板倒接力与人气股低吸组合执行；红盘起爆只看竞价涨幅较低的候选，明确回避约6%高开、优先5%以下。直播同时给出百洋股份、冰山冷热、龙溪股份及多组语音转写候选的盘中口述结果，但没有独立成交与收益证据。可复用内容是组合、追高过滤和把交易动作简化到事前模式；所有内容仅作authority=0研究素材。",
+  "author": "小草",
+  "source": "小草直播",
+  "authority": 0,
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_netdisk_enrichment/artifacts/kol-netdisk-da0880f5d83e43c2/20261029 大师班直播10月29日-compressed.txt",
+      "sha256": "b88330762fa58ffb4ee3e5554c8f3d88b6dc97d621471109c1794f2496f5730a",
+      "size": 18950
+    }
+  ],
+  "posture": {
+    "regime": "10月29日盘中主跌、普跌，作者称创业板和大盘明显下跌，要求星期四保守",
+    "dominant_style": "以连板倒接力和人气股低吸做组合，红盘起爆只选低高开候选，另提盘中紫薇模式",
+    "risk": "候选位置偏高、约6%高开追高、市场跳水、直播电脑故障和大量语音转写歧义",
+    "style_ranking": [
+      "连板倒接力与人气股低吸组合",
+      "红盘起爆中竞价涨幅低于5%的候选",
+      "盘中紫薇模式仅由可见页面者自行核对",
+      "约6%高开及无法唯一识别的语音候选不参与"
+    ]
+  },
+  "regime_call": {
+    "call": "来源当时仍把环境定为主跌和黑色星期四，核心是保守、组合并过滤高开，而不是放大单一模式风险。",
+    "horizon": "2026年10月29日开盘至盘中；截至10月30日具体信号和买点已过期。",
+    "what_would_falsify": [
+      "当日市场并非普跌或创业板未显著下跌",
+      "固定样本显示约6%高开组并不比5%以下组更差",
+      "固定总风险后组合模式未降低波动或反而稀释收益",
+      "口述候选身份、信号时点或可成交收益无法复现"
+    ]
+  },
+  "directions": [
+    {
+      "name": "连板倒接力与人气股低吸",
+      "stance": "来源当日建议两个模式同时做成组合，减少只押单一模式导致的心态波动",
+      "conditions": [
+        "倒接力用连板接力排名倒序观察",
+        "人气股低吸按当日模式第一名观察",
+        "总风险和分配比例来源没有提供"
+      ],
+      "boundary": "具体候选、买点和窗口均已过期；组合不等于扩大总风险。"
+    },
+    {
+      "name": "红盘起爆",
+      "stance": "只看涨幅不高的候选，作者明确说高开6%不要做，在前三名中优先5%以下",
+      "conditions": [
+        "竞价高开低于5%",
+        "候选确属红盘起爆模式",
+        "市场跳水时仍需接受未上涨或回落"
+      ],
+      "boundary": "来源只给现场口径，没有板块差异、成交价格、止损和长期样本。"
+    },
+    {
+      "name": "盘中紫薇模式",
+      "stance": "来源把它作为盘中可查模式，并以世纪恒通、疑似恒勃股份等前一日例子说明",
+      "conditions": [
+        "必须能看到完整盘中页面与信号时点",
+        "不得由口述收益倒推信号有效"
+      ],
+      "boundary": "本场电脑故障导致页面不完整，语音中的恒博或恒勃身份仍不确定。"
+    }
+  ],
+  "stocks": [
+    {
+      "surface_form": "冰山／冰山冷热",
+      "role": "红盘起爆当日候选",
+      "lesson": "作者称其开得不高、可用于组合，并口述盈利；没有独立成交或收益核验。",
+      "resolution": "证券目录支持冰山冷热000530.XSHE，但目录不证明当日信号和成交。"
+    },
+    {
+      "surface_form": "龙溪股份",
+      "role": "红盘起爆第三名结果例证",
+      "lesson": "作者口述其涨停，用于支持低高开候选，但不能作为未来收益保证。",
+      "resolution": "证券目录支持龙溪股份600592.XSHG；涨停与模式归因未独立核验。"
+    },
+    {
+      "surface_form": "百洋股份／百羊",
+      "role": "连板倒接力当日候选",
+      "lesson": "作者说倒序排名得分负107，并多次口述盘中约6至8个百分点收益。",
+      "resolution": "证券目录支持百洋股份002696.XSHE；具体收益和可成交性未核验。"
+    },
+    {
+      "surface_form": "世纪恒通",
+      "role": "前一日紫薇模式历史例证",
+      "lesson": "作者称前一日盘中买入且次日仍上涨，只能作为历史口述。",
+      "resolution": "证券目录支持世纪恒通301428.XSHE；本包没有前一日信号、成交和收益证据。"
+    },
+    {
+      "surface_form": "恒博股份／恒博／恒通恒博",
+      "role": "前一日紫薇模式历史例证",
+      "lesson": "作者与转写把其同世纪恒通并列为前一日高分例子。",
+      "resolution": "证券目录提供恒勃股份301225.XSHE作为候选，但原声转写不足以唯一确认，不作正式归一。"
+    },
+    {
+      "surface_form": "房错初创、凡多斯创、房东说说、防脱速算、房漏收、防多数创、黄豆醋蒜、房子",
+      "role": "人气股低吸当日候选及旧例的语音转写组",
+      "lesson": "来源把其中若干表述称为当日人气股低吸第一名或可买候选，并口述接近10个百分点或更高收益；接近结束时又说再次跳水使原词“房子”掉下来，构成同场回落例外。",
+      "resolution": "证券目录提供凡拓数创301313.XSHE作为可能候选，但多组原话不能仅凭目录单独解码，全部保持候选且不进入执行。"
+    },
+    {
+      "surface_form": "安全报",
+      "role": "红盘起爆未涨例外",
+      "lesson": "作者明确说该候选当时还没涨、涨得不多，并归因于大盘跳水；不能把低高开候选整体表述为赢家。",
+      "resolution": "原词无法唯一映射，保持未解析。"
+    },
+    {
+      "surface_form": "大业什么",
+      "role": "前一日过度思考的历史例证",
+      "lesson": "作者说自己曾因觉得位置高而犹豫，用于说明不要临场改规则。",
+      "resolution": "证券目录提供大业股份603278.XSHG作为候选；原话不完整，不能确认。"
+    }
+  ],
+  "method_principles": [
+    "在固定总风险前提下研究跨模式组合，不把同时做两个模式理解为风险翻倍。",
+    "红盘起爆必须把竞价高开作为追高过滤；本场明确口径是约6%不做、优先5%以下。",
+    "先冻结模式和候选生成规则，再评价结果；不能用盘中已上涨的个股倒推规则有效。",
+    "市场普跌时仍要保留总风险闸门，不能用少数口述赢家证明系统与大盘完全隔离。",
+    "同场反例必须与赢家一起保留：未解析的安全报尚未上涨，未解析的房子在再次跳水时回落。",
+    "直播设备、页面或通知故障会破坏信号时点证据；缺完整页面时不得补猜候选。",
+    "把交易动作简化为事前规则有助于减少临场犹豫，但必须保留追高过滤、风险预算和停用条件。"
+  ],
+  "exit_lessons": [
+    "本场没有清楚给出卖出、止损或持有期规则，不能从盘中涨幅补造退出策略。",
+    "口述六至十多个点是盘中结果，不等于收盘收益、可成交收益或已实现收益。",
+    "当具体交易窗口已经过去，方法可保留研究，个股买点不可重放。"
+  ],
+  "hypotheses": [],
+  "timing_notes": [
+    "来源标题与正文都指向2026年10月29日早盘；九点二十五后开始看排名。",
+    "作者用星期四和前一日上涨推测当日分歧，所有当日候选都绑定10月29日盘中。",
+    "截至2026年10月30日，来源里的当日买入建议、排名和盘中涨幅已经过期。"
+  ],
+  "typo_corrections": [
+    {
+      "raw": "红盘举报、红盘季报、红盘礼包",
+      "corrected": "红盘起爆模式",
+      "basis": "全场围绕竞价高开和前三名候选，语境与既有模式名称一致。",
+      "uncertainty": "只归一模式名，不更改具体证券转写。"
+    },
+    {
+      "raw": "道接力、倒接地、赵经理",
+      "corrected": "连板倒接力",
+      "basis": "作者后文明确说用连板接力排名倒着排。"
+    },
+    {
+      "raw": "人气股DC",
+      "corrected": "人气股低吸",
+      "basis": "同段及全场多次清楚读作人气股低吸。"
+    },
+    {
+      "raw": "恒博股份、房错初创等证券音似词",
+      "corrected": "不作确定校正",
+      "basis": "证券目录只能提供候选，不能替代原声唯一识别。",
+      "uncertainty": "保留原始表述和候选名称，禁止进入交易。"
+    }
+  ],
+  "decision_trace": [
+    {
+      "observation": "作者先说当日低开、随后明确环境仍是主跌，并多次称大盘和创业板暴跌。",
+      "inference": "当日风险预算应保守，不能因少数候选上涨而把环境改成强势。",
+      "action": "降低总体短线暴露，只研究满足模式条件的组合。",
+      "why": "市场广度和指数下跌会放大高位与追高候选的尾部风险。",
+      "evidence_claim_ids": ["c01", "c02"]
+    },
+    {
+      "observation": "连板倒接力与人气股低吸均有候选，作者反复要求组合，理由包括稳定心态。",
+      "inference": "跨模式分散可能降低单一模式波动，但来源未给总风险与权重。",
+      "action": "只形成组合研究候选，不自动增加仓位。",
+      "why": "组合的风险效果取决于固定总风险、相关性、成本和退出。",
+      "evidence_claim_ids": ["c03"]
+    },
+    {
+      "observation": "红盘起爆里作者明确排除高开约6%的候选，优先前三名中5%以下者。",
+      "inference": "竞价高开是该模式的追高风险过滤。",
+      "action": "对现有XH-286补充同向证据，不新建重复阈值。",
+      "why": "既有假设已覆盖红盘起爆的高开分组，本场未补齐主板与创业板差异。",
+      "evidence_claim_ids": ["c04", "c05"]
+    },
+    {
+      "observation": "作者说银行再猛拉行情就不好。",
+      "inference": "防御板块主动拉升可能是主线偏弱的启发式线索。",
+      "action": "对XH-027仅作部分支持，不把单次口述升级为规则。",
+      "why": "本场没有板块相对强度、持续性或后续收益证据。",
+      "evidence_claim_ids": ["c10"]
+    }
+  ],
+  "judgment_heuristics": [
+    "先定市场风险，再定模式组合，最后看个股；不能用结果赢家反向覆盖市场风险。",
+    "组合必须冻结总风险和模式权重，才有资格讨论分散效果。",
+    "高开阈值属于具体模式和竞价时点，不能泛化到所有策略。",
+    "设备故障和转写歧义属于证据质量问题，不是容许猜测证券的理由。",
+    "规则一致性不等于盲目执行；追高过滤、风险预算和时效仍是硬边界。"
+  ],
+  "existing_hypothesis_feedback": [
+    {
+      "hypothesis_id": "XH-276",
+      "assessment": "partial_support",
+      "reason": "本场反复要求连板倒接力与人气股低吸组合，并称有助于心态，但未说明固定总风险、模式权重或波动对照。",
+      "evidence_claim_ids": ["c03"]
+    },
+    {
+      "hypothesis_id": "XH-286",
+      "assessment": "support_with_scope_gap",
+      "reason": "本场明确红盘起爆高开约6%不做、优先5%以下，方向与既有假设一致；但没有主板和创业板分别阈值，也没有样本外结果。",
+      "evidence_claim_ids": ["c04", "c05"]
+    },
+    {
+      "hypothesis_id": "XH-218",
+      "assessment": "partial_support",
+      "reason": "作者用前一日过度思考为例，主张按事前模式简化动作；但本场也明确要求追高过滤，因此不支持脱离条件的机械执行。",
+      "evidence_claim_ids": ["c11"]
+    },
+    {
+      "hypothesis_id": "XH-027",
+      "assessment": "weak_partial_support",
+      "reason": "银行猛拉被作者当作行情不好的线索，但缺主线对象、主动性定义和后续验证。",
+      "evidence_claim_ids": ["c10"]
+    },
+    {
+      "hypothesis_id": "XH-304",
+      "assessment": "not_addressed",
+      "reason": "直播设备故障后作者改用另一台电脑和手机继续口述，没有给出排名数据完整性或故障状态下停用候选的规则。",
+      "evidence_claim_ids": []
+    }
+  ],
+  "strategy_hit_audit": {
+    "status": "completed_with_date_and_identity_boundaries",
+    "reason": "逐一核对老师具名赢家、10月29日本地信号和方向层观察；同日精确名称缺席只分类为not_emitted，不把29日证据外推到28日历史例子，也不把歧义语音强映射到目录候选。",
+    "teacher_named_winners": [
+      {
+        "surface_form": "冰山／冰山冷热",
+        "canonical_name": "冰山冷热",
+        "code": "000530.XSHE",
+        "teacher_date": "2026-10-29",
+        "teacher_role": "红盘起爆低高开候选及口述盈利例证",
+        "classification": "not_emitted",
+        "local_evidence_date": "2026-10-29",
+        "evidence": "10月29日09:26的19条本地信号不含冰山冷热；证券目录只确认名称代码。",
+        "boundary": "not_emitted只描述该批本地信号，不证明老师模式无效；没有老师成交和收益证据。"
+      },
+      {
+        "surface_form": "龙溪股份",
+        "canonical_name": "龙溪股份",
+        "code": "600592.XSHG",
+        "teacher_date": "2026-10-29",
+        "teacher_role": "红盘起爆第三名、口述涨停",
+        "classification": "not_emitted",
+        "local_evidence_date": "2026-10-29",
+        "evidence": "10月29日09:26的19条本地信号不含龙溪股份；目录确认名称代码。",
+        "boundary": "没有当日老师信号、成交与涨停时点证据。"
+      },
+      {
+        "surface_form": "百洋股份／百羊",
+        "canonical_name": "百洋股份",
+        "code": "002696.XSHE",
+        "teacher_date": "2026-10-29",
+        "teacher_role": "连板倒接力候选、口述约6至8点收益",
+        "classification": "not_emitted",
+        "local_evidence_date": "2026-10-29",
+        "evidence": "10月29日09:26的19条本地信号不含百洋股份；目录确认名称代码。",
+        "boundary": "本地与老师模式口径不同；没有老师成交、退出和统一收益时点。"
+      },
+      {
+        "surface_form": "世纪恒通",
+        "canonical_name": "世纪恒通",
+        "code": "301428.XSHE",
+        "teacher_date": "2026-10-28",
+        "teacher_role": "前一日紫薇模式买入、29日仍涨的历史例证",
+        "classification": "no_evidence",
+        "local_evidence_date": null,
+        "evidence": "当前包只有10月29日信号审计，没有10月28日同口径本地信号、成交或持仓。",
+        "boundary": "不得用29日19条信号的缺席推断28日not_emitted。"
+      },
+      {
+        "surface_form": "恒博股份／恒博／恒通恒博",
+        "canonical_name": null,
+        "code": null,
+        "teacher_date": "2026-10-28",
+        "teacher_role": "前一日紫薇模式历史赢家",
+        "classification": "no_evidence",
+        "local_evidence_date": null,
+        "evidence": "目录存在恒勃股份301225.XSHE这一候选，但原声不足以唯一映射；也没有10月28日本地信号和成交。",
+        "boundary": "保留原始转写，不写成恒勃股份命中或未命中。"
+      },
+      {
+        "surface_form": "房错初创／凡多斯创／房东说说／防脱速算／房漏收／防多数创／黄豆醋蒜／房子",
+        "canonical_name": null,
+        "code": null,
+        "teacher_date": "2026-10-29",
+        "teacher_role": "人气股低吸第一名或当日大肉候选的语音转写组",
+        "classification": "no_evidence",
+        "local_evidence_date": "2026-10-29",
+        "evidence": "目录存在凡拓数创301313.XSHE这一候选，但多组原话不能仅凭目录合并；无法与19条本地信号作精确代码比较。",
+        "boundary": "保持原话、code=null；不写成凡拓数创not_emitted。"
+      }
+    ],
+    "local_strategy_benchmark_hits": [
+      {
+        "name": "沃尔德",
+        "code": "688028.XSHG",
+        "date": "2026-10-29",
+        "classification": "emitted_strategy_hit",
+        "signal_state": "ACTIVE",
+        "high_open_pct": 6.517,
+        "teacher_overlap": false,
+        "execution_evidence": "none",
+        "evidence": "10月29日09:26本地19条信号中唯一ACTIVE；其余18条COLD且不合格。",
+        "boundary": "高开数据只描述本地信号，不验证老师红盘起爆阈值，也不证明已交易。"
+      }
+    ],
+    "direction_core_observations": [
+      {
+        "direction": "10月29日弱市防守",
+        "classification": "direction_confirmation",
+        "evidence": "10月29日收盘深成指-2.92%、创业板指-4.45%、上证指数-0.82%；本地环境最终仓位均为0且多数短线评分为负。",
+        "boundary": "只确认当日市场方向，不确认老师模式收益。"
+      },
+      {
+        "direction": "红盘起爆追高风险",
+        "classification": "core_observation_not_entry_signal",
+        "evidence": "老师明确说约6%高开不做、优先5%以下；本地唯一ACTIVE沃尔德高开6.517%。",
+        "boundary": "两套模式口径不同，不能把沃尔德当作老师阈值的命中或反例。"
+      },
+      {
+        "direction": "成交与账本边界",
+        "classification": "no_execution_evidence",
+        "evidence": "9条本地决策日志action均为空，包内没有APP成交证明。",
+        "boundary": "信号、老师口述和实际成交必须分别记录。"
+      }
+    ],
+    "evidence_path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261030/market_evidence_xiaocao_29.json",
+    "evidence_sha256": "f0d31adf4bc9dd8e57f2008befa1315e174a4fbc406754d8cb7109546684b74b",
+    "boundary": "相关板块或方向相同不算个股重合；本地信号缺席不证明老师模式无效，所有口述收益和成交仍需独立证据。"
+  },
+  "action_summary": {
+    "posture_update": "candidate_only：10月29日主跌与保守判断已过期，10月30日不能直接沿用。",
+    "playbook_update": "proposal_only：组合、红盘起爆高开过滤和规则简化只补充既有候选，不自动修改策略。",
+    "hypothesis_update": "no_new_hypothesis：现有XH-276、XH-286、XH-218和XH-027足以承接，本场证据只做反馈。",
+    "audit_evidence": "完整绑定52个稳定段和证券目录；所有歧义证券、口述涨幅、成交与模式归因均保留未核实。",
+    "instrumentation_todo": "未来研究需保存竞价排名、模式版本、总风险与权重、信号时点、可成交价格、费用、退出和市场广度。",
+    "routing": ["authority_0_only", "existing_hypothesis_feedback", "no_auto_tune", "human_gate_required"]
+  }
+}

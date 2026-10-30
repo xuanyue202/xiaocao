@@ -1,0 +1,210 @@
+{
+  "date": "2026-10-30",
+  "kind": "morning",
+  "summary": "小草在极弱盘面中把短线决策拆成环境、模式、组合、入场高度、持仓保护和收盘确认：高辨识度高位可能保持相对强势，但只有模式和价格条件合格时才观察；盈利保护的原声“两支票／两个点”存在冲突，不能参数化；预警只形成待确认假设。整套内容仅作为 authority=0 候选知识。",
+  "author": "小草",
+  "source": "小草直播",
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_netdisk_enrichment/artifacts/kol-netdisk-8372e2cbf6588463/20261030 大师班直播10月30日-compressed.txt",
+      "sha256": "2ddb29b34720332469253cffa10e4f173569ae61426f89ffc1d6ab0543bc5491",
+      "size": 10110
+    }
+  ],
+  "authority": 0,
+  "posture": {
+    "regime": "广泛下跌中的高辨识度抱团与盘中修复观察",
+    "dominant_style": "人气股低吸、倒接力、红盘起爆、紫薇与趋势抱团候选优先，科技和单纯超跌暂避",
+    "risk": "高位抱团可能在修复失败时同步补跌；含混名称、未核验榜单和盘中高点都不能代替成交或收益",
+    "style_ranking": [
+      "高辨识度且模式、排名和开盘高度合格的组合",
+      "医药、白酒、电池、中药等预警后继续确认的反弹方向",
+      "科技与电子仅在价格持续反转后重新评估",
+      "单纯超跌和未确认的高开追涨"
+    ]
+  },
+  "regime_call": {
+    "horizon": "2026年10月30日盘中至随后数个交易日",
+    "call": "若高辨识度高位继续取得相对收益，且模式、开盘高度和收盘确认均合格，弱市高位抱团仍可观察；若高位集体补跌或科技、低位形成持续主线，判断失效。",
+    "what_would_falsify": [
+      "高位和人气股模式连续出现亏钱效应",
+      "市场修复由科技、低位或其他风格持续主导",
+      "模式触发、排名和开盘高度不再同时合格",
+      "午后修复失败并再次扩大跌幅"
+    ]
+  },
+  "directions": [
+    {
+      "name": "高辨识度高位与人气股",
+      "stance": "当前短线优先观察，但必须采用组合并等待模式确认",
+      "conditions": ["排名和分数合格", "开盘不过高", "高位对象保持相对强势"],
+      "boundary": "不是无差别追高，也不证明老师真实买入或收益"
+    },
+    {
+      "name": "科技与创业板",
+      "stance": "短线谨慎，不因跌幅大就抄底",
+      "conditions": ["科技仍弱于市场", "电子预警尚未得到价格确认"],
+      "boundary": "来源没有给出长期基本面判断，也没有可参数化的转强阈值"
+    },
+    {
+      "name": "医药、白酒、电池和中药",
+      "stance": "只作为盘中相对强势和反弹线索",
+      "conditions": ["预警后价格继续修复", "板块而非单只个股保持相对强势"],
+      "boundary": "没有持续期限、仓位和具体买点"
+    }
+  ],
+  "stocks": [
+    {"name": "大业股份", "code": "603278.XSHG", "role": "红盘起爆居前与冲板案例", "boundary": "午间约涨8.95%只支持强势方向；来源所称再次买入没有订单或成交证明"},
+    {"name": "皇台酒业", "code": "000995.XSHE", "role": "涨停与双模式案例", "boundary": "午间约涨10.01%，时点已高，不构成追买授权"},
+    {"name": "奥雅股份", "code": "300949.XSHE", "role": "高辨识度延续案例", "boundary": "午间约涨3.31%，不等于来源所述全程强势或实际收益"},
+    {"name": "海洋王", "code": "002724.XSHE", "role": "高标延续案例", "boundary": "午间约涨4.43%，只作方向观察"},
+    {"name": "凡拓数创", "code": "301313.XSHE", "role": "高位与盘中高分候选", "boundary": "证据原声有“防拓数创”；午间约跌3.04%，与持续强势存在冲突"},
+    {"name": "冰山冷热", "code": "000530.XSHE", "role": "来源早盘称延续上涨、午间转弱的分时案例", "boundary": "本地信号快照有该票，但当时未进入可交易状态；午间约跌3.40%，说明早盘相对强弱不能外推到午间或收盘"},
+    {"name": "襄阳轴承", "code": "000678.XSHE", "role": "高位辨识度案例", "boundary": "本地信号快照有该票，但当时未进入可交易状态；午间约涨0.85%，没有发射或成交证明"},
+    {"name": "莱美药业", "code": "300006.XSHE", "role": "盘中高分候选", "boundary": "本地信号快照有该票，但当时未进入可交易状态；午间约跌0.48%，不能记为策略命中"},
+    {"name": "华氏", "code": null, "candidate_name": "华是科技", "candidate_code": "301218.XSHE", "role": "高分候选", "boundary": "仅音近和行情候选，来源没有代码"},
+    {"name": "摆阳/白羊", "code": null, "candidate_name": "百洋医药", "candidate_code": "301015.XSHE", "role": "转弱与反抽语境的含混对象", "boundary": "不能确认反抽高抛意见是否绑定该证券"},
+    {"name": "完美", "code": null, "role": "高分候选", "boundary": "无法确定是完美世界或其他对象"}
+  ],
+  "method_principles": [
+    "极弱盘面中先比较各风格的相对强弱；高位对象仍强只产生条件性观察，不构成全面看多。",
+    "高位模式采用组合，降低单票失误影响；组合数量、权重和总风险预算仍需独立定义。",
+    "模式、排名、分数和开盘高度必须共同约束候选，已经过度延伸时不追。",
+    "预警只产生可能反弹的假设，必须等待价格和收盘确认，盘中证据可以覆盖早盘判断。",
+    "盈利保护应依赖可靠成本和原交易计划；原声“两支票／两个点”冲突，不能写成固定止盈参数。",
+    "含混名称、午间点位和老师口述买入都不能替代唯一证券身份、订单、成交或收益证据。"
+  ],
+  "exit_lessons": [
+    "下跌对象反抽且出现高抛信号时退出；没有信号时不能由系统补写卖点。",
+    "盘中高点、预警和候选都不是终局，尚未收盘时减少动作并等待确认。",
+    "高位对象一旦集体补跌或模式连续亏损，应撤销弱市抱团假设。",
+    "盈利保护的方向清楚，但“两支票／两个点”参数不清楚，不能机械执行。"
+  ],
+  "decision_trace": [
+    {
+      "observation": "来源称接近五千家下跌、创业板和科技弱，但海洋王、奥雅、大业等高辨识度对象仍有局部强势。",
+      "inference": "弱市资金可能暂时向高位和人气股模式集中。",
+      "action": "只观察模式、排名和开盘高度合格的高辨识度组合，不泛化追高。",
+      "falsifiers": ["高位集体补跌", "其他风格持续占优", "模式连续亏损"]
+    },
+    {
+      "observation": "午间大业股份和皇台酒业强势，但凡拓数创、冰山冷热和莱美药业转弱。",
+      "inference": "高位抱团并非所有点名对象同步延续，候选必须逐项验证。",
+      "action": "不把点名列表当成一篮子追买指令；等待回落、收盘和模式继续确认。",
+      "falsifiers": ["点名对象重新同步转强并通过模式验证"]
+    },
+    {
+      "observation": "电子、医药生物预警出现，市场从较大低开收敛到午间小幅涨跌。",
+      "inference": "盘中证据可能覆盖早盘极弱判断，但预警本身不证明反弹完成。",
+      "action": "允许更新市场姿态，同时等待价格与收盘确认。",
+      "falsifiers": ["午后再度扩大跌幅", "预警方向没有持续相对收益"]
+    },
+    {
+      "observation": "来源先说“两支票”，随后说“两个点”，并同时给出反抽高抛意见。",
+      "inference": "盈利保护方向明确，但具体数量或利润垫无法确定；反抽退出条件相对清楚。",
+      "action": "只保留保护利润和反抽高抛原则，不创建两只持仓或两点止盈的固定参数。",
+      "falsifiers": ["可靠录音或上下文消除原声冲突", "原交易计划规定不同退出条件"]
+    }
+  ],
+  "judgment_heuristics": [
+    "弱市中寻找相对强势，不把相对强势误写成绝对安全。",
+    "高位机会先问模式与高度，再问对象；对象名称含混时停止执行映射。",
+    "组合能分散单票风险，但不能替代总仓位和相关性约束。",
+    "预警、盘中高点和老师口述动作都只是证据层级的一部分，不能替代收盘与成交。",
+    "同一原声中的数量冲突必须显式保留，不能为了可执行性擅自选一边。"
+  ],
+  "hypotheses": [],
+  "prior_hypothesis_comparison": [
+    {
+      "existing_id": "XH-078",
+      "disposition": "partial_support_only_no_merge",
+      "reason": "XH-078研究同一模式第一、第二名等权平铺能否以少量收益让渡换取更低单票方差和更平滑路径。本场只反复说高位人气股要做组合，既没有限定前二、等权，也没有给收益让渡与方差结果，因此只支持“不要单票集中”的真实部分，不确认XH-078整句。"
+    },
+    {
+      "existing_id": "XH-276",
+      "disposition": "partial_support_only_no_merge",
+      "reason": "XH-276研究在固定总风险下组合多个短线模式能否降低单一模式波动。本场同时谈人气股低吸、倒接力、红盘起爆与紫薇，但“组合”原话没有明确指跨模式配置，也没有固定风险权重、相关性或绩效结果；只能记为邻近先验的局部支持，不能确认整条命题。"
+    },
+    {
+      "existing_id": "playbook-calibration-2026-07-26-intraday-evidence-overrides-plan",
+      "disposition": "partial_support_only_no_merge",
+      "reason": "本场先描述极弱盘面，随后又用预警和修复更新判断，并反复要求等收盘；这支持盘中证据覆盖早先计划的原则，但没有复现7月26日的整套半导体、情绪核心和轮动条件，不能确认全命题。"
+    },
+    {
+      "existing_id": "loop-2026-08-10-rotation-not-main-up",
+      "disposition": "partial_support_only_no_merge",
+      "reason": "科技偏弱、医药白酒等局部反弹和高位抱团与轮动而非一致主升相容；单个上午不能确认科技或医药成为持续主线，也不能复现原先的预算参数。"
+    },
+    {
+      "existing_id": "loop-2026-08-11-wait-fresh-mode-qualification",
+      "disposition": "direct_recurrence_candidate_no_full_confirmation",
+      "reason": "来源再次强调模式、分数、开盘高度和收盘确认，属于等待新鲜模式资格的真实部分复现；没有复现最长三日退出边界，因此只记局部复现，不改写为整条先验确认。"
+    }
+  ],
+  "timing_notes": [
+    "来源日期为2026-10-30，直播语境明确包含09:25后盘中观察。",
+    "原声“星期五应该还是要修复”与当日同为星期五冲突，也可能是“下午”，不得改写为下一交易日预测。",
+    "绑定行情到11时30分附近，环境接口自带12时42分时间戳；午后和收盘尚未提供。",
+    "高位模式、候选组和反抽退出都属于短线条件；组合构造与预警方法可以跨期研究，但仍须研究与人工门禁。"
+  ],
+  "typo_corrections": [
+    {"surface": "直微模式", "candidate": "紫薇模式", "status": "candidate_only", "reason": "按直播上下文校正读者表述，证据仍保留原声"},
+    {"surface": "趋势报团", "candidate": "趋势抱团", "status": "candidate_only", "reason": "按策略语境校正，不能改动证据引文"},
+    {"surface": "红盘气泡", "candidate": "红盘起爆", "status": "candidate_only", "reason": "同场多处模式语境支持候选校正"},
+    {"surface": "赵建立", "candidate": "倒接力或独立实体", "status": "unresolved", "reason": "既可能是模式转写，也可能是人名或证券简称"},
+    {"surface": "文头", "candidate": "文投控股", "status": "candidate_only", "reason": "音近且行情包含候选，但没有代码"},
+    {"surface": "新盛", "candidate": "新易盛", "status": "unresolved", "reason": "仅音近且没有绑定证券点位"},
+    {"surface": "盛虹科技", "candidate": "胜宏科技", "status": "unresolved", "reason": "仅音近且没有绑定证券点位"},
+    {"surface": "新医生", "candidate": "新易盛或另一对象", "status": "unresolved", "reason": "不能与“新盛”自动合并"},
+    {"surface": "华氏", "candidate": "华是科技", "status": "candidate_only", "reason": "音近且行情包含候选，但来源未给代码"},
+    {"surface": "摆阳/白羊", "candidate": "百洋医药", "status": "candidate_only", "reason": "行情包含候选，但原声与反抽意见的绑定不唯一"},
+    {"surface": "上海900", "candidate": "上海九百或上涨九个点", "status": "unresolved", "reason": "证券名称与涨幅口语两种解释都成立"},
+    {"surface": "力帆DC", "candidate": null, "status": "unresolved", "reason": "没有可靠音近、代码或唯一上下文；行情包恰好包含某证券不能生成映射"},
+    {"surface": "需要这个机器", "candidate": null, "status": "unresolved", "reason": "原声破碎，没有可靠音近、代码或唯一上下文；行情包恰好包含某证券不能生成映射"},
+    {"surface": "开服", "candidate": "开幅或开开实业", "status": "unresolved", "reason": "上下文更可能是开盘幅度，但不能擅自消除歧义"},
+    {"surface": "两支票/两个点", "candidate": "持仓数量或利润垫", "status": "unresolved", "reason": "同一连续原声先后冲突，不能确定解释"}
+  ],
+  "promotional_performance_claims": [],
+  "strategy_hit_audit": {
+    "teacher_named_winners": [
+      {"surface_name": "冰山冷热", "resolved_name": "冰山冷热", "source_date": "2026-10-30", "source_path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_netdisk_enrichment/artifacts/kol-netdisk-8372e2cbf6588463/20261030 大师班直播10月30日-compressed.txt", "local_classification": "raw_pool_only", "local_evidence_path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261030_12/signal_snapshots_30.json", "reason": "来源早盘称仍在涨；本地快照确有该票，但mode_state=COLD、mode_trade_eligible=false，只能记原始候选池，不能记策略命中。"},
+      {"surface_name": "大业股份", "resolved_name": "大业股份", "source_date": "2026-10-30", "source_path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_netdisk_enrichment/artifacts/kol-netdisk-8372e2cbf6588463/20261030 大师班直播10月30日-compressed.txt", "local_classification": "no_evidence", "reason": "午间约涨8.95%只支持价格强势；本地17条信号与2条纸面交易均没有大业股份，不能登记策略命中或cohort基准。"},
+      {"surface_name": "皇台酒业", "resolved_name": "皇台酒业", "source_date": "2026-10-30", "source_path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_netdisk_enrichment/artifacts/kol-netdisk-8372e2cbf6588463/20261030 大师班直播10月30日-compressed.txt", "local_classification": "no_evidence", "reason": "午间约涨10.01%支持涨停观察，但本地17条信号与2条纸面交易均没有皇台酒业，不能登记策略命中或cohort基准。"},
+      {"surface_name": "奥雅/哦呀", "resolved_name": "奥雅股份", "source_date": "2026-10-30", "source_path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_netdisk_enrichment/artifacts/kol-netdisk-8372e2cbf6588463/20261030 大师班直播10月30日-compressed.txt", "local_classification": "no_evidence", "reason": "午间约涨3.31%只支持价格相对强势；本地17条信号与2条纸面交易均没有奥雅股份。"},
+      {"surface_name": "海洋王", "resolved_name": "海洋王", "source_date": "2026-10-30", "source_path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_netdisk_enrichment/artifacts/kol-netdisk-8372e2cbf6588463/20261030 大师班直播10月30日-compressed.txt", "local_classification": "no_evidence", "reason": "午间约涨4.43%只支持价格相对强势；本地17条信号与2条纸面交易均没有海洋王。"},
+      {"surface_name": "防拓数创/凡拓数创", "resolved_name": "凡拓数创", "source_date": "2026-10-30", "source_path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_netdisk_enrichment/artifacts/kol-netdisk-8372e2cbf6588463/20261030 大师班直播10月30日-compressed.txt", "local_classification": "no_evidence", "reason": "午间约跌3.04%，与来源早盘强势叙述形成分时反例；本地17条信号与2条纸面交易均没有凡拓数创。"}
+    ],
+    "local_strategy_benchmark_hits": [
+      {"name": "中电港", "code": "001287.XSHE", "evidence_date": "2026-10-30", "evidence_path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261030_12/signal_snapshots_30.json", "trade_evidence_path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261030_12/paper_trades_30.json", "classification": "emitted_strategy_hit", "reason": "高开标杆起爆为ACTIVE且可交易，并在Book A与Book B各有一条纸面买入；小草本场未点名该票，因此不是老师命中重合。"},
+      {"name": "必易微", "code": "688045.XSHG", "evidence_date": "2026-10-30", "evidence_path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261030_12/signal_snapshots_30.json", "classification": "emitted_strategy_hit", "reason": "高开标杆起爆为ACTIVE且可交易，但两条纸面交易均非该票；小草本场未点名该票，因此不是老师命中重合，也不补写成交。"}
+    ],
+    "direction_core_observations": [
+      {"name": "高位抱团", "evidence_date": "2026-10-30", "evidence_path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261030_12/market_evidence.json", "classification": "no_evidence", "reason": "点名对象强弱分化只支持价格观察；没有预注册cohort构成与基准证据，不能登记cohort_benchmark。"},
+      {"name": "襄阳轴承", "evidence_date": "2026-10-30", "evidence_path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261030_12/signal_snapshots_30.json", "classification": "raw_pool_only", "reason": "来源将其列为高位辨识度案例；本地快照mode_state=COLD、mode_trade_eligible=false、mode_rank=3，只是原始候选池。"},
+      {"name": "莱美药业", "evidence_date": "2026-10-30", "evidence_path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261030_12/signal_snapshots_30.json", "classification": "raw_pool_only", "reason": "来源将其列为盘中高分候选；本地快照mode_state=COLD、mode_trade_eligible=false、mode_rank=9999，只是原始候选池。"},
+      {"name": "科技弱势", "evidence_date": "2026-10-30", "evidence_path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261030_12/market_evidence.json", "classification": "no_evidence", "reason": "创业板指午间约跌1.18%、凡拓数创约跌3.04%支持价格承压，但不是已注册本地策略命中或cohort证据。"},
+      {"name": "医药白酒等反弹", "evidence_date": "2026-10-30", "evidence_path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261030_12/market_evidence.json", "classification": "no_evidence", "reason": "皇台酒业涨停而莱美药业略跌，只是价格分化；没有预注册cohort构成与基准证据。"}
+    ],
+    "audit_boundary": "老师点名强势、本地策略命中和方向观察互不替代。本轮已逐行读取17条信号快照、2条纸面交易、0条持仓快照和4条决策日志：冰山冷热、襄阳轴承、莱美药业均只在COLD且不可交易的原始候选池；两条纸面交易都只对应中电港，来源点名对象没有本地已发射策略或纸面成交。行情报价不能替代预注册cohort证据，也不能证明APP成交。"
+  },
+  "action_summary": {
+    "posture_update": "candidate_only_no_automatic_posture_change",
+    "playbook_update": "partial_support_for_intraday_evidence_and_fresh_mode_qualification_no_full_rewrite",
+    "hypothesis_update": "no_new_hypothesis_xh078_and_xh276_partial_support_plus_three_prior_audits",
+    "audit_evidence": "source_bound_with_midday_market_household_and_feedback_boundaries",
+    "instrumentation_todo": "reuse_xh078_same_mode_top_two_equal_weight_test_no_new_candidate",
+    "routing": [
+      "保留为待验证知识草稿",
+      "已与完整候选账本精确去重；组合观点与XH-078、XH-276相邻，只记局部支持，不新增",
+      "既有先验只记录局部支持或真实部分复现",
+      "不得自动调参",
+      "不得自动晋级正式策略或交易规则",
+      "研究通过后仍需人工门禁"
+    ]
+  },
+  "supplemental_feedback": {
+    "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261030_12/knowledge_feedback.json",
+    "sha256": "79793aef8cf5f8cc9568db0b75a58cf08642ffb4f247a33318e0b8a4d525a845",
+    "format_note": "文件扩展名为json但内容是纯文本反馈；按完整文本读取，不作为JSON解析。"
+  }
+}

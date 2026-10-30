@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any, Iterable
 from zoneinfo import ZoneInfo
 
-from .trading_execution import account_writer_lock
+from .trading_execution import account_writer_lock, TradePlan
 from .foundersc_native_broker import pending_buy_reservation_evidence, _decimal as _native_decimal
 from .foundersc_native_ax import FounderscNativeAXError
 
@@ -531,6 +531,45 @@ def _load_intent_index(state_dir: Path) -> dict[str, dict[str, Any]]:
     return index
 
 
+def load_execution_intents(root: Path) -> dict[str, dict[str, Any]]:
+    """Financial evidence reads both original namespaces without reauthoring.
+
+    Keep the ordinary unclaimed-intent index narrow: a canary's mere file is
+    not a new strategy reservation. Once it has execution/owned-fill evidence,
+    its canonical original source must be available to all financial readers.
+    """
+    from .book_b_live_morning import _trade_plan_from_canary_intent
+    intents = _load_intent_index(Path(root))
+    referenced = {row.get('plan_id') for name in ('events.jsonl', 'book_b_ownership_evidence.jsonl')
+                  for row in _read_jsonl_strict(Path(root) / name)}
+    if not any(str(plan_id).startswith('book-b-canary:') for plan_id in referenced):
+        return intents
+    for path in sorted((Path(root) / 'canary_intents').glob('*.json')):
+        try:
+            capsule = json.loads(path.read_text())
+        except (OSError, ValueError):
+            # Preserve unusable originals. Required open/owned sources still
+            # fail at their exact consumer; unrelated unclaimed test files
+            # cannot become an opening financial dependency.
+            continue
+        raw = capsule.get('plan') if isinstance(capsule, dict) else None
+        if not isinstance(raw, dict) or raw.get('plan_id') not in referenced:
+            continue
+        plan = _trade_plan_from_canary_intent(capsule)
+        if plan.plan_id in intents:
+            raise ValueError('LIVE_EXECUTION_INTENT_DUPLICATE')
+        intents[plan.plan_id] = plan.canonical_payload()
+    return intents
+
+
+def read_execution_plan(raw: dict) -> TradePlan:
+    """Use the existing canonical parser for this original plan family."""
+    from .book_b_live_morning import read_durable_live_plan_intent, _trade_plan_from_canary_intent
+    payload = {'schema_version': 1, 'plan_id': raw['plan_id'], 'plan_hash': _sha256(raw), 'plan': raw}
+    return (_trade_plan_from_canary_intent(payload) if raw['plan_id'].startswith('book-b-canary:')
+            else read_durable_live_plan_intent(payload))
+
+
 def _validate_execution_fill_coverage(
     state_dir: Path,
     ownership_rows: list[dict[str, Any]],
@@ -623,7 +662,7 @@ def open_execution_plan_ids(state_dir: Path) -> tuple[str, ...]:
 def unresolved_prior_sell_codes(state_dir: Path, *, trade_date: str) -> frozenset[str]:
     """Codes where an old SELL might later consume a newly bought position."""
     root = Path(state_dir)
-    intents = _load_intent_index(root)
+    intents = load_execution_intents(root)
     return frozenset(
         str(intents[plan_id]["code"])
         for plan_id in open_execution_plan_ids(root)
@@ -643,7 +682,7 @@ def proven_prior_day_zero_fill_sell_ids(state_dir: Path, *, trade_date: str,
     uses current APP sellable.
     """
     root = Path(state_dir)
-    intents = _load_intent_index(root)
+    intents = load_execution_intents(root)
     ownership, _ = _validate_ownership_chain(
         _read_jsonl_strict(root / "book_b_ownership_evidence.jsonl"))
     if not ownership:
@@ -730,7 +769,8 @@ def proven_prior_day_zero_fill_sell_ids(state_dir: Path, *, trade_date: str,
 def deferred_prior_day_sell_ids(state_dir: Path, *, trade_date: str) -> tuple[str, ...]:
     """Defer old SELL reconciliation without terminalizing its claim or code fence."""
     date.fromisoformat(trade_date)
-    intents = _load_intent_index(Path(state_dir))
+    # Deferral and the same-code fence must consume the same original family.
+    intents = load_execution_intents(Path(state_dir))
     return tuple(plan_id for plan_id in open_execution_plan_ids(state_dir)
                  if plan_id in intents and intents[plan_id].get("side") == "SELL"
                  and date.fromisoformat(str(intents[plan_id]["trade_date"])) < date.fromisoformat(trade_date))
@@ -739,11 +779,15 @@ def deferred_prior_day_sell_ids(state_dir: Path, *, trade_date: str) -> tuple[st
 def blocking_open_execution_plan_ids(state_dir: Path, *, trade_date: str,
                                       asof: datetime | None = None,
                                       max_age_seconds: float = 2700,
-                                      defer_prior_day_sells: bool = False) -> tuple[str, ...]:
+                                      defer_prior_day_sells: bool = False,
+                                      defer_prior_day_buys: bool = False) -> tuple[str, ...]:
     excluded = set(proven_prior_day_zero_fill_sell_ids(state_dir, trade_date=trade_date,
         asof=asof, max_age_seconds=max_age_seconds))
     if defer_prior_day_sells:
         excluded.update(deferred_prior_day_sell_ids(state_dir, trade_date=trade_date))
+    if defer_prior_day_buys:
+        from .inherited_execution import prior_day_buy_ids
+        excluded.update(prior_day_buy_ids(state_dir, trade_date=trade_date))
     return tuple(plan_id for plan_id in open_execution_plan_ids(state_dir) if plan_id not in excluded)
 
 

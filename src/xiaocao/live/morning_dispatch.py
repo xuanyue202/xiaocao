@@ -29,11 +29,14 @@ def write_warm_dispatch(request: dict, request_path: Path, *, now: datetime) -> 
         raise ValueError('MORNING_DISPATCH_PACKET_BINDING_MISMATCH')
     path = request_path.with_suffix('.dispatch.json')
     identifier = request['request_sha256']
+    # Ordinary COLD remains gated; the reviewed source-bound v2 exception is
+    # intentional. A blanket COLD ban would contradict the consuming policy.
     message = (
         f'原冻结评审现已就绪。立即读取这一个由原runner装配的authority=0交接文件：{path.resolve()}。'
         f'原请求{identifier}，截止{cutoff.isoformat()}；只复核相关已准备结论、全部delta与当前账户/风险事实。'
         '复用未变化准备，不重扫完整来源。引用必须精确核验，正式决策仍须父级独立复核后在原截止前发布。'
-        '预算不足就保留明确降级；不回填、不越过COLD或执行门。这个文件不是实际dispatch或政策采用证明。'
+        '预算不足就保留明确降级；不回填。普通COLD门保留，仅已验证v2小草显式模式跟随可恢复COLD；'
+        'UNKNOWN模式及账户、行情、资金、风险和精确一次门不变。这个文件不是实际dispatch或政策采用证明。'
     )
     value = {'schema_version':'morning-warm-dispatch.v1','authority':0,
         'request_sha256':identifier,'request_path':str(request_path.resolve()),

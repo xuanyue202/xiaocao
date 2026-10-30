@@ -12,6 +12,15 @@ service receipts, never local paper fills.
 
 ## Priority and dependency test
 
+Operating Contract §1e governs inherited incidents and current-window priority.
+Separate service-order finality, deployed technical repair, bounded current
+economic impact and next-window readiness. Restore or isolate an actual
+dependency before consuming a continuation claim; repeated unchanged failure
+is not recovery. A local early preflight failure does not finish the task while
+its legal recovery budget remains. Use the existing daily/weekly handoff for
+stable dispositions; never rewrite old UNKNOWN or infer funds occupied from
+the old plan notional alone. A rule change is not a proved runtime repair.
+
 The 09:25–09:30 frozen-candidate BUY and every legal protective/closing SELL
 window are the first repair priority: their missed opportunities cannot be
 recreated by an after-hours replay. Morning is a BUY owner; opening, 14:25

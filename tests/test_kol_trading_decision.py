@@ -699,6 +699,51 @@ def test_feedback_reads_real_live_run_and_paper_writer_schemas(tmp_path, bundle)
     assert result["profit_attribution"] == "not_established"
 
 
+@pytest.mark.parametrize("has_entry", [False, True])
+@pytest.mark.parametrize("source_blocked", [False, True])
+def test_feedback_preserves_paper_writer_source_terminals(tmp_path, has_entry, source_blocked):
+    from xiaocao.live import paper_decision_support as paper
+
+    failures = [{"code": CODE, "reason": "FIRST_MINUTE_HIGH_CHANGED_ACROSS_BOUNDARY"}] if source_blocked else []
+    paper.write_consumption(tmp_path, "2026-09-06", "mode_exec_star", {
+        "status": "claimed", "kol_decision": {"book": "B", "runtime": "paper", "status": "missing"},
+        "slots": [], "entry_source_failures": failures,
+    })
+    terminal = paper.complete_consumption(tmp_path, "2026-09-06", "mode_exec_star",
+                                          entries=[{"code": CODE, "shares": 100}] if has_entry else [])
+    result = td.audit_feedback(tmp_path, clock=lambda: NOW)
+    assert result["status"] == "audited"
+    assert result["consumption"]["paper"]["paper_terminal_status_counts"] == {terminal["status"]: 1}
+    assert result["profit_attribution"] == "not_established"
+
+
+@pytest.mark.parametrize("damage", ["entry_status", "count", "failures", "failure_type", "hidden_failure", "unknown_status"])
+def test_feedback_rejects_inconsistent_source_terminals(tmp_path, damage):
+    from xiaocao.live import paper_decision_support as paper
+
+    paper.write_consumption(tmp_path, "2026-09-06", "mode_exec_star", {
+        "status": "claimed", "kol_decision": {"book": "B", "runtime": "paper", "status": "missing"},
+        "slots": [], "entry_source_failures": [{"code": CODE, "reason": "FIRST_MINUTE_HIGH_UNPROVEN"}],
+    })
+    terminal = paper.complete_consumption(tmp_path, "2026-09-06", "mode_exec_star", entries=[])
+    if damage == "entry_status":
+        terminal["status"] = "bought_source_blocked"
+    elif damage == "count":
+        terminal["buy_count"] = 1
+    elif damage == "failures":
+        terminal["entry_source_failures"] = []
+    elif damage == "failure_type":
+        terminal["entry_source_failures"] = {}
+    elif damage == "hidden_failure":
+        terminal["status"] = "no_buy"
+    else:
+        terminal["status"] = "failed"
+    terminal["receipt_sha256"] = kol_policy.decision_sha256({k: v for k, v in terminal.items() if k != "receipt_sha256"})
+    paper.consumption_path(tmp_path, "2026-09-06", "mode_exec_star").with_suffix(".result.json").write_text(json.dumps(terminal))
+    with pytest.raises(td.TradingDecisionError):
+        td.audit_feedback(tmp_path, clock=lambda: NOW)
+
+
 def test_feedback_reads_live_exit_ledger_once_without_counting_run_mirror(tmp_path, bundle):
     receipt = publish(tmp_path, bundle)
     root = tmp_path / "output/live/book_b_live_execution"

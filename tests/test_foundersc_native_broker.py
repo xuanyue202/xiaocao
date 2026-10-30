@@ -647,6 +647,13 @@ class MalformedSelectionCancelNative(UnprovenConfirmationCancelNative):
         return receipt
 
 
+def _same_day(adapter, plan):
+    # These fixed vectors describe same-day recovery. Do not accidentally turn
+    # them into historical tests as the real wall clock advances.
+    adapter._clock = lambda: datetime.fromisoformat(plan.trade_date + "T12:39:09+00:00")
+    return adapter
+
+
 def _adapter(native: FakeNative | None = None) -> FounderscNativeAXBrokerAdapter:
     return FounderscNativeAXBrokerAdapter(
         native=native or FakeNative(),
@@ -1200,7 +1207,7 @@ def test_unknown_submit_recovery_accepts_founder_decimal_comma_price() -> None:
         basket_price=17.6683,
     )
 
-    recovered = _adapter(native).recover(
+    recovered = _same_day(_adapter(native), plan).recover(
         plan,
         {
             "requested_shares": 800,
@@ -1254,7 +1261,7 @@ def test_unknown_recovery_self_heals_delayed_grid_without_submit() -> None:
         reconcile_delays=(0.0, 0.0, 0.0),
     )
 
-    recovered = adapter.recover(
+    recovered = _same_day(adapter, _plan()).recover(
         _plan(),
         {
             "requested_shares": 100,
@@ -1305,7 +1312,7 @@ def test_native_prepare_persists_baseline_for_unknown_submit_recovery() -> None:
         }
     )
 
-    recovered = adapter.recover(
+    recovered = _same_day(adapter, plan).recover(
         plan,
         {
             "requested_shares": 100,
@@ -1352,7 +1359,7 @@ def test_recovery_keeps_bounded_baseline_separate_from_strict_readback() -> None
         }
     )
 
-    recovered = adapter.recover(
+    recovered = _same_day(adapter, plan).recover(
         plan,
         {
             "requested_shares": 100,
@@ -1414,7 +1421,7 @@ def test_native_unknown_recovery_accepts_a_proven_empty_baseline() -> None:
         }
     )
 
-    recovered = adapter.recover(
+    recovered = _same_day(adapter, plan).recover(
         plan,
         {
             "requested_shares": 100,
@@ -1610,7 +1617,7 @@ def test_acknowledged_wrong_code_rejection_terminalizes_without_retry() -> None:
         locator_proof=locator,
     )
 
-    receipt = _adapter(native).reconcile(plan, previous.as_dict())
+    receipt = _same_day(_adapter(native), plan).reconcile(plan, previous.as_dict())
 
     assert receipt.normalized_status() == BrokerStatus.REJECTED
     assert receipt.order_id == "6000099"
@@ -3029,7 +3036,7 @@ def test_server_rejection_is_persisted_before_notice_acknowledgment():
             )
 
     native = ClosedServer()
-    adapter = _adapter(native)
+    adapter = _same_day(_adapter(native), _plan())
     plan = _plan()
     prior = ExecutionReceipt(plan.plan_id, plan.plan_hash, ExecutionState.UNKNOWN,
         submit_claim_id='original-claim', submit_chain_uncertain=True, remaining_shares=100)

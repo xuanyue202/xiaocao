@@ -28,6 +28,16 @@ DEFAULT_OUTPUT_DIR = ROOT / "output"
 PACKAGE_DIR_NAME = "xiaocao-trading"
 
 SKILL_REFERENCE_FILES = [
+    # Role guides are part of the consumed runtime, not checkout-only prose.
+    "automation-context.md",
+    "tasks/morning-app.md",
+    "tasks/morning-producer.md",
+    "tasks/morning-paper.md",
+    "tasks/monitor-protective.md",
+    "tasks/monitor-sparse.md",
+    "tasks/eod.md",
+    "tasks/weekly.md",
+    "morning-session-recovery.md",
     "automation-morning.md",
     "kol-source-preparation.md",
     "kol-opening-preparation.md",
@@ -45,6 +55,10 @@ SKILL_REFERENCE_FILES = [
 ]
 
 RUNTIME_ITEMS = [
+    # KOL helpers shipped in src/scripts resolve profile and bound contracts
+    # relative to their runtime ROOT. Keep this closure without private state.
+    ".codex/skills/kol-intelligence/config",
+    ".codex/skills/kol-intelligence/references",
     "src",
     "scripts",
     "tests",
@@ -116,6 +130,15 @@ def validate_skill(skill_dir: Path) -> None:
         skill_md,
         openai_yaml,
         *(skill_dir / "references" / name for name in SKILL_REFERENCE_FILES),
+        runtime / ".codex/skills/kol-intelligence/config/semantic-analyst.json",
+        *(runtime / ".codex/skills/kol-intelligence/references" / name for name in (
+            "full-contract.md", "durable-knowledge.md", "semantic-analysis.md",
+            "semantic-model-routing.md", "hourly-local-start.md", "hourly-remote-start.md",
+        )),
+        *(runtime / ".codex/skills/xiaocao-trading/references" / name
+          for name in SKILL_REFERENCE_FILES),
+        runtime / "docs" / "CONTEXT_ENGINEERING.md",
+        runtime / "docs" / "STRATEGY_CONSUMPTION.md",
         runtime / "src" / "xiaocao" / "cli.py",
         runtime / "src" / "xiaocao" / "live" / "safety.py",
         runtime / "src" / "xiaocao" / "live" / "capital_keychain.py",

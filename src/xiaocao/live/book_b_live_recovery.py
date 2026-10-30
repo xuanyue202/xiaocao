@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import uuid
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from .book_b_live_morning import (
@@ -15,7 +15,8 @@ from .book_b_live_morning import (
 from .trading_execution import (
     ExecutionReceipt, ExecutionState, ExecutionStore, TradePlan, account_writer_lock,
 )
-from .book_b_live_lifecycle import open_execution_plan_ids, proven_prior_day_zero_fill_sell_ids
+from .book_b_live_lifecycle import (open_execution_plan_ids, proven_prior_day_zero_fill_sell_ids,
+    load_execution_intents, read_execution_plan)
 
 UNCLAIMED = {ExecutionState.PLANNED, ExecutionState.VALIDATED, ExecutionState.PREPARED}
 TERMINAL = {ExecutionState.FILLED, ExecutionState.CANCELLED, ExecutionState.REJECTED,
@@ -48,9 +49,31 @@ def _has_possible_write(events: list[dict]) -> bool:
     return False
 
 
+def prior_day_buy_exit_deferrals(state_dir: Path, *, trade_date: str) -> tuple[str, ...]:
+    """Classify original primary BUYs for owned-SELL checks, never cash authority.
+
+    The original account/book/side/date and complete event chain are required.
+    This does not certify the old broker outcome or adopt unknown shares; the
+    checkpoint must still prove current same-account owned/sellable quantities.
+    """
+    current_day = date.fromisoformat(trade_date)
+    intents = load_execution_intents(Path(state_dir))
+    deferred = []
+    for plan_id in open_execution_plan_ids(state_dir):
+        raw = intents.get(plan_id)
+        if raw is None:
+            continue  # Unclassified plans retain the caller's original fence.
+        plan = read_execution_plan(raw)
+        if plan.side == 'BUY' and date.fromisoformat(plan.trade_date) < current_day:
+            _history(state_dir, plan)
+            deferred.append(plan_id)
+    return tuple(deferred)
+
+
 def check_monitor_pending_plans(state_dir: Path, *, trade_date: str | None = None,
                                 asof: datetime | None = None,
-                                allow_open_sells: bool = False) -> tuple[str, ...]:
+                                allow_open_sells: bool = False,
+                                defer_prior_day_buys_for_owned_exit: bool = False) -> tuple[str, ...]:
     """Prove which open intents are only local BUY reservations.
 
     These remain open for their original owner. During an exit checkpoint,
@@ -62,15 +85,20 @@ def check_monitor_pending_plans(state_dir: Path, *, trade_date: str | None = Non
         proven_sells = set(proven_prior_day_zero_fill_sell_ids(
             state_dir, trade_date=trade_date, asof=asof,
         )) if trade_date and not allow_open_sells else set()
+        old_buys = set(prior_day_buy_exit_deferrals(state_dir, trade_date=trade_date)) if (
+            defer_prior_day_buys_for_owned_exit and trade_date) else set()
+        intents = load_execution_intents(state_dir)
         for plan_id in open_execution_plan_ids(state_dir):
             if plan_id in proven_sells:
                 continue
-            path = _plan_intent_path(state_dir, plan_id)
-            if not path.is_file():
+            if plan_id not in intents:
                 raise ValueError("LIVE_BOOK_B_OPEN_EXECUTION_RECONCILE_REQUIRED")
-            plan = read_durable_live_plan_intent(json.loads(path.read_text()))
+            plan = read_execution_plan(intents[plan_id])
             if plan.plan_id != plan_id or plan.logical_account_id != "primary":
                 raise ValueError("LIVE_RECOVERY_PLAN_BINDING_MISMATCH")
+            if plan_id in old_buys:
+                deferred.append(plan_id)
+                continue
             if allow_open_sells and plan.side == "SELL" and (
                 trade_date is None or plan.trade_date <= trade_date
             ):

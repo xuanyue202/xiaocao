@@ -118,16 +118,17 @@ def test_each_command_rechecks_window(tmp_path, monkeypatch):
 
 def test_session_closes_lock_when_wait_crosses_cutoff(tmp_path, monkeypatch):
     from xiaocao.live import foundersc_session as session
+    from xiaocao.live import bounded_readback
     allowed = [True]
     monkeypatch.setattr(window, 'app_tests_allowed', lambda: allowed[0])
     monkeypatch.setattr(session, 'session_path', lambda: tmp_path / 'app.lock')
-    original_flock = session.fcntl.flock
+    original_flock = bounded_readback.fcntl.flock
     descriptors = []
     def acquire_then_cross(descriptor, operation):
         original_flock(descriptor, operation)
         descriptors.append(descriptor)
         allowed[0] = False
-    monkeypatch.setattr(session.fcntl, 'flock', acquire_then_cross)
+    monkeypatch.setattr(bounded_readback.fcntl, 'flock', acquire_then_cross)
     with pytest.raises(window.AppTestWindowClosed):
         with session.app_session():
             pytest.fail('APP session must not be entered')

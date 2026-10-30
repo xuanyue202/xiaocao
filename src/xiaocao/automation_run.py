@@ -12,10 +12,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 _task_identity = ContextVar("xiaocao_automation_id", default=None)
+_run_owner = ContextVar("xiaocao_dated_run_owner", default=None)
 
 
 def current_automation_id():
     return _task_identity.get() or os.environ.get("CODEX_AUTOMATION_ID")
+
+
+def current_run_owner() -> dict | None:
+    """Evidence of this process holding a dated runner lock, not an env alias."""
+    owner = _run_owner.get()
+    return dict(owner) if owner is not None else None
 
 
 def validate_automation_identity(expected: str, requested: str) -> None:
@@ -56,9 +63,11 @@ def automation_run(automation_id: str, slot: str, *, root: Path):
         handle.flush()
         os.fsync(handle.fileno())
         token = _task_identity.set(automation_id)
+        owner_token = _run_owner.set(owner)
         try:
             yield {"status": "acquired", **owner}
         finally:
+            _run_owner.reset(owner_token)
             _task_identity.reset(token)
             fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 

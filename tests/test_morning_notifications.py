@@ -364,6 +364,36 @@ def test_history_only_refresh_reuses_upgraded_recipient_claim(tmp_path, prior_st
 
 
 @pytest.mark.app_simulation
+@pytest.mark.parametrize('prior_state', ['delivered','uncertain','sending'])
+def test_legacy_receipt_uncertainty_explanation_never_resends_existing_result(tmp_path,prior_state):
+    import hashlib
+    from xiaocao.live.morning_observability import terminal_notice
+    from xiaocao.live.morning_notifications import result_fingerprint,current_result_fingerprint
+    payload={'trade_date':'2026-10-21','run_id':'original','status':'blocked','failed_stage':'execution',
+        'reason':'ORIGINAL_EXECUTION_FAILURE','execution_receipts':[], 'persisted_plan_ids':['original-plan']}
+    path=tmp_path/'runs/history/original.json';path.parent.mkdir(parents=True)
+    path.write_text(json.dumps(payload))
+    facts=terminal_notice(payload,path,include_durable_pending=False)
+    assert facts['current_order_evidence_unproven']
+    legacy={key:value for key,value in facts.items() if key!='current_order_evidence_unproven'}
+    fingerprint=result_fingerprint(legacy);current=current_result_fingerprint(legacy)
+    key=hashlib.sha256(f'xiaocao-book-b-live-morning|2026-10-21|result|{current}'.encode()).hexdigest()
+    recipient=hashlib.sha256(b'user').hexdigest()
+    original={'notification_id':key,'automation_id':'xiaocao-book-b-live-morning',
+        'trade_date':'2026-10-21','kind':'result','result_fingerprint':fingerprint,
+        'current_result_fingerprint':current,'title':'original','body':'original',
+        'status':'pending','recipients':{recipient:{'status':prior_state,'attempted_at':'original'}}}
+    store=tmp_path/'notices';store.mkdir();record=store/f'{key}.json';record.write_text(json.dumps(original))
+    sent=[]
+    notices=MorningNotifications('2026-10-21',root=store,
+        sender=lambda *args:sent.append(args) or {'status':'ok'},recipients=lambda:('user',))
+    assert notices.publish('result',facts)==key
+    notices.close()
+    assert sent==[] and json.loads(record.read_text())['recipients']==original['recipients']
+    assert len(list(store.glob('*.json')))==1
+
+
+@pytest.mark.app_simulation
 def test_current_order_change_still_notifies_after_history_only_refresh(tmp_path):
     sent = []
     notices = MorningNotifications('2026-10-21', root=tmp_path,

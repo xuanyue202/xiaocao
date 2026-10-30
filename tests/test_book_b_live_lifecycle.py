@@ -1325,7 +1325,7 @@ def test_intraday_unknown_sell_does_not_block_independent_second_lot(
     )
     monkeypatch.setattr(
         "xiaocao.live.book_b_live_intraday.load_monitor_contexts",
-        lambda *args, **kwargs: {},
+        lambda root, lots: {lot.owned_lot_id: {} for lot in lots},
     )
     calls: list[TradePlan] = []
 
@@ -1556,11 +1556,18 @@ def test_intraday_eod_only_reconciles_projects_and_settles(tmp_path: Path) -> No
     assert receipt.broker_snapshot == _snapshot(observed_at=EOD_NOW)
 
 
-def _prior_zero_fill_sell_after_independent_exit(tmp_path: Path, state=ExecutionState.UNKNOWN):
+def _prior_zero_fill_sell_after_independent_exit(tmp_path: Path, state=ExecutionState.UNKNOWN, *, canary=False):
     buy = _record_fill(tmp_path, _plan(trade_date="2026-08-31"),
         price=10, event_id="prior-buy")
-    old_sell = _bind_plan_intent(tmp_path, _plan(side="SELL", lot_id=buy.plan_id,
-        trade_date="2026-09-02"))
+    old_sell = _plan(side="SELL", lot_id=buy.plan_id, trade_date="2026-09-02")
+    if canary:
+        old_sell = replace(old_sell, plan_id=old_sell.plan_id.replace('book-b:', 'book-b-canary:', 1))
+        folder = tmp_path / 'canary_intents'
+        folder.mkdir(exist_ok=True)
+        (folder / 'original-sell.json').write_text(json.dumps({'schema_version': 1,
+            'plan_hash': old_sell.plan_hash, 'plan': old_sell.canonical_payload()}))
+    else:
+        old_sell = _bind_plan_intent(tmp_path, old_sell)
     _record_fill(tmp_path, _plan(side="SELL", lot_id=buy.plan_id,
         trade_date="2026-09-03"), price=11, event_id="independent-exit")
     current = datetime(2026, 9, 4, 7, 10, tzinfo=timezone.utc)
@@ -1811,7 +1818,7 @@ def test_intraday_preserves_partial_receipt_when_closing_window_expires(
     )
     monkeypatch.setattr(
         "xiaocao.live.book_b_live_intraday.load_monitor_contexts",
-        lambda *args, **kwargs: {},
+        lambda root, lots: {lot.owned_lot_id: {} for lot in lots},
     )
     late = NOW + timedelta(minutes=1)
     times = iter((NOW,) * 7 + (late, late))

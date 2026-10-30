@@ -418,7 +418,7 @@ def test_nonterminal_sell_does_not_hide_an_independent_owned_lot_exit(tmp_path, 
     monkeypatch.setattr(intraday, "reconcile_open_book_b_plans", lambda *a, **k: ())
     monkeypatch.setattr(intraday, "check_monitor_pending_plans", lambda *a, **k: ())
     monkeypatch.setattr(intraday, "project_book_b_live_account", lambda *a, **k: account)
-    monkeypatch.setattr(intraday, "load_monitor_contexts", lambda *a, **k: {})
+    monkeypatch.setattr(intraday, "load_monitor_contexts", lambda root, lots: {lot.owned_lot_id: {} for lot in lots})
     monkeypatch.setattr(intraday, "bind_durable_live_plan_intents", lambda root, plans: plans)
     calls = []
 
@@ -468,7 +468,7 @@ def test_prior_day_unknown_sell_preserves_identity_and_allows_fresh_sellable_exi
     monkeypatch.setattr(intraday, "reconcile_open_book_b_plans", lambda *a, **k: ())
     monkeypatch.setattr(intraday, "check_monitor_pending_plans", lambda *a, **k: ())
     monkeypatch.setattr(intraday, "project_book_b_live_account", lambda *a, **k: account)
-    monkeypatch.setattr(intraday, "load_monitor_contexts", lambda *a, **k: {})
+    monkeypatch.setattr(intraday, "load_monitor_contexts", lambda root, lots: {lot.owned_lot_id: {} for lot in lots})
     calls = []
     receipt = run_book_b_live_intraday(state_dir=tmp_path, freeze_dir=tmp_path,
         trade_date="2026-09-01", phase="closing", now=lambda: current,

@@ -52,6 +52,8 @@ from zoneinfo import ZoneInfo
 
 NAV_BASIS = "book_b_cash_plus_liquidation_after_exit_fee"
 POLICY_ID = "book_b_pilot_drawdown_10_20_v1"
+_PAUSE_FLOOR_PERCENT = 80
+_REDUCED_FLOOR_PERCENT = 90
 _CHINA = ZoneInfo("Asia/Shanghai")
 
 
@@ -351,7 +353,7 @@ def evaluate_account_risk(
             if previous_observed is not None and observed >= previous_observed:
                 running_peak = max(running_peak, peak)
             running_peak = max(running_peak, value)
-            paused |= value * 100 <= running_peak * 80
+            paused |= value * 100 <= running_peak * _PAUSE_FLOOR_PERCENT
         peak = max(peak, running_peak)
         _, nav_out, observed_out = current or (max(dated), *dated[max(dated)])
         if previous_observed is not None and observed_out < previous_observed:
@@ -363,12 +365,12 @@ def evaluate_account_risk(
                 # proof of an economic loss or a new high. If even that bound
                 # is above the loss floor it can conservatively cap new risk.
                 nav_lower_bound = float(nav_out)
-                if nav_out * 100 <= peak * 80 and not paused:
+                if nav_out * 100 <= peak * _PAUSE_FLOOR_PERCENT and not paused:
                     errors.add("UNQUALIFIED_NAV_DRAWDOWN_UNPROVEN")
                 nav_out = min(nav_out, peak)
             else:
                 peak = max(peak, nav_out)
-                paused |= nav_out * 100 <= peak * 80
+                paused |= nav_out * 100 <= peak * _PAUSE_FLOOR_PERCENT
             drawdown = (peak - nav_out) * 100 / peak
             if epoch_mode and epoch_started is None:
                 epoch_started = now
@@ -380,7 +382,7 @@ def evaluate_account_risk(
     elif paused:
         status, factor = "PAUSED", 0.0
         reasons = ("DRAWDOWN_20_PCT_REVIEW_REQUIRED",)
-    elif nav_out * 100 <= peak * 90:
+    elif nav_out * 100 <= peak * _REDUCED_FLOOR_PERCENT:
         status, factor = "REDUCED", 0.5
         reasons = ("DRAWDOWN_10_PCT_NEW_RISK_HALVED",)
     else:
@@ -421,3 +423,22 @@ def evaluate_account_risk(
         tracking_epoch_started_at=epoch_started.isoformat() if epoch_started is not None else None,
         current_nav_lower_bound=nav_lower_bound,
     )
+
+
+def tighten_conservative_new_risk_cap(previous: AccountRiskReceipt, lower_bound: Decimal) -> float:
+    """Tighten an already admitted cap without I/O, a new peak or a pause event.
+
+    Used under the APP batch lease, where taking the persisted risk lock would
+    invert lock order. The full risk evaluation precedes that lease; a newer
+    account-bound lower mark may only reduce its cap using the same loss floors.
+    """
+    try:
+        bound, peak = _number(lower_bound), _number(previous.high_water_mark)
+        if (previous.policy_id != POLICY_ID or peak <= 0 or bound <= 0
+                or previous.pause_latched or not 0 <= previous.deploy_factor <= 1):
+            return 0.0
+        if bound * 100 <= peak * _PAUSE_FLOOR_PERCENT:
+            return 0.0
+        return min(previous.deploy_factor, 0.5 if bound * 100 <= peak * _REDUCED_FLOOR_PERCENT else 1.0)
+    except (ValueError, TypeError):
+        return 0.0

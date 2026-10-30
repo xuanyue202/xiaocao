@@ -63,7 +63,7 @@ REGISTRY: dict[str, Param] = {
                                "K->P primary_score 下限; below => weak_primary (shadow default)", (100.0, 200.0, 10.0)),
     # --- 出场 staged exit (live/exit_policy.py) ----------------------------- #
     "PROFILE_DD": Param("PROFILE_DD", {"v5": 2.0, "v6": 0.5}, "live.exit_policy",
-                        "soft trailing dd%% per profile; executed at 14:55 not intraday"),
+                        "soft trailing dd%% per profile; deferred to 14:45 closing, not sparse morning liquidation"),
     "PROFILE_HARD_DD": Param("PROFILE_HARD_DD", {"v5": 8.0, "v6": 8.0}, "live.exit_policy",
                              "intraday hard floor dd%% — the ONLY stop executed intraday"),
     # --- 仓位/资金 sizing (paper_record.py) --------------------------------- #
