@@ -1,5 +1,18 @@
 # Weekly deep review automation
 
+## System-level causal challenge
+
+Apply Operating Contract §1e and [EOD_WEEKLY_FEEDBACK.md](../../../../docs/EOD_WEEKLY_FEEDBACK.md)'s
+causal depth/next-window acceptance before closing incident work. Trace repeated
+root-cause classes across order sides and dates, read the first/latest raw
+effects, and challenge the preceding daily/weekly conclusions. Review strategy,
+current financial risk/accounting, execution/system design, data/statistical
+selection, product/agent governance and experimental opportunity cost together.
+Each material claim needs evidence, causal edges, alternatives/falsifier,
+affected scope, owner and an actual next-window acceptance. Missing execution
+is missing evidence, not a zero-return sample. Distinguish rule changes, code,
+tests, adoption and natural behavior; use existing slots and promotion gates.
+
 ## Funded APP B controls (2026-10-22)
 
 Use [BOOK_B_WORKFLOW.md](../../../../docs/BOOK_B_WORKFLOW.md) and `app-b-forward-funded-v1` in the research protocol registry. Weekly evidence includes `output/research/app_b_forward/{protocol,performance,app_lifecycle}.json`; `auto_daily.sh weekly` refreshes reports before inventory freeze. Compare complete funded paths, open lots, fees, unknown orders and missing EOD observations. Keep selection-only comparisons and matched closed trades as separate diagnostics. The E control and three pre-registered challenges are authority=0; no daily-return row may masquerade as an independent trade. Promotion still requires research_run and the human gate.

@@ -1,8 +1,12 @@
 # APP Book B 统一操作流程
 
 适用 APP 服务端仿真短线、原 Paper B 和独立前向研究。规则权威为
-[Operating Contract](OPERATING_CONTRACT.md) §1c/§2a/§4/§6/§10。
+[Operating Contract](OPERATING_CONTRACT.md) §1c/§1e/§2a/§4/§6/§10。
 Book T 保持趋势体系，不参与短线排名。
+
+当天执行与遗留问题处置按 §1e：分别读取已知限制、修复/采用、旧单正式状态、
+当前经济影响和下一窗口就绪。旧单只对账与独立新批次能否执行分开证明；
+会计最终性继续独立收口。规则明确、程序实现与自然验收分别留证。
 
 ## 已采纳的依据与边界
 

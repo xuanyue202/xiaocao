@@ -1,5 +1,17 @@
 # EOD automation
 
+## Causal review and next-session readiness
+
+After original business terminals, apply Operating Contract §1e and the causal
+review/next-window requirements in [EOD_WEEKLY_FEEDBACK.md](../../../../docs/EOD_WEEKLY_FEEDBACK.md).
+Read first/latest raw failures and prior responses. The daily review must leave
+an evidence-bound disposition usable by the next morning: known restriction,
+technical repair/adoption, service-order state, current economic impact,
+affected scope, recovery action/owner and verification window. Challenge whether
+an independent legal trade survives the old unresolved state. Trace the cause
+through the preflight and review mechanisms; bookkeeping status and passing
+tests cannot establish next-session readiness. Use existing items/evidence fields.
+
 ## Unified APP B lifecycle reporting (2026-10-22)
 
 After the original paper EOD, APP EOD and statement readback finish, run the original `scripts/research_book_b_forward.py --phase eod` once through `scripts/eod_post_business.py --step research` with the same identity. This advances independent funded controls and refreshes their reports and the read-only APP lifecycle join. The paper shell does not run research acquisition before APP reconciliation; do not duplicate it with a second report call. Read [BOOK_B_WORKFLOW.md](../../../../docs/BOOK_B_WORKFLOW.md): model net returns, APP marked NAV, estimated profit and confirmed profit are distinct. Missing actual fees or unclassified cash keep confirmed profit unknown. A report never closes an order or grants settlement authority.

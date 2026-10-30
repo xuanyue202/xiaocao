@@ -1,5 +1,18 @@
 # Morning automation
 
+## Current-window priority and inherited incidents
+
+After the minimal calendar gate and original runner start, apply Operating
+Contract §1e. Read the last daily review/EOD feedback disposition and current
+deployment before 09:20; distinguish a known permission restriction, repaired
+code, an unresolved historical order, current economic impact and actual
+next-window readiness. An early blocked process starts owned recovery work,
+not task closeout. Prove which current cash/exposure/code is affected; a status
+list is not economic evidence. Preserve old claims and original budgets, repair
+the dependency before claiming a permitted continuation, and disclose a missing
+recovery capability as an implementation gap. Keep source, APP and paper owners.
+The current-window rules do not themselves implement a new execution path.
+
 ## Unified APP B lifecycle (2026-10-22)
 
 Read [BOOK_B_WORKFLOW.md](../../../../docs/BOOK_B_WORKFLOW.md) for the common final-plan receipt and funded forward controls. Keep E selection, the COLD default gate and B staged exits. `book_b_live_morning.py` records the frozen adjudication, account/risk allocation and exact final plans separately from execution receipts. `auto_daily.sh morning-execute` advances `research_book_b_forward.py --phase morning` only after its original paper B and T children finish. Do not start another producer or research writer from the APP task, and never replay an already consumed day. Research is authority=0, uses independent cash/lots and future-window model fills, and cannot certify APP execution or strategy promotion.
