@@ -272,3 +272,23 @@ def test_dated_morning_merchant_title(title, published, merchant_title, allowed)
     else:
         with pytest.raises(EnrichmentError):
             human.verify_course_metadata({"title": title}, lineage, published)
+
+
+@pytest.mark.parametrize('title,merchant_title,published,allowed', [
+    ('抽平板电脑｜大师班回馈专场', '抽平板电脑｜大师班回馈专场', '2026-10-30T16:52:00+08:00', True),
+    ('抽平板电脑 | 大师班回馈专场', '抽平板电脑｜大师班回馈专场', '2026-10-30T16:52:00+08:00', True),
+    ('抽平板电脑｜大师班回馈专场', '大师班专场', '2026-10-30T16:52:00+08:00', False),
+    ('抽手机｜大师班回馈专场', '抽手机｜大师班回馈专场', '2026-10-30T16:52:00+08:00', False),
+    ('抽平板电脑｜大师班回馈专场', '抽平板电脑｜大师班回馈专场', '2026-10-29T16:52:00+08:00', False),
+    ('抽平板电脑｜大师班回馈专场', '抽平板电脑｜大师班回馈专场', '2026-10-30T08:35:00+08:00', False),
+])
+def test_exact_evening_feedback_course(title, merchant_title, published, allowed):
+    lineage = {'course_title': merchant_title, 'course_start_at': 1793354400,
+               'metadata_anchors': [{'live_id': 'same-live'}]}
+    if allowed:
+        proof = human.verify_course_metadata({'title': title}, lineage, published)
+        assert proof['title'] == title
+        assert proof['merchant_title'] == merchant_title
+    else:
+        with pytest.raises(EnrichmentError):
+            human.verify_course_metadata({'title': title}, lineage, published)

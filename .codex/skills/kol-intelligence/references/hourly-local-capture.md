@@ -394,3 +394,5 @@ coordinator's old failure, use applicable pushed fingerprint-bound validation
 and exact narrow continuation to reconcile that real terminal expiry; do not
 claim media/Handoff or that a user skip proves native input was repaired.
 Never retire bound downloads/uploads or stop another capture to record a skip.
+
+The independently observed evening title `抽平板电脑｜大师班回馈专场` is supported only when downloader and same-capture merchant titles match under the existing narrow formatting rules and the merchant date/evening session matches the original publication. This is one exact title, not an equivalence to the old evening title or other giveaway wording; finite media and merchant/media lineage remain mandatory.
