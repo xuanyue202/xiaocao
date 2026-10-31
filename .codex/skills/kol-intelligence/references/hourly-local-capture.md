@@ -12,9 +12,15 @@ sole writer and receives this node's credential-free capsules as external input.
 
 The Automation starts through one deterministic Beijing clock-hour gate. It does
 not parse the cron schedule or list Codex tasks, OS processes, terminals, or
-runners. The gate truncates the current time to the hour only to form the lock
-key. It exits with `hour_busy` when another invocation owns that Beijing clock
-hour and otherwise holds the hour lock for the full runner lifetime. It has no
+runners. The gate assigns the last two minutes before an hour to the upcoming
+Beijing hour: 06:58:00–06:59:59 uses the 07:00 lock and starts scanning immediately.
+Other minutes use the current hour. The local coordinator uses the same slot for
+its daytime admission and sweep ledger, retaining the gate-assigned slot across
+startup/mailbox waits. Direct local invocations calculate their own slot. Event
+timestamps and course replay
+readiness checks retain the actual wall clock. The remote writer keeps its existing
+time window. It exits with `hour_busy` when another invocation owns that Beijing clock
+hour and otherwise holds the hour lock for the full runner lifetime. Within each assigned slot it has no
 minute cutoff, so `HH:00` and `HH:30` schedules behave identically:
 
 ```bash
@@ -364,10 +370,11 @@ task uses this Beijing cadence; do not restore the older every-20-minute schedul
 from historical instructions:
 
 ```text
-RRULE:FREQ=DAILY;BYHOUR=7,10,12,14,17,18,21;BYMINUTE=0
+RRULE:FREQ=DAILY;BYHOUR=7,11,21;BYMINUTE=0
 ```
 
-Use Beijing wall time; omit `DTSTART`/`TZID`; do not run 23:00–06:59. Reopen a
+Use Beijing wall time; omit `DTSTART`/`TZID`. The local daytime window admits
+06:58 starts as the 07:00 batch; earlier starts remain outside the window. Reopen a
 changed Automation, verify next run/no duplicate, and never alter the remote writer.
 
 The append-only local ledger resumes only unfinished capture/upload/handoff

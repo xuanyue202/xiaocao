@@ -5697,6 +5697,10 @@ def main() -> int:
                 }]
                 ],
                 blocker_sender=_sender,
+                allow_early_start=True,
+                automation_slot_start=(datetime.fromisoformat(
+                    os.environ["XIAOCAO_AUTOMATION_HOUR_START_AT"]
+                ) if os.environ.get("XIAOCAO_AUTOMATION_HOUR_START_AT") else None),
             )
             if not result.get("silent"):
                 _print(result)

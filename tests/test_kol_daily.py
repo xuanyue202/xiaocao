@@ -145,9 +145,12 @@ def test_capture_local_finishes_xiaocao_before_liuguan(tmp_path, monkeypatch, st
             pass
 
         def run(self, sources, **kwargs):
+            assert kwargs["allow_early_start"] is True
+            assert kwargs["automation_slot_start"] == datetime.fromisoformat("2026-11-01T07:00:00+08:00")
             calls.append("xiaocao")
             return {"status": status, "silent": True}
 
+    monkeypatch.setenv("XIAOCAO_AUTOMATION_HOUR_START_AT", "2026-11-01T07:00:00+08:00")
     monkeypatch.setattr(kol_daily_script, "DailyCoordinator", Coordinator)
     monkeypatch.setattr(DailyRuntime, "reconcile_local_mailbox", lambda self: [])
     monkeypatch.setattr(kol_daily_script, "_follow_cloud_handoff", lambda *a, **kw: calls.append("handoff"))
@@ -1768,7 +1771,7 @@ def test_source_cli_narrow_runner_supports_xiaocao_wechat_live_in_local_capture(
         def __init__(self, _output_dir):
             pass
 
-        def run(self, sources, *, blocker_sender):
+        def run(self, sources, *, blocker_sender, allow_early_start=False, automation_slot_start=None):
             source = sources[0]
             result = source["narrow_resume"](
                 "xiaocao_wechat_live:kol-wechat-recovered"
@@ -1803,7 +1806,7 @@ def test_capture_local_cli_runs_live_and_official_account_sources(
         def __init__(self, output_dir):
             observed["output_dir"] = output_dir
 
-        def run(self, sources, *, blocker_sender):
+        def run(self, sources, *, blocker_sender, allow_early_start=False, automation_slot_start=None):
             observed["source_names"] = [source["name"] for source in sources]
             observed["priorities"] = [source["priority"] for source in sources]
             observed["results"] = [source["run"]() for source in sources]
@@ -1906,7 +1909,7 @@ def test_remote_run_drains_mailbox_before_existing_sources(
         def __init__(self, output_dir):
             observed["output_dir"] = output_dir
 
-        def run(self, sources, *, blocker_sender):
+        def run(self, sources, *, blocker_sender, allow_early_start=False, automation_slot_start=None):
             observed["order"].append("coordinator")
             observed["source_names"] = [source["name"] for source in sources]
             observed["priorities"] = [source["priority"] for source in sources]
@@ -3162,7 +3165,7 @@ def test_capture_local_cli_follows_exact_cloud_handoff_in_same_process(
             observed["follow_source"] = source
             return self.delegate._source_locked(source)
 
-        def run(self, sources, *, blocker_sender):
+        def run(self, sources, *, blocker_sender, allow_early_start=False, automation_slot_start=None):
             observed["coordinator_runs"] = int(observed["coordinator_runs"]) + 1
             assert [source["name"] for source in sources] == [
                 "xiaocao_wechat_live",
@@ -3257,7 +3260,7 @@ def test_capture_local_reconciles_mailbox_before_one_discovery_sweep(
         def __init__(self, output_dir):
             assert output_dir == tmp_path / "daily"
 
-        def run(self, sources, *, blocker_sender):
+        def run(self, sources, *, blocker_sender, allow_early_start=False, automation_slot_start=None):
             calls.append("sweep")
             assert len(sources) == 2
             assert callable(blocker_sender)
@@ -9553,3 +9556,53 @@ def test_exact_xiaocao_repair_resume_owns_proxy_until_exit_even_on_failure(tmp_p
     with pytest.raises(DailyError,match='no validated narrow resume'):
         kol_daily_script.main()
     assert calls==['owner_enter','xiaocao_wechat_live','pending','owner_exit']
+
+
+@pytest.mark.parametrize(("now", "runs", "slot"), [
+    ("2026-11-01T06:57:59+08:00", False, None),
+    ("2026-11-01T06:58:00+08:00", True, "2026-11-01T07:00+08:00"),
+    ("2026-11-01T06:59:59+08:00", True, "2026-11-01T07:00+08:00"),
+    ("2026-11-01T07:00:00+08:00", True, "2026-11-01T07:00+08:00"),
+    ("2026-11-01T10:58:00+08:00", True, "2026-11-01T11:00+08:00"),
+    ("2026-11-01T23:58:00+08:00", False, None),
+])
+def test_local_capture_early_window_runs_source_with_real_event_time(tmp_path, now, runs, slot):
+    service = DailyCoordinator(tmp_path, now=Clock(now))
+    calls = []
+    result = service.run([{"name": "local", "run": lambda: calls.append("scan") or
+                           {"status": "no_update"}}], allow_early_start=True)
+    assert calls == (["scan"] if runs else [])
+    if runs:
+        rows = [json.loads(line) for line in service.events_path.read_text().splitlines()]
+        assert result["slot"] == slot
+        assert all(row["slot"] == slot for row in rows)
+        assert all(row["occurred_at"] == now for row in rows)
+    else:
+        assert result["status"] == "outside_window"
+        assert not service.events_path.exists()
+
+
+def test_early_capture_still_honors_legacy_writer_lock(tmp_path):
+    import fcntl
+    service = DailyCoordinator(tmp_path, now=Clock("2026-11-01T06:58:00+08:00"))
+    calls = []
+    with service.legacy_lock_path.open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        result = service.run([{"name": "local", "run": lambda: calls.append("scan")}],
+                             allow_early_start=True)
+    assert result["code"] == "legacy_coordinator_busy"
+    assert calls == []
+
+
+
+def test_local_capture_keeps_gate_slot_when_startup_crosses_boundary(tmp_path):
+    service = DailyCoordinator(tmp_path, now=Clock("2026-11-01T07:58:00+08:00"))
+    calls = []
+    result = service.run([{"name": "local", "run": lambda: calls.append("scan") or
+                           {"status": "no_update"}}], allow_early_start=True,
+                         automation_slot_start=datetime.fromisoformat("2026-11-01T07:00:00+08:00"))
+    assert calls == ["scan"]
+    assert result["slot"] == "2026-11-01T07:00+08:00"
+    rows = [json.loads(line) for line in service.events_path.read_text().splitlines()]
+    assert all(row["slot"] == "2026-11-01T07:00+08:00" for row in rows)
+    assert all(row["occurred_at"] == "2026-11-01T07:58:00+08:00" for row in rows)

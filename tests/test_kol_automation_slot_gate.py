@@ -8,6 +8,8 @@ from pathlib import Path
 import subprocess
 import sys
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "kol_automation_slot_gate.py"
@@ -145,7 +147,7 @@ def test_runner_holds_lock_while_waiting_for_input_and_releases_on_exit(tmp_path
         assert json.loads(process.stdout.readline())["status"] == "hour_acquired"
         marker = tmp_path / "duplicate-effect"
         competing = _run_gate(
-            tmp_path, "2026-10-07T10:59:00+08:00",
+            tmp_path, "2026-10-07T10:57:00+08:00",
             [sys.executable, "-c", f"from pathlib import Path; Path({str(marker)!r}).touch()"],
         )
         assert competing.returncode == 0
@@ -154,7 +156,7 @@ def test_runner_holds_lock_while_waiting_for_input_and_releases_on_exit(tmp_path
         output, errors = process.communicate("continue\n", timeout=5)
         assert process.returncode == 0, errors
         assert output.strip() == "finished"
-        after_exit = _run_gate(tmp_path, "2026-10-07T10:59:00+08:00",
+        after_exit = _run_gate(tmp_path, "2026-10-07T10:57:00+08:00",
                                [sys.executable, "-c", "print('continued')"])
         assert json.loads(after_exit.stdout.splitlines()[0])["status"] == "hour_acquired"
     finally:
@@ -176,3 +178,45 @@ def test_inherited_automation_mismatch_stops_before_command(tmp_path):
     assert "AUTOMATION_ENTRYPOINT_ID_MISMATCH" in completed.stderr
     assert not marker.exists()
     assert not (tmp_path / "weekly").exists()
+
+
+@pytest.mark.parametrize(("now", "slot"), [
+    ("2026-11-01T06:57:59+08:00", "2026-11-01T06:00:00+08:00"),
+    ("2026-11-01T06:58:00+08:00", "2026-11-01T07:00:00+08:00"),
+    ("2026-11-01T06:59:59+08:00", "2026-11-01T07:00:00+08:00"),
+    ("2026-11-01T07:00:00+08:00", "2026-11-01T07:00:00+08:00"),
+    ("2026-11-01T10:58:00+08:00", "2026-11-01T11:00:00+08:00"),
+    ("2026-11-01T23:58:00+08:00", "2026-11-02T00:00:00+08:00"),
+    ("2026-10-31T22:58:00+00:00", "2026-11-01T07:00:00+08:00"),
+])
+def test_early_start_slot_and_child_environment(tmp_path, now, slot):
+    completed = _run_gate(tmp_path, now, [sys.executable, "-c",
+        "import os; print(os.environ['XIAOCAO_AUTOMATION_HOUR_START_AT'])"])
+    assert completed.returncode == 0, completed.stderr
+    notice, inherited = completed.stdout.splitlines()
+    assert json.loads(notice)["hour_start_at"] == slot
+    assert inherited == slot
+
+
+def test_early_runner_blocks_same_upcoming_hour_until_exit(tmp_path):
+    process = subprocess.Popen(
+        [sys.executable, str(SCRIPT), "--now", "2026-11-01T06:58:00+08:00",
+         "--lock-dir", str(tmp_path), "--automation-id", "weekly", "--",
+         sys.executable, "-c", "input(); print('finished')"],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+    )
+    try:
+        assert select.select([process.stdout], [], [], 5)[0]
+        first = json.loads(process.stdout.readline())
+        assert first["hour_start_at"] == "2026-11-01T07:00:00+08:00"
+        competing = _run_gate(tmp_path, "2026-11-01T07:00:00+08:00",
+                              [sys.executable, "-c", "raise SystemExit(9)"])
+        assert competing.returncode == 0
+        assert json.loads(competing.stdout)["status"] == "hour_busy"
+        output, errors = process.communicate("continue\n", timeout=5)
+        assert process.returncode == 0, errors
+        assert output.strip() == "finished"
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.communicate(timeout=5)

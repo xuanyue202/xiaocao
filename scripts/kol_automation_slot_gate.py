@@ -13,6 +13,8 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from xiaocao.kol.automation_slot import automation_hour_start
+
 
 BEIJING = ZoneInfo("Asia/Shanghai")
 
@@ -27,7 +29,7 @@ def _parse_now(raw: str | None) -> datetime:
 
 
 def _hour_start(now: datetime) -> datetime:
-    return now.astimezone(BEIJING).replace(minute=0, second=0, microsecond=0)
+    return automation_hour_start(now)
 
 
 def _hour_key(hour_start: datetime) -> str:
