@@ -16,11 +16,12 @@ def isolate_morning_notices(monkeypatch):
     cli = importlib.import_module("scripts.book_b_live_morning")
     monkeypatch.setenv("CODEX_AUTOMATION_ID", cli.AUTOMATION_ID)
     monkeypatch.setenv("CODEX_THREAD_ID", "scheduled-owner")
+    published = []
     class Notices:
         def __init__(self, *args, **kwargs):
             pass
         def publish(self, *args, **kwargs):
-            pass
+            published.append((args, kwargs))
         def arm_golden_window(self):
             pass
         def close(self):
@@ -28,6 +29,7 @@ def isolate_morning_notices(monkeypatch):
     monkeypatch.setattr(cli, "MorningNotifications", Notices)
     monkeypatch.setattr(cli, "_morning_calendar_check", lambda day: {
         "status": "trading_day", "trade_date": day, "latest_trading_date": day})
+    return published
 
 
 @pytest.mark.app_simulation
@@ -75,12 +77,31 @@ def test_morning_rejects_unbound_task_before_lock_or_notices(monkeypatch, capsys
 
 
 @pytest.mark.app_simulation
-@pytest.mark.parametrize("action", [None, "preflight_repair", "resume", "reconcile", "close", "capital_unavailable"])
-def test_morning_entry_dispatches_without_reproducing_recovery_candidates(tmp_path, monkeypatch, capsys, action):
+@pytest.mark.parametrize(('action', 'business_status', 'audit_fault'), [
+    (None, 'no_action', None), ('preflight_repair', 'no_action', None),
+    ('resume', 'no_action', None), ('reconcile', 'no_action', None), ('close', 'no_action', None),
+    ('capital_unavailable', 'no_action', None),
+    (None, 'no_action', 'audit_import_error'), (None, 'completed', 'audit_import_error'),
+    (None, 'blocked', 'audit_import_error'), (None, 'no_action', 'audit_runtime_error'),
+])
+def test_morning_entry_dispatches_without_reproducing_recovery_candidates(
+        tmp_path, monkeypatch, capsys, action, business_status, audit_fault, isolate_morning_notices):
     repair = action == "preflight_repair"
     action = None if repair else action
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "scripts"))
     cli = importlib.import_module("scripts.book_b_live_morning")
+    if audit_fault == 'audit_import_error':
+        import builtins
+        original_import = builtins.__import__
+        def import_with_missing_audit(name, *args, **kwargs):
+            if name == 'xiaocao.live.morning_acceptance':
+                raise ModuleNotFoundError('audit module absent')
+            return original_import(name, *args, **kwargs)
+        monkeypatch.setattr(builtins, '__import__', import_with_missing_audit)
+    elif audit_fault == 'audit_runtime_error':
+        def failed_audit(*args, **kwargs):
+            raise RuntimeError('audit storage unavailable')
+        monkeypatch.setattr('xiaocao.live.morning_acceptance.record_repair_acceptance', failed_audit)
     calls = []
     if repair:
         from xiaocao.runner_recovery import DependencyRecovery, signal_recheck
@@ -152,16 +173,24 @@ def test_morning_entry_dispatches_without_reproducing_recovery_candidates(tmp_pa
                 kwargs["prepare_only"]("same-plan")
             kwargs["execute"]("same-plan")
             assert kwargs["restore_environment"]()["status"] == "native_environment_restore_not_applicable"
-        return BookBLiveMorningReceipt(config.trade_date, "no_action", "fixture", 0, (), (),
+        return BookBLiveMorningReceipt(config.trade_date, business_status, "fixture", 0, (), (),
             str(config.freeze_path), str(config.allocation_facts_path), str(config.state_dir))
     monkeypatch.setattr(cli, "run_book_b_live_morning", core if action is None else lambda *a, **k: pytest.fail("new producer during recovery"))
     monkeypatch.setattr(cli, "run_book_b_live_recovery", core)
     args = ["--date", "2026-09-11", "--state-dir", str(tmp_path)]
     if action in {"resume", "reconcile", "close"}:
         args += ["--resume-plan-id", "same-plan", "--recovery-action", action]
-    assert cli.main(args) == (2 if action == "capital_unavailable" else 0)
+    assert cli.main(args) == (2 if action == "capital_unavailable" or business_status == 'blocked' else 0)
     lines = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
-    result = lines[-1]
+    result = [line for line in lines if 'status' in line and 'event' not in line][-1]
+    if action in {None, 'preflight_repair'}:
+        audit = next(line for line in lines if line.get('event') == 'book_b_repair_acceptance')
+        # The fake business receipt is deliberately not written. Audit failure
+        # must remain local and cannot change the original exit/result/actions.
+        assert audit['status'] == 'degraded' and audit['admission_authority'] == 'none'
+        assert result['status'] == business_status and result['reason'] == 'fixture'
+    if action != 'close':
+        assert len([args for args, _ in isolate_morning_notices if args[0] == 'result']) == 1
     if repair:
         assert calls.count("environment") == 3 and calls.count("login") == 0 and calls.count("execute") == 1
         assert [line.get("event") for line in lines if str(line.get("event", "")).startswith("dependency_")] == ["dependency_recovery_wait", "dependency_recovered"]

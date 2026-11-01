@@ -21,11 +21,21 @@ EXPECTED_BRANCHES = {
 
 
 def test_xiaocao_skill_routes_to_existing_branch_files() -> None:
-    text = SKILL_MD.read_text(encoding="utf-8")
-
+    # Role guides own phase-specific links. Check actual transitive reachability
+    # instead of forcing every detailed reference back into the top-level router.
+    pending, reached = [SKILL_MD], set()
+    while pending:
+        source = pending.pop().resolve()
+        if source in reached:
+            continue
+        reached.add(source)
+        for target in re.findall(r"\]\(([^)]+\.md)(?:#[^)]*)?\)", source.read_text(encoding="utf-8")):
+            path = (source.parent / target).resolve()
+            if path.is_relative_to(SKILL_DIR.resolve()):
+                assert path.is_file(), f"broken role route: {source}: {target}"
+                pending.append(path)
     for name in EXPECTED_BRANCHES:
-        assert f"(references/{name})" in text
-        assert (SKILL_DIR / "references" / name).is_file()
+        assert (SKILL_DIR / "references" / name).resolve() in reached
 
 
 def test_xiaocao_skill_local_markdown_links_resolve() -> None:

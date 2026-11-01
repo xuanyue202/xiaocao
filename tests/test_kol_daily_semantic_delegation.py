@@ -155,11 +155,12 @@ def test_other_authors_keep_existing_canonical_route(tmp_path):
     assert kol_daily._require_canonical_semantic_artifact(bundle, request) == bundle
 
 
-def test_changed_contract_remains_exact_semantic_input_wait(tmp_path, monkeypatch):
+@pytest.mark.parametrize('changed_reference', ['durable-knowledge.md', 'semantic-analysis.md'])
+def test_changed_contract_remains_exact_semantic_input_wait(tmp_path, monkeypatch, changed_reference):
     references = tmp_path / "references"
-    references.mkdir()
-    for name in ("full-contract.md", "durable-knowledge.md"):
-        shutil.copy2(semantic_delegation.REFERENCES / name, references / name)
+    # Prepare against the deployed reference closure, including the v3 reading
+    # map, before testing a later mutation of one bound source.
+    shutil.copytree(semantic_delegation.REFERENCES, references)
     monkeypatch.setattr(semantic_delegation, "REFERENCES", references)
     request, request_path, draft, market, bundle = _inputs(tmp_path)
     prepared = prepare(request_path, market_evidence=market)
@@ -173,7 +174,7 @@ def test_changed_contract_remains_exact_semantic_input_wait(tmp_path, monkeypatc
     )
     build_validated_bundle_from_files(request_path, draft_path, market)
     Path(prepared["packet_path"]).with_name("parent_source_review.json").write_text("{}")
-    contract = references / "durable-knowledge.md"
+    contract = references / changed_reference
     contract.write_text(contract.read_text() + "\nChanged after dispatch.\n")
     original_request = request_path.read_bytes()
 

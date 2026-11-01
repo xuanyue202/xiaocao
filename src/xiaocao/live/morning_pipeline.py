@@ -21,6 +21,14 @@ def _evidence(path: Path):
         return None, {"path": str(path.resolve()), "status": "missing_or_invalid"}
 
 
+def _remaining(deadline, now):
+    try:
+        parsed = datetime.fromisoformat(deadline)
+        return (parsed - now).total_seconds() if parsed.tzinfo else None
+    except (ValueError, TypeError):
+        return None
+
+
 def pipeline_status(live_dir: Path, date: str) -> dict:
     now = datetime.now(A_SHARE_TZ)
     result = {"market_date": date, "observed_at": now.isoformat(),
@@ -59,11 +67,7 @@ def pipeline_status(live_dir: Path, date: str) -> dict:
             continue
         app_owners.add(owner)
         deadline = binding.get("preparation_deadline")
-        try:
-            parsed = datetime.fromisoformat(deadline)
-            remaining = (parsed - now).total_seconds() if parsed.tzinfo else None
-        except (ValueError, TypeError):
-            remaining = None
+        remaining = _remaining(deadline, now)
         result["app"].append({"automation_id": binding["automation_id"],
             "thread_id": binding.get("owner_thread_id"), "runner_pid": binding.get("runner_pid"),
             "preparation_deadline": deadline, "remaining_seconds": remaining, "checklist": ref,
@@ -79,11 +83,28 @@ def pipeline_status(live_dir: Path, date: str) -> dict:
         if (not isinstance(identity.get("owner_thread_id"), str) or not identity["owner_thread_id"]
                 or type(identity.get("runner_pid")) is not int or identity["runner_pid"] <= 0):
             continue
+        owner = (identity['owner_thread_id'], identity['runner_pid'])
+        if owner not in app_owners:
+            # The checklist is supporting audit storage. Its absence cannot
+            # suppress an independently sealed original business receipt.
+            app_owners.add(owner)
+            deadline = receipt.get('preparation_deadline')
+            result['app'].append({'automation_id': identity['automation_id'],
+                'thread_id': identity['owner_thread_id'], 'runner_pid': identity['runner_pid'],
+                'preparation_deadline': deadline, 'remaining_seconds': _remaining(deadline, now),
+                'checklist': {'path': receipt.get('checklist_path'), 'status': 'unproved'},
+                'terminal_receipts': []})
         for app in result["app"]:
             if identity.get("owner_thread_id") == app["thread_id"] and identity.get("runner_pid") == app["runner_pid"]:
+                try:
+                    from .morning_acceptance import read_repair_acceptance
+                    acceptance = read_repair_acceptance(live_dir / 'book_b_live_execution', path)
+                except Exception as exc:
+                    acceptance = {'status': 'unproved', 'reason': type(exc).__name__}
                 app["terminal_receipts"].append({"status": receipt.get("status"),
                     "reason": receipt.get("reason"), "run_id": receipt.get("run_id"), "evidence": ref,
-                    "strategy_adjudication": summarize_adjudication(receipt.get("strategy_adjudication"), runtime="live")})
+                    "strategy_adjudication": summarize_adjudication(receipt.get("strategy_adjudication"), runtime="live"),
+                    "repair_acceptance": acceptance})
     from xiaocao.live.morning_bundle import inspect_bundle
     bundle = inspect_bundle(live_dir, date)
     result["bundle"] = {"evidence": _evidence(live_dir / f"morning_bundle_ready_{date}.json")[1],

@@ -100,6 +100,13 @@ On `book_b_deferred_reconciliation`, read that separate artifact after the
 sealed result. It records actual old-claim readbacks and exact unread work under
 the same deadline; keep UNKNOWN and missing empty-response completion explicit.
 The opening result/notification claim stays bound to its original receipt.
+On `book_b_repair_acceptance`, consume the original owner's local audit and its
+`morning_pipeline_status.py` readback. It binds the sealed archive, held dated
+owner, loaded code, immutable disposition consumption and current-account
+observation. Report reached/unexercised/unproved branches separately. Engineering
+receipts are not natural runs; a reached admission path is not a fill or final
+accounting result. The audit never starts APP work, extends a deadline or sends
+a notice; audit degradation preserves the sealed business result.
 If terminal blocked at preflight, --kind book-b --receipt <exact terminal> reuses
 its result delivery claim; repair first, then only a legally available original
 zero-effect continuation under its saved budget. A consumed claim cannot chain.

@@ -43,15 +43,18 @@ def test_absent_prompt_never_proves_login(monkeypatch, state, reason):
     assert result['authenticated_verified'] is False
 
 
-@pytest.mark.parametrize('payload', ['not-json', '[]', '{}',
-    json.dumps(observation(read_only=False)),
-    json.dumps(observation(state='authenticated')),
-    json.dumps(observation(visible_windows=[{'id': None, 'bounds': [10, 20, 500, 400]}])),
-    json.dumps(observation(pid=True)),
-    json.dumps(observation(observed_at=(datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat())),
-    json.dumps(observation(observed_at=(datetime.now(timezone.utc) + timedelta(minutes=1)).isoformat())),
-    json.dumps(observation(reason='ax_unavailable')),
-    json.dumps(observation(state=[])),
+@pytest.mark.parametrize('payload', [
+    pytest.param('not-json', id='not-json'),
+    pytest.param('[]', id='array'),
+    pytest.param('{}', id='empty-object'),
+    pytest.param(json.dumps(observation(read_only=False)), id='not-read-only'),
+    pytest.param(json.dumps(observation(state='authenticated')), id='claimed-authentication'),
+    pytest.param(json.dumps(observation(visible_windows=[{'id': None, 'bounds': [10, 20, 500, 400]}])), id='missing-window-id'),
+    pytest.param(json.dumps(observation(pid=True)), id='boolean-pid'),
+    pytest.param(json.dumps(observation(observed_at=(datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat())), id='stale'),
+    pytest.param(json.dumps(observation(observed_at=(datetime.now(timezone.utc) + timedelta(minutes=1)).isoformat())), id='future'),
+    pytest.param(json.dumps(observation(reason='ax_unavailable')), id='ax-unavailable'),
+    pytest.param(json.dumps(observation(state=[])), id='invalid-state'),
 ])
 def test_untrusted_or_unbound_observation_stays_unknown(monkeypatch, payload):
     runner = Mock(return_value=subprocess.CompletedProcess([], 0, payload, ''))

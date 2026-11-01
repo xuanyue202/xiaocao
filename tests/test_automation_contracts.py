@@ -6,7 +6,15 @@ Trading behavior is covered by the execution, lifecycle and safety suites.
 from __future__ import annotations
 
 import tomllib
+import json
+import os
+import re
+import shlex
+import subprocess
+import sys
 from pathlib import Path
+
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -51,20 +59,47 @@ def test_morning_tasks_route_to_separate_entrypoints() -> None:
     assert "book_b_live_morning.py" not in paper
 
 
-def test_closing_dispatches_native_once_before_paper_work() -> None:
+@pytest.mark.parametrize(('app_exit', 'paper_exit'), [(0, 0), (2, 0), (0, 3), (2, 3)])
+def test_closing_dispatches_native_once_before_paper_work(tmp_path, app_exit, paper_exit) -> None:
     prompt = _automation("xiaocao-intraday-monitor-1455")["prompt"]
-    startup_command = "bash scripts/book_b_live_closing_startup.sh"
-    paper_command = "scripts/live_monitor.py --execute-sells"
-    assert prompt.index(startup_command) < prompt.index(paper_command)
-    startup = (ROOT / "scripts/book_b_live_closing_startup.sh").read_text()
-    prearm_command = "python -m xiaocao.live.closing_startup"
-    live_command = "scripts/book_b_live_intraday.py --date today --phase closing --execute-sells"
-    assert startup.count(live_command) == 1
-    assert startup.count(prearm_command) == 1
-    assert startup.index(prearm_command) < startup.index(live_command)
-    before_live = startup.split(live_command, 1)[0]
-    for unrelated_work in ("live_monitor.py", "data_doctor.py", "git status", "kol_trading_decision.py"):
-        assert unrelated_work not in before_live
+    entry = "scripts/book_b_live_closing_startup.sh"
+    assert entry in prompt
+    launcher = tmp_path / entry
+    launcher.parent.mkdir()
+    launcher.write_bytes((ROOT / entry).read_bytes())
+    executable = tmp_path / '.venv/bin/python'
+    executable.parent.mkdir(parents=True)
+    executable.write_text(f'''#!{sys.executable}
+import json, os, sys
+with open(os.environ['CALLS_PATH'], 'a') as log:
+    log.write(json.dumps(sys.argv[1:]) + '\\n')
+if 'scripts/book_b_live_intraday.py' in sys.argv:
+    sys.exit(int(os.environ['APP_EXIT']))
+if 'scripts/live_monitor.py' in sys.argv:
+    sys.exit(int(os.environ['PAPER_EXIT']))
+''')
+    executable.chmod(0o700)
+    # Reference reads are not the behavior under test and must not read the
+    # operator's actual Automation memory from this isolated shell harness.
+    fake_bin = tmp_path / 'bin'
+    fake_bin.mkdir()
+    for name in ('sed', 'rg'):
+        script = fake_bin / name
+        script.write_text('#!/bin/sh\nexit 0\n')
+        script.chmod(0o700)
+    calls = tmp_path / 'calls.jsonl'
+    env = {**os.environ, 'PATH': str(fake_bin) + os.pathsep + os.defpath,
+        'CODEX_AUTOMATION_ID': 'xiaocao-intraday-monitor-1455', 'CODEX_THREAD_ID': 'test-owner',
+        'CALLS_PATH': str(calls), 'APP_EXIT': str(app_exit), 'PAPER_EXIT': str(paper_exit)}
+    result = subprocess.run(['bash', str(launcher)], cwd=tmp_path, env=env,
+        capture_output=True, text=True, timeout=10)
+    assert result.returncode == (app_exit or paper_exit), result.stderr
+    assert [json.loads(line) for line in calls.read_text().splitlines()] == [
+        ['-m', 'xiaocao.live.closing_startup'],
+        ['scripts/book_b_live_intraday.py', '--date', 'today', '--phase', 'closing', '--execute-sells'],
+        ['scripts/live_monitor.py', '--execute-sells'],
+        ['scripts/research_book_b_forward.py', '--phase', 'monitor', '--checkpoint-phase', 'closing'],
+    ]
 
 
 def test_nonsemantic_daytime_tasks_cannot_start_kol_publication() -> None:
@@ -79,12 +114,17 @@ def test_nonsemantic_daytime_tasks_cannot_start_kol_publication() -> None:
         assert "kol_trading_decision.py publish" not in prompt
 
 
-def test_remote_writer_owns_typed_short_term_classification() -> None:
-    prompt = _automation("xiaocao-kol-hourly-remote-writer")["prompt"]
-    assert "trading_applicability" in prompt
-    assert "book_b_short_term" in prompt
-    assert "classification_backfill" in prompt
-    assert "not_book_b_short_term" in prompt
+def test_remote_writer_routes_to_its_identity_gated_entrypoint() -> None:
+    remote = _automation("xiaocao-kol-hourly-remote-writer")
+    commands = [shlex.split(command) for command in re.findall(r'`([^`]+)`', remote['prompt'])
+                if 'scripts/kol_automation_slot_gate.py' in command]
+    assert len(commands) == 1
+    command = commands[0]
+    assert f"CODEX_AUTOMATION_ID={remote['id']}" in command
+    assert command[command.index('--automation-id') + 1] == remote['id']
+    assert command[command.index('--') + 1:] == ['.venv/bin/python', 'scripts/kol_daily.py', 'run']
+    assert (ROOT / 'scripts/kol_automation_slot_gate.py').is_file()
+    assert (ROOT / 'scripts/kol_daily.py').is_file()
 
 
 def test_kol_writers_stay_on_separate_hosts_and_schedules() -> None:
@@ -95,4 +135,10 @@ def test_kol_writers_stay_on_separate_hosts_and_schedules() -> None:
     assert local["cwds"] == ["/Users/bytedance/coding/xiaocao"]
     assert remote["cwds"] == ["/Users/xuanyue202/Documents/project/xiaocao"]
     assert local["rrule"].endswith(";BYMINUTE=0,20,40")
-    assert remote["rrule"] == "RRULE:FREQ=DAILY;BYHOUR=8,10,12,14,17,18,21;BYMINUTE=30"
+    # Hour selections are reviewed scheduling preferences. The deployment test
+    # protects China wall-clock syntax and the separate writer, not an old hour.
+    assert 'DTSTART' not in remote['rrule'] and 'TZID' not in remote['rrule']
+    parts = dict(part.split('=', 1) for part in remote['rrule'].removeprefix('RRULE:').split(';'))
+    assert parts['FREQ'] == 'DAILY'
+    assert all(0 <= int(hour) < 24 for hour in parts['BYHOUR'].split(','))
+    assert all(0 <= int(minute) < 60 for minute in parts['BYMINUTE'].split(','))

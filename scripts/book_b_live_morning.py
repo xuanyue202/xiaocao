@@ -946,6 +946,17 @@ def _run(args, notices):
         except (OSError, ValueError, RuntimeError, KeyError, TypeError) as exc:
             deferred = {"status": "degraded", "reason": type(exc).__name__}
         _emit_json({"event": "book_b_deferred_reconciliation", **deferred})
+    # Supporting acceptance is local and post-business. It cannot delay an
+    # order, change the sealed result or create a second notification claim.
+    if not args.resume_plan_id:
+        try:
+            from xiaocao.live.morning_acceptance import record_repair_acceptance
+            acceptance = record_repair_acceptance(config.state_dir,
+                config.state_dir / 'runs/history' / f'{receipt.run_id}.json',
+                original_receipt_sha256=_hash(payload))
+        except Exception as exc:
+            acceptance = {'status': 'degraded', 'reason': type(exc).__name__, 'admission_authority': 'none'}
+        _emit_json({'event': 'book_b_repair_acceptance', **acceptance})
     return 0 if receipt.status in {"completed", "no_action", "skipped"} else 2
 
 

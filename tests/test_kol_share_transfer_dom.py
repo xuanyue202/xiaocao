@@ -37,10 +37,19 @@ const row = node('', {
   querySelector: selector => selector === 'a.filename' ? filename :
     selector === '[role="checkbox"]' ? checkbox : null,
 });
-const treeNode = {classList: {contains: () => true}};
-const segments = ['课程', '自己的课', '吕晓彤'].map(text => node(text, {
-  closest: selector => selector === '.treeview-node' ? treeNode : {click: () => {}},
-}));
+let selectedPath = null;
+const labels = ['课程', '自己的课', '吕晓彤'];
+const segments = labels.map((text, index) => {
+  const path = '/' + labels.slice(0, index + 1).join('/');
+  const treeNode = {classList: {contains: name => name === 'treeview-node-on' && selectedPath === path}};
+  const handler = {click: () => {selectedPath = path;}};
+  return node(text, {
+    getAttribute: key => key === 'node-path' && input.mode !== 'missing_root' ? path : null,
+    closest: selector => selector === '.treeview-node' ? treeNode :
+      selector === '.treeview-node-handler' ? handler : null,
+  });
+});
+if (input.mode === 'duplicate_segment') segments.push(segments[1]);
 const pathControl = node('我的网盘', {click: () => {dialogVisible = true;}});
 const submit = node('保存到网盘', {click: () => {
   if (input.mode === 'submit_dialog' && !dialogVisible) {
@@ -175,7 +184,7 @@ def test_share_save_reaches_provider_after_destination_selection(mode):
     assert all(record["errno"] == 0 for record in result["outcome"]["provider_network_records"])
 
 
-@pytest.mark.parametrize("mode", ["wrong_destination", "ambiguous_submit", "obstructed"])
+@pytest.mark.parametrize("mode", ["wrong_destination", "ambiguous_submit", "obstructed", "missing_root", "duplicate_segment"])
 def test_share_save_does_not_submit_to_wrong_or_ambiguous_controls(mode):
     result = _run_page(mode)
     assert result["submitted"] == 0, result
