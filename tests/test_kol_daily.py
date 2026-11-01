@@ -1771,7 +1771,7 @@ def test_source_cli_narrow_runner_supports_xiaocao_wechat_live_in_local_capture(
         def __init__(self, _output_dir):
             pass
 
-        def run(self, sources, *, blocker_sender, allow_early_start=False, automation_slot_start=None):
+        def run(self, sources, *, blocker_sender, allow_early_start=False, automation_slot_start=None, automation_acquired_at=None):
             source = sources[0]
             result = source["narrow_resume"](
                 "xiaocao_wechat_live:kol-wechat-recovered"
@@ -1806,7 +1806,7 @@ def test_capture_local_cli_runs_live_and_official_account_sources(
         def __init__(self, output_dir):
             observed["output_dir"] = output_dir
 
-        def run(self, sources, *, blocker_sender, allow_early_start=False, automation_slot_start=None):
+        def run(self, sources, *, blocker_sender, allow_early_start=False, automation_slot_start=None, automation_acquired_at=None):
             observed["source_names"] = [source["name"] for source in sources]
             observed["priorities"] = [source["priority"] for source in sources]
             observed["results"] = [source["run"]() for source in sources]
@@ -1909,7 +1909,7 @@ def test_remote_run_drains_mailbox_before_existing_sources(
         def __init__(self, output_dir):
             observed["output_dir"] = output_dir
 
-        def run(self, sources, *, blocker_sender, allow_early_start=False, automation_slot_start=None):
+        def run(self, sources, *, blocker_sender, allow_early_start=False, automation_slot_start=None, automation_acquired_at=None):
             observed["order"].append("coordinator")
             observed["source_names"] = [source["name"] for source in sources]
             observed["priorities"] = [source["priority"] for source in sources]
@@ -3165,7 +3165,7 @@ def test_capture_local_cli_follows_exact_cloud_handoff_in_same_process(
             observed["follow_source"] = source
             return self.delegate._source_locked(source)
 
-        def run(self, sources, *, blocker_sender, allow_early_start=False, automation_slot_start=None):
+        def run(self, sources, *, blocker_sender, allow_early_start=False, automation_slot_start=None, automation_acquired_at=None):
             observed["coordinator_runs"] = int(observed["coordinator_runs"]) + 1
             assert [source["name"] for source in sources] == [
                 "xiaocao_wechat_live",
@@ -3260,7 +3260,7 @@ def test_capture_local_reconciles_mailbox_before_one_discovery_sweep(
         def __init__(self, output_dir):
             assert output_dir == tmp_path / "daily"
 
-        def run(self, sources, *, blocker_sender, allow_early_start=False, automation_slot_start=None):
+        def run(self, sources, *, blocker_sender, allow_early_start=False, automation_slot_start=None, automation_acquired_at=None):
             calls.append("sweep")
             assert len(sources) == 2
             assert callable(blocker_sender)
@@ -9559,12 +9559,16 @@ def test_exact_xiaocao_repair_resume_owns_proxy_until_exit_even_on_failure(tmp_p
 
 
 @pytest.mark.parametrize(("now", "runs", "slot"), [
-    ("2026-11-01T06:57:59+08:00", False, None),
-    ("2026-11-01T06:58:00+08:00", True, "2026-11-01T07:00+08:00"),
+    ("2026-11-01T06:49:59+08:00", False, None),
+    ("2026-11-01T06:50:00+08:00", True, "2026-11-01T07:00+08:00"),
+    ("2026-11-01T20:57:19+08:00", True, "2026-11-01T21:00+08:00"),
     ("2026-11-01T06:59:59+08:00", True, "2026-11-01T07:00+08:00"),
     ("2026-11-01T07:00:00+08:00", True, "2026-11-01T07:00+08:00"),
-    ("2026-11-01T10:58:00+08:00", True, "2026-11-01T11:00+08:00"),
-    ("2026-11-01T23:58:00+08:00", False, None),
+    ("2026-11-01T10:50:00+08:00", True, "2026-11-01T11:00+08:00"),
+    ("2026-11-01T23:49:59+08:00", True, "2026-11-01T23:00+08:00"),
+    ("2026-11-01T23:50:00+08:00", True, "2026-11-02T00:00+08:00"),
+    ("2026-11-01T23:59:59+08:00", True, "2026-11-02T00:00+08:00"),
+    ("2026-11-02T00:00:00+08:00", False, None),
 ])
 def test_local_capture_early_window_runs_source_with_real_event_time(tmp_path, now, runs, slot):
     service = DailyCoordinator(tmp_path, now=Clock(now))
@@ -9584,7 +9588,7 @@ def test_local_capture_early_window_runs_source_with_real_event_time(tmp_path, n
 
 def test_early_capture_still_honors_legacy_writer_lock(tmp_path):
     import fcntl
-    service = DailyCoordinator(tmp_path, now=Clock("2026-11-01T06:58:00+08:00"))
+    service = DailyCoordinator(tmp_path, now=Clock("2026-11-01T06:50:00+08:00"))
     calls = []
     with service.legacy_lock_path.open("a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -9606,3 +9610,23 @@ def test_local_capture_keeps_gate_slot_when_startup_crosses_boundary(tmp_path):
     rows = [json.loads(line) for line in service.events_path.read_text().splitlines()]
     assert all(row["slot"] == "2026-11-01T07:00+08:00" for row in rows)
     assert all(row["occurred_at"] == "2026-11-01T07:58:00+08:00" for row in rows)
+
+
+def test_local_capture_keeps_admission_when_startup_crosses_midnight(tmp_path):
+    service = DailyCoordinator(tmp_path, now=Clock("2026-11-02T00:00:05+08:00"))
+    calls = []
+    result = service.run([{"name": "local", "run": lambda: calls.append("scan") or
+                           {"status": "no_update"}}], allow_early_start=True,
+                         automation_slot_start=datetime.fromisoformat("2026-11-02T00:00:00+08:00"),
+                         automation_acquired_at=datetime.fromisoformat("2026-11-01T23:59:59+08:00"))
+    assert calls == ["scan"]
+    assert result["slot"] == "2026-11-02T00:00+08:00"
+
+
+def test_local_capture_rejects_acquisition_time_from_another_slot(tmp_path):
+    service = DailyCoordinator(tmp_path, now=Clock("2026-11-02T00:00:05+08:00"))
+    with pytest.raises(DailyError, match="acquisition time is invalid"):
+        service.run([{"name": "local", "run": lambda: {"status": "no_update"}}],
+                    allow_early_start=True,
+                    automation_slot_start=datetime.fromisoformat("2026-11-02T00:00:00+08:00"),
+                    automation_acquired_at=datetime.fromisoformat("2026-11-01T23:49:59+08:00"))

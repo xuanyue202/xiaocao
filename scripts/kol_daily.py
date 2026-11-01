@@ -5701,6 +5701,9 @@ def main() -> int:
                 automation_slot_start=(datetime.fromisoformat(
                     os.environ["XIAOCAO_AUTOMATION_HOUR_START_AT"]
                 ) if os.environ.get("XIAOCAO_AUTOMATION_HOUR_START_AT") else None),
+                automation_acquired_at=(datetime.fromisoformat(
+                    os.environ["XIAOCAO_AUTOMATION_ACQUIRED_AT"]
+                ) if os.environ.get("XIAOCAO_AUTOMATION_ACQUIRED_AT") else None),
             )
             if not result.get("silent"):
                 _print(result)

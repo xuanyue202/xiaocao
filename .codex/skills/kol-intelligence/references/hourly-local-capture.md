@@ -12,8 +12,8 @@ sole writer and receives this node's credential-free capsules as external input.
 
 The Automation starts through one deterministic Beijing clock-hour gate. It does
 not parse the cron schedule or list Codex tasks, OS processes, terminals, or
-runners. The gate assigns the last two minutes before an hour to the upcoming
-Beijing hour: 06:58:00–06:59:59 uses the 07:00 lock and starts scanning immediately.
+runners. The gate assigns the last ten minutes before an hour to the upcoming
+Beijing hour: 06:50:00–06:59:59 uses the 07:00 lock and starts scanning immediately.
 Other minutes use the current hour. The local coordinator uses the same slot for
 its daytime admission and sweep ledger, retaining the gate-assigned slot across
 startup/mailbox waits. Direct local invocations calculate their own slot. Event
@@ -59,9 +59,9 @@ playback notice. Known unstarted/live/generating courses remain pending without
 launch. First opaque shares use its conservative Beijing checking windows
 (morning publication: 11:00; afternoon/evening: 21:00), subject to announced later
 sessions or known not-ready evidence. These times permit checking, never prove
-replay availability. When a browser request is emitted too early, stop only that idle
-invocation, verify guardian restoration and retain its original IDs for later
-readiness reconciliation. This does not interrupt an active download/upload or
+replay availability. If the earliest check is within the ten-minute early-start
+window, keep the same invocation and wait until the check time before any Browser
+action or reply; recheck same-course evidence then. This does not interrupt an active download/upload or
 the required same-process polling after a justified entry. A later continuation must
 provide a usable Caoliao entry before asking the human to play: follow the
 human-assisted reference's bounded entry restoration for an interrupted or premature
@@ -374,7 +374,7 @@ RRULE:FREQ=DAILY;BYHOUR=7,11,21;BYMINUTE=0
 ```
 
 Use Beijing wall time; omit `DTSTART`/`TZID`. The local daytime window admits
-06:58 starts as the 07:00 batch; earlier starts remain outside the window. Reopen a
+06:50 starts as the 07:00 batch; earlier starts remain outside the window. Reopen a
 changed Automation, verify next run/no duplicate, and never alter the remote writer.
 
 The append-only local ledger resumes only unfinished capture/upload/handoff

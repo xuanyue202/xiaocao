@@ -2961,6 +2961,7 @@ class DailyCoordinator:
         blocker_sender: Callable[[str, str], Any] | None = None,
         allow_early_start: bool = False,
         automation_slot_start: datetime | None = None,
+        automation_acquired_at: datetime | None = None,
     ) -> dict[str, Any]:
         now = self._beijing_now()
         if automation_slot_start is not None:
@@ -2972,13 +2973,23 @@ class DailyCoordinator:
         else:
             slot_start = (automation_hour_start(now) if allow_early_start
                           else now.replace(minute=0, second=0, microsecond=0))
-        if slot_start.hour not in DAYTIME_HOURS:
-            return self._run(sources, blocker_sender=blocker_sender, slot_start=slot_start)
+        admitted_at = now
+        if automation_acquired_at is not None:
+            if (not allow_early_start or automation_slot_start is None
+                    or automation_acquired_at.tzinfo is None
+                    or automation_hour_start(automation_acquired_at) != slot_start
+                    or automation_acquired_at > now):
+                raise DailyError("local automation acquisition time is invalid")
+            admitted_at = automation_acquired_at.astimezone(BEIJING)
+        admitted = (slot_start.hour in DAYTIME_HOURS or
+                    (allow_early_start and admitted_at.hour == 23 and slot_start.hour == 0))
+        if not admitted:
+            return self._run(sources, blocker_sender=blocker_sender, slot_start=slot_start, admitted=False)
         # A shared migration guard does not serialize new sources. It prevents
         # an old global writer starting between our short ledger transactions.
         try:
             with self._legacy_locked():
-                return self._run(sources, blocker_sender=blocker_sender, slot_start=slot_start)
+                return self._run(sources, blocker_sender=blocker_sender, slot_start=slot_start, admitted=True)
         except LegacyCoordinatorBusy:
             result = self._legacy_busy_result()
             result["source_results"] = [
@@ -2994,10 +3005,11 @@ class DailyCoordinator:
         sources: list[dict[str, Any]],
         *,
         slot_start: datetime,
+        admitted: bool,
         blocker_sender: Callable[[str, str], Any] | None = None,
     ) -> dict[str, Any]:
         now = self._beijing_now()
-        if slot_start.hour not in DAYTIME_HOURS:
+        if not admitted:
             return {
                 "status": "outside_window",
                 "silent": True,

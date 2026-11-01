@@ -131,6 +131,7 @@ def main(argv: list[str] | None = None) -> int:
             hour_start.isoformat(timespec="seconds")
         )
         environment["XIAOCAO_AUTOMATION_HOUR_KEY"] = _hour_key(hour_start)
+        environment["XIAOCAO_AUTOMATION_ACQUIRED_AT"] = now.isoformat(timespec="seconds")
         os.execvpe(command[0], command, environment)
     except OSError as exc:
         print(
