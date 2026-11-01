@@ -100,6 +100,38 @@ On `book_b_deferred_reconciliation`, read that separate artifact after the
 sealed result. It records actual old-claim readbacks and exact unread work under
 the same deadline; keep UNKNOWN and missing empty-response completion explicit.
 The opening result/notification claim stays bound to its original receipt.
+On `book_b_repair_acceptance`, consume the original owner's local audit and its
+`morning_pipeline_status.py` readback. It binds the sealed archive, held dated
+owner, loaded code, immutable disposition consumption and current-account
+observation. Complete every naturally reachable acceptance in this same run
+from evidence already collected in its ordinary phases:
+
+| Phase | Required acceptance evidence |
+|---|---|
+| Before09:20 | Deployed guard/version, inherited-incident consumption, original preparation/auth/transport proofs and all-eligible input coverage; recover local dependencies while the original waits. |
+|09:24 | Original account-bound ordinary-trade boundary readback or its exact owned recovery outcome. |
+| Original freeze | Original source/owner/checkpoint/bundle, actual warm dispatch and policy/adjudication/adoption; APP permission exclusion and ranked reseating only if that branch occurred. |
+| Current admission | Fresh account/cash/owned marks, funding head and risk; actual bounded inherited impact and same-code limits. A historical status alone cannot establish a global veto. |
+| Batch and closeout | Original final plan, exact ACK/fill/UNKNOWN and first-order/batch/reconciliation times; separate producer/Paper B/Paper T/APP receipts, local repair audit and current result-delivery proof. |
+
+For each phase record the original path/hash/clock, actual result, elapsed time
+and passed/failed/unexercised/unproved status in a local acceptance artifact. Reuse
+checklist, audit and pipeline originals; consume other owners' available receipts
+without waiting for or operating their children. A reached admission is not a
+fill. With no eligible candidate, order branches remain unexercised; retain the
+proved original no_action and its cause rather than creating a test order.
+Engineering receipts, missing actual fees and future EOD facts retain their own
+limits. Keep the routine notice on its one current-result delivery claim.
+
+WHY: acceptance observes the business flow; it must not become a new opening
+dependency. Finish preparation checks before the window and collect current
+proofs through the original action guards. In09:25–09:30, state the failed
+step's affected funds/codes and next-order prerequisite: defer supporting
+audit/history, or perform minimum necessary repair/validation and continue the
+original legal entry. Complete remaining receipt readback after the batch;
+preserve original deadlines,09:27 support cutoff and uncertain-action fences.
+An unavailable proof stays explicit rather than becoming passed or an unchanged
+retry. Audit degradation preserves the sealed business result.
 If terminal blocked at preflight, --kind book-b --receipt <exact terminal> reuses
 its result delivery claim; repair first, then only a legally available original
 zero-effect continuation under its saved budget. A consumed claim cannot chain.
