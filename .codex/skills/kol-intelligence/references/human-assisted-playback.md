@@ -23,11 +23,12 @@ permit an earlier check. Never use WeChat UI to probe readiness before this gate
 After entry, actual finite-media/source validation remains mandatory; a checking
 window is never media acceptance or permission to reopen a claimed entry.
 
-Before that checking window, retain the exact original as pending without an
-entry or human Open/Allow/play request. Recheck at a later existing Automation
-run; do not add a reminder or schedule. If already at browser input wait, stop
-only that retained idle invocation and verify guardian proxy restoration, keeping
-all IDs and claims. This pre-entry readiness wait is distinct from the persistent
+Before the checking window, keep the same invocation and exact original pending
+without an entry or human Open/Allow/play request. If the earliest check time is
+within this early-start allowance, wait in the same process until that time, then
+recheck same-course evidence before any Browser action or reply. For a known
+not-ready or later session, preserve its original state and follow the applicable
+provider deadline; do not invent readiness or add a reminder or schedule. This pre-entry readiness wait is distinct from the persistent
 same-process HTTP polling after a justified launch, and is not an indefinite
 human deferral requiring explicit resume. A premature launch remains in history.
 Once the same original becomes eligible

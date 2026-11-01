@@ -147,7 +147,7 @@ def test_runner_holds_lock_while_waiting_for_input_and_releases_on_exit(tmp_path
         assert json.loads(process.stdout.readline())["status"] == "hour_acquired"
         marker = tmp_path / "duplicate-effect"
         competing = _run_gate(
-            tmp_path, "2026-10-07T10:57:00+08:00",
+            tmp_path, "2026-10-07T10:49:00+08:00",
             [sys.executable, "-c", f"from pathlib import Path; Path({str(marker)!r}).touch()"],
         )
         assert competing.returncode == 0
@@ -156,7 +156,7 @@ def test_runner_holds_lock_while_waiting_for_input_and_releases_on_exit(tmp_path
         output, errors = process.communicate("continue\n", timeout=5)
         assert process.returncode == 0, errors
         assert output.strip() == "finished"
-        after_exit = _run_gate(tmp_path, "2026-10-07T10:57:00+08:00",
+        after_exit = _run_gate(tmp_path, "2026-10-07T10:49:00+08:00",
                                [sys.executable, "-c", "print('continued')"])
         assert json.loads(after_exit.stdout.splitlines()[0])["status"] == "hour_acquired"
     finally:
@@ -181,13 +181,14 @@ def test_inherited_automation_mismatch_stops_before_command(tmp_path):
 
 
 @pytest.mark.parametrize(("now", "slot"), [
-    ("2026-11-01T06:57:59+08:00", "2026-11-01T06:00:00+08:00"),
-    ("2026-11-01T06:58:00+08:00", "2026-11-01T07:00:00+08:00"),
+    ("2026-11-01T06:49:59+08:00", "2026-11-01T06:00:00+08:00"),
+    ("2026-11-01T06:50:00+08:00", "2026-11-01T07:00:00+08:00"),
+    ("2026-11-01T20:57:19+08:00", "2026-11-01T21:00:00+08:00"),
     ("2026-11-01T06:59:59+08:00", "2026-11-01T07:00:00+08:00"),
     ("2026-11-01T07:00:00+08:00", "2026-11-01T07:00:00+08:00"),
-    ("2026-11-01T10:58:00+08:00", "2026-11-01T11:00:00+08:00"),
-    ("2026-11-01T23:58:00+08:00", "2026-11-02T00:00:00+08:00"),
-    ("2026-10-31T22:58:00+00:00", "2026-11-01T07:00:00+08:00"),
+    ("2026-11-01T10:50:00+08:00", "2026-11-01T11:00:00+08:00"),
+    ("2026-11-01T23:50:00+08:00", "2026-11-02T00:00:00+08:00"),
+    ("2026-10-31T22:50:00+00:00", "2026-11-01T07:00:00+08:00"),
 ])
 def test_early_start_slot_and_child_environment(tmp_path, now, slot):
     completed = _run_gate(tmp_path, now, [sys.executable, "-c",
@@ -200,7 +201,7 @@ def test_early_start_slot_and_child_environment(tmp_path, now, slot):
 
 def test_early_runner_blocks_same_upcoming_hour_until_exit(tmp_path):
     process = subprocess.Popen(
-        [sys.executable, str(SCRIPT), "--now", "2026-11-01T06:58:00+08:00",
+        [sys.executable, str(SCRIPT), "--now", "2026-11-01T06:50:00+08:00",
          "--lock-dir", str(tmp_path), "--automation-id", "weekly", "--",
          sys.executable, "-c", "input(); print('finished')"],
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
@@ -220,3 +221,11 @@ def test_early_runner_blocks_same_upcoming_hour_until_exit(tmp_path):
         if process.poll() is None:
             process.kill()
             process.communicate(timeout=5)
+
+
+def test_gate_passes_actual_acquisition_time_to_child(tmp_path):
+    completed = _run_gate(tmp_path, "2026-11-01T23:59:59+08:00", [
+        sys.executable, "-c", "import os; print(os.environ['XIAOCAO_AUTOMATION_ACQUIRED_AT'])",
+    ])
+    assert completed.returncode == 0
+    assert completed.stdout.splitlines()[1] == "2026-11-01T23:59:59+08:00"

@@ -15,6 +15,11 @@ mailbox, owner scan or effects. hour_acquired retains same process/stdin. Differ
 hours may overlap under resource/object claims; don't add global peer discovery.
 Why: hour ownership and economic effect ownership are different locks.
 
+The shared gate assigns Beijing HH:50–HH:59 to the upcoming hour. The remote
+coordinator and narrow repair use that exact gate slot, including after mailbox
+waits; their admission uses the actual gate acquisition time and the existing
+remote daytime window. This slot does not replace source or effect claims.
+
 ## Read only the emitted branch
 
 After acquired, read [hourly-remote-writer.md](hourly-remote-writer.md)'s startup/
