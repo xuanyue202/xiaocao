@@ -1909,8 +1909,13 @@ def test_remote_run_drains_mailbox_before_existing_sources(
         def __init__(self, output_dir):
             observed["output_dir"] = output_dir
 
+        def _beijing_now(self):
+            return datetime.fromisoformat("2026-11-01T10:57:30+08:00")
+
         def run(self, sources, *, blocker_sender, allow_early_start=False, automation_slot_start=None, automation_acquired_at=None):
             observed["order"].append("coordinator")
+            observed["slot"] = automation_slot_start
+            observed["acquired_at"] = automation_acquired_at
             observed["source_names"] = [source["name"] for source in sources]
             observed["priorities"] = [source["priority"] for source in sources]
             observed["results"] = [source["run"]() for source in sources]
@@ -1955,6 +1960,8 @@ def test_remote_run_drains_mailbox_before_existing_sources(
 
     monkeypatch.setattr(kol_daily_script, "DailyCoordinator", FakeCoordinator)
     monkeypatch.setattr(kol_daily_script, "DailyRuntime", FakeRuntime)
+    monkeypatch.setenv("XIAOCAO_AUTOMATION_HOUR_START_AT", "2026-11-01T11:00:00+08:00")
+    monkeypatch.setenv("XIAOCAO_AUTOMATION_ACQUIRED_AT", "2026-11-01T10:57:19+08:00")
     monkeypatch.setattr(
         sys,
         "argv",
@@ -1963,6 +1970,8 @@ def test_remote_run_drains_mailbox_before_existing_sources(
 
     assert kol_daily_script.main() == 0
     assert observed["order"] == ["mailbox", "coordinator"]
+    assert observed["slot"] == datetime.fromisoformat("2026-11-01T11:00:00+08:00")
+    assert observed["acquired_at"] == datetime.fromisoformat("2026-11-01T10:57:19+08:00")
     assert observed["source_names"] == [
         "lv_text_image",
         "subscription_video",
@@ -9552,6 +9561,7 @@ def test_exact_xiaocao_repair_resume_owns_proxy_until_exit_even_on_failure(tmp_p
         def pending(self,source): calls.append('pending'); return None
     monkeypatch.setattr(human_playback,'human_capture_network_owner',owner)
     monkeypatch.setattr(kol_daily_script,'DailyCoordinator',Coordinator)
+    monkeypatch.setattr(kol_daily_script, '_source_repair_slot', lambda service: 'slot')
     monkeypatch.setattr(sys,'argv',['kol_daily.py','resume-source-repair','--source-adapter','xiaocao_wechat_live','--failure-fingerprint','abc','--output-dir',str(tmp_path)])
     with pytest.raises(DailyError,match='no validated narrow resume'):
         kol_daily_script.main()
@@ -9630,3 +9640,76 @@ def test_local_capture_rejects_acquisition_time_from_another_slot(tmp_path):
                     allow_early_start=True,
                     automation_slot_start=datetime.fromisoformat("2026-11-02T00:00:00+08:00"),
                     automation_acquired_at=datetime.fromisoformat("2026-11-01T23:49:59+08:00"))
+
+
+def test_remote_gate_slot_is_used_for_sequential_sweeps(tmp_path):
+    clock = Clock("2026-11-01T10:57:19+08:00")
+    service = DailyCoordinator(tmp_path, now=clock)
+    calls = []
+    source = {"name": "remote", "run": lambda: calls.append("scan") or {"status": "no_update"}}
+    slot = datetime.fromisoformat("2026-11-01T11:00:00+08:00")
+    first = service.run([source], automation_slot_start=slot, automation_acquired_at=clock.value)
+    clock.value = datetime.fromisoformat("2026-11-01T11:00:02+08:00")
+    second = service.run([source], automation_slot_start=slot, automation_acquired_at=clock.value)
+    assert calls == ["scan"]
+    assert first["slot"] == second["slot"] == "2026-11-01T11:00+08:00"
+    assert second["source_results"][0]["resumed"] is True
+
+
+def test_remote_acquisition_before_midnight_remains_admitted_after_wait(tmp_path):
+    clock = Clock("2026-11-02T00:00:05+08:00")
+    calls = []
+    result = DailyCoordinator(tmp_path, now=clock).run(
+        [{"name": "remote", "run": lambda: calls.append("scan") or {"status": "no_update"}}],
+        automation_slot_start=datetime.fromisoformat("2026-11-02T00:00:00+08:00"),
+        automation_acquired_at=datetime.fromisoformat("2026-11-01T23:59:59+08:00"),
+    )
+    assert result["slot"] == "2026-11-02T00:00+08:00"
+    assert calls == ["scan"]
+
+
+def test_remote_invalid_gate_binding_stops_before_mailbox(tmp_path, monkeypatch):
+    monkeypatch.setenv("XIAOCAO_AUTOMATION_HOUR_START_AT", "2026-11-01T11:00:00+08:00")
+    monkeypatch.setenv("XIAOCAO_AUTOMATION_ACQUIRED_AT", "2026-11-01T10:49:00+08:00")
+    monkeypatch.setattr(sys, "argv", ["kol_daily.py", "run", "--output-dir", str(tmp_path)])
+    monkeypatch.setattr(DailyRuntime, "mailbox", lambda self: pytest.fail("mailbox was invoked"))
+    with pytest.raises(DailyError, match="acquisition time is invalid"):
+        kol_daily_script.main()
+
+
+def test_remote_narrow_repair_uses_gate_slot(tmp_path, monkeypatch):
+    monkeypatch.setenv("XIAOCAO_AUTOMATION_HOUR_START_AT", "2026-11-01T11:00:00+08:00")
+    monkeypatch.setenv("XIAOCAO_AUTOMATION_ACQUIRED_AT", "2026-11-01T10:57:19+08:00")
+    service = DailyCoordinator(tmp_path, now=Clock("2026-11-01T10:58:00+08:00"))
+    assert kol_daily_script._source_repair_slot(service) == "2026-11-01T11:00+08:00"
+
+
+def test_invalid_gate_binding_stops_repair_before_any_resume(tmp_path, monkeypatch):
+    monkeypatch.setenv("XIAOCAO_AUTOMATION_HOUR_START_AT", "2026-11-01T11:00:00+08:00")
+    monkeypatch.setenv("XIAOCAO_AUTOMATION_ACQUIRED_AT", "2026-11-01T10:49:00+08:00")
+    monkeypatch.setattr(sys, "argv", ["kol_daily.py", "resume-source-repair", "--source-adapter", "xiaocao_wechat_live", "--failure-fingerprint", "abc", "--output-dir", str(tmp_path)])
+    monkeypatch.setattr(kol_daily_script, "_resume_source_repair_outcome", lambda *a, **kw: pytest.fail("resume was invoked"))
+    with pytest.raises(DailyError, match="acquisition time is invalid"):
+        kol_daily_script.main()
+
+
+def test_gate_slot_must_be_hour_aligned_in_beijing(tmp_path):
+    service = DailyCoordinator(tmp_path, now=Clock("2026-11-01T10:58:00+08:00"))
+    with pytest.raises(DailyError, match="Beijing hour"):
+        service.run([], automation_slot_start=datetime.fromisoformat("2026-11-01T07:00:00+04:30"))
+
+
+@pytest.mark.parametrize(("now", "slot"), [
+    ("2026-11-01T06:55:00+08:00", "2026-11-01T07:00:00+08:00"),
+    ("2026-11-02T00:00:00+08:00", "2026-11-02T00:00:00+08:00"),
+])
+def test_remote_gate_slot_does_not_widen_real_execution_window(tmp_path, now, slot):
+    clock = Clock(now)
+    calls = []
+    result = DailyCoordinator(tmp_path, now=clock).run(
+        [{"name": "remote", "run": lambda: calls.append("scan")}],
+        automation_slot_start=datetime.fromisoformat(slot),
+        automation_acquired_at=clock.value,
+    )
+    assert result["status"] == "outside_window"
+    assert calls == []

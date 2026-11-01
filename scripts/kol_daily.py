@@ -26,6 +26,7 @@ from time import monotonic
 from typing import Any, Callable
 
 from xiaocao.kol._shared import DecisionError, canonical_sha256
+from xiaocao.kol.automation_slot import validate_automation_slot
 from xiaocao.kol.daily import (
     AGENT_OWNED_FAILURE_CATEGORIES,
     build_classification_backfill_candidate,
@@ -5030,7 +5031,28 @@ def _source_repair_context(progress: WriterProgress) -> dict[str, Any]:
 
 
 def _source_repair_slot(service: DailyCoordinator) -> str:
-    return service._beijing_now().strftime("%Y-%m-%dT%H:00+08:00")
+    binding = _automation_slot_binding(service._beijing_now())
+    current = binding.get("automation_slot_start") or service._beijing_now()
+    return current.strftime("%Y-%m-%dT%H:00+08:00")
+
+
+def _automation_slot_binding(now: datetime) -> dict[str, datetime]:
+    raw_slot = os.environ.get("XIAOCAO_AUTOMATION_HOUR_START_AT")
+    raw_acquired = os.environ.get("XIAOCAO_AUTOMATION_ACQUIRED_AT")
+    if not raw_slot and not raw_acquired:
+        return {}
+    if not raw_slot:
+        raise DailyError("automation acquisition time lacks a slot")
+    try:
+        slot = datetime.fromisoformat(raw_slot)
+        acquired = datetime.fromisoformat(raw_acquired) if raw_acquired else None
+        slot = validate_automation_slot(slot, acquired, now)
+    except ValueError as exc:
+        raise DailyError(str(exc)) from exc
+    binding = {"automation_slot_start": slot}
+    if acquired is not None:
+        binding["automation_acquired_at"] = acquired
+    return binding
 
 
 def _source_effect_reconciliation_progress(
@@ -5454,6 +5476,7 @@ def main() -> int:
                 "validate-source-repair requires source adapter and fingerprint"
         )
         service = DailyCoordinator(args.output_dir)
+        repair_slot = _source_repair_slot(service)
         progress = _source_repair_validation_progress(
             service,
             args.source_adapter,
@@ -5481,7 +5504,7 @@ def main() -> int:
             progress.failure_fingerprint,
             repair_receipt=receipt,
             validation_ledger=ledger,
-            slot=_source_repair_slot(service),
+            slot=repair_slot,
         )
         _print({
             "source_repair_validation": receipt.to_dict(),
@@ -5491,14 +5514,15 @@ def main() -> int:
     if args.command == "resume-source-repair":
         from contextlib import nullcontext
         from xiaocao.kol.human_playback import human_capture_network_owner
+        if not args.source_adapter or not args.failure_fingerprint:
+            raise DailyError(
+                "resume-source-repair requires source adapter and fingerprint"
+            )
+        service = DailyCoordinator(args.output_dir)
+        repair_slot = _source_repair_slot(service)
         owner = (human_capture_network_owner(args.xiaocao_wechat_output_dir.parent / "native_share_bridge.json")
                  if args.source_adapter == "xiaocao_wechat_live" else nullcontext())
         with owner:
-            if not args.source_adapter or not args.failure_fingerprint:
-                raise DailyError(
-                    "resume-source-repair requires source adapter and fingerprint"
-                )
-            service = DailyCoordinator(args.output_dir)
             with service._source_locked(args.source_adapter):
                 pending = service.convergence.pending_resume(args.source_adapter)
                 if pending is None:
@@ -5541,7 +5565,7 @@ def main() -> int:
                     prior=progress,
                     outcome=outcome,
                     following=following,
-                    slot=_source_repair_slot(service),
+                    slot=repair_slot,
                 )
             _print({
                 "source_repair_resume": outcome,
@@ -5766,6 +5790,7 @@ def main() -> int:
         if result.get("status") != "no_update":
             _print(result)
         return 0
+    remote_slot_args = _automation_slot_binding(service._beijing_now())
     runtime = DailyRuntime(args)
     mailbox_result = runtime.mailbox()
     attempted_handoff_ids = frozenset(
@@ -5940,6 +5965,7 @@ def main() -> int:
         ]
         ],
         blocker_sender=_sender,
+        **remote_slot_args,
     )
     if result.get("ledger_available") is False:
         _print(result)

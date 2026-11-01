@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterator, Mapping
 from zoneinfo import ZoneInfo
 
-from .automation_slot import automation_hour_start
+from .automation_slot import automation_hour_start, validate_automation_slot
 from .enrichment_types import EnrichmentError, is_durable_report_only
 from .mailbox import MailboxError, MailboxLedger
 from ._shared import (
@@ -2965,24 +2965,21 @@ class DailyCoordinator:
     ) -> dict[str, Any]:
         now = self._beijing_now()
         if automation_slot_start is not None:
-            if (not allow_early_start or automation_slot_start.tzinfo is None
-                    or automation_slot_start.minute or automation_slot_start.second
-                    or automation_slot_start.microsecond):
-                raise DailyError("local automation slot must be a timezone-aware hour")
-            slot_start = automation_slot_start.astimezone(BEIJING)
+            try:
+                slot_start = validate_automation_slot(automation_slot_start, automation_acquired_at, now)
+            except ValueError as exc:
+                raise DailyError(str(exc)) from exc
         else:
+            if automation_acquired_at is not None:
+                raise DailyError("automation acquisition time is invalid")
             slot_start = (automation_hour_start(now) if allow_early_start
                           else now.replace(minute=0, second=0, microsecond=0))
         admitted_at = now
         if automation_acquired_at is not None:
-            if (not allow_early_start or automation_slot_start is None
-                    or automation_acquired_at.tzinfo is None
-                    or automation_hour_start(automation_acquired_at) != slot_start
-                    or automation_acquired_at > now):
-                raise DailyError("local automation acquisition time is invalid")
             admitted_at = automation_acquired_at.astimezone(BEIJING)
-        admitted = (slot_start.hour in DAYTIME_HOURS or
-                    (allow_early_start and admitted_at.hour == 23 and slot_start.hour == 0))
+        admitted = ((slot_start.hour in DAYTIME_HOURS or
+                     (admitted_at.hour == 23 and slot_start.hour == 0))
+                    if allow_early_start else admitted_at.hour in DAYTIME_HOURS)
         if not admitted:
             return self._run(sources, blocker_sender=blocker_sender, slot_start=slot_start, admitted=False)
         # A shared migration guard does not serialize new sources. It prevents
