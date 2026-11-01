@@ -1,0 +1,254 @@
+{
+  "schema_version": 1,
+  "knowledge_status": "reusable_knowledge",
+  "authority": 0,
+  "date": "2026-11-01",
+  "kind": "review",
+  "author": "小草",
+  "source": "小草直播",
+  "summary": "本场把连续急跌后的放量与融资盘出清、代表真实亏钱效应的指数、盘中观察窗口、环境门控的模式切换和紫薇中位以下过滤连成一套可复核方法。对既有XH-181仅提供9:30:45至9:35邻近窗口的局部支持，未覆盖9:30:20、候选快速变化或回看变化，不能复现完整命题；XH-042、XH-194、XH-271与XH-286也只作局部比较。新增XH-325中位以下过滤仍是authority=0候选。",
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_netdisk_enrichment/artifacts/kol-netdisk-b05ac853e4b846b5/20261101 大师班专场(18：00开播)-compressed.txt",
+      "sha256": "831e68b5ece7195ef45bc77c564b2c4b7fe27084e38d2ea16f2733cf3fe2b68f",
+      "size": 43658
+    }
+  ],
+  "posture": {
+    "regime": "两日急跌后的潜在恐慌出清窗口",
+    "dominant_style": "若低开后确认修复，作者更偏短线且不优先大票；科技硬件趋势仍受压",
+    "risk": "反弹尚未发生，科技与融资盘可能继续被动卖出；软件回看存在字段错误，口述绩效未核",
+    "style_ranking": [
+      "先等待大低开后的承接修复",
+      "红盘起爆、低开人气股低吸或倒接力按开盘结构择一",
+      "中位以下紫薇模式只作研究",
+      "大票、科技硬件抄底和高开追涨置后"
+    ]
+  },
+  "regime_call": {
+    "horizon": "2026年11月2日及随后数个交易日，逐日重验",
+    "call": "大低开和放量出清若伴随承接，短线可能阶段修复；若继续无承接杀跌，则七月路径类比失效。",
+    "what_would_falsify": "低开后继续扩大跌幅、短线模式和赚钱效应不能转强、科技抛压继续扩散，或大票反而成为持续主线。"
+  },
+  "directions": [
+    {
+      "name": "恐慌出清后的短线修复",
+      "stance": "条件观察",
+      "conditions": "大低开、放量出清和随后承接同时出现。",
+      "risk_boundary": "历史K线相似不能替代次日确认；没有修复就不交易这个类比。"
+    },
+    {
+      "name": "红盘起爆、人气股低吸与倒接力",
+      "stance": "按开盘结构和模式读数选择观察",
+      "conditions": "红盘起爆不追过高开盘；明显低开才看低吸或倒接力。",
+      "risk_boundary": "作者后段把计划收敛为不急、可等；软件字段错误未修复前不把回看读数当触发。"
+    },
+    {
+      "name": "紫薇模式中位以下过滤",
+      "stance": "研究候选",
+      "conditions": "预先定义中位以下标签，并按环境分层比较全量与过滤组。",
+      "risk_boundary": "可能漏掉大收益；一年500%多、30点回撤和单周100点修复均是未验证口述。"
+    }
+  ],
+  "stocks": [
+    {
+      "surface_form": "东山精密；中商机密；东川精密",
+      "resolved_identity": "目录只确认东山精密002384.XSHE；其余表面名不自动合并",
+      "role": "科技拥挤与杠杆风险案例",
+      "lesson": "爆仓金额、杠杆比例和账户身份均未核，不能从传闻推导个股动作。"
+    },
+    {
+      "surface_form": "冰山冷热、百洋股份、众智科技、阳光乳业、奥宏电子、博汇科技、三维天地、多伦科技、邵阳液压",
+      "resolved_identity": "除奥宏电子外，绑定目录可确认其余名称中的多数；全部仍只是历史演示",
+      "role": "模式切换和口述盈亏案例",
+      "lesson": "历史赢家必须与完整候选、时点、可成交价格和未成交样本一起审计。"
+    },
+    {
+      "surface_form": "引力传媒",
+      "resolved_identity": "引力传媒603598.XSHG；仍只是历史演示",
+      "role": "口述亏损案例",
+      "lesson": "负面历史案例同样需要精确日期、候选全集和可成交证据，不能归入赢家或当前推荐。"
+    },
+    {
+      "surface_form": "BEV、红富城、但丁、奥宏电子",
+      "resolved_identity": "无法唯一映射",
+      "role": "历史例证或口述比较",
+      "lesson": "保留原话，不猜代码，不纳入当前交易。"
+    }
+  ],
+  "method_principles": [
+    "观察真实亏钱效应时，指数应匹配受损风格；上证指数受银行、石油影响，不能单独代表科技和成长股体感。",
+    "历史路径只能形成情景树：恐慌低开和放量出清是条件，承接修复是触发，继续杀跌是取消条件。",
+    "盘中模式研究要保存首次可见时间、完整候选、版本和可成交价；9:30:45至9:31只是初步观察，不是严格固定买点。",
+    "9:34至9:35仍可能有倒接力，价格回落后也可能有更低买点；因此不能把一个秒点和立即成交合并成规则。",
+    "模式切换先受环境约束；退潮或暴跌阶段不能因为紫薇历史爆发强就强行使用。",
+    "回看界面出现下杀盈亏、虚线、收盘评分、每日勾选和部分日期无数据等问题时，相关字段不得作为绩效证据。"
+  ],
+  "exit_lessons": [
+    "杠杆会把正常波动转成被动出清；即使1.7倍看似不高，也需纳入尾部风险。",
+    "高开单次盈利不能覆盖下一笔大面，红盘起爆仍要限制追高。"
+  ],
+  "decision_trace": [
+    {
+      "observation": "美股科技走弱，10月30日创业板指跌4.13%、上证指数跌1.44%，A股已连续急跌。",
+      "inference": "科技亏钱效应和外盘压力属实，但11月2日低开与反弹仍是未来情景。",
+      "action": "等开盘和承接确认，不把历史类比直接写成买单。"
+    },
+    {
+      "observation": "作者先说红盘起爆前三仍可看，随后又说下一交易日不急，可等，低开时再看人气股低吸或倒接力。",
+      "inference": "计划在直播中从初步模式偏好收敛为等待确认。",
+      "action": "以最后形成的条件树为准，保留早期分支但不把它误写成无条件推荐。"
+    },
+    {
+      "observation": "9:30:45至9:31的演示得分较高，但9:34至9:35也有卡位倒接力，且界面存在多项错误。",
+      "inference": "时点可能有研究价值，当前演示不足以确定有效买点。",
+      "action": "只记录对XH-181的局部支持，不复现完整claim；等待固定时点、候选全集与回看版本的样本外复放。"
+    },
+    {
+      "observation": "中位以下紫薇模式被描述为更平滑，全量模式爆发更强、回撤也更大。",
+      "inference": "位置过滤可能在收益上限与尾部风险间取舍。",
+      "action": "新建零权威候选，按环境和位置分层研究，不采用口述绩效。"
+    }
+  ],
+  "judgment_heuristics": [
+    "先看真实受损风格，再看综合指数。",
+    "先写取消条件，再使用历史类比。",
+    "保留直播中计划的收敛过程，后段谨慎不能抹掉前段分支，前段分支也不能覆盖后段收敛。",
+    "先固定秒点、版本和可见字段，再比较模式。",
+    "软件显示错误时停止把相关指标当证据。",
+    "求稳过滤和追求爆发是不同目标。"
+  ],
+  "hypotheses": [
+    {
+      "hypothesis_id": "XH-325",
+      "candidate_local_key": "ziwei-mid-position-filter",
+      "ingest_status": "assigned_no_second_ingest",
+      "prior_relationship": "novel_after_backlog_comparison",
+      "claim": "紫薇模式只保留中位以下候选，可能降低回撤并使曲线更平滑，但会过滤部分极端大收益。",
+      "implied_rule": "在相同时间、候选和成本下比较全量与中位以下过滤，并按市场环境分层。",
+      "falsifiable_test": "跨上涨、退潮和暴跌环境比较成本后收益、最大回撤、恢复时间、尾损及被过滤赢家；若稳定性增量不能补偿收益损失则否决。",
+      "expected_effect": "明确稳定性改善是否足以补偿收益上限损失。",
+      "category": "risk_filter"
+    }
+  ],
+  "prior_hypothesis_comparison": [
+    {
+      "existing_id": "XH-181",
+      "disposition": "partial_support_only_no_merge",
+      "reason": "本场讨论9:30:45至9:35的邻近观察窗口并否定严格固定买点，但没有9:30:20、候选在多个观测点快速变化或回看结果变化的证据，不能把完整既有claim标成复现。"
+    },
+    {
+      "existing_id": "XH-042",
+      "disposition": "partial_support_only_no_merge",
+      "reason": "本场支持融资盘出清与低位放量的重要性，但没有比较中长期均线，因此不能确认完整命题。"
+    },
+    {
+      "existing_id": "XH-194",
+      "disposition": "partial_support_only_no_merge",
+      "reason": "本场支持用环境和模式计划决定做不做，但没有空仓越规与第一次亏损停止链。"
+    },
+    {
+      "existing_id": "XH-219",
+      "disposition": "adjacent_no_merge",
+      "reason": "本场讨论红盘起爆与低吸分支，却没有统一退出、次日延续和绿盘低吸对照。"
+    },
+    {
+      "existing_id": "XH-222",
+      "disposition": "adjacent_no_merge",
+      "reason": "本场弱市后段偏向低吸，但没有10厘米分组或完整风险调整结果。"
+    },
+    {
+      "existing_id": "XH-271",
+      "disposition": "adjacent_no_merge",
+      "reason": "本场在大低开下同时保留低吸与倒接力，没有主张低吸相对倒接力的稳定优势。"
+    },
+    {
+      "existing_id": "XH-286",
+      "disposition": "partial_support_only_no_merge",
+      "reason": "来源明确不追过高开盘，但没有主板5%、创业板6%的阈值，不能精确复用。"
+    },
+    {
+      "existing_id": "2026-10-30_xiaocao_review_c2f968c3",
+      "disposition": "refines_prior_distillation",
+      "reason": "10月30日复盘已给出周一或周二修复、科技硬件置后与红盘起爆条件；本场把周一大低开、低吸／倒接力和等待确认写得更具体，但没有证明修复发生。"
+    }
+  ],
+  "timing_notes": [
+    "来源日期为2026年11月1日，下一交易日语境指向11月2日。",
+    "9:30:45、9:31、9:32、9:34和9:35均是口述观察点，没有绑定完整逐秒候选、评分版本和成交回执。",
+    "一年500%多、约30点回撤和单周100点修复均为来源口述绩效。",
+    "新模式约一周后、监控池约再一周属于产品规划，不是交易时点。"
+  ],
+  "typo_corrections": [
+    {"surface": "红盘举报、红盘细胞、红盘急报", "corrected": "按上下文校正为红盘起爆"},
+    {"surface": "人气补丁、人气股定期、地方利息", "corrected": "按上下文分别保留为人气股低吸或低位低吸，具体模式名待核"},
+    {"surface": "指挥模式、职位模式、主谓模式", "corrected": "按连续上下文校正为紫薇模式"},
+    {"surface": "小帕菜", "corrected": "可能指小白菜模式，名称待界面核对"},
+    {"surface": "东山精密、中商机密、东川精密", "corrected": "逐字稿表面名冲突，只确认目录中的东山精密，不自动合并"},
+    {"surface": "奥宏电子、红富城、但丁、BEV", "corrected": "保留原话，证券身份待权威映射"}
+  ],
+  "action_summary": {
+    "posture_update": "candidate_only_no_global_posture_change；已过期7月姿态不因本场自动覆盖。",
+    "playbook_update": "no_change；本轮没有修改判断手册。知识草稿只把XH-181、融资盘出清、环境门控与追高限制记为局部校准证据。",
+    "hypothesis_update": "XH-181仅局部支持且不合并；保留新增XH-325中位以下紫薇过滤候选，不二次入库。",
+    "audit_evidence": "完整读取115个稳定segment、绑定市场证据、家庭上下文、完整候选backlog与10月30日两份distillation；feedback无flagged校准。",
+    "instrumentation_todo": "固定秒点保存候选全集、版本、可成交价、未成交样本、费用滑点、环境标签、软件字段校验和过滤前后结果。",
+    "routing": [
+      "XH-181局部支持且不合并",
+      "XH-325 authority=0候选保留且不二次入库",
+      "既有相邻假设只记局部支持",
+      "不更新全局姿态",
+      "不自动调参",
+      "不触发交易",
+      "未执行知识入库"
+    ]
+  },
+  "strategy_hit_audit": {
+    "status": "two_dated_examples_checked_no_local_match_others_no_evidence",
+    "teacher_named_winners": [
+      "冰山冷热",
+      "百洋股份",
+      "众智科技",
+      "阳光乳业",
+      "奥宏电子（名称待核）",
+      "博汇科技",
+      "三维天地",
+      "多伦科技",
+      "邵阳液压"
+    ],
+    "teacher_named_losses": [
+      "引力传媒"
+    ],
+    "local_strategy_benchmark_hits": [],
+    "dated_example_checks": [
+      {
+        "source_example_date": "2026-10-13",
+        "source_asset": "博汇科技",
+        "code": "688004.XSHG",
+        "local_recommendation_path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/recommend_2026-10-13.md",
+        "local_recommendation_sha256": "79da50214b4e4ed2f99b082ba19ccba3c0b6d123ed16440129f266381c11aa91",
+        "recommendation_signal_result": "not_present",
+        "execution_result": "no_evidence",
+        "performance_result": "no_evidence",
+        "reason": "该日文件存在，但候选、观察、可执行与影子信号表均未出现688004或博汇科技；不能记为本地命中，也没有绑定成交与收益。"
+      },
+      {
+        "source_example_date": "2026-10-29",
+        "source_asset": "邵阳液压",
+        "code": "301079.XSHE",
+        "local_recommendation_path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/recommend_2026-10-29.md",
+        "local_recommendation_sha256": "6a0629ebc7cce62ad61aae1f25b1e3af635b5f33fdaf0043b85dfefa293c96f3",
+        "recommendation_signal_result": "not_present",
+        "execution_result": "no_evidence",
+        "performance_result": "no_evidence",
+        "reason": "该日文件存在，但候选、观察、可执行与影子信号表均未出现301079或邵阳液压；不能记为本地命中，也没有绑定成交与收益。"
+      }
+    ],
+    "direction_core_observations": [
+      "本场个股均为10月历史软件回看案例，不是11月2日推荐。",
+      "来源没有为每个历史示例同时给出唯一交易日期、当日模式排名、观察秒点、实际买点与卖点；因此不能把口述案例逐一绑定到本地recommend、signal或paper记录。",
+      "Book T与APP记录即使出现同名资产，也不能在缺少同日候选全集、订单身份和成交链时归因于本场所述模式。"
+    ],
+    "boundary": "博汇科技与邵阳液压已按来源给出的明确日期检查本地推荐文件，结果均未出现对应代码或名称，成交与收益仍无证据；其余日期或身份不清的历史示例继续标记no_evidence，不归因Book T或APP。"
+  }
+}
