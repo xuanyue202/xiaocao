@@ -24,7 +24,9 @@ five minutes in either direction. These wakes leave two minutes of startup
 margin even at +5 minutes. Enter the original launcher immediately; Python
 owns bounded wall-clock waiting before business effects and budgets. A late
 dispatch is recorded as late; order validity remains independent of data wait.
-Opening and sparse multiple-minute rules remain unchanged. Recheck planned
+Opening and sparse multiple-minute rules remain unchanged. A header-validated
+sparse CLI poll waits in its original process when up to five minutes early;
+the four business windows and their claim gates stay unchanged. Recheck planned
 next-run times through Automation after updates, including actual local time.
 
 ## Daytime ownership matrix
