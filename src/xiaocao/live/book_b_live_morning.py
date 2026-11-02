@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, ContextManager
 from zoneinfo import ZoneInfo
+from . import kol_policy
 
 from .book_b_allocation import allocate_policy_rows, BookBAllocationFacts, allocate_frozen_rows, validate_allocation_rows
 from .account_risk import AccountRiskReceipt
@@ -1213,12 +1214,12 @@ def app_buy_permission_reason(code: object) -> str | None:
             if re.fullmatch(r"68[89]\d{3}\.XSHG", normalized) else None)
 
 
-def _app_permitted_rows(rows: list[dict], policy: dict, slots: int) -> list[dict]:
+def _app_permitted_rows(rows: list[dict], policy: dict, slots: int, *, freeze: dict | None = None) -> list[dict]:
     """Reseat only permission-blocked slots in original frozen candidate order."""
     from . import kol_policy
     from xiaocao.strategy.mode_switch import target_weights
     allowed = [row for row in rows if app_buy_permission_reason(row.get("code")) is None]
-    derived = kol_policy.prioritize_xiaocao_modes(allowed, policy)
+    derived, _ = kol_policy.select_book_b(allowed, policy, freeze=freeze or {}, max_slots=slots)
     candidates = [row for row in derived if row.get("book") == "B" and row.get("is_live") is True
                   and row.get("mode_state") in {"ACTIVE", "PROVISIONAL"}
                   and row.get("mode_trade_eligible") is True
@@ -1261,7 +1262,7 @@ def apply_app_buy_permissions(adjudication: BookBAdjudication, frozen_rows: list
     derived = adjudication.rows
     common_codes = [row.get("code") for row in eligible_buy_rows(derived)]
     if any(app_buy_permission_reason(row.get("code")) for row in eligible_buy_rows(derived)):
-        derived = _app_permitted_rows(frozen_rows, policy, len(common_codes))
+        derived = _app_permitted_rows(frozen_rows, policy, len(common_codes), freeze=adjudication.receipt['freeze'])
     receipt = deepcopy(adjudication.receipt)
     explanations = explain_selection_rows(derived, policy)
     for row in explanations:
@@ -2132,6 +2133,7 @@ def run_book_b_live_morning(
                             "book": "B", "runtime": "live", "trade_date": config.trade_date,
                             "freeze_path": str(dated_freeze_receipt.get("consumed_snapshot_path") or config.freeze_path),
                             "freeze_sha256": dated_freeze_receipt["snapshot_sha256"],
+                            "freeze": {key: dated_freeze_receipt.get(key) for key in kol_policy.SELECTION_BINDING_FIELDS},
                             "strategy_sha": dated_freeze_receipt["strategy_sha"],
                             "policy_root": str(config.policy_root),
                             "candidate_scope": "all_frozen_non_unknown_modes",

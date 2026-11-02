@@ -899,6 +899,7 @@ def _mode_exec_candidate_pool(day_live: list[dict], limit: int = 8) -> list[dict
         if row.get("mode_trade_eligible")
         and row.get("mode_state") in {ACTIVE, PROVISIONAL}
         and not str(row.get("code") or "").endswith(".BJSE")
+        and row.get("executable_fillable", True) is True
     ]
     rows.sort(key=lambda row: (
         int(_num(row.get("mode_exec_candidate_rank")) or 9999),

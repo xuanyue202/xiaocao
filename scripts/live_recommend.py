@@ -38,6 +38,7 @@ from xml.etree import ElementTree
 import requests
 
 ROOT = Path(__file__).resolve().parent.parent
+_KOL_RECOMMENDATION_PREVIEW = None
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "kronos_screen" / "scripts"))
 
@@ -1262,7 +1263,8 @@ def _select_standby_candidates(
 
 
 def _main() -> None:
-    global _SOURCE_RECOVERY
+    global _SOURCE_RECOVERY, _KOL_RECOMMENDATION_PREVIEW
+    _KOL_RECOMMENDATION_PREVIEW = None
     script_entered_at = datetime.now(A_SHARE_TZ).isoformat()
     parser = argparse.ArgumentParser()
     parser.add_argument("--date", default="today")
@@ -1854,6 +1856,10 @@ def _main() -> None:
     L.append("")
 
     md = "\n".join(L)
+    if _KOL_RECOMMENDATION_PREVIEW is not None:
+        from xiaocao.kol.selection_preview import render
+        title, _, detail = md.partition('\n')
+        md = title + '\n' + render(_KOL_RECOMMENDATION_PREVIEW) + '\n原始评分与基线明细：\n' + detail
     atomic_write(OUT_DIR / f"recommend_{date_iso}.md", md.encode())
     if not args.no_stdout:
         print(md)
@@ -1861,6 +1867,7 @@ def _main() -> None:
 
 
 def _publish_original_batch(date_iso: str, readiness: dict, entered_at: str, snapshot: bytes) -> None:
+    global _KOL_RECOMMENDATION_PREVIEW
     if os.environ.get("CODEX_AUTOMATION_ID") != "xiaocao-daily-morning":
         return
     revision = os.environ.get("XIAOCAO_DAILY_SOURCE_REVISION") or subprocess.run(
@@ -1904,6 +1911,30 @@ def _publish_original_batch(date_iso: str, readiness: dict, entered_at: str, sna
     pipeline = save_pipeline_status(OUT_DIR, date_iso)
     print(json.dumps({"event": "morning_bundle_published", **result, "pipeline_path": pipeline["path"], "pipeline_status": pipeline["status"],
         "compatibility_freeze": compatibility}, ensure_ascii=False), file=sys.stderr)
+    # The committed original is already available. This local recommendation
+    # sidecar cannot delay its release, change its bytes or authorize a trade.
+    try:
+        from xiaocao.kol.selection_preview import preview
+        from xiaocao.kol.opening_preparation import write_artifact
+        from xiaocao.utils.trading_session import A_SHARE_TZ
+        from xiaocao.live.runtime_snapshot import operational_root
+        _KOL_RECOMMENDATION_PREVIEW = preview(rows, result, root=operational_root(ROOT), now=datetime.now(A_SHARE_TZ))
+        path = write_artifact(OUT_DIR / 'kol_recommendations' / date_iso,
+                             _KOL_RECOMMENDATION_PREVIEW, '.json')
+        atomic_write(OUT_DIR / f'morning_kol_recommendation_{date_iso}.json', json.dumps({
+            'path':str(path), 'receipt_sha256':_KOL_RECOMMENDATION_PREVIEW['receipt_sha256']},
+            ensure_ascii=False,sort_keys=True).encode(),immutable=True)
+        from xiaocao.kol.selection_preview import render
+        immediate = (f'# {date_iso} 早盘推荐预览\n\n'
+            '原始候选已冻结；支持信息仍在补齐，正式订单与成交另行确认。\n'
+            + render(_KOL_RECOMMENDATION_PREVIEW))
+        atomic_write(OUT_DIR / f'recommend_{date_iso}.md',immediate.encode())
+        print(json.dumps({'event': 'morning_kol_recommendation_preview', 'path': str(path),
+            'status': _KOL_RECOMMENDATION_PREVIEW['status'],
+            'receipt_sha256': _KOL_RECOMMENDATION_PREVIEW['receipt_sha256'],
+            'elapsed_seconds': _KOL_RECOMMENDATION_PREVIEW['elapsed_seconds']}, ensure_ascii=False), file=sys.stderr)
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        print(json.dumps({'event': 'morning_kol_recommendation_degraded', 'reason': type(exc).__name__}), file=sys.stderr)
 
 
 def main() -> None:

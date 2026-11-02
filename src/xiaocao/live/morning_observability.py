@@ -13,6 +13,8 @@ _CANDIDATE_FIELDS = (
     'open', 'open_pct_change', 'basket_price', 'market_price',
     'market_observed_at', 'market_guard_status', 'down_price',
     'ai_hard_veto', 'veto_flags', 'snapshot_ref',
+    'excIndustryCode', 'blockCodeList', 'blockCategoryCodeList',
+    'is_main_line', 'is_big_cap', 'direction',
 )
 
 
@@ -26,6 +28,7 @@ def review_brief(request: dict) -> dict:
         **{k: request.get(k) for k in (
             'request_id', 'request_sha256', 'requested_at', 'entry_deadline',
             'freeze_path', 'freeze_sha256', 'strategy_sha', 'trade_date',
+            'freeze',
             'allocation_facts_path', 'allocation_capsule_sha256',
             'account_facts', 'account_risk', 'kol_inputs', 'dispatch_budget',
         )},

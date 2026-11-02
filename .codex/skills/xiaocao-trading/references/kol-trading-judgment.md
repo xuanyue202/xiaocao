@@ -12,8 +12,8 @@ the report plus LiangHui viewpoints, evaluations and relations. Those records
 are the sole source-semantic SSOT. At 09:00 build the compact projection with
 `kol_trading_context.py projection --cache-only`; consume its path,
 `projection_sha256`, stable `source_fingerprint` and counts
-without reopening unchanged report bodies or creating source notes/opening
-drafts. At the action boundary one bounded worker judges current applicability
+without reopening unchanged source semantics. Morning conditional preparation
+follows its original owner and accepted preparation reference. At the action boundary one bounded worker judges current applicability
 from this projection plus exact runtime facts. The projection has authority=0
 and never satisfies formal decision publication by itself.
 
@@ -45,7 +45,7 @@ and never satisfies formal decision publication by itself.
    degraded coverage requiring investigation, never a fabricated absence.
    Historical cached evaluations are dated context, not fresh market proof.
    The compact `refresh` manifest identifies missing/stale registered sources. For a needed
-   unloaded or stale body, repeat with its exact `--report-id` and
+   unloaded or stale body, use `context --decision-sources --summary` with its exact `--report-id` and
    `--read-report-id` (plus `--refresh` only for that exact scope); do not load
    every historical transcript on every tick. `--refresh` is an explicit full
    source refresh, not a routine five-minute action.
@@ -99,6 +99,23 @@ another KOL, or a merely related theme. `runtime=both` is valid only when both
 accounts were actually checked. Otherwise publish separate decisions. Neutral
 is valid when justified; do not manufacture a trade to demonstrate absorption.
 
+Use `kol-trading-decision.v3` for user-authorized ordered mode/sector/candidate
+preferences within the exact original morning freeze. Follow the typed preference,
+source quote, canonical sector-map and selection_binding schema in
+[opening preparation](kol-opening-preparation.md). All risk fields and v2 mode
+override guards remain. Parent review explicitly covers preference priority,
+mapping, conditions/conflicts and selection_preferences_reviewed=true.
+Producer authority=0 recommendation preview and formal per-runtime adoption
+are separate receipts. APP/Paper and local replay share select_candidates;
+no code/eligibility/seat/weight/parameter widening. The final warm worker reuses
+the prepared preference list and checks current facts/delta only; do not repeat
+all unchanged viewpoints or report bodies after capture.
+An accepted policy_template may instantiate a draft without another worker
+when complete source/delta and explicit conditions are unchanged/proved. Follow
+the handoff next_action in opening preparation. The original parent still
+performs current independent review and exact source-verified publication;
+unresolved semantics take the existing bounded warm-worker branch.
+
 The independent review binds `decision_sha256`, a different reviewer agent ID,
 `reviewed_at`, `status=approved`, and true source-fidelity/coverage/applicability/
 counterevidence checks. It also binds `context_sha256` and explicitly
@@ -124,6 +141,13 @@ For a policy bound by `morning_request_sha256`, also pass
 hash/scope, bounds source readback to the remaining absolute budget, and checks
 the deadline under the final policy-store lock. Late drafts cannot enter the
 policy store; completed exact retries retain their original receipts.
+
+Before accepting morning preparation run `context-check --context <file>`;
+`context_ready` proves known local publication prerequisites, not a completed
+judgment. Formal publication reads one current report head per cited report,
+checks published state, content hash and the complete manifest, and binds every
+reused immutable record to that manifest. Any evaluation/relation/version change
+invalidates the old context even if report prose is unchanged.
 
 Publish verifies source hashes against current remote manifests and writes only
 the dedicated `output/live/kol_policy/decisions` store. Keep source caches,

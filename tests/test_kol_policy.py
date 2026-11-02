@@ -74,6 +74,67 @@ def assert_inert(snapshot: dict, status: str, scale: float) -> None:
     assert policy.exit_adjustment(snapshot, CODE)["triggered"] is False
 
 
+def selection_decision():
+    from tests.test_kol_selection import preference
+    decision=make_decision(scale=0)
+    binding=dict(market_date='2026-09-06',strategy_run_id='original',strategy_sha='c'*40,
+        snapshot_sha256='a'*64,snapshot_raw_sha256='b'*64,snapshot_row_count=2,checkpoint_sha256='d'*64)
+    decision.update(schema_version=policy.SELECTION_SCHEMA_VERSION,xiaocao_mode_overrides=[],
+        selection_binding=binding,selection_preferences=[preference('candidate',{'code':OTHER,'mode':'A'},
+        source_report_id='report-1')],morning_request_sha256='e'*64,mode_mappings=[])
+    review=make_review(decision,selection_preferences_reviewed=True,mode_mapping_reviewed=True,
+        morning_request_sha256='e'*64)
+    return decision,review,binding
+
+
+def test_v3_exact_batch_selection_keeps_risk_effects_and_rejects_other_freeze(tmp_path):
+    from tests.test_kol_selection import row
+    decision,review,binding=selection_decision()
+    policy.publish_decision(tmp_path,decision,review,NOW)
+    rows=[{**row(CODE,'A',1),'date':'2026-09-06'}, {**row(OTHER,'A',4),'date':'2026-09-06'}]
+    derived,receipt=policy.select_book_b(rows,load(tmp_path),freeze=binding)
+    assert [r['code'] for r in derived if r['mode_exec_star']]==[OTHER]
+    assert receipt['decision_sha256']==policy.decision_sha256(decision)
+    assert policy.buy_adjustment(load(tmp_path),OTHER)['skip'] is True
+    with pytest.raises(policy.KolPolicyError,match='FOREIGN_BATCH'):
+        policy.select_book_b(rows,load(tmp_path),freeze={**binding,'snapshot_sha256':'f'*64})
+
+
+@pytest.mark.parametrize('damage',['review','source','request','date','v2'])
+def test_v3_cannot_bypass_source_review_or_batch_binding(tmp_path,damage):
+    decision,review,binding=selection_decision()
+    if damage=='review':review['selection_preferences_reviewed']=False
+    elif damage=='source':decision['selection_preferences'][0]['source_report_id']='uncited'
+    elif damage=='request':decision.pop('morning_request_sha256')
+    elif damage=='date':decision['selection_binding']['market_date']='2026-09-07'
+    else:decision['schema_version']=policy.MODE_OVERRIDE_SCHEMA_VERSION
+    review['decision_sha256']=policy.decision_sha256(decision)
+    with pytest.raises(ValueError):policy.publish_decision(tmp_path,decision,review,NOW)
+    assert not list(tmp_path.iterdir())
+
+
+def test_v3_conditions_use_original_cold_state_before_explicit_mode_follow(tmp_path):
+    from tests.test_kol_selection import row, preference
+    decision,review,binding=selection_decision()
+    decision['source_refs'][0]['author_id']='kol-xiaocao'
+    decision['xiaocao_mode_overrides']=[{'mode':'A','source_report_id':'report-1','source_quote':'follow A now',
+                                        'scope':'frozen_candidates_only'}]
+    decision['mode_mappings']=[{'source_report_id':'report-1','source_term':'A','target_mode':'A',
+        'reason':'explicit exact target','classification':'exact','current_applicability':'supported','conditions':[]}]
+    decision['selection_preferences']=[preference('mode',{'mode':'A'},direction='deprioritize',source_report_id='report-1',
+        conditions=[{'field':'mode_state','op':'eq','value':'ACTIVE','evidence_ref':'original frozen state'}])]
+    review['decision_sha256']=policy.decision_sha256(decision)
+    policy.publish_decision(tmp_path,decision,review,NOW)
+    rows=[row('000001.XSHE','A',4,state='COLD'),row('000002.XSHE','B',1),
+          row('000003.XSHE','C',2),row('000004.XSHE','D',3)]
+    for item in rows:item['date']='2026-09-06'
+    derived,receipt=policy.select_book_b(rows,load(tmp_path),freeze=binding)
+    assert [r['mode'] for r in derived if r['mode_exec_star']]==['A','B','C']
+    assert receipt['preferences'][0]['status']=='not_applicable'
+    assert receipt['diff']['added_seats']==[{'code':'000001.XSHE','mode':'A'}]
+    assert receipt['diff']['removed_seats']==[{'code':'000004.XSHE','mode':'D'}]
+
+
 def test_publish_load_and_exact_adjustments(tmp_path: Path) -> None:
     decision = make_decision()
     decision.update(skip_codes=[CODE], exit_codes=[OTHER])

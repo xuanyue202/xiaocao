@@ -11,7 +11,7 @@ from xiaocao.kol import trading_decision as decisions
 
 def main(argv: list[str] | None = None, *, client=None, clock=decisions.utc_now) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("publish", "status", "request", "audit", "feedback"))
+    parser.add_argument("command", choices=("publish", "status", "request", "audit", "feedback", "context-check"))
     parser.add_argument("--root", type=Path, default=decisions.ROOT)
     parser.add_argument("--decision", type=Path)
     parser.add_argument("--review", type=Path)
@@ -37,6 +37,11 @@ def main(argv: list[str] | None = None, *, client=None, clock=decisions.utc_now)
                 decisions.read_json(path(args.decision)), decisions.read_json(path(args.review)),
                 decisions.read_json(path(args.context)), client=client, clock=clock,
                 morning_request=decisions.read_json(path(args.morning_request)) if args.morning_request else None)
+        elif args.command == "context-check":
+            if not args.context:
+                raise decisions.TradingDecisionError("context_file_required")
+            result = decisions.context_readiness(decisions.read_json(path(args.context)),
+                review=decisions.read_json(path(args.review)) if args.review else None, clock=clock)
         elif args.command == "request":
             if not all((args.context, args.decision_context, args.phase)):
                 raise decisions.TradingDecisionError("request_files_and_phase_required")

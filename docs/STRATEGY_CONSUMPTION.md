@@ -13,7 +13,7 @@ must not be flattened into one trading policy during context compression.
 | rules | raw lianban/dixi/direction/qibao candidates; runner/research | Candidate generation precedes formal qualification/risk/fill |
 | runner | CLI/recommendation/backtest orchestration, structural enrichment | Legacy profile/regime opt-ins do not replace formal E |
 | adaptive | optional legacy active/shadow history | Adaptive active is not formal mode_switch ACTIVE; fitness remains shadow |
-| mode_switch | formal mode evidence, selection and board-lot sizing for APP/Paper | Current source qualifications, slots/weights/lots; reviewed §2a v2 exception only |
+| mode_switch | formal mode evidence, selection and board-lot sizing for APP/Paper | Current qualifications/slots/weights/lots; §2a v2 COLD exception and bounded v3 preference selection |
 | params | declarative registry, rules/exit imports and kronos literal drift tests | Search range is not tuning authority; evidence weighting is not deployment weighting |
 | state | dated cached state features | Feature vector is not current account or independent strategy authority |
 | regime | research/telemetry mode fitness | Failed regime deployment proposals do not create a new market timing veto |
@@ -52,6 +52,10 @@ look-ahead or correctness. The detailed review records that limit explicitly.
 - Ordinary COLD remains a gate. Only explicit cited/reviewed Xiaocao v2 named-mode
   follow can restore COLD within original frozen candidates; UNKNOWN mode and all
   account/capital/market/claim constraints remain. General focus is not an order.
+- `kol/selection.py` is the shared pure mode/sector/candidate sorter used by
+  producer preparation preview, reviewed exact-batch v3 APP/Paper derivation
+  and offline replay. It changes eligible seats/ranks, not raw strategy scores,
+  frozen bytes or account allocation. Producer preview remains authority0.
 - Primary APP excludes688/689 before selecting seats, then scans qualified original
   ranks so account permission does not waste a legitimate slot. This does not
   change Paper/funded rules or prove yesterday's rejected order.

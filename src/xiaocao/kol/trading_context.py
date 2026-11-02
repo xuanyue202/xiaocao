@@ -40,6 +40,7 @@ from .publication import (
     canonical_sha256,
     manifest_entries,
     read_published_publication,
+    read_published_report_head,
     report_id as stable_report_id,
 )
 
@@ -380,6 +381,7 @@ def build_trading_context(
     timeout_seconds: float = 10, retries: int = 1, max_read_calls: int | None = None,
     total_timeout_seconds: float = 120, client: PublicationTransport | None = None,
     repo_root: Path | str = ROOT, clock: Callable[[], datetime] = _now,
+    decision_sources: bool = False,
 ) -> dict[str, Any]:
     """Build/cache a credential-free, evidence-only multi-author context.
 
@@ -397,9 +399,18 @@ def build_trading_context(
     Before a current decision, use refresh=True with the exact read_report_ids.
     An explicit as_of cannot use a version first observed later; None records
     the actual completion time. Incomplete coverage returns data plus reasons.
+    decision_sources=True loads only explicitly requested bodies and refreshes only
+    their current heads; complete published writer receipts retain all historical
+    semantics with their original observation clocks, without remote archive scans.
     Fatal argument/cache-directory errors raise TradingContextError. Consumers
     must inspect coverage before making their separately authorized judgment.
     """
+    if decision_sources and (not report_ids or not include_report_bodies):
+        raise TradingContextError("decision_source_ids_required")
+    if decision_sources:
+        if read_report_ids is not None and not set(read_report_ids) <= set(report_ids):
+            raise TradingContextError("decision_read_scope_mismatch")
+        read_report_ids = list(report_ids) if read_report_ids is None else read_report_ids
     start = _timestamp(clock())
     horizon = _timestamp(history_fresh_through) if history_fresh_through is not None else None
     if horizon is not None and (horizon - start).total_seconds() >= history_max_cache_age_seconds:
@@ -432,13 +443,14 @@ def build_trading_context(
         return _build_locked(root, directory, cutoff, ledger_paths, report_ids, read_report_ids,
                              registered_authors, latest_per_author, include_report_bodies, refresh,
                              max_cache_age_seconds, history_max_cache_age_seconds, client, timeout_seconds,
-                             retries, max_read_calls, total_timeout_seconds, clock, horizon)
+                             retries, max_read_calls, total_timeout_seconds, clock, horizon, decision_sources)
 
 
 def _build_locked(root, directory, cutoff, ledger_paths, report_ids, read_report_ids,
                   registered_authors, latest_per_author, include_report_bodies, refresh,
                   max_cache_age_seconds, history_max_cache_age_seconds,
-                  client, timeout_seconds, retries, max_read_calls, total_timeout_seconds, clock, horizon):
+                  client, timeout_seconds, retries, max_read_calls, total_timeout_seconds, clock, horizon,
+                  decision_sources=False):
     registry, issues, ledgers = _registry(root, ledger_paths)
     read_scope = None if read_report_ids is None else set(read_report_ids)
     if not registry:
@@ -453,7 +465,7 @@ def _build_locked(root, directory, cutoff, ledger_paths, report_ids, read_report
         rows.sort(key=lambda r: (r["source_published_at"], r["report_id"]), reverse=True)
     freshness_ids = requested | ({
         r["report_id"] for rows in by_author.values() for r in rows[:latest_per_author]
-    } if include_report_bodies else set())
+    } if include_report_bodies and not decision_sources else set())
     if read_scope is not None:
         freshness_ids |= read_scope
     # Round-robin recent events prevents one prolific author exhausting all reads.
@@ -473,7 +485,7 @@ def _build_locked(root, directory, cutoff, ledger_paths, report_ids, read_report
             issues.append({"code": "cache_invalid_rebuild_required", "report_id": rid})
         now = _timestamp(clock())
         age = (now - _timestamp(cached["verified_at"])).total_seconds() if cached else None
-        if not include_report_bodies and index.get("_local_publication"):
+        if (not include_report_bodies or decision_sources) and index.get("_local_publication"):
             observed = index["registry_observed_at"]
             cached = {
                 "schema_version": 1,
@@ -486,7 +498,8 @@ def _build_locked(root, directory, cutoff, ledger_paths, report_ids, read_report
             _validate_publication(cached["publication"], index)
             age = (now - _timestamp(cached["verified_at"])).total_seconds()
         prior_caches[rid] = cached
-        force_refresh = refresh and (read_scope is None or rid in read_scope)
+        force_refresh = (refresh and (read_scope is None or rid in read_scope)
+                         or decision_sources and rid in requested and cached and cached.get("local_publication_receipt"))
         ttl = max_cache_age_seconds if rid in freshness_ids else history_max_cache_age_seconds
         if (
             cached
@@ -521,9 +534,10 @@ def _build_locked(root, directory, cutoff, ledger_paths, report_ids, read_report
             continue
         if read_scope is not None and rid not in read_scope:
             age = (_timestamp(clock()) - _timestamp(cached["verified_at"])).total_seconds() if cached else None
-            if (cached and not cached.get("refresh_required") and
-                    0 <= age <= history_max_cache_age_seconds
-                    and (max(_timestamp(clock()), horizon or _timestamp(clock())) - _timestamp(cached["verified_at"])).total_seconds() <= history_max_cache_age_seconds):
+            if (cached and not cached.get("refresh_required") and age >= 0 and
+                    (cached.get("local_publication_receipt") or
+                     age <= history_max_cache_age_seconds and
+                     (max(_timestamp(clock()), horizon or _timestamp(clock())) - _timestamp(cached["verified_at"])).total_seconds() <= history_max_cache_age_seconds)):
                 caches[rid] = cached
                 if rid in freshness_ids and age > max_cache_age_seconds:
                     issues.append({"code": "selected_report_refresh_required", "report_id": rid})
@@ -531,7 +545,18 @@ def _build_locked(root, directory, cutoff, ledger_paths, report_ids, read_report
             failures[rid] = "outside_exact_read_batch"
             continue
         try:
-            publication = read_published_publication(transport, rid)
+            if decision_sources and cached:
+                head = read_published_report_head(transport, rid)
+                if (head["manifest_sha256"] == cached["publication"]["manifest_sha256"]
+                        and head["report"] == cached["publication"]["report"]):
+                    # Writer artifacts need not store records in manifest order.
+                    # Replay the full verifier locally before persisting a reusable cache.
+                    publication = read_published_publication(_SnapshotTransport(cached["publication"]), rid)
+                    publication.update({key: value for key, value in head.items() if key != "manifest"})
+                else:
+                    publication = read_published_publication(transport, rid)
+            else:
+                publication = read_published_publication(transport, rid)
             _validate_publication(publication, index)
             observed = _iso(_timestamp(clock()))
             unchanged = cached and cached["publication"]["manifest_sha256"] == publication["manifest_sha256"]
@@ -577,7 +602,7 @@ def _build_locked(root, directory, cutoff, ledger_paths, report_ids, read_report
     author_identities = {}
     for rows in by_author.values():
         rows.sort(key=lambda r: (r["source_published_at"], r["report_id"]), reverse=True)
-        if include_report_bodies:
+        if include_report_bodies and not decision_sources:
             selected.update(r["report_id"] for r in rows[:latest_per_author])
         latest = rows[0]
         canonical_author = (caches[latest["report_id"]]["publication"]["report"]["payload"]["author"]
@@ -692,6 +717,9 @@ def _build_locked(root, directory, cutoff, ledger_paths, report_ids, read_report
     missing = sorted(set(authors) - set(covered))
     if missing:
         issues.append({"code": "registered_author_latest_report_missing", "authors": missing})
+    recovered_cache_issues = [issue for issue in issues if decision_sources
+        and issue.get("code") == "cache_invalid_rebuild_required" and issue.get("report_id") in caches]
+    issues = [issue for issue in issues if issue not in recovered_cache_issues]
     context = {
         "schema_version": 1, "as_of": _iso(as_of), "authority": 0,
         "source": "lianghui_published_registry", "reports": reports,
@@ -706,9 +734,12 @@ def _build_locked(root, directory, cutoff, ledger_paths, report_ids, read_report
             "registered_longitudinal_complete": len(caches) == len(registry) and bool(registry)
                 and not any(i["code"] in {"registered_ledger_missing", "registered_ledger_invalid"} for i in issues),
             "latest_per_author": latest_per_author, "registered_ledgers": ledgers,
-            "history_policy": "all_registered_manifests; latest_n_and_explicit_report_bodies",
+            "history_policy": ("published_writer_history; explicit_current_report_bodies" if decision_sources
+                               else "all_registered_manifests; latest_n_and_explicit_report_bodies"),
+            "decision_sources": decision_sources,
+            "recovered_cache_issues": recovered_cache_issues,
             "body_loading_policy": (
-                "latest_n_and_explicit" if include_report_bodies
+                "explicit_decision_sources" if decision_sources else "latest_n_and_explicit" if include_report_bodies
                 else "none_longitudinal_projection_only"
             ),
             "history_refresh_policy": "independent_history_ttl; exact_report_ids_for_current_readback; refresh_all_when_unscoped",

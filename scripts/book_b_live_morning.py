@@ -351,6 +351,13 @@ def _review_rendezvous(request: dict, *, now=None, sleep=None, monotonic=None,
         notice["dispatch_error"] = dispatch_error
     _emit_json(notice)
     latest: dict = {}
+    deferred_overlay = None
+    if dispatch_path:
+        try:
+            from xiaocao.live.morning_dispatch import read_deferred_overlay
+            deferred_overlay = read_deferred_overlay(dispatch_path,identifier)
+        except (OSError,ValueError,KeyError,TypeError) as exc:
+            dispatch_error=type(exc).__name__
     status, reason = "timed_out", "LIVE_REVIEW_TIMEOUT_NEUTRAL_FALLBACK"
     while True:
         current = now()
@@ -368,6 +375,9 @@ def _review_rendezvous(request: dict, *, now=None, sleep=None, monotonic=None,
             status = "validated"
             reason = "LIVE_REVIEW_REUSED_VALIDATED_POLICY" if as_of < requested else "LIVE_REVIEW_NEW_VALIDATED_POLICY"
             break
+        if deferred_overlay is not None:
+            status, reason = 'deferred', deferred_overlay['reason']
+            break
         if remaining <= 0 or monotonic() - started >= budget or now() >= deadline:
             break
         sleep(min(1.0, poll_seconds, remaining))
@@ -384,6 +394,9 @@ def _review_rendezvous(request: dict, *, now=None, sleep=None, monotonic=None,
         "last_policy_status": latest.get("status"), "decision_id": latest.get("decision_id"),
         "decision_sha256": latest.get("decision_sha256"),
     }
+    if deferred_overlay is not None:
+        receipt['deferred_overlay'] = deferred_overlay
+        receipt['fallback'] = deferred_overlay['fallback']
     receipt["receipt_sha256"] = digest(receipt)
     _write_review_immutable(receipt_path, receipt)
     return receipt

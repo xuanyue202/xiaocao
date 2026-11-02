@@ -77,4 +77,7 @@ def acknowledge_inputs(checklist: MorningChecklist, input_path: Path, *, worker_
     late = dispatched >= deadline or datetime.now(deadline.tzinfo) >= deadline
     checklist.record("kol_inputs_loaded", "degraded" if late else "passed",
                      evidence=evidence, reason="INPUT_LOADING_LATE" if late else None)
+    if not late and checklist.binding.get('automation_id') == 'xiaocao-book-b-live-morning':
+        from xiaocao.kol.selection_preview import register_preparation
+        register_preparation(Path(input_path).resolve(), preparation_path, prepared)
     return evidence

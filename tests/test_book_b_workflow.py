@@ -229,6 +229,47 @@ def app_adjudication(rows, policy):
     return apply_app_buy_permissions(adjudicate_book_b(rows, policy, freeze=freeze(rows), runtime="live"), rows, policy)
 
 
+def v3_policy(tmp_path,rows,preferences,*,runtime='live'):
+    decision=make_decision('selection-'+runtime,scale=1,runtime=runtime)
+    decision.update(schema_version=kol_policy.SELECTION_SCHEMA_VERSION,
+        selection_binding=freeze(rows),selection_preferences=preferences,xiaocao_mode_overrides=[],
+        morning_request_sha256='d'*64,mode_mappings=[])
+    review=make_review(decision,selection_preferences_reviewed=True,mode_mapping_reviewed=True,
+                       morning_request_sha256='d'*64)
+    kol_policy.publish_decision(tmp_path,decision,review,NOW)
+    return kol_policy.load_decision(tmp_path,'B',runtime,NOW)
+
+
+def test_v3_app_permission_reseat_preserves_shared_preference_order(tmp_path):
+    from tests.test_kol_selection import preference
+    rows=[row('688028.XSHG','ACTIVE',mode_exec_candidate_rank=1),
+          row('000004.XSHE','ACTIVE',mode_exec_star=False,mode_exec_candidate_rank=4),
+          row('000005.XSHE','ACTIVE',mode_exec_star=False,mode_exec_candidate_rank=5)]
+    prefs=[preference('candidate',{'code':'688028.XSHG','mode':rows[0]['mode']},source_report_id='report-1'),
+           preference('candidate',{'code':'000005.XSHE','mode':rows[0]['mode']},id='p2',source_report_id='report-1')]
+    original=copy.deepcopy(rows)
+    policy=v3_policy(tmp_path,rows,prefs)
+    result=app_adjudication(rows,policy)
+    assert result.receipt['common_strategy_codes']==['688028.XSHG']
+    assert result.receipt['strategy_codes']==['000005.XSHE']
+    assert result.receipt['selection']['freeze']['snapshot_sha256']==freeze(original)['snapshot_sha256']
+    assert rows==original
+
+
+def test_v3_paper_and_app_share_selection_before_account_adapters(tmp_path):
+    from tests.test_kol_selection import preference
+    rows=[row('000001.XSHE','ACTIVE',mode_exec_candidate_rank=1),
+          row('000002.XSHE','ACTIVE',mode_exec_star=False,mode_exec_candidate_rank=4)]
+    prefs=[preference('candidate',{'code':'000002.XSHE','mode':rows[0]['mode']},source_report_id='report-1')]
+    live=v3_policy(tmp_path,rows,prefs,runtime='live')
+    paper=v3_policy(tmp_path,rows,prefs,runtime='paper')
+    app=adjudicate_book_b(rows,live,freeze=freeze(rows),runtime='live')
+    result=adjudicate_book_b(rows,paper,freeze=freeze(rows),runtime='paper')
+    assert app.receipt['strategy_codes']==result.receipt['strategy_codes']==['000002.XSHE']
+    assert app.receipt['strategy_semantics_sha256']==result.receipt['strategy_semantics_sha256']
+    assert app.receipt['selection']['decision_sha256']!=result.receipt['selection']['decision_sha256']
+
+
 def test_app_star_permission_reseats_original_rank_without_restoring_cold_or_unknown(tmp_path):
     rows = [row("688028.XSHG", "ACTIVE", mode_exec_candidate_rank=1),
             row("000002.XSHE", "COLD", mode_exec_candidate_rank=2),

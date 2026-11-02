@@ -64,8 +64,13 @@ support waits. Preparation authority0 is not formal policy or trade authority.
 
 ## Frozen event: dispatch, policy, current account and batch
 
-On dispatch_path read that ONE assembled file and immediately send its exact
-tool_arguments to the same accepted warm worker, recording actual dispatch.
+On dispatch_path read that ONE assembled file. Follow next_action: independently
+review its unapproved prepared-policy draft when unchanged typed conditions
+allow materialization; otherwise send exact tool_arguments to the accepted
+warm worker and record actual dispatch. See opening preparation for both branches.
+On continue_original_baseline_deferred, code continues valid-policy/baseline
+gates with an explicit deferred receipt and retained unknowns; no new dispatch
+or neutral-policy publication. This requires separate pre-window review.
 Otherwise read brief_path first. Review all delta/current freeze/account/risk,
 reuse unchanged preparation, verify exact cited sources, parent review and
 publish with original request binding before09:27. Do not spend dispatch budget
@@ -110,7 +115,7 @@ from evidence already collected in its ordinary phases:
 |---|---|
 | Before09:20 | Deployed guard/version, inherited-incident consumption, original preparation/auth/transport proofs and all-eligible input coverage; recover local dependencies while the original waits. |
 |09:24 | Original account-bound ordinary-trade boundary readback or its exact owned recovery outcome. |
-| Original freeze | Original source/owner/checkpoint/bundle, actual warm dispatch and policy/adjudication/adoption; APP permission exclusion and ranked reseating only if that branch occurred. |
+| Original freeze | Original source/owner/checkpoint/bundle, actual draft-materialization or warm dispatch branch and independent policy/adjudication/adoption; APP permission exclusion and ranked reseating only if reached. |
 | Current admission | Fresh account/cash/owned marks, funding head and risk; actual bounded inherited impact and same-code limits. A historical status alone cannot establish a global veto. |
 | Batch and closeout | Original final plan, exact ACK/fill/UNKNOWN and first-order/batch/reconciliation times; separate producer/Paper B/Paper T/APP receipts, local repair audit and current result-delivery proof. |
 

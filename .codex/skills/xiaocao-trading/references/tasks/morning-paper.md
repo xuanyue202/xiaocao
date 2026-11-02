@@ -31,8 +31,13 @@ reviews use agent_intelligence_review with exact --evidence-freeze-ref, never
 keyword scoring. Derived queue waits share original budget; timeout preserves
 baseline and explicit degradation. Intelligence on still needs same-batch support.
 On paper_kol_review_requested use original request/packet/hash. dispatch_path
-means read once and send exact tool_arguments immediately to accepted warm
-worker; otherwise read brief. No duplicate full projection/schema scan. All
+means read once and follow next_action: independently review its authority0
+materialized draft, or immediately send exact tool_arguments to the accepted
+warm worker when new semantic judgment is needed; otherwise read brief.
+On continue_original_baseline_deferred, read the retained uncertainty and original
+deferred receipt; skip new model/publication and let the same writer continue
+under its independently loaded policy and account/execution gates.
+No duplicate full projection/schema scan. All
 source verification, independent review and runtime=paper publication bind
 original request and fit09:27. Intelligence completion does not close KOL wait.
 Missing preparation/expiry/timeout/baseline is not completed neutral judgment.

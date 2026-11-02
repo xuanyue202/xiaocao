@@ -87,6 +87,8 @@ def _row_explanation(row: dict, selected: bool, policy: dict) -> dict:
         reason = "OUTSIDE_BOOK_B_LIVE_FREEZE"
     elif row.get("kol_mode_override") and selected:
         reason = "REVIEWED_XIAOCAO_MODE_FOLLOW"
+    elif row.get('kol_selection_preferences') and selected:
+        reason = 'REVIEWED_KOL_SELECTION_PREFERENCE'
     elif selected:
         reason = "BASELINE_STAR_E"
     elif row.get("mode_state") == "COLD":
@@ -136,7 +138,7 @@ def adjudicate_book_b(rows: list[dict], policy: dict, *, freeze: dict,
     judgment = kol_policy.describe_judgment(policy)
     if judgment["book"] != "B" or judgment["runtime"] != runtime:
         raise ValueError("BOOK_B_POLICY_SCOPE_MISMATCH")
-    derived = kol_policy.prioritize_xiaocao_modes(rows, policy)
+    derived, selection = kol_policy.select_book_b(rows, policy, freeze=freeze)
     selected_ids = {id(row) for row in eligible_buy_rows(derived)}
     explanations = [_row_explanation(row, id(row) in selected_ids, policy) for row in derived]
     effects = {**judgment["effect"], "skip_codes": sorted(judgment["effect"]["skip_codes"]),
@@ -170,6 +172,9 @@ def adjudicate_book_b(rows: list[dict], policy: dict, *, freeze: dict,
         "authority": "explanation_only_account_and_execution_gates_required",
     }
     receipt["receipt_sha256"] = kol_policy.decision_sha256(receipt)
+    if selection is not None:
+        receipt['selection'] = selection
+        receipt['receipt_sha256'] = kol_policy.decision_sha256({k:v for k,v in receipt.items() if k!='receipt_sha256'})
     return BookBAdjudication(derived, receipt)
 
 
@@ -194,6 +199,7 @@ def summarize_adjudication(value: object, *, runtime: str) -> dict:
             "selection_reasons": dict(Counter(row["selection_reason"] for row in value["rows"])),
             "allocation_adapter": value["allocation_adapter"],
             "app_buy_permissions": value.get("app_buy_permissions", {"profile": "legacy_unrecorded"}),
+            "kol_selection": value.get('selection'),
         }
     except (ValueError, KeyError, TypeError):
         return {"status": "unproved"}

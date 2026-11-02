@@ -201,5 +201,24 @@ APP 撮合规律仍须实际原单和 contemporaneous quote 验证，不能从�
 按 Operating Contract §1d 和 [准备操作](../.codex/skills/xiaocao-trading/references/kol-opening-preparation.md)，
 APP/Paper分别在原owner下完成一次全观点条件准备；冻结后只复核相关结论、全部变化和当前
 账户事实。准备authority=0，正式source/独立复核/发布及COLD默认门保持。
-回执分别记录准备接受、实际最终dispatch、增量、正式政策及原consumer采用；模式/仓位
+回执分别记录准备接受、无变化时草案装配或实际最终dispatch、增量、正式政策及原consumer采用；模式/仓位
 影响须能追溯到来源、条件和当时事实。准备完成不算决策采用，也不能证明收益提升。
+
+用户 2026-11-02 授权的模式/赛道/候选偏好使用 v3，绑定原请求完整 freeze；
+APP/Paper 共用 `kol_policy.select_book_b`，其纯选择器只重排原 ACTIVE/PROVISIONAL 合格池，
+原小草显式 COLD 例外及所有账户/行情门继续。APP 权限补位重新应用相同偏好，Paper
+整手 reserve 顺序保留相同候选优先级。选择回执与最终手数/成交分别记录。
+daily morning 先提交 baseline，再用已接受准备生成独立推荐预览；pipeline 区分
+推荐预览、正式策略采用、账户分配及实际成交，不把相同代码冒称相同政策或收益。
+
+离线验证：`PYTHONPATH=src .venv/bin/python scripts/kol_selection_replay.py
+--bundle-root output/live/morning_bundles --output-dir output/research/kol-selection-replay`。
+它验证原不可变数据、选择不变量及读取/校验/选择/渲染/落盘 p50/p95；人工构造偏好
+仅测试排序机制，可选 authority0 `--analysis` 只按其原交易日重放。语义模型与远端
+核验时延单独计量。缺当时政策或完成持有期、费用、成交分母时，收益效果保持未证实。
+加 `--raw-strategy --date <YYYY-MM-DD>` 可从该批次每份原始 normalized API 响应的
+路径/hash重跑真实策略与基线排序；模式资格、K/P 分数及价格事实仍使用该批次原记录，
+不重训盘前模型、不把后续行情回填到旧策略。原 source/date/code 调用顺序须完整匹配；
+旧批次若未归档响应文件就拒绝该 raw 回放，不能改用当前数据冒称原始输入。
+当已另行批准无可执行增量时的提前 deferred，保留所有未知条件但不花开盘时间等待模型；
+这与待审核草案、正式中性政策及实际采用是独立结果。

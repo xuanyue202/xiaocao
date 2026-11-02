@@ -1072,3 +1072,26 @@ def test_optional_warm_handoff_failure_degrades_without_blocking_baseline(tmp_pa
     assert result['status']=='timed_out' and result['fallback']=='neutral'
     assert result['dispatch']['error']=='MORNING_DISPATCH_ORIGINAL_CUTOFF'
     assert json.loads(capsys.readouterr().out)['dispatch_error']=='MORNING_DISPATCH_ORIGINAL_CUTOFF'
+
+
+@pytest.mark.app_simulation
+@pytest.mark.parametrize('policy_status',['no_decision','blocked'])
+def test_reviewed_no_effect_defer_skips_wait_and_preserves_policy_integrity_gate(tmp_path,monkeypatch,policy_status):
+    cli=_morning_cli(monkeypatch)
+    from xiaocao.live import morning_dispatch as dispatch
+    from xiaocao.kol.publication import canonical_sha256
+    def handoff(request,path,**kwargs):
+        deferred={'authority':0,'status':'deferred','reason':'NO_EXECUTABLE_PREPARED_KOL_EFFECT',
+            'request_sha256':request['request_sha256'],'semantic_review_completed':False,
+            'known_unresolved_conditions':['mapping unproved'],'fallback':'original_baseline_under_current_policy'}
+        deferred['sha256']=canonical_sha256(deferred)
+        value={'request_sha256':request['request_sha256'],'next_action':'continue_original_baseline_deferred',
+               'deferred_overlay':deferred}
+        value['sha256']=canonical_sha256(value)
+        result=path.with_suffix('.dispatch.json');result.write_text(json.dumps(value));return result
+    monkeypatch.setattr(dispatch,'write_warm_dispatch',handoff)
+    monkeypatch.setattr(cli,'read_policy',lambda *a:{'status':policy_status,'reason':'store check'})
+    def forbidden_sleep(seconds):raise AssertionError('no optional model wait')
+    result=cli._review_rendezvous(_review_request(tmp_path),now=lambda:MORNING,monotonic=lambda:0,sleep=forbidden_sleep)
+    assert result['status']==('blocked' if policy_status=='blocked' else 'deferred')
+    assert result['waited_seconds']==0 and result['deferred_overlay']['known_unresolved_conditions']

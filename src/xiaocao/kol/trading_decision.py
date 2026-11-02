@@ -37,8 +37,8 @@ from typing import Callable, Iterator, Sequence
 from xiaocao.live import kol_policy
 from . import trading_context
 from .publication import (
-    canonical_bytes, canonical_sha256, manifest_sha256, read_published_publication,
-    record_content_sha256,
+    canonical_bytes, canonical_sha256, manifest_sha256, read_published_report_head,
+    record_content_sha256, manifest_entries,
 )
 
 
@@ -128,6 +128,22 @@ def _source(row: dict) -> dict:
             "received_at": row["received_at"]}
 
 
+def _source_records(row: dict, context: dict) -> list[dict]:
+    """Bind every previously read immutable record to this exact current manifest."""
+    records = [item["report"] for item in context["reports"]]
+    records += [item["record"] for name in ("viewpoints", "evaluations", "relations")
+                for item in context.get(name, []) if isinstance(item.get("record"), dict)]
+    by_identity = {(item["kind"], item["record_id"], item["content_sha256"]): item for item in records}
+    selected = []
+    for entry in row["manifest"]:
+        record = by_identity.get((entry["kind"], entry["record_id"], entry["content_sha256"]))
+        _require(record is not None and record_content_sha256(record) == entry["content_sha256"],
+                 "context_manifest_record_missing_or_changed")
+        selected.append(record)
+    _require(manifest_entries(selected) == row["manifest"], "context_manifest_records_mismatch")
+    return selected
+
+
 def _coverage(context: dict, review: dict, source_report_ids: set[str] | None = None) -> dict[str, dict]:
     coverage = context["coverage"]
     _require(isinstance(coverage, dict) and coverage.get("remote_discovery") == "registry_only",
@@ -206,6 +222,14 @@ def _coverage(context: dict, review: dict, source_report_ids: set[str] | None = 
     return reports
 
 
+def _observation_times(context: dict, as_of: datetime, now: datetime) -> None:
+    for row in context["report_index"]:
+        _require(_time(row["source_published_at"]) <= _time(row["received_at"])
+                 <= _time(row["version_received_at"]) <= as_of, "context_observation_time_invalid")
+        _require(_time(row["version_received_at"]) <= _time(row["verified_at"]) <= now,
+                 "source_verification_time_invalid")
+
+
 def _validate_inputs(decision: dict, review: dict, context: dict, now: datetime, *, fresh: bool) -> list[dict]:
     try:
         as_of, until, reviewed_at = kol_policy._validate_pair(decision, review)
@@ -213,11 +237,7 @@ def _validate_inputs(decision: dict, review: dict, context: dict, now: datetime,
         _context(context, now)
         _require(_time(context["as_of"]) <= as_of, "context_later_than_decision")
         reports = _coverage(context, review, {source["report_id"] for source in decision["source_refs"]})
-        for row in context["report_index"]:
-            _require(_time(row["source_published_at"]) <= _time(row["received_at"])
-                     <= _time(row["version_received_at"]) <= as_of, "context_observation_time_invalid")
-            _require(_time(row["version_received_at"]) <= _time(row["verified_at"]) <= now,
-                     "source_verification_time_invalid")
+        _observation_times(context, as_of, now)
         selected = []
         for source in decision["source_refs"]:
             row = reports.get(source["report_id"])
@@ -227,6 +247,9 @@ def _validate_inputs(decision: dict, review: dict, context: dict, now: datetime,
             _require(_time(row["version_received_at"]) <= _time(row["verified_at"]) <= now,
                      "source_verification_time_invalid")
             selected.append(row)
+        if fresh and decision.get('schema_version') == kol_policy.SELECTION_SCHEMA_VERSION:
+            from .selection_evidence import verify_preference_sources
+            verify_preference_sources(decision['selection_preferences'], reports, as_of=as_of)
         if fresh:
             _require(now < until, "decision_expired")
         return selected
@@ -234,6 +257,26 @@ def _validate_inputs(decision: dict, review: dict, context: dict, now: datetime,
         raise
     except Exception:
         raise TradingDecisionError("decision_review_or_context_invalid") from None
+
+
+def context_readiness(context: dict, *, review: dict | None = None,
+                      clock: Callable[[], datetime] = utc_now) -> dict:
+    """Check known publication prerequisites before model work; grants no policy authority."""
+    now = _time(clock())
+    _context(context, now)
+    assertions = review if review is not None else {
+        "context_sha256": context["context_sha256"],
+        "acknowledged_unloaded_report_ids": context["unloaded_report_ids"],
+    }
+    reports = _coverage(context, assertions, {row["report_id"] for row in context["reports"]})
+    _observation_times(context, _time(context["as_of"]), now)
+    _require(bool(reports), "decision_source_ids_required")
+    for row in reports.values():
+        _require(trading_context._eligible({"report": row["report"], "records": _source_records(row, context)},
+                                          row, now), "context_source_time_invalid")
+    return {"status": "context_ready", "authority": 0, "context_sha256": context["context_sha256"],
+            "source_count": len(reports), "registered_report_count": len(context["report_index"]),
+            "policy_publication": "not_performed", "remote_readback": "not_performed"}
 
 
 def _sync(directory: Path) -> None:
@@ -316,6 +359,12 @@ def _morning_deadline(decision: dict, review: dict, request: dict | None) -> dat
     _require(kol_policy.decision_sha256(unsigned) == sha, "morning_request_hash_mismatch")
     _require(request.get("runtime") == decision["runtime"] and request.get("book", "B") == decision["book"],
              "morning_request_scope_mismatch")
+    if decision.get('schema_version') == kol_policy.SELECTION_SCHEMA_VERSION:
+        binding = decision['selection_binding']
+        _require(binding == {key: (request.get('freeze') or {}).get(key)
+                             for key in kol_policy.SELECTION_BINDING_FIELDS}
+                 and binding['snapshot_sha256'] == request.get('freeze_sha256')
+                 and binding['market_date'] == request.get('trade_date'), 'selection_original_batch_mismatch')
     requested = _time(request["requested_at"])
     _require(requested.astimezone(ZoneInfo("Asia/Shanghai")).date().isoformat() == request["trade_date"],
              "morning_request_date_mismatch")
@@ -377,14 +426,13 @@ def publish_trading_decision(root: Path, decision: dict, review: dict, context: 
                 timeout_seconds=per_source_timeout_seconds, retries=0, max_read_calls=256,
                 total_timeout_seconds=total_timeout_seconds)
             for row in selected:
-                publication = read_published_publication(transport, row["report_id"])
-                trading_context._validate_publication(publication, {
-                    **row, "publication_id": row["report"]["source_binding"]["publication_id"],
-                })
+                publication = read_published_report_head(transport, row["report_id"])
                 # Compare the canonical source identity, not writer-request
                 # metadata such as a correction's expected_content_sha256.
                 _require(record_content_sha256(publication["report"]) == row["content_sha256"]
+                         and publication["manifest"] == row["manifest"]
                          and publication["manifest_sha256"] == row["manifest_sha256"], "remote_current_report_changed")
+                publication["records"] = _source_records(row, context)
                 _require(trading_context._eligible(publication, row, _time(decision["as_of"])),
                          "remote_publication_not_observed_as_of")
             finished = _time(clock())
@@ -448,7 +496,9 @@ def decision_status(root: Path, *, book: str, runtime: str, clock: Callable[[], 
     return {"status": snapshot["status"], "book": book, "runtime": runtime,
             "decision_id": snapshot["decision_id"], "buy_scale": snapshot["buy_scale"],
             "skip_count": len(snapshot["skip_codes"]), "exit_request_count": len(snapshot["exit_codes"]),
-            "xiaocao_mode_override_count": len(snapshot.get("xiaocao_mode_overrides") or [])}
+            "xiaocao_mode_override_count": len(snapshot.get("xiaocao_mode_overrides") or []),
+            "selection_preference_count":len(snapshot.get('selection_preferences') or []),
+            "selection_freeze_sha256":(snapshot.get('selection_binding') or {}).get('snapshot_sha256')}
 
 
 def _consumption_evidence(location: Path, runtime: str) -> tuple[list[dict], dict]:

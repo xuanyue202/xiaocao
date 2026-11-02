@@ -47,6 +47,46 @@ summary. Fill the template:
   Every implication source appears in this ledger. Background is an explained
   disposition, never latest-N truncation or inferred keyword classification.
 
+Organize implications by the actual decision that may change: shared environment,
+mode conditions, candidate preference or code risk. Compatible viewpoints can
+support one implication with each source attribution and condition preserved;
+conflicting direction, horizon or conditions stay separate. Every eligible
+viewpoint still has its own coverage row. Explain background/not-applicable
+items rather than expanding each into another operational instruction. There is
+no fixed implication cap and no keyword/latest-N filtering. At final dispatch,
+review current applicability/delta and emit the existing bounded policy; reuse
+unchanged reasoning. For user-authorized mode/sector/candidate preferences,
+also fill optional `selection_preferences` using the typed schema in
+`src/xiaocao/kol/selection.py`: unique id, kind/target, direction
+prefer|deprioritize, source_report_id/source_quote/rationale, current
+applicability supported|uncertain|contradicted and explicit conditions.
+List order is priority; no invented numeric score boost. Candidate targets bind
+code+mode; sector targets bind exact frozen excIndustryCode/blockCodeList/
+blockCategoryCodeList codes and a hash-bound `kol-sector-map.v1` file with
+observed_at/source_ref/entries(field,code,name). Verify source quote and sector
+map before acceptance; parent review sets selection_preferences_reviewed=true.
+Uncertain/contradicted or unproved conditions have no sorting effect. Ordinary
+preferences never qualify COLD/UNKNOWN, absent codes or unfillable candidates.
+
+To keep new model work out of an unchanged opening, also author `policy_template`
+during preparation: buy_scale/skip_codes/exit_codes/rationale/
+invalidation_conditions/xiaocao_mode_overrides/mode_mappings, exact
+source_report_ids, request_conditions and unresolved_semantic_conditions.
+`prepared_policy.py` defines the executable schema; request conditions currently
+support explicit account_risk_status/account_deploy_factor predicates, while
+candidate conditions remain on each preference. Every important unrepresented
+semantic condition belongs in unresolved_semantic_conditions; an empty list
+must be justified by the analyst and independent parent, not assumed. Parent
+sets policy_template_reviewed=true after source/effect/condition review.
+Template acceptance grants no final decision review or publication authority.
+When no executable overlay is justified, the analyst may explicitly set
+policy_template.defer_if_no_effect=true and parent deferred_overlay_reviewed=true.
+This authorizes only prompt baseline fallback: unchanged full source/delta,
+satisfied request conditions, neutral template risk effects and no applicable
+selection preference. Keep unresolved conditions. It declares KOL deferred,
+not completed neutral review, and preserves every independent valid policy and
+original trading gate. Any executable effect or changed source disables it.
+
 “轻仓” retains its wording and conditions; a numerical buy_scale needs explicit
 reasoning and final independent review. “重点看” retains the source term and
 exact/conditional/unmapped system mapping; it is not itself an order or COLD
@@ -54,9 +94,16 @@ exception. Preserve conflicting evidence and unresolved mappings.
 
 Fetch only the exact reports cited by these implications **before** preparation
 acceptance, using repeated `--report-id <id> --read-report-id <id>` with
-`kol_trading_context.py context --summary`. Do not combine this with
+`kol_trading_context.py context --decision-sources --summary`. Do not combine this with
 `--cache-only` when a cited body is missing. Check selected body coverage and
 hashes. This is citation verification, not re-authoring the source semantics.
+Run `kol_trading_decision.py context-check --context <context.json>` now.
+Require `context_ready` before sealing; a known author/longitudinal/body gap
+is preparation recovery work, not a surprise for 09:25. This read-only check
+grants no policy authority. Complete published writer receipts supply history;
+only the explicit reports receive current remote head checks, so unrelated
+archive expiry does not schedule a full remote reread. Missing writer proof
+remains explicit rather than being marked fresh.
 Keep this full context for final publication if its source versions are still
 current; publication performs its existing exact remote readback. Preparation
 receipt embeds the context, so it is not a golden-window schema/body hunt.
@@ -77,6 +124,10 @@ its exact Automation/Thread. Paper resolves its original manifest-bound shared o
 deployment state root for context caches; foreign/nested cache symlinks remain
 blocked. An early preparation failure is explicit and must be repaired before
 09:20 where possible; do not summarize it as successfully prepared.
+APP acknowledgement also registers the accepted preparation immutably for
+daily morning's local recommendation preview. Prepare preferences before the
+09:25 capture; the producer never waits or launches another analyst. This
+authority=0 preview has its own receipt and never counts as APP/Paper adoption.
 For Paper, pass the original manifest `execution_root` as `--root` to both
 inputs and accept. Accept registers the sealed reference in the original run
 directory after matching Automation/Thread/run identity; the supervisor reads
@@ -86,8 +137,24 @@ that reference, and the pinned runtime includes the same rule bytes. Keep the wo
 
 APP's original request contains `kol_inputs.packet_path/packet_sha256` produced
 by the shared assembler. When the event includes `dispatch_path`, read that
-one immutable handoff file and immediately send its exact `tool_arguments` to
-the same warm worker. It includes the brief, hash-bound packet and actual assembly
+one immutable handoff file. If next_action=independently_review_prepared_draft,
+read its exact prepared_policy_path: the code assembled an authority0 draft
+from an accepted template, unchanged source fingerprint/full delta and satisfied
+explicit current conditions. It contains small decision/source hash references;
+pass decision_path/context_path to the publisher. Unchanged full context stays
+in its immutable sidecar, rather than being reopened by the parent merely for
+publication. Independently review that draft against this
+request's embedded current facts and all original source conditions, then publish
+through the usual exact context/current-source verification before cutoff.
+Create an actual new final review bound to decision/context/request hashes;
+the earlier preparation review cannot substitute. This branch invokes no model.
+If next_action=continue_original_baseline_deferred, original code records the
+explicit KOL deferred receipt and continues its own valid-policy/baseline gates;
+read its known unresolved conditions without dispatching or publishing a neutral
+substitute. This is a separately reviewed fallback, not judgment completion.
+If next_action=dispatch_warm_worker, immediately send exact tool_arguments to
+the same worker; a new source/delta/unresolved condition requires its judgment.
+The handoff includes the brief, hash-bound packet and actual assembly
 clock; `actual_dispatch=not_observed` must be replaced only by a real tool receipt.
 Do not add separate brief/schema/full-projection reads before dispatch. If no
 accepted warm preparation exists, preserve the explicit degradation. Do not open the complete old projection again. Paper's original
@@ -132,8 +199,14 @@ neutral judgment. Neither a prepared brief nor a packet grants trading authority
 
 ## Final output schema: prepare the shape early
 
-Use existing `kol_policy` schema `kol-trading-decision.v1` (v2 only for the
-existing explicit Xiaocao override). Before dispatch, verify its current constant
+Use `kol-trading-decision.v3` for selection preferences, preserving v1 risk fields
+and the existing v2-equivalent Xiaocao override. Its `selection_preferences`
+reuse reviewed prepared semantics with current conditions; `selection_binding`
+copies only market_date/strategy_run_id/strategy_sha/snapshot_sha256/
+snapshot_raw_sha256/snapshot_row_count/checkpoint_sha256 from the exact original
+request.freeze. Review also sets selection_preferences_reviewed=true. No new
+sorting claim is needed when preferences=[]; justified neutral is valid.
+V1/v2 remain supported. Before dispatch, verify its current constant
 and fields in `src/xiaocao/live/kol_policy.py`; do this during preparation.
 Decision fields: `schema_version`, unique `decision_id`, actual `agent_id`,
 `book=B`, this consumer's `runtime=live|paper`, UTC-Z `as_of`, `valid_until`,
@@ -160,7 +233,9 @@ issues explicitly under the existing publisher rules. Publish through
 Morning-bound policies require that hash-matching original request. Source-read
 budget and the final locked store admission use its absolute deadline; a completed
 exact retry still only returns the original receipt. Unchanged early cited bodies may be reused;
-the publisher still verifies exact current remote content/manifests. New cited
+the publisher still verifies exact current remote report heads and complete manifests.
+A matching manifest reuses its hash-verified immutable records; changed or missing
+records must be read and reviewed, not silently accepted. New cited
 versions require their exact context; do not replace freshness with a claim.
 
 ## Completion evidence
