@@ -22,7 +22,7 @@ async function uploadStage(input, stage, action) {
   return result;
 }
 
-async function restoreUploaderWindow(page, input) {
+async function restoreUploaderWindow(page, input, expectedPage) {
   const state = await uploadStage(input, 'page_state', () => page.evaluate(`({
     visibility: document.visibilityState, url: location.href
   })`));
@@ -61,14 +61,16 @@ async function restoreUploaderWindow(page, input) {
       set active tab index of w to tabIndex
       set index of w to 1
       activate
+      return "minimized=" & (minimized of w as text) & ";visible=" & (visible of w as text) & ";selected=" & ((id of active tab of w as text) is (item 3 of chosen)) & ";frontmost=" & (frontmost as text)
     end tell
-    return "foreground_requested"
   end run`;
   try {
     await uploadStage(input, 'foreground', async () => {
       try {
-        execFileSync('/usr/bin/osascript', ['-e', script, state.url, marker],
+        const nativeState = execFileSync('/usr/bin/osascript', ['-e', script, state.url, marker],
           {encoding: 'utf8', timeout: 10000});
+        process.stderr.write(JSON.stringify({kind: 'xiaocao_uploader_native_readback',
+          claimId: input.claimId, state: nativeState.trim()}) + '\n');
       } catch {
         throw new CommandExecutionError('Exact Edge uploader window restoration failed; no file attached');
       }
@@ -78,9 +80,21 @@ async function restoreUploaderWindow(page, input) {
       if (document.title === ${JSON.stringify(marker)}) document.title = ${JSON.stringify(originalTitle)};
     })()`);
   }
-  const heartbeat = await uploadStage(input, 'event_loop', () => page.evaluate(
-    'new Promise(resolve => setTimeout(() => resolve({responsive:true}), 100))'
-  ));
+  if (!expectedPage || page.getActivePage?.() !== expectedPage) {
+    throw new CommandExecutionError('Uploader page changed during foreground recovery');
+  }
+  await uploadStage(input, 'foreground', () => page.selectTab(expectedPage));
+  if (page.getActivePage?.() !== expectedPage) {
+    throw new CommandExecutionError('Uploader page changed after foreground recovery');
+  }
+  const heartbeat = await uploadStage(input, 'event_loop', async () => {
+    const foregroundState = await page.evaluate(`({visibility: document.visibilityState,
+      focused: document.hasFocus()})`);
+    process.stderr.write(JSON.stringify({kind: 'xiaocao_uploader_foreground_readback',
+      claimId: input.claimId, visibility: foregroundState?.visibility,
+      focused: foregroundState?.focused}) + '\n');
+    return page.evaluate('new Promise(resolve => setTimeout(() => resolve({responsive:true}), 100))');
+  });
   if (heartbeat?.responsive !== true) {
     throw new CommandExecutionError('Uploader event loop recovery was not verified');
   }
@@ -134,11 +148,13 @@ async function inspectTarget(page, input, { retainPage = false, restoreReadback 
   if (targets.length > 1) {
     throw new CommandExecutionError('Multiple exact adapter uploader pages; selection is ambiguous');
   }
+  let boundPage;
   if (targets.length === 1 && targets[0].page) {
+    boundPage = targets[0].page;
     if (expectedPage && targets[0].page !== expectedPage) {
       throw new CommandExecutionError('Recovery uploader page changed; do not attach');
     }
-    await uploadStage(input, 'select', () => page.selectTab(targets[0].page));
+    await uploadStage(input, 'select', () => page.selectTab(boundPage));
   } else {
     if (retainPage) {
       const netdiskPages = tabs.flatMap(tab => {
@@ -168,9 +184,13 @@ async function inspectTarget(page, input, { retainPage = false, restoreReadback 
     await uploadStage(input, 'navigate', () => page.goto(folderUrl, { waitUntil: 'load', settleMs: 1500 }));
     const activePage = page.getActivePage?.();
     if (!activePage) throw new CommandExecutionError('Exact adapter page identity is missing');
+    boundPage = activePage;
     await uploadStage(input, 'select', () => page.selectTab(activePage));
   }
-  if (!restoreReadback) await restoreUploaderWindow(page, input);
+  if (!boundPage || page.getActivePage?.() !== boundPage) {
+    throw new CommandExecutionError('Uploader page changed after selection');
+  }
+  if (!restoreReadback) await restoreUploaderWindow(page, input, boundPage);
   const inspection = await uploadStage(input, 'folder_scan', () => page.evaluate(`(async () => {
     const dir = ${JSON.stringify(input.directory)};
     const target = ${JSON.stringify(input.targetName)};
