@@ -27,6 +27,19 @@ class FakeClient:
         return self.rows
 
 
+def test_kol_reserve_order_cannot_readmit_explicitly_unfillable_candidate():
+    from kronos_screen.scripts.paper_record import _mode_exec_candidate_pool
+    from tests.test_kol_selection import row,preference
+    from xiaocao.kol.selection import select_candidates
+    rows=[row('000001.XSHE','A',1),row('000002.XSHE','A',4)]
+    rows[0]['executable_fillable']=False
+    result=select_candidates(rows,[preference('candidate',{'code':'000002.XSHE','mode':'A'})],
+        trade_date='2026-11-03',freeze_sha256='a'*64)
+    pool=_mode_exec_candidate_pool(result.rows)
+    assert [r['code'] for r in pool]==['000002.XSHE']
+    assert [r['code'] for r in pool]==result.receipt['selected_codes']
+
+
 class FakeBookTClient(FakeClient):
     def stock_info(self):
         return [

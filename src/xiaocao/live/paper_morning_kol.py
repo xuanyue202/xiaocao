@@ -201,6 +201,12 @@ class PaperKolReview:
         self.emit({"event": "paper_kol_review_requested", "trade_date": self.date,
                    "request_path": str(path), "request_sha256": digest,
                    "dispatch_path": str(dispatch_path) if dispatch_path else None})
+        if dispatch_path:
+            from .morning_dispatch import read_deferred_overlay
+            deferred=read_deferred_overlay(dispatch_path,digest)
+            if deferred is not None:
+                self.deferred_overlay=deferred
+                self.defer(deferred['reason'])
 
     def _finish(self, status: str, reason: str, policy=None):
         completed = self.now()
@@ -212,6 +218,8 @@ class PaperKolReview:
             "entry_deadline": self.cutoff.isoformat(), "max_wait_seconds": max(0, (self.cutoff-self.started).total_seconds()),
             "waited_seconds": max(0, (completed-self.started).total_seconds()),
             "decision_sha256": (policy or {}).get("decision_sha256")}
+        if getattr(self,'deferred_overlay',None) is not None:
+            value['deferred_overlay']=self.deferred_overlay
         self.receipt = {**value, "receipt_sha256": kol_policy.decision_sha256(value)}
         write_once(self.path, self.receipt)
 

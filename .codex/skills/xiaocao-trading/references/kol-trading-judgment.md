@@ -99,6 +99,23 @@ another KOL, or a merely related theme. `runtime=both` is valid only when both
 accounts were actually checked. Otherwise publish separate decisions. Neutral
 is valid when justified; do not manufacture a trade to demonstrate absorption.
 
+Use `kol-trading-decision.v3` for user-authorized ordered mode/sector/candidate
+preferences within the exact original morning freeze. Follow the typed preference,
+source quote, canonical sector-map and selection_binding schema in
+[opening preparation](kol-opening-preparation.md). All risk fields and v2 mode
+override guards remain. Parent review explicitly covers preference priority,
+mapping, conditions/conflicts and selection_preferences_reviewed=true.
+Producer authority=0 recommendation preview and formal per-runtime adoption
+are separate receipts. APP/Paper and local replay share select_candidates;
+no code/eligibility/seat/weight/parameter widening. The final warm worker reuses
+the prepared preference list and checks current facts/delta only; do not repeat
+all unchanged viewpoints or report bodies after capture.
+An accepted policy_template may instantiate a draft without another worker
+when complete source/delta and explicit conditions are unchanged/proved. Follow
+the handoff next_action in opening preparation. The original parent still
+performs current independent review and exact source-verified publication;
+unresolved semantics take the existing bounded warm-worker branch.
+
 The independent review binds `decision_sha256`, a different reviewer agent ID,
 `reviewed_at`, `status=approved`, and true source-fidelity/coverage/applicability/
 counterevidence checks. It also binds `context_sha256` and explicitly

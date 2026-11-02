@@ -58,7 +58,12 @@ def test_committed_bundle_survives_compatibility_freeze_conflict(tmp_path, monke
     receipt = acquire_bundle(tmp_path, day)
     assert receipt["status"] == "ready"
     assert read_consumed_rows(receipt, day, live_dir=tmp_path) == [row]
-    event = json.loads(capsys.readouterr().err.splitlines()[-1])
+    immediate=(tmp_path/f'recommend_{day}.md').read_text()
+    assert row['code'] in immediate
+    from xiaocao.kol.selection_preview import read_recommendation
+    assert read_recommendation(tmp_path,day,receipt)['baseline_codes']==[row['code']]
+    event = next(e for e in (json.loads(line) for line in capsys.readouterr().err.splitlines()
+        if line.startswith('{')) if e.get('event')=='morning_bundle_published')
     assert event["compatibility_freeze"]["status"] == "conflict_preserved"
 
 

@@ -160,6 +160,35 @@ def morning_bundle(bundle):
     return decision, review, context, reader, request
 
 
+@pytest.mark.parametrize('damage', [None, 'quote', 'foreign_batch'])
+def test_v3_selection_publication_binds_original_batch_and_source_quote(tmp_path,bundle,damage):
+    from tests.test_kol_selection import preference
+    decision,review,context,reader,request=morning_bundle(bundle)
+    binding=dict(market_date=request['trade_date'],strategy_run_id='original',strategy_sha='a'*40,
+        snapshot_sha256='b'*64,snapshot_raw_sha256='c'*64,snapshot_row_count=2,checkpoint_sha256='d'*64)
+    request.update(freeze=binding,freeze_sha256=binding['snapshot_sha256'])
+    request.pop('request_sha256')
+    request['request_sha256']=kol_policy.decision_sha256(request)
+    decision.update(schema_version=kol_policy.SELECTION_SCHEMA_VERSION, selection_binding=copy.deepcopy(binding),
+        xiaocao_mode_overrides=[],morning_request_sha256=request['request_sha256'],
+        selection_preferences=[preference('mode',{'mode':'test'},source_report_id=context['reports'][0]['report_id'],
+            source_quote='完整报告' if damage!='quote' else 'invented quotation')])
+    if damage=='foreign_batch':decision['selection_binding']['checkpoint_sha256']='f'*64
+    review.update(decision_sha256=kol_policy.decision_sha256(decision),selection_preferences_reviewed=True,
+        morning_request_sha256=request['request_sha256'])
+    if damage:
+        with pytest.raises(td.TradingDecisionError):
+            td.publish_trading_decision(tmp_path,decision,review,context,client=reader,
+                clock=lambda:NOW,morning_request=request)
+        assert not (tmp_path/td.POLICY_PATH/'decisions').exists()
+    else:
+        result=td.publish_trading_decision(tmp_path,decision,review,context,client=reader,
+            clock=lambda:NOW,morning_request=request)
+        assert result['status']=='published'
+        status=td.decision_status(tmp_path,book='B',runtime='live',clock=lambda:NOW)
+        assert status['selection_preference_count']==1 and status['selection_freeze_sha256']==binding['snapshot_sha256']
+
+
 @pytest.mark.parametrize("late", ["before", "during", "store_admission", "on_time"])
 def test_morning_publication_keeps_original_budget_through_store_admission(tmp_path, bundle, monkeypatch, late):
     decision, review, context, reader, request = morning_bundle(bundle)

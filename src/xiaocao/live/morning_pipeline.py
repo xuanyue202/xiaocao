@@ -107,6 +107,8 @@ def pipeline_status(live_dir: Path, date: str) -> dict:
                     "repair_acceptance": acceptance})
     from xiaocao.live.morning_bundle import inspect_bundle
     bundle = inspect_bundle(live_dir, date)
+    from xiaocao.kol.selection_preview import read_recommendation
+    result['kol_recommendation_preview'] = read_recommendation(live_dir, date, bundle)
     result["bundle"] = {"evidence": _evidence(live_dir / f"morning_bundle_ready_{date}.json")[1],
         "status": bundle["status"], "checkpoint_sha256": bundle.get("checkpoint_sha256"),
         "producer": bundle.get("producer")}

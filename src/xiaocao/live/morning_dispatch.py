@@ -45,6 +45,46 @@ def write_warm_dispatch(request: dict, request_path: Path, *, now: datetime) -> 
         'brief':review_brief(request),'packet':packet,
         'tool_arguments':{'target':worker,'message':message},
         'actual_dispatch':'not_observed','publication':'not_observed'}
+    try:
+        from xiaocao.kol.opening_preparation import read_preparation, write_artifact
+        from xiaocao.kol.prepared_policy import materialize, defer_no_effect
+        prepared = read_preparation(Path(packet['preparation_path']), now=now)
+        try:
+            deferred = defer_no_effect(prepared,packet,request,now=now)
+        except ValueError:
+            deferred = None
+        if deferred is not None:
+            value.update(next_action='continue_original_baseline_deferred', deferred_overlay=deferred)
+        else:
+            candidate = materialize(prepared,packet,request,now=now)
+            context_path = write_artifact(request_path.parent,prepared['context'],'.publication-context.json')
+            decision_path = write_artifact(request_path.parent,candidate['decision'],'.decision.json')
+            from .kol_policy import decision_sha256
+            candidate.update(context_path=str(context_path),decision_path=str(decision_path),
+                decision_sha256=decision_sha256(candidate['decision']))
+            candidate_path = write_artifact(request_path.parent,candidate,'.prepared-policy.json')
+            value.update(next_action='independently_review_prepared_draft',
+                prepared_policy_path=str(candidate_path), prepared_policy_sha256=canonical_sha256(candidate))
+    except (OSError,ValueError,KeyError,TypeError) as exc:
+        value.update(next_action='dispatch_warm_worker', prepared_policy_unavailable=type(exc).__name__+':'+str(exc))
     value['sha256'] = canonical_sha256(value)
     atomic_write(path,json.dumps(value,ensure_ascii=False,sort_keys=True).encode(),immutable=True)
     return path
+
+
+def read_deferred_overlay(path: Path, request_sha256: str) -> dict | None:
+    """Validate the exact generated supporting directive before skipping a wait."""
+    if path.is_symlink():
+        raise ValueError('MORNING_DISPATCH_DEFER_PATH_INVALID')
+    value=json.loads(path.read_bytes())
+    if (value.get('sha256')!=canonical_sha256({k:v for k,v in value.items() if k!='sha256'})
+            or value.get('request_sha256')!=request_sha256):
+        raise ValueError('MORNING_DISPATCH_DEFER_HASH_INVALID')
+    if value.get('next_action')!='continue_original_baseline_deferred':
+        return None
+    deferred=value['deferred_overlay']
+    if (deferred.get('sha256')!=canonical_sha256({k:v for k,v in deferred.items() if k!='sha256'})
+            or deferred.get('request_sha256')!=request_sha256 or deferred.get('authority')!=0
+            or deferred.get('status')!='deferred' or deferred.get('semantic_review_completed') is not False):
+        raise ValueError('MORNING_DISPATCH_DEFER_BINDING_INVALID')
+    return deferred

@@ -46,11 +46,15 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterator
+from zoneinfo import ZoneInfo
 
 
 SCHEMA_VERSION = "kol-trading-decision.v1"
 MODE_OVERRIDE_SCHEMA_VERSION = "kol-trading-decision.v2"
-_SUPPORTED_SCHEMA_VERSIONS = {SCHEMA_VERSION, MODE_OVERRIDE_SCHEMA_VERSION}
+SELECTION_SCHEMA_VERSION = "kol-trading-decision.v3"
+_SUPPORTED_SCHEMA_VERSIONS = {SCHEMA_VERSION, MODE_OVERRIDE_SCHEMA_VERSION, SELECTION_SCHEMA_VERSION}
+SELECTION_BINDING_FIELDS = ("market_date", "strategy_run_id", "strategy_sha", "snapshot_sha256",
+                            "snapshot_raw_sha256", "snapshot_row_count", "checkpoint_sha256")
 _RECORD_VERSION = "kol-trading-decision-record.v1"
 _SOURCE_FIELDS = {
     "report_id", "content_sha256", "author_id", "source_published_at", "received_at",
@@ -213,6 +217,29 @@ def _validate_pair(decision: dict, review: dict) -> tuple[datetime, datetime, da
     reviewer = review.get("reviewer_agent_id")
     _require(_text(reviewer) and reviewer != decision["agent_id"], "INDEPENDENT_REVIEWER_REQUIRED")
     _require(all(review.get(flag) is True for flag in _REVIEW_FLAGS), "REVIEW_COVERAGE_INCOMPLETE")
+    if schema_version == SELECTION_SCHEMA_VERSION:
+        from xiaocao.kol.selection import validate_preferences
+        _require(decision['book'] == 'B', 'SELECTION_BOOK_B_ONLY')
+        validate_preferences(decision.get('selection_preferences'))
+        _require(all(p['source_report_id'] in report_ids for p in decision['selection_preferences']),
+                 'SELECTION_SOURCE_NOT_CITED')
+        binding = decision.get('selection_binding')
+        _require(isinstance(binding, dict) and set(binding) == set(SELECTION_BINDING_FIELDS),
+                 'SELECTION_BATCH_BINDING_REQUIRED')
+        for field in ('snapshot_sha256', 'snapshot_raw_sha256', 'checkpoint_sha256'):
+            _require(isinstance(binding[field], str) and _SHA.fullmatch(binding[field]) is not None,
+                     'SELECTION_BATCH_HASH_INVALID')
+        _require(isinstance(binding['strategy_sha'], str) and re.fullmatch(r'[0-9a-f]{40}|[0-9a-f]{64}', binding['strategy_sha']) is not None,
+                 'SELECTION_STRATEGY_HASH_INVALID')
+        _require(_text(binding['strategy_run_id']) and type(binding['snapshot_row_count']) is int
+                 and binding['snapshot_row_count'] >= 0
+                 and binding['market_date'] == as_of.astimezone(ZoneInfo('Asia/Shanghai')).date().isoformat(),
+                 'SELECTION_BATCH_DATE_INVALID')
+        _require('morning_request_sha256' in decision and review.get('selection_preferences_reviewed') is True,
+                 'SELECTION_INDEPENDENT_REVIEW_REQUIRED')
+    else:
+        _require('selection_preferences' not in decision and 'selection_binding' not in decision,
+                 'SELECTION_REQUIRES_V3')
     if "morning_request_sha256" in decision or "morning_request_sha256" in review:
         request_sha = decision.get("morning_request_sha256")
         _require(isinstance(request_sha, str) and _SHA.fullmatch(request_sha) is not None
@@ -398,6 +425,8 @@ def _snapshot(record: dict, book: str, runtime: str, now: datetime) -> dict:
     result = _state("validated", book, runtime, "KOL_POLICY_VALIDATED", decision_id=decision["decision_id"])
     result.update({key: decision[key] for key in ("buy_scale", "skip_codes", "exit_codes")})
     result["xiaocao_mode_overrides"] = list(decision.get("xiaocao_mode_overrides") or [])
+    if decision.get('schema_version') == SELECTION_SCHEMA_VERSION:
+        result.update(selection_preferences=decision['selection_preferences'], selection_binding=decision['selection_binding'])
     result.update(record=record, evaluated_at=now.isoformat(), decision_sha256=record["receipt"]["decision_sha256"])
     return result
 
@@ -504,7 +533,7 @@ def describe_judgment(snapshot: dict) -> dict:
     status = verified["status"]
     if status == "validated":
         changed = (verified["buy_scale"] != 1 or bool(verified["skip_codes"])
-                   or bool(verified["exit_codes"]) or bool(verified["xiaocao_mode_overrides"]))
+                   or bool(verified["exit_codes"]) or bool(verified["xiaocao_mode_overrides"]) or bool(verified.get('selection_preferences')))
         outcome = "published_changed" if changed else "published_no_change"
     else:
         outcome = "invalid" if status == "blocked" else "degraded_" + status
@@ -518,8 +547,28 @@ def describe_judgment(snapshot: dict) -> dict:
         "record_sha256": (verified.get("record") or {}).get("record_sha256"),
         "mode_mappings": (verified.get("record") or {}).get("decision", {}).get("mode_mappings"),
         "effect": {name: verified[name] for name in (
-            "buy_scale", "skip_codes", "exit_codes", "xiaocao_mode_overrides")},
+            "buy_scale", "skip_codes", "exit_codes", "xiaocao_mode_overrides")}
+            | ({'selection_preferences': verified['selection_preferences']} if 'selection_preferences' in verified else {}),
     }
+
+
+def select_book_b(rows: list[dict], snapshot: dict, *, freeze: dict,
+                  max_slots: int = 3) -> tuple[list[dict], dict | None]:
+    """One shared derivation for exact-batch v3; legacy v1/v2 remain unchanged."""
+    verified = _consumable_snapshot(snapshot)
+    derived = prioritize_xiaocao_modes(rows, snapshot, max_slots=max_slots)
+    if 'selection_preferences' not in verified:
+        return derived, None
+    binding = {key: freeze.get(key) for key in SELECTION_BINDING_FIELDS}
+    _require(binding == verified['selection_binding'], 'SELECTION_FOREIGN_BATCH')
+    from xiaocao.kol.selection import select_candidates
+    result = select_candidates(derived, verified['selection_preferences'], trade_date=binding['market_date'],
+                               freeze_sha256=binding['snapshot_sha256'], max_slots=max_slots, frozen_rows=rows)
+    receipt = {**result.receipt, 'freeze': binding, 'decision_sha256': verified['decision_sha256'],
+               'record_sha256': verified['record']['record_sha256']}
+    receipt.pop('receipt_sha256', None)
+    receipt['receipt_sha256'] = decision_sha256(receipt)
+    return result.rows, receipt
 
 
 def prioritize_xiaocao_modes(rows: list[dict], snapshot: dict, *, max_slots: int = 3) -> list[dict]:

@@ -247,6 +247,9 @@ def _validate_inputs(decision: dict, review: dict, context: dict, now: datetime,
             _require(_time(row["version_received_at"]) <= _time(row["verified_at"]) <= now,
                      "source_verification_time_invalid")
             selected.append(row)
+        if fresh and decision.get('schema_version') == kol_policy.SELECTION_SCHEMA_VERSION:
+            from .selection_evidence import verify_preference_sources
+            verify_preference_sources(decision['selection_preferences'], reports, as_of=as_of)
         if fresh:
             _require(now < until, "decision_expired")
         return selected
@@ -356,6 +359,12 @@ def _morning_deadline(decision: dict, review: dict, request: dict | None) -> dat
     _require(kol_policy.decision_sha256(unsigned) == sha, "morning_request_hash_mismatch")
     _require(request.get("runtime") == decision["runtime"] and request.get("book", "B") == decision["book"],
              "morning_request_scope_mismatch")
+    if decision.get('schema_version') == kol_policy.SELECTION_SCHEMA_VERSION:
+        binding = decision['selection_binding']
+        _require(binding == {key: (request.get('freeze') or {}).get(key)
+                             for key in kol_policy.SELECTION_BINDING_FIELDS}
+                 and binding['snapshot_sha256'] == request.get('freeze_sha256')
+                 and binding['market_date'] == request.get('trade_date'), 'selection_original_batch_mismatch')
     requested = _time(request["requested_at"])
     _require(requested.astimezone(ZoneInfo("Asia/Shanghai")).date().isoformat() == request["trade_date"],
              "morning_request_date_mismatch")
@@ -487,7 +496,9 @@ def decision_status(root: Path, *, book: str, runtime: str, clock: Callable[[], 
     return {"status": snapshot["status"], "book": book, "runtime": runtime,
             "decision_id": snapshot["decision_id"], "buy_scale": snapshot["buy_scale"],
             "skip_count": len(snapshot["skip_codes"]), "exit_request_count": len(snapshot["exit_codes"]),
-            "xiaocao_mode_override_count": len(snapshot.get("xiaocao_mode_overrides") or [])}
+            "xiaocao_mode_override_count": len(snapshot.get("xiaocao_mode_overrides") or []),
+            "selection_preference_count":len(snapshot.get('selection_preferences') or []),
+            "selection_freeze_sha256":(snapshot.get('selection_binding') or {}).get('snapshot_sha256')}
 
 
 def _consumption_evidence(location: Path, runtime: str) -> tuple[list[dict], dict]:

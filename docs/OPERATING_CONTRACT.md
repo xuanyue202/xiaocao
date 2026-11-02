@@ -1,6 +1,6 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：4.55
+**版本**：4.56
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
 **关联实现**：`src/xiaocao/live/{safety,capital_keychain,foundersc_native_ax,foundersc_native_broker,trading_execution,book_b_live_lifecycle,book_b_live_intraday}.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`native/foundersc_ax_executor/`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{book_b_live_morning,book_b_live_intraday,live_monitor,research_mode_switch_replay}.py`
@@ -297,7 +297,7 @@ KOL 断言、候选假设或报告升级为策略真值，也不替代永久参�
 不得仅按持仓名称或关键词裁剪信息。完整语义库存保持全量，但模型运行上下文只消费 writer 显式分类且可操作的短线子集。灰常亮报告及观点/评估/关系是事实源，
 本地只保存可重建的 hash-bound 缓存；远端发现仅能证明已登记 ID 的覆盖。
 
-语义分析产出兼容的 `kol-trading-decision.v1/v2`，由不同 Agent 完整复核来源忠实性、
+语义分析产出兼容的 `kol-trading-decision.v1/v2/v3`，由不同 Agent 完整复核来源忠实性、
 重要观点覆盖、当下适用性及反证，并绑定精确 decision hash。
 `kol_policy.py` 仅确定性解释这个受限接口，不自行理解自然语言或生成信号：
 
@@ -309,6 +309,27 @@ KOL 断言、候选假设或报告升级为策略真值，也不替代永久参�
   `COLD`，不得恢复证据缺失的 `UNKNOWN`、北交所、不可成交行或新增代码。
   不得增加席位、本金、杠杆或原预算上限；跳过后的槽位留现金。Book T/KOL-US
   不因此新增实盘或确定性执行权限。
+- 2026-11-02 用户授权 v3 在原冻结池内参与模式/赛道选择和候选重排。有序的
+  prefer/deprioritize 只重排已合格 ACTIVE/PROVISIONAL 候选，沿用三席、每模式一只、
+  原 target_weights 和确定性同分排序；不改策略分数、参数或原冻结字节。COLD 仍仅可
+  由上述小草显式跟随恢复。偏好含精确来源原话、当前适用性与明确冻结事实条件；赛道使用
+  原行标准行业/板块代码和经独立复核的不可变映射，不按名称关键词推断。
+  模糊/条件未证实/反证未解决的偏好不生效。v3 及 review 绑定原请求与完整
+  date/run/strategy/snapshot/raw/count/checkpoint，父级明确复核 selection_preferences；
+  publisher 核验原话和映射。APP/Paper 共用纯选择器，资金与执行门继续独立。
+  daily morning 先提交完整 baseline，再只读已接受准备生成 authority=0 推荐预览，
+  展示 baseline→KOL 差异及回执；不等待 APP 账户或启动另一模型/生产者。
+  缺失/过期/来源改变回原推荐并明示降级，预览不算正式政策采用。
+  完整语义、政策形状与显式条件在盘前准备；当原 packet 的来源/观点无变化、所有可执行
+  条件已证实且没有未解决语义条件时，可确定性装配待审核 v3 草案，原父级仍须核验当前
+  事实、独立审核并经当前来源验证发布；准备审核不得冒充正式 review。需要新语义判断
+  才进入原有 warm worker 分支，预算不够保留原门，不延长截止。
+  若盘前父级另行批准 defer_if_no_effect，原来源/全量 delta 未变、当前条件满足，
+  且没有可执行候选偏好、缩放/跳过/退出或模式跟随增量时，可以保留所有未解条件并立即
+  记录 KOL deferred，继续原基线及独立有效政策/执行门，不再等待模型。此分支不是中性
+  判断完成、不发布政策、不覆盖既有效果；新来源或有可执行增量仍走原有评审。
+  离线分别计量模型准备、数据就绪到推荐落盘及当前来源验证，验证选择不变量。
+  无当时有效 v3/完整成交持有期和费用证据时，不把今天偏好回填历史或宣称收益改善。
 - 普通买入仍须原 ★E/ACTIVE-PROVISIONAL；上述小草显式模式跟随是唯一例外，
   只生成带原状态、来源 report、decision hash 的消费派生行，不改写 freeze。
   两者都继续受板块/整手/资金、行情新鲜度、涨跌停可成交性及所有交易安全门。
@@ -883,6 +904,7 @@ no-KOL三项纸盘挑战，共同风险与B退出，仅前向独立账本。原�
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| 4.56 | 2026-11-02 | 按用户授权新增原冻结池内模式/赛道/候选偏好、精确批次 v3、无变化时待审核草案装配及 daily morning 独立预览；离线分别验证性能、选择与未证实收益边界。 |
 | 4.55 | 2026-11-02 | 修复 KOL 准备/发布的全库历史补读与重复逐记录回读；保留全量 writer 语义与精确当前 manifest 证明，准备前检查已知发布依赖，不扩大策略或执行权限。 |
 | 4.54 | 2026-10-30 | 明确当天交易优先、遗留问题按当前经济影响隔离、盘前处置与恢复职责、日/周因果复盘及下一交易窗口验收；规则更新不冒称运行代码已修复，不回放已终态日期。 |
 | 4.53 | 2026-10-29 | 原晨间根因修复：Paper首分钟来源接受/故障终态，APP morning专属权限过滤、会话读恢复/摘要解析、同源批量取价/缺失缓存重试、KOL快照和交接、通知本地收敛、稀疏Paper独立覆盖及前置身份校验。 |

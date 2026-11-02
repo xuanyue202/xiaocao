@@ -101,6 +101,7 @@ def draft_template(input_path: Path) -> dict:
     inputs, _ = _inputs(input_path)
     return {"schema_version": SCHEMA, "authority": 0, "input_sha256": _hash(inputs),
         "worker_id": "", "prepared_at": "", "valid_until": "",
+        "selection_preferences": [],
         "implications": [], "coverage": [{"viewpoint_id": i, "implication_ids": [],
             "disposition": "", "reason": ""} for i in inputs["viewpoint_ids"]]}
 
@@ -167,6 +168,19 @@ def accept_preparation(input_path: Path, draft: dict, review: dict, dispatch: di
         raise ValueError("KOL_PREPARATION_DISPATCH_OR_DEADLINE_INVALID")
     context_sha = canonical_sha256({k: v for k, v in context.items() if k != "context_sha256"})
     reports = {r["report_id"]: r for r in context.get("reports", [])}
+    preferences = draft.get('selection_preferences', [])
+    from .selection_evidence import verify_preference_sources
+    verify_preference_sources(preferences, reports, as_of=aware(draft['prepared_at']))
+    if preferences and (review.get('selection_preferences_reviewed') is not True
+                        or any(p['source_report_id'] not in cited for p in preferences)):
+        raise ValueError('KOL_PREPARATION_SELECTION_REVIEW_REQUIRED')
+    if 'policy_template' in draft:
+        from .prepared_policy import validate_template
+        validate_template(draft['policy_template'], reports)
+        if review.get('policy_template_reviewed') is not True:
+            raise ValueError('KOL_PREPARATION_POLICY_TEMPLATE_REVIEW_REQUIRED')
+        if draft['policy_template'].get('defer_if_no_effect') and review.get('deferred_overlay_reviewed') is not True:
+            raise ValueError('KOL_PREPARATION_DEFERRED_OVERLAY_REVIEW_REQUIRED')
     for row in projection["active_viewpoints"]:
         if row["report_id"] in cited:
             report = reports.get(row["report_id"], {})
@@ -251,12 +265,16 @@ def opening_packet(preparation_path: Path, current_input_path: Path, request: di
         scope = item["scope"]
         if scope["kind"] == "all" or set(scope["values"]) & (codes if scope["kind"] == "codes" else modes):
             relevant.append(item)
+    invalid_reports = {old[i]['viewpoint']['report_id'] for i in changed | removed if i in old}
+    preferences = prepared['draft'].get('selection_preferences', [])
     value = {"schema_version": "kol-opening-packet.v1", "authority": 0,
         "preparation_path": str(preparation_path.resolve()), "preparation_sha256": prepared["preparation_sha256"],
         "worker_id": prepared["worker_id"], "current_input_path": str(current_input_path.resolve()),
         "current_input_sha256": _hash(current), "source_fingerprint": current["source_fingerprint"],
         "request_facts_sha256": canonical_sha256(request), "observed_at": now.isoformat(),
         "cutoff": request["review_wait_until"], "implications": relevant, "invalidated_implications": invalidated,
+        "selection_preferences": [p for p in preferences if p['source_report_id'] not in invalid_reports],
+        "invalidated_selection_preferences": [p for p in preferences if p['source_report_id'] in invalid_reports],
         "delta": {"added": sorted(added), "changed": sorted(changed), "removed": sorted(removed),
                   "units": {i: new[i] for i in sorted(added | changed)},
                   "relation_history": relation_history(projection)
