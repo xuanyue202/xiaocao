@@ -872,3 +872,47 @@ def test_context_does_not_claim_complete_when_history_expires_during_batch(tmp_p
     context = build(tmp_path, reader, clock, latest_per_author=1)
     assert context["coverage"]["registered_longitudinal_complete"] is False
     assert "history_refresh_required" in codes(context)
+
+
+def test_decision_sources_reuse_complete_writer_history_without_remote_archive_scan(tmp_path):
+    publications = [publication('甲作者', day=day) for day in range(1, 6)]
+    publications.append(publication('乙作者', day=5))
+    register(tmp_path, publications)
+    reader, clock = Reader(publications), Clock()
+    selected = publications[-2][0]['record_id']
+    context = build(tmp_path, reader, clock, report_ids=[selected], decision_sources=True)
+    assert context['coverage']['registered_longitudinal_complete'] is True
+    assert context['coverage']['missing_authors'] == []
+    assert {r['report_id'] for r in context['reports']} == {selected}
+    assert {args['record_id'] for _, args in reader.calls if args['kind'] == 'report'} == {selected}
+    assert len(reader.calls) == 1
+    assert len(context['viewpoints']) == sum(len(p[0]['payload']['viewpoint_ids']) for p in publications)
+    history = [r for r in context['report_index'] if r['report_id'] != selected]
+    assert all(r['evidence_mode'] == 'local_published_receipt' for r in history)
+    assert all(r['verification_age_seconds'] > 0 for r in history)
+
+
+def test_decision_sources_require_explicit_reports_before_any_remote_read(tmp_path):
+    records = publication()
+    register(tmp_path, [records])
+    reader = Reader([records])
+    with pytest.raises(tc.TradingContextError, match='decision_source_ids_required'):
+        build(tmp_path, reader, Clock(), decision_sources=True)
+    assert not reader.calls
+
+
+def test_decision_sources_rebuild_bad_cache_and_preserve_manifest_order(tmp_path):
+    from xiaocao.kol import trading_decision as td
+    rows = publication()
+    register(tmp_path, [rows])
+    reader, clock = Reader([rows]), Clock()
+    rid = rows[0]['record_id']
+    first = build(tmp_path, reader, clock, report_ids=[rid], decision_sources=True)
+    registry, _, _ = tc._registry(tmp_path, [])
+    cache = tmp_path/tc.CACHE_RELATIVE_PATH/(canonical_sha256(rid)+'.cache.json')
+    assert tc._load_cache(cache, registry[rid]) is not None
+    cache.write_text('{"bad":"cache"}')
+    repaired = build(tmp_path, reader, clock, report_ids=[rid], decision_sources=True)
+    assert repaired['coverage']['recovered_cache_issues']
+    assert td.context_readiness(repaired, clock=clock)['status'] == 'context_ready'
+    assert first['viewpoints'] == repaired['viewpoints']

@@ -47,6 +47,17 @@ summary. Fill the template:
   Every implication source appears in this ledger. Background is an explained
   disposition, never latest-N truncation or inferred keyword classification.
 
+Organize implications by the actual decision that may change: shared environment,
+mode conditions, candidate preference or code risk. Compatible viewpoints can
+support one implication with each source attribution and condition preserved;
+conflicting direction, horizon or conditions stay separate. Every eligible
+viewpoint still has its own coverage row. Explain background/not-applicable
+items rather than expanding each into another operational instruction. There is
+no fixed implication cap and no keyword/latest-N filtering. At final dispatch,
+review current applicability/delta and emit the existing bounded policy; reuse
+unchanged reasoning. Candidate/sector preferences outside that policy's current
+authority remain explicit analysis, not a new ranking or eligibility rule.
+
 “轻仓” retains its wording and conditions; a numerical buy_scale needs explicit
 reasoning and final independent review. “重点看” retains the source term and
 exact/conditional/unmapped system mapping; it is not itself an order or COLD
@@ -54,9 +65,16 @@ exception. Preserve conflicting evidence and unresolved mappings.
 
 Fetch only the exact reports cited by these implications **before** preparation
 acceptance, using repeated `--report-id <id> --read-report-id <id>` with
-`kol_trading_context.py context --summary`. Do not combine this with
+`kol_trading_context.py context --decision-sources --summary`. Do not combine this with
 `--cache-only` when a cited body is missing. Check selected body coverage and
 hashes. This is citation verification, not re-authoring the source semantics.
+Run `kol_trading_decision.py context-check --context <context.json>` now.
+Require `context_ready` before sealing; a known author/longitudinal/body gap
+is preparation recovery work, not a surprise for 09:25. This read-only check
+grants no policy authority. Complete published writer receipts supply history;
+only the explicit reports receive current remote head checks, so unrelated
+archive expiry does not schedule a full remote reread. Missing writer proof
+remains explicit rather than being marked fresh.
 Keep this full context for final publication if its source versions are still
 current; publication performs its existing exact remote readback. Preparation
 receipt embeds the context, so it is not a golden-window schema/body hunt.
@@ -160,7 +178,9 @@ issues explicitly under the existing publisher rules. Publish through
 Morning-bound policies require that hash-matching original request. Source-read
 budget and the final locked store admission use its absolute deadline; a completed
 exact retry still only returns the original receipt. Unchanged early cited bodies may be reused;
-the publisher still verifies exact current remote content/manifests. New cited
+the publisher still verifies exact current remote report heads and complete manifests.
+A matching manifest reuses its hash-verified immutable records; changed or missing
+records must be read and reviewed, not silently accepted. New cited
 versions require their exact context; do not replace freshness with a claim.
 
 ## Completion evidence

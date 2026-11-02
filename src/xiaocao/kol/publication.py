@@ -340,6 +340,30 @@ def _envelope_from_read(value: dict[str, Any]) -> dict[str, Any]:
     return envelope
 
 
+def read_published_report_head(client: PublicationTransport, report_id_value: str) -> dict[str, Any]:
+    """Verify the current report and complete manifest without rereading its immutable records."""
+    current = client.call_tool("get_kol_record", {"kind": "report", "record_id": report_id_value})
+    if current.get("state") != "published":
+        raise PublicationError("LiangHui report is not published")
+    report = _envelope_from_read(current)
+    manifest = current.get("manifest")
+    if (report["kind"] != "report" or report["record_id"] != report_id_value
+            or not isinstance(manifest, list) or not manifest
+            or any(not isinstance(entry, dict) or entry.get("kind") not in KOL_RECORD_KINDS
+                   or not entry.get("record_id") or not isinstance(entry.get("content_sha256"), str)
+                   for entry in manifest)):
+        raise PublicationError("LiangHui current report manifest is invalid")
+    identities = [(entry["kind"], entry["record_id"]) for entry in manifest]
+    report_entries = [entry for entry in manifest if entry["kind"] == "report"]
+    if (len(set(identities)) != len(identities) or report_entries != manifest_entries([report])
+            or manifest_entries(manifest) != manifest
+            or manifest_sha256(manifest) != current.get("manifest_sha256")):
+        raise PublicationError("LiangHui current report manifest failed validation")
+    return {"report": report, "manifest": manifest, "content_sha256": report["content_sha256"],
+            "manifest_sha256": current["manifest_sha256"],
+            "published_at": current.get("published_at"), "updated_at": current.get("updated_at")}
+
+
 def read_published_publication(
     client: PublicationTransport,
     report_id_value: str,

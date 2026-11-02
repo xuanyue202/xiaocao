@@ -1,6 +1,6 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：4.54
+**版本**：4.55
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
 **关联实现**：`src/xiaocao/live/{safety,capital_keychain,foundersc_native_ax,foundersc_native_broker,trading_execution,book_b_live_lifecycle,book_b_live_intraday}.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`native/foundersc_ax_executor/`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{book_b_live_morning,book_b_live_intraday,live_monitor,research_mode_switch_replay}.py`
@@ -167,6 +167,14 @@ claim 从原 checkpoint 恢复原字节到新的不可变副本，保留冲突�
 后续 review queue 绑定原提交快照，富化共享研究行不产生第二份交易 freeze。
 记录配置槽位、真实脚本入口、capture/commit 和消费者阶段时刻；拿不到的
 scheduler dispatch/task-start 填 unavailable，不能由文件 mtime 推断。
+
+2026-11-02 KOL 来源路径修复：交易判断正文上下文使用 `context --decision-sources`，
+只为精确引用报告做当前回读；全体已登记作者、观点、评价及关系由完整且已验证的
+writer 发布回执保留，不因无关历史缓存过期而全库远端补读，不宣称历史刚被远端验证。
+准备封存前以 `context-check` 排除已知来源覆盖缺口。正式发布逐报告读取当前已发布
+正文头与完整 manifest；内容、评价或关系 manifest 不变时复用已有精确哈希的不可变
+记录，变化、缺记录或坏哈希仍拒绝旧判断。独立复核、当前适用性、原请求与截止、
+COLD/UNKNOWN、资金及订单门保持。完整历史审计仍有独立原入口。
 
 LiangHui 语义投影质量、来源读回时效、当前正式决策是三个独立状态。相同hash的已发布观点不会因为过了十分钟而重新提炼；历史TTL仍24小时，09:00补验应覆盖11:30恢复窗口，保持真实as-of并只按准确ID刷新。`projection`的ready/degraded只描述已登记纵向记录是否完整，不称为交易ready。
 
@@ -875,6 +883,7 @@ no-KOL三项纸盘挑战，共同风险与B退出，仅前向独立账本。原�
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| 4.55 | 2026-11-02 | 修复 KOL 准备/发布的全库历史补读与重复逐记录回读；保留全量 writer 语义与精确当前 manifest 证明，准备前检查已知发布依赖，不扩大策略或执行权限。 |
 | 4.54 | 2026-10-30 | 明确当天交易优先、遗留问题按当前经济影响隔离、盘前处置与恢复职责、日/周因果复盘及下一交易窗口验收；规则更新不冒称运行代码已修复，不回放已终态日期。 |
 | 4.53 | 2026-10-29 | 原晨间根因修复：Paper首分钟来源接受/故障终态，APP morning专属权限过滤、会话读恢复/摘要解析、同源批量取价/缺失缓存重试、KOL快照和交接、通知本地收敛、稀疏Paper独立覆盖及前置身份校验。 |
 | 4.52 | 2026-10-29 | 用户确认 APP 科创板权限不足：新 BUY 选席位前排除并按原冻结排序检查合格候选；保留策略/风险门、原单与 Paper/已登记模型协议，独立记录账户权限归因。 |

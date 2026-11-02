@@ -22,6 +22,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--report-id", action="append", default=[], help="Load an additional registered report body")
     parser.add_argument("--read-report-id", action="append", default=None, help="Read only these exact registered IDs remotely; reuse other fresh caches")
     parser.add_argument("--cache-only", action="store_true", help="No MCP calls; expose stale/missing coverage")
+    parser.add_argument("--decision-sources", action="store_true", help="Read only explicit report bodies; reuse complete published writer receipts for history")
     parser.add_argument("--summary", action="store_true", help="Print compact path/hash/coverage/counts; keep full cache")
     parser.add_argument("--since-context", type=Path, help="With --summary, read changes against this already-read full context; never a substitute for reading the base")
     parser.add_argument("--author", action="append", default=[], help="Declare expected coverage; does not filter authors")
@@ -50,6 +51,7 @@ def main(argv: list[str] | None = None) -> int:
             history_fresh_through=args.history_fresh_through,
             timeout_seconds=args.timeout_seconds, total_timeout_seconds=args.total_timeout_seconds,
             retries=args.retries, max_read_calls=args.max_read_calls,
+            decision_sources=args.decision_sources,
         )
         result = (
             write_trading_projection(context)

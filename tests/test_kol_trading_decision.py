@@ -878,3 +878,80 @@ def test_strict_json_input_rejects_duplicates_nonfinite_and_nonobjects(tmp_path,
     path.write_text(raw)
     with pytest.raises(td.TradingDecisionError):
         td.read_json(path)
+
+
+def test_publication_verifies_each_current_manifest_with_one_head_read(tmp_path, bundle):
+    from tests.test_kol_trading_context import publication, register as register_full, Reader as FullReader
+    rows = [publication('甲作者'), publication('乙作者')]
+    register_full(tmp_path, rows)
+    reader = FullReader(rows)
+    context = tc.build_trading_context(repo_root=tmp_path, client=reader, clock=lambda:NOW)
+    decision = copy.deepcopy(bundle[0])
+    decision['source_refs'] = [td._source(row) for row in context['reports']]
+    review = review_for(decision, context)
+    reader.calls.clear()
+    result = td.publish_trading_decision(tmp_path, decision, review, context, client=reader, clock=lambda:NOW)
+    assert result['status'] == 'published'
+    assert len(reader.calls) == len(rows)
+    assert all(args['kind'] == 'report' for _, args in reader.calls)
+
+
+@pytest.mark.parametrize('damage', ['evaluation_changed', 'unpublished', 'manifest_hash', 'report_hash'])
+def test_current_head_verification_rejects_changed_source_before_publication(tmp_path, bundle, damage):
+    decision, review, context, reader = bundle
+    call = reader.call_tool
+    def changed(name, arguments):
+        value = call(name, arguments)
+        if arguments['kind'] == 'report':
+            if damage == 'evaluation_changed':
+                value['manifest'].append({'kind':'viewpoint_evaluation','record_id':'changed','content_sha256':'a'*64})
+                value['manifest_sha256'] = manifest_sha256(value['manifest'])
+            elif damage == 'unpublished': value['state'] = 'staged'
+            elif damage == 'manifest_hash': value['manifest_sha256'] = '0'*64
+            else: value['payload']['report_body'] = 'different source'
+        return value
+    reader.call_tool = changed
+    with pytest.raises(td.TradingDecisionError):
+        publish(tmp_path, bundle)
+    assert not list((tmp_path/td.POLICY_PATH/'decisions').glob('*.json'))
+
+
+def test_context_readiness_detects_known_unpublishable_preparation_without_remote_calls(bundle):
+    _, _, context, reader = bundle
+    result = td.context_readiness(context, clock=lambda:NOW)
+    assert result['status'] == 'context_ready'
+    assert result['policy_publication'] == 'not_performed'
+    assert not reader.calls
+    context['coverage']['registered_longitudinal_complete'] = False
+    rehash(context)
+    with pytest.raises(td.TradingDecisionError, match='longitudinal_coverage_incomplete'):
+        td.context_readiness(context, clock=lambda:NOW)
+    assert not reader.calls
+
+
+def test_context_check_cli_fails_early_without_publication_or_remote_read(tmp_path, bundle, capsys):
+    write_files(tmp_path, bundle)
+    assert command().main(['context-check','--root',str(tmp_path),'--context','context.json'],
+                          client=bundle[3],clock=lambda:NOW) == 0
+    assert json.loads(capsys.readouterr().out)['status'] == 'context_ready'
+    bundle[2]['coverage']['registered_longitudinal_complete'] = False
+    rehash(bundle[2])
+    write_files(tmp_path, bundle)
+    assert command().main(['context-check','--root',str(tmp_path),'--context','context.json'],
+                          client=bundle[3],clock=lambda:NOW) == 2
+    assert json.loads(capsys.readouterr().out)['code'] == 'longitudinal_coverage_incomplete'
+    assert not bundle[3].calls
+    assert not (tmp_path/td.POLICY_PATH/'decisions').exists()
+
+
+def test_context_readiness_checks_unloaded_history_observation_order(bundle):
+    context = bundle[2]
+    historical = context['report_index'][0]
+    rid = historical['report_id']
+    context['reports'] = [row for row in context['reports'] if row['report_id'] != rid]
+    historical['body_loaded'] = False
+    context['unloaded_report_ids'] = [rid]
+    historical['received_at'] = '2026-09-04T01:00:00Z'
+    rehash(context)
+    with pytest.raises(td.TradingDecisionError, match='context_observation_time_invalid'):
+        td.context_readiness(context, clock=lambda:NOW)

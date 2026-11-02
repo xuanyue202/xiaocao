@@ -12,8 +12,8 @@ the report plus LiangHui viewpoints, evaluations and relations. Those records
 are the sole source-semantic SSOT. At 09:00 build the compact projection with
 `kol_trading_context.py projection --cache-only`; consume its path,
 `projection_sha256`, stable `source_fingerprint` and counts
-without reopening unchanged report bodies or creating source notes/opening
-drafts. At the action boundary one bounded worker judges current applicability
+without reopening unchanged source semantics. Morning conditional preparation
+follows its original owner and accepted preparation reference. At the action boundary one bounded worker judges current applicability
 from this projection plus exact runtime facts. The projection has authority=0
 and never satisfies formal decision publication by itself.
 
@@ -45,7 +45,7 @@ and never satisfies formal decision publication by itself.
    degraded coverage requiring investigation, never a fabricated absence.
    Historical cached evaluations are dated context, not fresh market proof.
    The compact `refresh` manifest identifies missing/stale registered sources. For a needed
-   unloaded or stale body, repeat with its exact `--report-id` and
+   unloaded or stale body, use `context --decision-sources --summary` with its exact `--report-id` and
    `--read-report-id` (plus `--refresh` only for that exact scope); do not load
    every historical transcript on every tick. `--refresh` is an explicit full
    source refresh, not a routine five-minute action.
@@ -124,6 +124,13 @@ For a policy bound by `morning_request_sha256`, also pass
 hash/scope, bounds source readback to the remaining absolute budget, and checks
 the deadline under the final policy-store lock. Late drafts cannot enter the
 policy store; completed exact retries retain their original receipts.
+
+Before accepting morning preparation run `context-check --context <file>`;
+`context_ready` proves known local publication prerequisites, not a completed
+judgment. Formal publication reads one current report head per cited report,
+checks published state, content hash and the complete manifest, and binds every
+reused immutable record to that manifest. Any evaluation/relation/version change
+invalidates the old context even if report prose is unchanged.
 
 Publish verifies source hashes against current remote manifests and writes only
 the dedicated `output/live/kol_policy/decisions` store. Keep source caches,
