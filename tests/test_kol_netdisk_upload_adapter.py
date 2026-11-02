@@ -40,7 +40,7 @@ spec.func(page,{file:'/tmp/video.mp4','target-name':'video.mp4','claim-id':'job-
     assert queue["complete"] is False
 
 
-@pytest.mark.parametrize("mode", ["upload", "inspect", "activate", "activation_denied", "missing", "ambiguous", "wrong_folder", "hidden", "foreground_ambiguous", "restore_missing", "restore_existing", "restore_ambiguous", "restore_present", "restore_activate_conflict", "restore_wrong_folder", "restore_unrelated", "restore_hidden", "recover_empty", "recover_active", "recover_multi", "recover_reactivated", "recover_missing", "recover_wrong_page", "recover_changed_after"])
+@pytest.mark.parametrize("mode", ["upload", "inspect", "activate", "activation_denied", "missing", "ambiguous", "wrong_folder", "hidden", "selection_changed", "foreground_changed", "foreground_ambiguous", "restore_missing", "restore_existing", "restore_ambiguous", "restore_present", "restore_activate_conflict", "restore_wrong_folder", "restore_unrelated", "restore_hidden", "recover_empty", "recover_active", "recover_multi", "recover_reactivated", "recover_missing", "recover_wrong_page", "recover_changed_after"])
 def test_upload_selects_exact_site_tab_before_file_input(mode):
     adapter = Path(__file__).parents[1] / "opencli/clis/baidu-netdisk/upload.js"
     script = r"""
@@ -56,12 +56,12 @@ const sandbox = {randomUUID: () => 'test-marker', process: {...process, platform
     if(!argv[1].includes('title of tab i of w is expectedTitle')) throw Error('ambiguous native URLs not disambiguated');
     if(cmd !== '/usr/bin/osascript' || !argv.includes('https://pan.baidu.com/disk/main#/index?category=all&path=%2F%E8%AF%BE%E7%A8%8B%2F%E8%87%AA%E5%B7%B1%E7%9A%84%E8%AF%BE%2F%E5%B0%8F%E8%8D%89')) throw Error('wrong native target');
     if(mode === 'foreground_ambiguous') throw Error('ambiguous native window');
-    return 'foreground_requested';
+    return 'minimized=false;visible=true;selected=true;frontmost=false';
   }, URL, URLSearchParams, cli: value => spec = value, Strategy: {UI: 'UI'},
   ArgumentError: Error, AuthRequiredError: Error, CommandExecutionError: Error};
 vm.runInNewContext(fs.readFileSync(process.argv[1], 'utf8').replace(/import[\s\S]*?from '[^']+';/g, ''), sandbox);
 let foreground = false;
-let activated = false, attachments = 0, navigations = 0;
+let activated = false, attachments = 0, navigations = 0, selections = 0;
 const emptySurface = () => ({transferQueue:{panelCount:1,rowCount:0,targetCount:0},
   targetInTransferUi:false,receiptMatchesTarget:false,targetUiRows:[],inputs:[{targetAttached:false}]});
 const nonemptySurface = () => ({...emptySurface(),transferQueue:{panelCount:1,rowCount:1,targetCount:1},
@@ -73,14 +73,15 @@ const page = {
     return ['missing','restore_missing','recover_missing'].includes(mode) ? [] : ['ambiguous','restore_ambiguous'].includes(mode) ? [tab, {...tab, page:'other'}] : [tab];
   },
   goto: async () => {if(mode !== 'restore_missing') throw Error('BUG: navigated an already bound uploader'); navigations++;}, wait: async () => {},
-  getActivePage: () => mode === 'recover_changed_after' && activated ? 'other-page' : 'site-upload-page',
-  selectTab: async id => { if (id !== 'site-upload-page') throw Error('wrong page'); foreground = true; },
+  getActivePage: () => (mode === 'recover_changed_after' && activated) || (mode === 'foreground_changed' && foregroundRequests) || (mode === 'selection_changed' && selections) ? 'other-page' : 'site-upload-page',
+  selectTab: async id => { if (id !== 'site-upload-page') throw Error('wrong page'); foreground = true; selections++; },
   click: async selector => { if (!foreground || !selector.includes('activation')) throw Error('wrong activation'); activated = mode !== 'activation_denied'; },
   evaluate: async source => {
     if (source.includes('const original = document.title')) {if(mode==='restore_hidden')throw Error('readback changed native title'); pageTitle='Xiaocao uploader test-marker'; return '百度网盘';}
     if (source.includes('if (document.title ===')) {pageTitle='百度网盘'; return;}
+    if (source.startsWith('({visibility: document.visibilityState,')) return {visibility:'hidden', focused:false};
     if (source.includes('responsive:true')) return {responsive:true};
-    if (source.includes('visibility: document.visibilityState, url: location.href')) return {visibility: ['hidden','foreground_ambiguous','restore_hidden'].includes(mode) ? 'hidden' : 'visible', x:0,y:101,w:1496,h:866,url:'https://pan.baidu.com/disk/main#/index?category=all&path=%2F%E8%AF%BE%E7%A8%8B%2F%E8%87%AA%E5%B7%B1%E7%9A%84%E8%AF%BE%2F%E5%B0%8F%E8%8D%89'};
+    if (source.includes('visibility: document.visibilityState, url: location.href')) return {visibility: ['hidden','foreground_changed','foreground_ambiguous','restore_hidden'].includes(mode) ? 'hidden' : 'visible', x:0,y:101,w:1496,h:866,url:'https://pan.baidu.com/disk/main#/index?category=all&path=%2F%E8%AF%BE%E7%A8%8B%2F%E8%87%AA%E5%B7%B1%E7%9A%84%E8%AF%BE%2F%E5%B0%8F%E8%8D%89'};
     if (source.includes('const pageSize')) {
       const surface = mode === 'recover_active' ? nonemptySurface() : emptySurface();
       if(mode==='recover_multi')surface.transferQueue.panelCount=2;
@@ -101,20 +102,30 @@ const page = {
   },
 };
 spec.func(page, {file: '/tmp/video.mp4', 'target-name': 'video.mp4', 'claim-id': 'job-12345678',
-  'inspect-only': ['inspect','missing','ambiguous','wrong_folder','hidden','foreground_ambiguous'].includes(mode), 'activate-only': ['activate','restore_activate_conflict'].includes(mode),
+  'inspect-only': ['inspect','missing','ambiguous','wrong_folder','hidden','selection_changed','foreground_changed','foreground_ambiguous'].includes(mode), 'activate-only': ['activate','restore_activate_conflict'].includes(mode),
   'restore-readback-only': mode.startsWith('restore_'), 'recover-lost-context': mode.startsWith('recover_'),
   'expected-page': mode === 'recover_wrong_page' ? 'other-page' : 'site-upload-page'})
-  .then(value => process.stdout.write(JSON.stringify({value, attachments,foregroundRequests,pageTitle,navigations})))
+  .then(value => process.stdout.write(JSON.stringify({value, attachments,foregroundRequests,pageTitle,navigations,selections})))
   .catch(error => {process.stdout.write(JSON.stringify({error: error.message, attachments,foregroundRequests,pageTitle,navigations})); process.exitCode = 1;});
 """
     node = shutil.which("node") or "/opt/homebrew/bin/node"
     result = subprocess.run([node, "-e", script, str(adapter), mode], capture_output=True, text=True)
     payload = json.loads(result.stdout)
+    if mode == "hidden":
+        assert payload["selections"] == 2
+        events = [json.loads(line) for line in result.stderr.splitlines()]
+        native = next(event for event in events if event.get("kind") == "xiaocao_uploader_native_readback")
+        assert native["claimId"] == "job-12345678"
+        assert native["state"] == "minimized=false;visible=true;selected=true;frontmost=false"
+        readback = next(event for event in events if event.get("kind") == "xiaocao_uploader_foreground_readback")
+        assert readback["claimId"] == "job-12345678"
+        assert readback["visibility"] == "hidden"
+        assert readback["focused"] is False
     assert payload["pageTitle"] == "百度网盘"
     assert payload["attachments"] == (1 if mode in {"upload", "recover_empty"} else 0)
     assert payload["navigations"] == (1 if mode == "restore_missing" else 0)
-    assert payload["foregroundRequests"] == (1 if mode in {"hidden", "foreground_ambiguous"} else 0)
-    if mode == "foreground_ambiguous":
+    assert payload["foregroundRequests"] == (1 if mode in {"hidden", "foreground_changed", "foreground_ambiguous"} else 0)
+    if mode in {"foreground_ambiguous", "foreground_changed", "selection_changed"}:
         assert result.returncode == 1
         return
     if mode == "restore_activate_conflict":
