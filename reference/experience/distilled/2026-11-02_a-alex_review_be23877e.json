@@ -1,0 +1,380 @@
+{
+  "knowledge_status": "reusable_knowledge",
+  "ingestion_status": "ingested",
+  "authority": 0,
+  "date": "2026-11-02",
+  "kind": "微信公众号研究观察",
+  "author": "A也叫艾利克斯",
+  "source": "微信公众号",
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_wechat_official/evidence/89a6f39cac755a79ed153e622d8c4c3160c68bd2593bc95c018e201c7b901a19.md",
+      "sha256": "be23877e1f1a81f348d0b362dbebb36dabd0f80b28fcf43f545b5a152a615d07",
+      "size": 17526
+    }
+  ],
+  "summary": "A也叫艾利克斯把人工智能资本开支拆成需求、融资和许可三道闸门，并用云厂收入、自由现金流、信用违约互换、供应商担保、搜索变现、模型价格结构、算力租金和存储价格斜率解释为什么需求仍强而估值与信用仍可能承压。去重后，本次完整复现既有XH-313的云收入、核心业务变现与自由现金流可见性框架；对XH-211、XH-228、XH-254、XH-255和XH-256只形成局部支持，不能登记为整条复现。另形成两条权威度为零的新候选：数据中心的地方许可与政治阻力可能成为独立于需求和融资的建设约束；周期资产的定价可能先看价格增速和前瞻指引的拐点，而不是当期绝对利润纪录。全部内容不得自动修改小草姿态、策略参数、家庭仓位或任何交易权限。",
+  "posture": {
+    "regime": "其他作者关于人工智能资本开支、信用与硬件周期的研究框架，不应用为小草当前A股姿态。",
+    "dominant_style": "来源认为人工智能需求仍在增长，但资本成本、核心业务变现、自由现金流和地方许可正在提高扩张门槛；硬件内部则从普涨转向新旧代际和价格斜率分化。",
+    "risk": "本次独立市场材料只支持Anthropic于10月26日提交上市文件并拟用ANT代码，以及美联储10月28日维持3.75%至4%的利率区间。11月2日两市成交额、政策维稳措辞、评级、信用违约互换、云厂财报、OpenRouter、存储价格和美国公投数字均未获得逐项原始核验。",
+    "style_ranking": [
+      "先比较核心业务变现与自由现金流，再解释同样云收入增长下的估值分化",
+      "把需求、融资和许可分别设门槛，任何一项受限都可能推迟数据中心扩张",
+      "信用价格必须区分未平仓名义值、滚动成交量、基差和融资成本，不能混成一个风险指标",
+      "硬件周期同时看现货价、合约价、企业平均售价和前瞻指引，不用当期利润纪录代替拐点判断"
+    ]
+  },
+  "regime_call": {
+    "horizon": "云厂与人工智能信用框架对应未来数个季度，地方许可观察从2026年11月3日美国选举延伸到项目审批和投产，光互连与元件扩产延伸至2027年至2030年以后。",
+    "what_would_falsify": [
+      "云收入相近时，核心业务变现、自由现金流和融资变化对后续估值与盈利修正没有增量解释力",
+      "在需求和融资条件相近的项目中，地方公投、暂停审批和建设限制不影响开工、通电、延期或资本开支",
+      "控制需求、库存与宏观条件后，价格增速和前瞻指引的拐点不领先周期企业利润或股价拐点",
+      "人工智能相关信用利差持续收窄、资本开支按期兑现且核心业务收入足以覆盖新增融资成本"
+    ]
+  },
+  "directions": [
+    {
+      "name": "云厂资本效率与估值分化",
+      "stance": "来源认为云业务需求强并不足以单独支持估值；核心业务是否被人工智能稀释、自由现金流何时转正及融资成本高低共同决定确定性溢价。"
+    },
+    {
+      "name": "人工智能信用与供应商融资",
+      "stance": "来源认为供应商兼任担保人或贷款方会把硬件销售与客户信用绑定，信用保护价格上升意味着融资仍可得但已经更贵，扩张可能被逐年后移。"
+    },
+    {
+      "name": "数据中心许可约束",
+      "stance": "来源把地方公投、社区反对和审批暂停视为第三道闸门；即便终端需求和融资尚未关闭，许可也可能独立推迟建设。"
+    },
+    {
+      "name": "算力与存储价格分层",
+      "stance": "来源认为旧卡租金下跌、新卡租金上涨，存储绝对价格仍高但边际涨幅放缓；硬件需求没有消失，却正在从普涨转向结构分化和斜率定价。"
+    }
+  ],
+  "stocks": [
+    {
+      "name": "Alphabet、Amazon、Meta、Microsoft、Oracle",
+      "code": "",
+      "role": "云收入、核心业务变现、资本开支、自由现金流和信用成本的比较样本，不是证券推荐。"
+    },
+    {
+      "name": "Anthropic、OpenAI、CoreWeave、SpaceX",
+      "code": "",
+      "role": "人工智能融资、信用及数据中心扩张案例；SEC材料只核实Anthropic申报及拟用ANT代码，不证明上市获批或可交易。"
+    },
+    {
+      "name": "Broadcom、NVIDIA、AMD、Intel",
+      "code": "",
+      "role": "芯片供应商、供应商融资及新旧算力租金分化的案例，不构成买卖建议。"
+    },
+    {
+      "name": "Kioxia Holdings、Murata Manufacturing",
+      "code": "",
+      "role": "存储周期斜率和人工智能服务器元件扩产案例，来源数字未独立核实。"
+    },
+    {
+      "name": "中国A股市场",
+      "code": "",
+      "role": "政策底、市场底和反弹主线的当前观察对象；两市成交额与政策措辞未独立核实。"
+    }
+  ],
+  "method_principles": [
+    "分析人工智能资本开支时把需求、融资和许可分开验证，不能因其中一项仍强就默认项目必然按期兑现。",
+    "比较云厂商时同时记录云收入、核心业务变现、资本开支、自由现金流、评级和融资成本，不能只按云增速排序。",
+    "读取信用市场时分别保存信用利差、基差、未平仓名义值和滚动成交量；图2的滚动成交量不能替代正文70亿至280亿美元的未平仓名义值。",
+    "读取模型价格时分别保存平均单价环比变化与加权均价同比变化；来源的环比下降5%和同比下降38%不是同一个指标。",
+    "读取存储周期时分别保存现货价、合约价和企业平均售价；正文51.80美元与29.40美元是现货，图片季度数据是合约价，铠侠约70%收敛至25%是企业平均售价。",
+    "评价周期公司时把当期绝对利润与下一季度指引、价格增速和市场预期分开，防止用历史最好业绩掩盖前瞻斜率转弱。"
+  ],
+  "exit_lessons": [
+    "如果核心业务变现受人工智能产品稀释、自由现金流长期不能覆盖资本开支且信用成本继续上升，应降低对单一云收入高增的乐观解释。",
+    "如果地方公投、暂停审批或供电建设限制持续增加，即使订单和融资尚在，也应下调数据中心按期交付情景。",
+    "如果存储现货、合约价或企业平均售价的增速继续收敛并伴随指引低于预期，不应因当期利润创新高继续外推周期。",
+    "来源没有给出任何证券的入场价、仓位和止损，知识框架不能补写成交易规则。"
+  ],
+  "hypotheses": [
+    {
+      "claim": "在同样云收入加速的条件下，核心业务变现和自由现金流拐点的可见性可能比单一云增速更能解释财报后的估值分化。",
+      "implied_rule": "比较云收入增速时，同时加入核心业务增速、资本开支、自由现金流、融资、回购和稀释，不能按单一云指标排序。",
+      "falsifiable_test": "对主要云厂商构建季度面板，在控制云收入增速和市场状态后，检验核心业务变现、自由现金流拐点可见性和融资变化对未来一周至四季度收益、估值与盈利修正的增量解释力；若没有增量解释，则否定。",
+      "expected_effect": "若成立，云增速相近但现金流和变现路径更清晰的公司应有更稳定的估值和更小左尾。",
+      "category": "cloud_cash_flow_visibility",
+      "related_existing_ids": [
+        "XH-313"
+      ],
+      "relation_to_existing": "recurrence",
+      "dedup_boundary": "与XH-313完全同义，复用精确主张；本次只提供新的归属证据，不创建近义编号。"
+    },
+    {
+      "claim": "当数据中心需求与融资仍可用时，地方公投、社区反对和审批暂停仍可能成为独立的建设闸门，并推迟资本开支与收入兑现。",
+      "implied_rule": "数据中心项目除需求、合同和融资外，另列地方许可、公投、诉讼、并网与审批状态；未取得许可的规划容量不能等同可交付容量。",
+      "falsifiable_test": "建立美国数据中心项目级面板，匹配需求合同和融资条件，比较存在公投、暂停审批或地方限制与无此限制项目的开工、通电、延期、取消和资本开支；若控制其他变量后许可状态没有增量影响，则否定。",
+      "expected_effect": "减少把订单或融资可得性直接外推为建设和收入兑现的错误。",
+      "category": "data_center_permitting",
+      "related_existing_ids": [
+        "XH-228",
+        "XH-238"
+      ],
+      "relation_to_existing": "distinct_candidate",
+      "dedup_boundary": "XH-228研究信用条件，XH-238研究计算、互连和电力瓶颈；本候选只研究地方政治和许可对项目交付的独立约束。"
+    },
+    {
+      "claim": "在存储等强周期行业中，价格增速和下一季度指引的拐点可能比当期绝对利润纪录更早解释股价见顶。",
+      "implied_rule": "同时跟踪现货价、合约价、企业平均售价、环比增速、管理层指引与预期差，不能用不同口径价格相互替代。",
+      "falsifiable_test": "构建存储企业跨周期季度面板，检验价格增速收敛和指引低于预期是否在控制需求、库存和市场状态后领先利润与股价拐点；若没有稳定领先关系，则否定。",
+      "expected_effect": "避免在当期业绩最好时忽略价格斜率和下一季预期已经转弱。",
+      "category": "memory_cycle_slope",
+      "related_existing_ids": [
+        "XH-309"
+      ],
+      "relation_to_existing": "distinct_candidate",
+      "dedup_boundary": "XH-309研究高价导致终端出货或配置下降；本候选研究价格斜率和公司指引对周期资产定价的领先性，不要求先观察终端需求破坏。"
+    }
+  ],
+  "timing_notes": [
+    "2026年11月3日及随后数周观察美国地方公投、选举立场和项目审批结果，但来源正文数字仍需原始材料核验。",
+    "未来数个季度按财报更新云收入、核心业务变现、资本开支、自由现金流和信用成本。",
+    "2026年第四季度至2027财年持续跟踪存储现货、合约价、企业平均售价和铠侠指引，不混合不同价格口径。",
+    "2027年至2030年以后分别跟踪现有共封装光学产能和硅中介层光引擎的量产兑现。"
+  ],
+  "typo_corrections": [
+    "来源中的ANT仅是Anthropic向纳斯达克申请使用的代码，SEC原始申报为初步文件，不能写成已经挂牌或已可交易。",
+    "正文OpenRouter平均单价环比下降5%与图片加权均价同比下降38%保留为两个不同指标。",
+    "正文DDR5 16Gb和NAND 1Tb为现货价格，图片季度数据为合约价，铠侠约70%降至约25%为企业平均售价增幅，三者不可合并。",
+    "图片2是四周滚动周均成交量，正文70亿至280亿美元是单一名称信用违约互换未平仓名义值，两者不可互换。",
+    "路透图片只显示标题和元信息，不能独立证明正文41项公投或其他具体数量。"
+  ],
+  "decision_trace": [
+    {
+      "observation": "来源称云收入和人工智能需求仍强，但三家云厂自由现金流为负、资本开支继续增加，谷歌的人工智能搜索变现低于传统搜索。",
+      "inference": "同样的云增长需要用核心业务变现、自由现金流和融资成本区分质量。",
+      "action": "精确复用XH-313，不创建近义候选；所有跨公司数字保留来源边界。"
+    },
+    {
+      "observation": "来源称人工智能信用利差、供应商担保和债务保险成本上升，但没有说融资渠道已经关闭。",
+      "inference": "融资重新定价更可能先推迟扩张，而不是立即终止需求。",
+      "action": "只记录对XH-211、XH-228、XH-254、XH-255和XH-256的局部支持，不登记完整复现。"
+    },
+    {
+      "observation": "来源把美国地方公投、社区反对和暂停审批列为数据中心第三道闸门。",
+      "inference": "许可可能在需求和融资之外独立决定项目能否按期交付。",
+      "action": "形成一条权威度为零、可用项目级审批和交付数据检验的新候选。"
+    },
+    {
+      "observation": "来源称铠侠当期利润创纪录，但企业平均售价增幅收敛、下一季指引低于预期，股价按周期见顶定价。",
+      "inference": "周期资产可能先交易价格斜率和前瞻指引，而不是绝对利润。",
+      "action": "形成与XH-309边界分明的权威度为零候选，并要求分开现货、合约价和企业平均售价。"
+    }
+  ],
+  "judgment_heuristics": [
+    "需求回答有没有人用，融资回答能否承受建设成本，许可回答项目能否落地，三者不能互相替代。",
+    "信用利差上升意味着风险被重新定价，不自动等于融资市场关闭或违约已经发生。",
+    "云增速只是收入一侧，核心业务变现和自由现金流决定资本开支对股东的传导路径。",
+    "周期行业先看价格增速和下一季指引，再看当期绝对利润是否创新高。",
+    "不同统计口径先分开保存，再判断关系；不能用叙事一致性消除口径差异。"
+  ],
+  "deduplication_review": {
+    "status": "reviewed_against_current_ledger",
+    "ledger_path": "/Users/xuanyue202/Documents/project/xiaocao/reference/experience/xiaocao_hypotheses.jsonl",
+    "ledger_tail_last_id": "XH-328",
+    "reviewed_existing_ids": [
+      "XH-211",
+      "XH-228",
+      "XH-238",
+      "XH-254",
+      "XH-255",
+      "XH-256",
+      "XH-298",
+      "XH-309",
+      "XH-313"
+    ],
+    "result": {
+      "exact_recurrences": [
+        "XH-313"
+      ],
+      "partial_support_only": [
+        {
+          "existing_id": "XH-211",
+          "reason": "来源支持供应商兼任担保人或融资方的结构，但未验证应收、采购延迟和违约结果。"
+        },
+        {
+          "existing_id": "XH-228",
+          "reason": "来源支持资本开支、负自由现金流和信用成本共同上升，但未提供同口径经营现金流与订单敏感性检验。"
+        },
+        {
+          "existing_id": "XH-254",
+          "reason": "来源说明投资级门槛会改变资金池，但Anthropic并非从投资级被下调，不能当作既有主张的完整事件复现。"
+        },
+        {
+          "existing_id": "XH-255",
+          "reason": "来源支持需求仍强而融资收紧，但新旧GPU租价分化、NAND环比下跌，未满足订单、算力租价和存储价格同时走强的完整条件。"
+        },
+        {
+          "existing_id": "XH-256",
+          "reason": "来源支持信用保护成为权益情绪出口，却没有证明当前极端收益率由薄流动性和小成交额造成。"
+        },
+        {
+          "existing_id": "XH-298",
+          "reason": "来源再次强调资本回报、资金成本和自由现金流，但相关数字未独立核验；本次不把局部叙事登记成整条复现。"
+        }
+      ],
+      "new_distinct_candidates": [
+        "data_center_permitting",
+        "memory_cycle_slope"
+      ]
+    }
+  },
+  "action_summary": {
+    "posture_update": "不应用：A也叫艾利克斯是其他作者，本条不得修改小草posture_current或REGIME_TIMELINE。",
+    "playbook_update": "no_change：需求、融资、许可和周期斜率框架均未经过研究与人工门禁。",
+    "hypothesis_update": "复用XH-313的精确主张；六条既有候选只记局部支持；形成数据中心许可与存储周期斜率两条待检验新候选。",
+    "audit_evidence": "完整读取并绑定公众号Markdown正文及八张图片文字化；独立市场材料只核实Anthropic初步上市申报和10月28日美联储维持利率，其他金融、行情和政策数字保持来源引述。",
+    "instrumentation_todo": "若后续获授权，建立云厂核心业务与自由现金流面板、数据中心许可到交付面板、信用价格口径面板及存储现货/合约/企业平均售价和指引面板。",
+    "routing": [
+      "authority_0_durable_knowledge",
+      "reuse_XH-313",
+      "partial_support_no_merge",
+      "data_center_permitting_candidate",
+      "memory_cycle_slope_candidate",
+      "research_backlog_candidate"
+    ]
+  },
+  "ingestion_receipt": {
+    "new_hypothesis_ids": [
+      "XH-329",
+      "XH-330"
+    ],
+    "recurrence_hypothesis_ids": [
+      "XH-313"
+    ],
+    "analyst_draft_sha256": "fcb4012e532cc80a5ef40f852a5b995dea29a8e26ffd1c594f76344369cf3eca",
+    "semantic_content_unchanged": true
+  },
+  "deduplication_review_addendum": {
+    "supersedes": [
+      "deduplication_review.result.new_distinct_candidates:data_center_permitting",
+      "hypotheses:data_center_permitting.relation_to_existing",
+      "hypotheses:data_center_permitting.dedup_boundary"
+    ],
+    "analyst_addendum_sha256": "6431cfd4a222d6319c865d768dbe88cd93eea55eb620ba1537b76a7157da93e5",
+    "review": {
+      "schema_version": "kol-knowledge-dedup-addendum-v1",
+      "status": "reviewed",
+      "scope": "只审查XH-329与XH-150、XH-228、XH-238的去重关系；不重写既有知识草稿，不执行第二次ingest，不改变策略或姿态。",
+      "original_knowledge_binding": {
+        "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_wechat_official/analysis_requests/.semantic_delegation/7d52ddd6831966e3d6d6741fa4b49545cb4867d6572ea2b98cdabe6e48698a75/context-67b29c3b996f2a6e592da182e9e9a9709321e6cc237afa5951da44eb6e66922d/knowledge_draft.json",
+        "sha256": "fcb4012e532cc80a5ef40f852a5b995dea29a8e26ffd1c594f76344369cf3eca",
+        "bytes_preserved": true
+      },
+      "evidence_binding": {
+        "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_wechat_official/evidence/89a6f39cac755a79ed153e622d8c4c3160c68bd2593bc95c018e201c7b901a19.md",
+        "sha256": "be23877e1f1a81f348d0b362dbebb36dabd0f80b28fcf43f545b5a152a615d07",
+        "read_to_eof": true,
+        "source_boundary": "来源正文可作为KOL观点证据；本次绑定的独立材料没有核实41项公投、各州暂停审批、民调或项目交付结果，因此不得把这些数字或因果结果升级为系统事实。"
+      },
+      "backlog_binding": {
+        "path": "/Users/xuanyue202/Documents/project/xiaocao/reference/experience/xiaocao_hypotheses.jsonl",
+        "sha256": "c4c6530fb71489982abfba24622f0bf0f5a10790b5979c98787e903951ee6cb6",
+        "reviewed_ids": [
+          "XH-150",
+          "XH-228",
+          "XH-238",
+          "XH-329"
+        ]
+      },
+      "source_comparison_evidence": [
+        {
+          "excerpt": "前面讲的是需求和融资。11 月 3 日，第三道闸门开始落闸——许可。",
+          "meaning": "作者把地方许可作为需求和融资之外的单独观察维度。"
+        },
+        {
+          "excerpt": "需求是第一道，现在是开着的；融资是第二道，正在变窄；许可是第三道，似乎刚刚开始关。任何一道卡住，影响都不小。",
+          "meaning": "来源主张许可可能独立约束项目，但使用“似乎”并未给出已发生的投产、采购或收入结果。"
+        },
+        {
+          "excerpt": "Anthropic 在招股书里把纽约、得州的暂停令列为业务风险",
+          "meaning": "这支持把暂停审批当作风险变量，不等于证明名义资本开支与投产容量已经脱节。"
+        },
+        {
+          "excerpt": "只有标题与元信息，没有公投数字全文；不能用此图独立核实正文41项等细节。",
+          "meaning": "图片证据不能补足地方许可事件数量，更不能补足对开工、通电、采购和收入的因果结果。"
+        }
+      ],
+      "backlog_comparison": {
+        "XH-150": {
+          "claim": "电力、并网、变压器和许可延误会使名义AI资本开支与实际投产容量脱节，并延后光模块等下游采购收入确认。",
+          "operationalization": "按项目跟踪规划投资、通电日期、并网许可、设备采购、实际投产容量与供应商收入；若延期项目的采购和收入节奏并未后移，则否定。",
+          "overlap_with_XH-329": [
+            "都把许可状态与规划容量能否转成可交付容量相联系",
+            "都要求项目级跟踪许可、开工或通电等交付里程碑"
+          ],
+          "not_supported_by_this_source": [
+            "电力供给、并网和变压器瓶颈",
+            "名义资本开支与实际投产容量已经发生脱节",
+            "光模块或其他下游设备采购已经延后",
+            "供应商收入确认已经延后"
+          ]
+        },
+        "XH-228": {
+          "claim": "当云厂商资本开支接近或超过经营现金流且外部融资占比上升时，AI基础设施订单对信用条件变化会更敏感。",
+          "relationship": "complementary_not_duplicate",
+          "reason": "XH-228检验信用条件对订单和应收的影响；XH-329是在需求和融资仍可用的条件下隔离地方许可的增量影响。来源同时讨论融资变贵，但不能把融资机制与许可机制合并。"
+        },
+        "XH-238": {
+          "claim": "Agent从企业级走向消费级后，服务器CPU、异构计算、光互连和电力系统会成为与GPU同等重要的增长瓶颈。",
+          "relationship": "adjacent_not_duplicate",
+          "reason": "XH-238研究计算、互连和电力系统瓶颈及订单外溢；XH-329研究地方政治、社区反对和许可程序。两者可共同影响交付，但处理变量和可证伪结果不同。"
+        },
+        "XH-329": {
+          "claim": "当数据中心需求与融资仍可用时，地方公投、社区反对和审批暂停仍可能成为独立的建设闸门，并推迟资本开支与收入兑现。",
+          "current_dedup_gap": "现有related_existing_ids和dedup_boundary只比较XH-228与XH-238，遗漏了已覆盖许可延误、投产容量和下游收入的XH-150。",
+          "relationship_to_XH-150": "refines",
+          "support_for_XH-150": "partial_support_only",
+          "is_full_recurrence_of_XH-150": false,
+          "is_fully_distinct_from_XH-150": false
+        }
+      },
+      "first_principles_judgment": {
+        "relationship": "XH-329 refines XH-150 and provides partial support only",
+        "reasoning": [
+          "XH-150已经把许可延误列入名义资本开支无法转成投产容量的原因，因此XH-329不能继续被称为相对XH-150完全独立的新机制。",
+          "XH-329的增量价值是把许可拆成地方公投、社区反对和审批暂停，并在需求、融资仍可用时检验其独立影响；这是更窄的政治与程序性处理变量。",
+          "本次来源只有风险主张和事件叙述，没有项目开工、通电、采购或供应商收入结果，不能把XH-150整句登记为复现或确认。",
+          "XH-329可作为XH-150许可分支的子候选保留，以免丢失更具体的可证伪设计，但必须更正为refinement而不是new_distinct_candidate。"
+        ]
+      },
+      "new_dedup_boundary": "XH-329是XH-150中“许可延误”分支的细化，而不是相对XH-150完全独立的新机制：它只检验在需求和融资仍可用时，地方公投、社区反对与审批暂停是否对许可、开工、通电、延期或取消产生增量影响；它不包含XH-150的电力、并网和变压器瓶颈，也不主张本次来源已证明名义资本开支与实际投产容量脱节，或光模块等下游采购、供应商收入确认后移。XH-228仍是信用条件轴，XH-238仍是计算、互连和电力系统瓶颈轴，二者与XH-329相邻但不重复。",
+      "candidate_status_correction": {
+        "required": true,
+        "candidate_id": "XH-329",
+        "from": "new_distinct_candidate",
+        "to": "refinement_candidate",
+        "parent_candidate_id": "XH-150",
+        "support_level_for_parent": "partial_support_only",
+        "authority": 0,
+        "related_existing_ids_should_be": [
+          "XH-150",
+          "XH-228",
+          "XH-238"
+        ],
+        "prohibited_interpretation": "不得把本次来源登记为XH-150整句复现、确认光模块收入延后，或证明地方许可已经造成实际投产缺口。"
+      },
+      "merge_retire_decision": {
+        "merge_required": false,
+        "retire_required": false,
+        "retain_XH-329": true,
+        "retain_condition": "父级附加metadata时必须把XH-329标成XH-150的refinement并替换dedup_boundary；若无法保存父子/refines关系，则不应继续把XH-329当独立候选复用，应并回XH-150以避免重复计数。",
+        "reason": "立即合并会丢失地方政治与审批程序这一更窄、可单独做项目级对照的处理变量；继续保持“完全独立新候选”又会与XH-150的许可分支重复。保留ID并降格为子候选细化，既保留可证伪性，也避免把同一许可机制计为两条独立证据。"
+      },
+      "downstream_boundary": {
+        "second_ingest": false,
+        "strategy_change": false,
+        "posture_change": false,
+        "parameter_change": false,
+        "publication_or_notification": false,
+        "allowed_followup": "父级仅可按本附加审查原文补充知识审计与候选metadata，再交Spec复审。"
+      }
+    }
+  }
+}

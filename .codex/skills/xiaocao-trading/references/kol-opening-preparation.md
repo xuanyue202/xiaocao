@@ -8,18 +8,23 @@ quote and exact-once gates. Never replay a completed run to validate this flow.
 
 ## Before 09:20: prepare once
 
-APP consumes its original `book_b_kol_inputs_prepared` event directly. Paper
-starts its original supervisor at 09:10 and, after its calendar proof, runs one
-cache-only 11:30-horizon projection while the supervisor waits for 09:25:01.
-Paper creates an input with `scripts/kol_trading_prepare.py inputs
---projection-summary <saved summary JSON> --binding <original owner JSON>
---output-dir <dated analysis directory>`; the binding contains `trade_date`,
-`automation_id=xiaocao-daily-morning-execution`, `owner_thread_id` and original
-supervisor `run_id`. Keep the same binding for its final input. No second
-producer, account capture or paper writer is started. APP never rebuilds its
-input outside the runner event.
+APP consumes its original `book_b_kol_inputs_prepared` event directly and owns
+one complete conditional preparation. Its successful `accept` command publishes
+the shared source reference immediately under the same Automation/Thread; APP
+account readiness, final checklist acknowledgement and execution are separate.
 
-Dispatch one worker with `model=gpt-6-sol`, `reasoning_effort=xhigh`,
+Paper starts its original supervisor at09:10 after calendar proof, without
+another source-preparation worker. At original freeze the supervisor reads the
+shared accepted brief once, builds its fresh cache-only projection and creates
+`kol-preparation-adoption.json` under its original run. This binds Paper's exact
+Automation/Thread/run, current input/rules/fingerprint and the original APP
+preparation path/hash/source binding. Source/viewpoint/evaluation/relation or
+rule changes, expiry, ambiguity and missing support defer KOL promptly; no
+APP-status polling, duplicated model preparation or extended budget. APP keeps
+its original owner and receipt; adoption grants no policy/account authority.
+Legacy exact Paper-owned preparation references remain readable.
+
+APP preparation owner only: dispatch one worker with `model=gpt-6-sol`, `reasoning_effort=xhigh`,
 `fork_turns=none`. Save actual accepted arguments/result, worker ID and aware
 `dispatched_at`; the dispatch JSON also contains `accepted=true`, model/effort,
 `input_sha256` (the input's runner hash) and exact `binding`. If routing or
@@ -128,10 +133,9 @@ APP acknowledgement also registers the accepted preparation immutably for
 daily morning's local recommendation preview. Prepare preferences before the
 09:25 capture; the producer never waits or launches another analyst. This
 authority=0 preview has its own receipt and never counts as APP/Paper adoption.
-For Paper, pass the original manifest `execution_root` as `--root` to both
-inputs and accept. Accept registers the sealed reference in the original run
-directory after matching Automation/Thread/run identity; the supervisor reads
-that reference, and the pinned runtime includes the same rule bytes. Keep the worker warm. Pre-read the final schema below now.
+The shared reference is source reasoning only. Paper's adopted packet retains
+the source worker as provenance, never as a cross-thread follow-up target.
+Pre-read the final schema below during the original wait.
 
 ## At the original freeze: apply and verify changes
 
@@ -152,6 +156,10 @@ If next_action=continue_original_baseline_deferred, original code records the
 explicit KOL deferred receipt and continues its own valid-policy/baseline gates;
 read its known unresolved conditions without dispatching or publishing a neutral
 substitute. This is a separately reviewed fallback, not judgment completion.
+If next_action=dispatch_current_worker, spawn the exact provided gpt-6-sol/xhigh/
+fork-none worker in the Paper thread. Only current applicability/delta is new;
+reuse the independently accepted prepared implications and conditions. Do not
+address an APP child agent or reread the complete unchanged source projection.
 If next_action=dispatch_warm_worker, immediately send exact tool_arguments to
 the same worker; a new source/delta/unresolved condition requires its judgment.
 The handoff includes the brief, hash-bound packet and actual assembly
@@ -161,7 +169,7 @@ accepted warm preparation exists, preserve the explicit degradation. Do not open
 `wait_for_agent_reviews.py` starts its KOL support branch independently of the
 structured intelligence queue. It emits `paper_kol_review_requested` with a real
 immutable request/hash, fresh cache-only input and assembled packet. Dispatch
-that exact request to its warm worker. Empty/completed intelligence does not
+the exact request through its emitted next_action. Empty/completed intelligence does not
 end a pending KOL branch. Missing preparation, risk no-buy or cutoff produces
 an explicit supporting receipt and continues the original paper writer.
 

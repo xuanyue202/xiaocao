@@ -1,5 +1,7 @@
 """Paper support owns no trading writer and never waits with a ledger lease."""
 
+from pathlib import Path
+
 import pytest
 
 from tests.test_kol_opening_preparation import case, NOW, save, accept
@@ -39,6 +41,112 @@ def start(owner, factor=1):
     case, run, freeze, clock, events = owner
     return paper.PaperKolReview(case["root"], run, "2026-10-23", freeze,
         now=lambda:clock[0], preview=lambda root, **kw: ({"authority":"preview_only"}, {"deploy_factor":factor}), emit=events.append)
+
+
+@pytest.fixture
+def shared_owner(owner, monkeypatch):
+    """Same source brief, genuinely different original APP/Paper bindings."""
+    import copy
+    from xiaocao.kol.selection_preview import register_preparation
+    case, run, _, _, _ = owner
+    app_input = copy.deepcopy(case['inputs'])
+    app_input['binding'] = {**app_input['binding'], 'automation_id': 'xiaocao-book-b-live-morning',
+                            'owner_thread_id': 'app-owner'}
+    app_path = save(case['root'] / 'app-input.json', app_input)
+    draft = {**case['draft'], 'input_sha256': _hash(app_input)}
+    dispatch = {**case['dispatch'], 'binding': app_input['binding'], 'input_sha256': _hash(app_input)}
+    review = {**case['review'], 'draft_sha256': prep.canonical_sha256(draft),
+              'dispatch_sha256': prep.canonical_sha256(dispatch)}
+    value = prep.accept_preparation(app_path, draft, review, dispatch, case['context'], now=NOW)
+    path = save(case['root'] / 'app-prepared.json', value)
+    monkeypatch.setenv('CODEX_AUTOMATION_ID', 'xiaocao-book-b-live-morning')
+    monkeypatch.setenv('CODEX_THREAD_ID', 'app-owner')
+    register_preparation(app_path.resolve(), path, value)
+    monkeypatch.setenv('CODEX_AUTOMATION_ID', 'xiaocao-daily-morning-execution')
+    monkeypatch.setenv('CODEX_THREAD_ID', 'owner')
+    (run / 'kol-preparation.json').unlink()
+    return owner, value, path
+
+
+def test_paper_reuses_source_without_app_task_or_worker_dependency(shared_owner):
+    owner, original, path = shared_owner
+    review = start(owner)
+    assert review.receipt is None
+    adopted = prep.read_json(owner[1] / 'kol-preparation-adoption.json')
+    assert adopted['binding'] == review.binding
+    assert adopted['source_binding'] == original['binding']
+    assert adopted['preparation_sha256'] == original['preparation_sha256']
+    assert prep.read_json(path) == original  # no rewritten APP owner or clock
+    assert not (owner[1] / 'kol-preparation.json').exists()
+    assert review.request['kol_inputs']['warm_worker'] is None
+    handoff = prep.read_json(Path(owner[4][0]['dispatch_path']))
+    assert handoff['next_action'] == 'dispatch_current_worker'
+    assert handoff['tool_arguments']['model'] == 'gpt-6-sol'
+    assert handoff['tool_arguments']['fork_turns'] == 'none'
+    assert 'target' not in handoff['tool_arguments']
+
+
+def test_changed_shared_source_defers_without_account_or_model_wait(shared_owner, monkeypatch):
+    owner, _, _ = shared_owner
+    case = owner[0]
+    projection = prep.read_json(Path(case['inputs']['projection']['projection_path']))
+    projection['active_viewpoints'][0]['report_content_sha256'] = 'f' * 64
+    projection['projection_sha256'] = prep.canonical_sha256({k: v for k, v in projection.items() if k != 'projection_sha256'})
+    summary = {'projection_path': str(save(case['root'] / 'changed.json', projection)),
+               'projection_sha256': projection['projection_sha256']}
+    monkeypatch.setattr(paper, 'write_trading_projection', lambda *a, **kw: summary)
+    def forbidden(*a, **kw):
+        raise AssertionError('changed support must defer before account/model work')
+    review = paper.PaperKolReview(case['root'], owner[1], '2026-10-23', owner[2],
+        now=lambda: owner[3][0], preview=forbidden, emit=owner[4].append)
+    assert review.receipt['status'] == 'deferred' and not owner[4]
+    assert 'SOURCE_CHANGED' in review.receipt['reason']
+
+
+def test_foreign_or_altered_adoption_cannot_authorize_packet(shared_owner):
+    from pathlib import Path
+    from xiaocao.kol.preparation_adoption import read_adoption
+    owner, _, source_path = shared_owner
+    review = start(owner)
+    path = owner[1] / 'kol-preparation-adoption.json'
+    value = prep.read_json(path)
+    value['binding']['owner_thread_id'] = 'foreign'
+    value['adoption_sha256'] = prep.canonical_sha256({k: v for k, v in value.items() if k != 'adoption_sha256'})
+    save(path, value)
+    with pytest.raises(ValueError, match='ADOPTION_ALTERED'):
+        read_adoption(path, source_path, Path(review.request['kol_inputs']['input_path']), now=owner[3][0])
+
+
+@pytest.mark.parametrize('cause', ['missing', 'expired', 'ambiguous'])
+def test_unavailable_shared_preparation_is_prompt_baseline(shared_owner, monkeypatch, cause):
+    from xiaocao.kol.opening_preparation import write_artifact
+    owner, prepared, source_path = shared_owner
+    root = owner[0]['root']
+    references = root / 'output/live/kol_selection_preparations/2026-10-23'
+    if cause == 'missing':
+        next(references.glob('*.json')).unlink()
+    elif cause == 'expired':
+        owner[3][0] = prep.aware(prepared['draft']['valid_until'])
+    else:
+        ref = prep.read_json(next(references.glob('*.json')))
+        write_artifact(references, {**ref, 'extra': 'another accepted reference'}, '.json')
+    def forbidden(*a, **kw):
+        raise AssertionError('no account or new model wait for unavailable shared preparation')
+    monkeypatch.setattr(paper, 'build_trading_context', forbidden)
+    review = start(owner)
+    assert review.receipt['status'] == 'deferred' and not owner[4]
+
+
+def test_shared_adoption_still_requires_original_paper_manifest(shared_owner, monkeypatch):
+    owner, _, _ = shared_owner
+    review = start(owner)
+    from xiaocao.kol.preparation_adoption import read_adoption
+    path = owner[1] / 'kol-preparation-adoption.json'
+    value = prep.read_json(path)
+    monkeypatch.setenv('CODEX_THREAD_ID', 'foreign-thread')
+    with pytest.raises(ValueError, match='ORIGINAL_OWNER_REQUIRED'):
+        read_adoption(path, Path(value['preparation_path']),
+                      Path(review.request['kol_inputs']['input_path']), now=owner[3][0])
 
 
 def test_current_request_waits_for_bound_policy_and_records_adoption_evidence(owner, monkeypatch):

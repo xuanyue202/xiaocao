@@ -235,6 +235,112 @@ def test_cli_compact_json_and_test_clock_scope(tmp_path, capsys):
     assert tick.main(["poll", "--root", str(tmp_path), "--now", "2026-09-07T10:00:00"]) == 2
 
 
+@pytest.mark.parametrize("early,target", [("10:20", "10:25"), ("10:53", "10:55"),
+                                          ("13:24", "13:25"), ("13:54", "13:55")])
+def test_scheduled_cli_prewake_reaches_one_claim_at_business_time(tmp_path, monkeypatch, capsys, early, target):
+    from xiaocao import automation_run
+    from xiaocao.utils import business_clock
+
+    current = [at(early)]
+    sleeps = []
+    original_clock = tick._clock
+    monkeypatch.setattr(tick, "_clock", lambda now: original_clock(now if now is not None else current[0]))
+    monkeypatch.setenv("CODEX_AUTOMATION_ID", "xiaocao-intraday-monitor-05")
+    monkeypatch.setenv("CODEX_THREAD_ID", "original-owner")
+    monkeypatch.setattr(automation_run, "validate_scheduler_header", lambda *a, **k: {"thread_id": "original-owner"})
+
+    def advance(seconds):
+        assert 0 < seconds <= 60
+        sleeps.append(seconds)
+        current[0] += timedelta(seconds=seconds)
+
+    def publication_after_gate(*args):
+        assert current[0] >= at(target), "support read before legal checkpoint"
+        return tick._digest([])
+
+    monkeypatch.setattr(business_clock.clock, "sleep", advance)
+    monkeypatch.setattr(tick, "publication_fingerprint", publication_after_gate)
+    assert tick.main(["poll", "--root", str(tmp_path)]) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["status"] == "run" and result["cadence_slot"] == at(target).isoformat()
+    assert sum(sleeps) == (at(target) - at(early)).total_seconds()
+    assert tick.main(["poll", "--root", str(tmp_path)]) == 2
+    second = json.loads(capsys.readouterr().out)
+    assert second["reason"] == "RUNNING_CLAIM" and second["token"] == result["token"]
+
+
+@pytest.mark.parametrize("hhmm,day,identity,test_clock", [
+    ("10:19", "2026-09-07", True, False), ("14:44", "2026-09-07", True, False),
+    ("10:24", "2026-09-05", True, False), ("10:24", "2026-09-07", False, False),
+    ("10:24", "2026-09-07", True, True),
+])
+def test_cli_prewake_does_not_expand_wait_authority(tmp_path, monkeypatch, capsys, hhmm, day, identity, test_clock):
+    from xiaocao import automation_run
+    from xiaocao.utils import business_clock
+
+    original_clock = tick._clock
+    moment = at(hhmm, day)
+    monkeypatch.setattr(tick, "_clock", lambda now: original_clock(now if now is not None else moment))
+    monkeypatch.delenv("CODEX_AUTOMATION_ID", raising=False)
+    if identity:
+        monkeypatch.setenv("CODEX_AUTOMATION_ID", "xiaocao-intraday-monitor-05")
+        monkeypatch.setattr(automation_run, "validate_scheduler_header", lambda *a, **k: {})
+    monkeypatch.setattr(business_clock.clock, "sleep", lambda seconds: pytest.fail("unauthorized wait"))
+    argv = ["poll", "--root", str(tmp_path)]
+    if test_clock:
+        argv += ["--now", moment.isoformat()]
+    assert tick.main(argv) == 0
+    assert json.loads(capsys.readouterr().out)["status"] == "no_op"
+
+
+def test_cli_invalid_scheduler_header_cannot_wait_or_claim(tmp_path, monkeypatch, capsys):
+    from xiaocao import automation_run
+    from xiaocao.utils import business_clock
+
+    monkeypatch.setenv("CODEX_AUTOMATION_ID", "foreign-automation")
+    monkeypatch.setattr(business_clock.clock, "sleep", lambda seconds: pytest.fail("unverified wait"))
+
+    def deny(*args, **kwargs):
+        raise ValueError("INITIAL_SCHEDULER_ID_MISMATCH")
+
+    monkeypatch.setattr(automation_run, "validate_scheduler_header", deny)
+    assert tick.main(["poll", "--root", str(tmp_path)]) == 2
+    assert json.loads(capsys.readouterr().out)["status"] == "reconcile_required"
+    assert not (tmp_path / tick.STATE_RELATIVE_PATH / "state.json").exists()
+
+
+def test_cli_prewake_date_rollover_fails_before_claim(tmp_path, monkeypatch):
+    from xiaocao import automation_run
+    from xiaocao.utils import business_clock
+
+    current = [at("13:54")]
+    original_clock = tick._clock
+    monkeypatch.setattr(tick, "_clock", lambda now: original_clock(now if now is not None else current[0]))
+    monkeypatch.setenv("CODEX_AUTOMATION_ID", "xiaocao-intraday-monitor-05")
+    monkeypatch.setattr(automation_run, "validate_scheduler_header", lambda *a, **k: {})
+    monkeypatch.setattr(business_clock.clock, "sleep", lambda seconds: current.__setitem__(0, current[0] + timedelta(days=1)))
+    with pytest.raises(RuntimeError, match="BUSINESS_WAIT_SESSION_CHANGED"):
+        tick.main(["poll", "--root", str(tmp_path)])
+    assert not (tmp_path / tick.STATE_RELATIVE_PATH / "state.json").exists()
+
+
+def test_cli_prewake_rollover_before_wait_initial_clock_cannot_claim_new_day(tmp_path, monkeypatch, capsys):
+    from xiaocao import automation_run
+    from xiaocao.utils import business_clock
+
+    old = at("13:54")
+    new = at("13:55") + timedelta(days=1)
+    reads = iter([old, old])
+    original_clock = tick._clock
+    monkeypatch.setattr(tick, "_clock", lambda now: original_clock(now if now is not None else next(reads, new)))
+    monkeypatch.setenv("CODEX_AUTOMATION_ID", "xiaocao-intraday-monitor-05")
+    monkeypatch.setattr(automation_run, "validate_scheduler_header", lambda *a, **k: {})
+    monkeypatch.setattr(business_clock.clock, "sleep", lambda seconds: pytest.fail("already on new day"))
+    assert tick.main(["poll", "--root", str(tmp_path)]) == 2
+    assert json.loads(capsys.readouterr().out)["status"] == "reconcile_required"
+    assert not (tmp_path / tick.STATE_RELATIVE_PATH / "state.json").exists()
+
+
 def test_sparse_monitor_and_publication_review_share_one_claim(tmp_path):
     publication(tmp_path)
     claim = tick.poll(tmp_path, now=at("10:25"))

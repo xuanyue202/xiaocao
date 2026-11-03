@@ -34,8 +34,9 @@ def _dt(hour: int, minute: int, second: int = 0) -> datetime:
     return datetime(2026, 4, 30, hour, minute, second, tzinfo=A_SHARE_TZ)
 
 
+@pytest.mark.parametrize("kol_enabled", [True, False])
 @pytest.mark.parametrize("conflicting_bytes", [b"", b"different original\n"])
-def test_committed_bundle_survives_compatibility_freeze_conflict(tmp_path, monkeypatch, capsys, conflicting_bytes):
+def test_committed_bundle_survives_compatibility_freeze_conflict(tmp_path, monkeypatch, capsys, conflicting_bytes, kol_enabled):
     from xiaocao.live.morning_bundle import acquire_bundle, read_consumed_rows
 
     day = "2026-10-09"
@@ -44,6 +45,7 @@ def test_committed_bundle_survives_compatibility_freeze_conflict(tmp_path, monke
     monkeypatch.setenv("CODEX_AUTOMATION_ID", "xiaocao-daily-morning")
     monkeypatch.setenv("CODEX_THREAD_ID", "exact-producer")
     monkeypatch.setattr(live_recommend, "OUT_DIR", tmp_path)
+    monkeypatch.setattr(live_recommend, "_KOL_RECOMMENDATION_ENABLED", kol_enabled)
     monkeypatch.setattr(live_recommend, "_load_stock_sentiment_map", lambda _: {})
     monkeypatch.setattr(live_recommend.subprocess, "run", lambda *a, **k: SimpleNamespace(stdout="a" * 40))
     row = {"date": day, "book": "B", "code": "000020.XSHE", "mode": "test",
@@ -58,10 +60,14 @@ def test_committed_bundle_survives_compatibility_freeze_conflict(tmp_path, monke
     receipt = acquire_bundle(tmp_path, day)
     assert receipt["status"] == "ready"
     assert read_consumed_rows(receipt, day, live_dir=tmp_path) == [row]
-    immediate=(tmp_path/f'recommend_{day}.md').read_text()
-    assert row['code'] in immediate
-    from xiaocao.kol.selection_preview import read_recommendation
-    assert read_recommendation(tmp_path,day,receipt)['baseline_codes']==[row['code']]
+    if kol_enabled:
+        immediate = (tmp_path / f"recommend_{day}.md").read_text()
+        assert row["code"] in immediate
+        from xiaocao.kol.selection_preview import read_recommendation
+        assert read_recommendation(tmp_path, day, receipt)["baseline_codes"] == [row["code"]]
+    else:
+        assert not (tmp_path / f"morning_kol_recommendation_{day}.json").exists()
+        assert not (tmp_path / "kol_recommendations").exists()
     event = next(e for e in (json.loads(line) for line in capsys.readouterr().err.splitlines()
         if line.startswith('{')) if e.get('event')=='morning_bundle_published')
     assert event["compatibility_freeze"]["status"] == "conflict_preserved"

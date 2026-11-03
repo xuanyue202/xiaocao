@@ -145,7 +145,7 @@ See Contract §5's linked repair note for natural proof still pending.
 
 ## Execute
 
-Scheduler wakes are preparation only: producer wakes at 09:18, paper at 09:10; APP
+Scheduler wakes are preparation only: producer wakes at 09:10, paper at 09:10; APP
 wakes at 08:53. Start the original entrypoint promptly. Python waits until
 09:25:01 before capture/paper consumption, and until 09:00 before fresh APP
 preflight notices and its 2100-second preparation budget. Continuations retain

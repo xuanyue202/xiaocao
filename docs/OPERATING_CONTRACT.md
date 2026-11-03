@@ -1,6 +1,6 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：4.56
+**版本**：4.57
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
 **关联实现**：`src/xiaocao/live/{safety,capital_keychain,foundersc_native_ax,foundersc_native_broker,trading_execution,book_b_live_lifecycle,book_b_live_intraday}.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`native/foundersc_ax_executor/`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{book_b_live_morning,book_b_live_intraday,live_monitor,research_mode_switch_replay}.py`
@@ -69,7 +69,7 @@ claim 与精确副作用证据判断是否可重放。完整复盘和充分回�
 
 晨间任务先调用小草 `/stock/trade_cal`，核验今日是否交易日；最近交易日不同于今日则直接 `NON_TRADING_DAY` 结束，不进入 APP/KOL 预检、冻结等待、历史对账或企微交易告警。日历缺失或失败停在 APP 前，不以工作日调度推断交易日。
 
-调度只负责预唤醒：APP 08:53、推荐 09:18、纸面 09:10（先做日历核验与 KOL 准备）；脚本以北京时间绝对门等待，APP 09:00 才开始预检，推荐和纸面 09:25:01 才消费集合竞价数据。推荐所需来源、排序覆盖及全部 active 定价未就绪时每2秒重试原调用，不按超时丢弃候选或把缺数据记作 NONE。09:00立即启动一次原APP进程（默认冻结等待2100秒）并行检查行情认证、会话及来源准备；初次确认APP就绪后静默等待至09:24，此前不重复APP保活或冻结文件轮询；09:24恢复会话检查及必要解锁，再恢复30秒心跳，09:24:50起主动等待09:25冻结。等待分段校时并受原超时约束；晚启动立即检查，不额外等待。行情预检只证明接口可达/认证，不证明来源齐全。
+调度只负责预唤醒：APP 08:53、推荐与纸面 09:10（先做日历核验，纸面复用共享 KOL 准备）；脚本以北京时间绝对门等待，APP 09:00 才开始预检，推荐和纸面 09:25:01 才消费集合竞价数据。推荐所需来源、排序覆盖及全部 active 定价未就绪时每2秒重试原调用，不按超时丢弃候选或把缺数据记作 NONE。09:00立即启动一次原APP进程（默认冻结等待2100秒）并行检查行情认证、会话及来源准备；初次确认APP就绪后静默等待至09:24，此前不重复APP保活或冻结文件轮询；09:24恢复会话检查及必要解锁，再恢复30秒心跳，09:24:50起主动等待09:25冻结。等待分段校时并受原超时约束；晚启动立即检查，不额外等待。行情预检只证明接口可达/认证，不证明来源齐全。
 
 **2026-10-19 用户批准的证券范围解析**：当天推荐先通过成功、非空且结构有效的专有
 `stock_info` 新鲜读取解析原始股票池/方向名单。目录之外的代码自动剔除，保留原名单
@@ -206,6 +206,8 @@ KOL 提前准备（2026-10-23 用户批准）在09:20前由§2a指定路由worke
 关系历史变化保守重审；规则变化或准备缺失/迟到则跳过新模型等待。原warm worker只复核
 这些条件与变化，不对每笔订单重读完整旧投影。完整覆盖和来源证据仍保存在原准备回执。
 盘前备好引用正文和输出结构；正式发布仍须当前来源核验、独立主审与原请求绑定。
+2026-11-03 用户批准：只做一次完整晨间条件准备。APP 09:00 原 owner 在来源准备独立复核封存后立即登记共享 authority=0 产物，不以 APP 交易完成或 checklist 最终完成为条件。推荐与 Paper 只读已存在产物，不等待 APP 登录、账户或执行，不新增跨任务轮询或模型准备。缺失、过期、规则/来源变更保持各自确定性基线及独立有效政策，并明确 KOL deferred。Paper 在原冻结阶段生成自己的当前输入和不可变采用回执，绑定原 Automation/Thread/run、原 APP 来源 binding、准备 hash、当前投影/规则/source_fingerprint；不得重写 APP 准备身份或复用 APP 账户/政策。原 Paper 自有准备回执保留精确兼容读回。共享准备的 APP 子 agent 不能从 Paper 线程直接调用；需要新判断时用指定路由新建只处理 Paper 当前条件/delta 的 worker，不重复全量来源准备。最终政策、独立复核、账户、09:27截止和订单门各自保留。这是可选的单向数据依赖，不得形成 APP 等推荐准备、推荐等 APP 交易完成的循环。
+
 APP和paper共用opening_preparation接口、各自保留owner与账户证据。操作见
 [晨间KOL准备](../.codex/skills/xiaocao-trading/references/kol-opening-preparation.md)。
 
@@ -904,6 +906,7 @@ no-KOL三项纸盘挑战，共同风险与B退出，仅前向独立账本。原�
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| 4.57 | 2026-11-03 | Paper 复用 APP 独立封存的共享条件准备，采用回执保留双方身份及来源/规则验证；可选单向依赖、无任务互等，最终账户政策仍独立。推荐预唤醒提前至09:10，行情门09:25:01不变。 |
 | 4.56 | 2026-11-02 | 按用户授权新增原冻结池内模式/赛道/候选偏好、精确批次 v3、无变化时待审核草案装配及 daily morning 独立预览；离线分别验证性能、选择与未证实收益边界。 |
 | 4.55 | 2026-11-02 | 修复 KOL 准备/发布的全库历史补读与重复逐记录回读；保留全量 writer 语义与精确当前 manifest 证明，准备前检查已知发布依赖，不扩大策略或执行权限。 |
 | 4.54 | 2026-10-30 | 明确当天交易优先、遗留问题按当前经济影响隔离、盘前处置与恢复职责、日/周因果复盘及下一交易窗口验收；规则更新不冒称运行代码已修复，不回放已终态日期。 |

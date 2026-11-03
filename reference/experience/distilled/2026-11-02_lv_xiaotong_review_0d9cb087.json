@@ -1,0 +1,184 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-02",
+  "kind": "订阅视频研究观察",
+  "knowledge_status": "reusable_knowledge",
+  "ingestion_status": "not_ingested",
+  "authority": 0,
+  "author": "吕晓彤",
+  "source": "百度网盘订阅视频《11月2日.mp4》完整ASR逐字稿",
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_subscription_videos/enrichment/9420545b8f349df9ee3e0a157d1b0d308ed091f81a17189205ca2c9cf16e5f72/artifacts/kol-netdisk-cloud-d9181145a4ac5de0/11月2日.txt",
+      "sha256": "0d9cb087e5577a8cd58cb9b78e8abfc13ccde01e577f6feb042b9c874b1c3875",
+      "size": 78044
+    }
+  ],
+  "summary": "本场可复用的是一个归属于吕晓彤的AI基础设施双边验证框架：模型竞争可能迫使持续采购，但模型公司若长期亏损、面对股东回报要求，竞争也可能压低供应链议价和利润；国内PCB、MLCC和光模块等更下游环节需单独检验订单、价格、库存和毛利。该框架只与XH-306、XH-163等既有候选局部相邻：来源没有明确模型市场收敛到少数赢家，也没有说明重复资本开支消失，因此不登记为XH-306复现；本场也不创建近义新候选。",
+  "posture": {
+    "regime": "其他作者关于AI长期趋势、短期硬件压力与应用轮动的研究观察，不应用为小草当前A股姿态。",
+    "dominant_style": "来源认为宽基反弹但主线仍不清，短期AI硬件承压，应用端快速轮动；长期AI需求需要同时验证采购扩张与商业化回报。",
+    "risk": "指数上涨、分期限美债收益率和铠侠业绩材料有绑定证据；行业领涨、个股跌幅、模型公司盈利、供应链订单与名人持仓均未逐项核实。",
+    "style_ranking": [
+      "先把长期技术方向、短期价格和单个供应链环节盈利分开",
+      "同时检查模型采购与模型商业化回报，不按单一资本开支叙事排序",
+      "对PCB、MLCC和光模块等更下游环节单独核订单、价格、库存和毛利",
+      "应用降本还要检查竞争、收入与毛利，不能把成本下降直接等同利润增加"
+    ]
+  },
+  "regime_call": {
+    "horizon": "短期硬件与应用轮动对应未来数日至数周，AI基础设施商业化和供应链利润框架对应未来数个季度。",
+    "what_would_falsify": [
+      "模型公司商业化改善且资本开支、供应商订单与毛利同步扩张，竞争没有压低供应链利润",
+      "模型公司亏损或股东回报压力变化与供应链订单、价格和毛利没有可重复关系",
+      "PCB、MLCC和光模块等更下游环节在上游压价时仍保持订单、议价和毛利",
+      "应用端降本后竞争没有加剧，收入、毛利和市场集中度反而持续改善"
+    ]
+  },
+  "directions": [
+    "用模型公司收入、亏损、融资与股东回报压力验证需求端持续性",
+    "用服务器和加速器采购、供应商订单、价格与毛利验证硬件链传导",
+    "把PCB、MLCC、光模块等更下游环节单独检查，避免把AI长期趋势等同于所有供应链利润长期上升"
+  ],
+  "stocks": [],
+  "method_principles": [
+    "把AI需求扩张与模型商业化回报放在同一张验证表中，不能只看采购额。",
+    "竞争加剧既可能扩大模型使用，也可能压低供应链议价与利润率。",
+    "长期技术方向、短期股价和单个供应链环节的盈利必须分层判断。",
+    "ASR未确认的“老馒头”“宁做”等词不映射为证券。"
+  ],
+  "exit_lessons": [],
+  "hypotheses": [],
+  "timing_notes": [
+    "本场短期判断是AI硬件承压、应用端轮动持续性存疑；这不是XH-306结构假设已经兑现的证明。",
+    "只有补充模型市场集中度、重复资本开支、供应商订单和估值的同口径证据，才能重新判断与XH-306的关系；当前只记局部相邻。",
+    "若商业化改善且采购和供应链利润共同扩张，则削弱本场关于利润挤压的归因。"
+  ],
+  "typo_corrections": [
+    {
+      "surface": "老馒头",
+      "normalized": null,
+      "decision": "unresolved",
+      "reason": "音频转写无法唯一指向公司或证券，禁止猜为Palantir或其他标的。"
+    },
+    {
+      "surface": "宁做",
+      "normalized": null,
+      "decision": "unresolved",
+      "reason": "上下文不足，禁止编造证券代码。"
+    }
+  ],
+  "decision_trace": [
+    {
+      "observation": "来源同时陈述模型竞争迫使持续采购，以及模型不挣钱、股东要求回报可能压低供应链利润。",
+      "inference": "采购需求与商业化回报必须并行验证，不能只按一侧叙事外推AI硬件利润。",
+      "action": "保留归属于吕晓彤的方法框架，不创建近义新候选。"
+    },
+    {
+      "observation": "来源没有说明通用模型市场从多家竞争收敛为少数赢家，也没有说明重复资本开支消失。",
+      "inference": "不满足XH-306精确主张的完整复现条件。",
+      "action": "只记XH-306局部相邻，不增加来源日期、不合并、不摄入。"
+    },
+    {
+      "observation": "作者把AI传媒降本与竞争加剧并列，但没有行业价格、收入和毛利数据。",
+      "inference": "与XH-163和XH-094只有局部机制重叠。",
+      "action": "只记录局部支持边界，不登记候选。"
+    }
+  ],
+  "judgment_heuristics": [
+    "先区分模型采购是否增长，再检验模型商业化能否覆盖资本成本。",
+    "供应链越往下游，越要独立检验订单、价格、库存和毛利，不能只依赖上游叙事。",
+    "应用降本不是利润自动增加；进入门槛下降也可能导致竞争加剧。"
+  ],
+  "deduplication_review": {
+    "status": "reviewed_against_current_ledger",
+    "ledger_path": "/Users/xuanyue202/Documents/project/xiaocao/reference/experience/xiaocao_hypotheses.jsonl",
+    "ledger_tail_last_id": "XH-330",
+    "reviewed_existing_ids": [
+      "XH-070",
+      "XH-094",
+      "XH-115",
+      "XH-128",
+      "XH-163",
+      "XH-306"
+    ],
+    "result": {
+      "exact_recurrences": [],
+      "partial_support_only": [
+        {
+          "existing_id": "XH-306",
+          "reason": "来源谈模型竞争、亏损与供应链利润压力，但没有少数赢家或重复资本开支消失，不能登记完整复现。"
+        },
+        {
+          "existing_id": "XH-163",
+          "reason": "来源支持AI传媒降本后竞争可能加剧，但没有价格、份额和毛利证据。"
+        },
+        {
+          "existing_id": "XH-094",
+          "reason": "来源谈应用轮动与降本，没有形成应用商业化的完整证据链。"
+        },
+        {
+          "existing_id": "XH-115",
+          "reason": "来源同时提及美债、科技、黄金、比特币、医药与机器人，但只是当日困惑与轮动叙事，不是稳定配置规则。"
+        },
+        {
+          "existing_id": "XH-128",
+          "reason": "长期AI趋势与短期交易分层相邻，但没有形成可独立登记的新方法主张。"
+        }
+      ],
+      "adjacent_not_support": [
+        {
+          "existing_id": "XH-070",
+          "reason": "作者没钱加仓是个人资金约束，不是通用现金风险预算规则。"
+        }
+      ],
+      "new_distinct_candidates": []
+    }
+  },
+  "action_summary": {
+    "posture_update": "不应用：吕晓彤是其他作者，本条不得修改小草posture_current或REGIME_TIMELINE。",
+    "playbook_update": "no_change：AI采购与利润双边框架未经研究和人工门禁。",
+    "hypothesis_update": "hypotheses为空；XH-306、XH-163、XH-094、XH-115和XH-128只记局部相邻或局部支持，不登记复现，不创建新候选。",
+    "audit_evidence": "完整读取并绑定11月2日ASR逐字稿；市场材料仅核实指数、分期限美债收益率和铠侠业绩发布，其他事实保持来源引述边界。",
+    "instrumentation_todo": "若后续获授权，建立模型公司采购、商业化、市场集中度与供应链订单、价格、库存、毛利的同口径面板。",
+    "routing": [
+      "authority_0_durable_knowledge",
+      "attributed_distillation_only",
+      "partial_support_no_merge",
+      "no_new_hypothesis",
+      "not_ingested"
+    ]
+  },
+  "provenance": {
+    "analysis_request_sha256": "8fb38de54271986e97efbb6a5f6195c68c1b73173592ab21df95e1c1fa74e115",
+    "packet_sha256": "0767d7be74abf5a58ee4a49ee2e5f2c680f3af05acc592817413fb12bbcf2ee7",
+    "evidence_sha256": "0d9cb087e5577a8cd58cb9b78e8abfc13ccde01e577f6feb042b9c874b1c3875",
+    "market_evidence_sha256": "3ba32bf05f2610e3f1902df1f53804d17d264f3eac02eab819fdc662cf9d4af9",
+    "household_context_sha256": "5cf4d9d7dffec3295caa96a5e4437234f40ab619c98250e00f46b79e958874e4",
+    "durable_contract_sha256": "44b6316a5631ff1f29d47b962a578dfb2247d636cde0a5a4fa5d00aeb1b550b8"
+  },
+  "hypothesis_relationships": [
+    {
+      "from": "lv-20261102-ai-infra-two-sided-framework",
+      "to": "XH-306",
+      "type": "partial_support",
+      "reason": "只覆盖竞争、亏损与供应链利润压力，未覆盖少数赢家和重复资本开支消失。"
+    },
+    {
+      "from": "lv-20261102-ai-media-cost-competition",
+      "to": "XH-163",
+      "type": "partial_support",
+      "reason": "只支持竞争可能压利润的局部机制。"
+    },
+    {
+      "from": "lv-20261102-full-no-cash",
+      "to": "XH-070",
+      "type": "adjacent_not_support",
+      "reason": "个人资金状态不是规范性风险预算原则。"
+    }
+  ],
+  "prior_comparison": {
+    "result": "存在可复用的归因方法框架，但与既有候选均不满足精确复现；不创建近义候选，不摄入。",
+    "no_duplicate_candidate_created": true
+  }
+}

@@ -36,7 +36,7 @@ import sys
 import tempfile
 import uuid
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, time, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -461,6 +461,21 @@ def run_independent_paper(root: Path, result: dict, *, now: datetime | None = No
     return {**result, "paper_checkpoint_path":str(path),
             "checkpoint_coverage":{"paper":claim["status"], "app":"blocked"}}
 
+def _wait_for_sparse_checkpoint() -> None:
+    """Absorb the scheduler's bounded early wake before the unchanged poll gate."""
+    from xiaocao.utils.business_clock import wait_for_business_time
+
+    local = _clock(None).astimezone(_CHINA)
+    if local.weekday() > 4:
+        return
+    for slot in sorted(_REGULAR):
+        target = time.fromisoformat(slot)
+        deadline = datetime.combine(local.date(), target, tzinfo=_CHINA)
+        if 0 < (deadline - local).total_seconds() <= 300:
+            wait_for_business_time(local.date().isoformat(), target, now=lambda: _clock(None))
+            return
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -484,7 +499,13 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "poll":
             if os.environ.get("CODEX_AUTOMATION_ID") is not None:
                 from xiaocao.automation_run import validate_scheduler_header
-                validate_scheduler_header("xiaocao-intraday-monitor-05", date=_clock(now).astimezone(_CHINA).date().isoformat())
+                market_date = _clock(now).astimezone(_CHINA).date().isoformat()
+                validate_scheduler_header("xiaocao-intraday-monitor-05", date=market_date)
+                if now is None:
+                    _wait_for_sparse_checkpoint()
+                    now = _clock(None)
+                    if now.astimezone(_CHINA).date().isoformat() != market_date:
+                        raise TickError("BUSINESS_WAIT_SESSION_CHANGED")
             result = poll(
                 args.root,
                 now=now,

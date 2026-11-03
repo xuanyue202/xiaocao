@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Daily xiaocao paper-trade + data-accumulation automation (the compounding flywheel).
-#   auto_daily.sh morning-prerecommend # ~09:18 prewake / 09:25:01 business: recommend + freeze review queue, then exit for prompt delivery
+#   auto_daily.sh morning-prerecommend # ~09:10 prewake / 09:25:01 business: recommend + freeze review queue, then exit for prompt delivery
 #   auto_daily.sh morning-execute      # ~09:25: consume frozen artifacts + review rendezvous + paper-record
 #   auto_daily.sh morning              # manual compatibility: run both stages in one shell
 #   auto_daily.sh eod        # 15:03 prewake / 15:10 business (after close): tick capture + forward A/B/F + monitor + settle + digest->WeCom + pipeline health

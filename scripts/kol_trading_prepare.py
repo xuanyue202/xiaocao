@@ -37,6 +37,9 @@ def main(argv=None):
         else:
             value = prep.opening_packet(args.preparation, args.input, read_json(args.request), now=now)
         path = prep.write_artifact(args.output_dir, value, "." + args.command + ".json")
+        if args.command == 'accept' and value['binding'].get('automation_id') == 'xiaocao-book-b-live-morning':
+            from xiaocao.kol.selection_preview import register_preparation
+            register_preparation(args.input.resolve(), path, value)
         if args.command == "accept" and value["binding"].get("automation_id") == "xiaocao-daily-morning-execution":
             from xiaocao.live.paper_morning_kol import register_preparation
             register_preparation(args.root, path, value)

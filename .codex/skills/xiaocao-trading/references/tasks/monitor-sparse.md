@@ -2,6 +2,10 @@
 
 Role xiaocao-intraday-monitor-05. First business command, once:
 `CODEX_AUTOMATION_ID=xiaocao-intraday-monitor-05 PYTHONPATH=src .venv/bin/python scripts/kol_trading_tick.py poll --monitor-paper-on-app-fence`.
+If this verified scheduled invocation arrives up to five minutes early, the CLI
+waits in the original process until the next same-day weekday sparse checkpoint.
+Retain it with short yield; no model sleep or second poll process. Other times
+still return the unchanged no-op gate. Why: early wake must not erase a checkpoint.
 Retain actual Thread and initial identity. Do not read source/report context
 before this gate. Why: an ineligible tick cannot acquire semantic/writer work.
 

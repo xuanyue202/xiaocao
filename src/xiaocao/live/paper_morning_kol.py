@@ -160,17 +160,36 @@ class PaperKolReview:
         if self.now() >= self.cutoff:
             self._finish("deferred", "PAPER_KOL_CUTOFF_REACHED")
             return
-        ready = read_json(self.run_dir / "kol-preparation.json")
-        prepared = preparation.read_preparation(Path(ready["preparation_path"]), now=self.now())
-        if (ready["binding"] != self.binding or prepared["binding"] != self.binding
-                or ready["preparation_sha256"] != prepared["preparation_sha256"]):
-            raise ValueError("PAPER_KOL_PREPARATION_OWNER_MISMATCH")
         state_root = operational_root(self.root)
+        legacy = self.run_dir / 'kol-preparation.json'
+        use_legacy = legacy.exists() or legacy.is_symlink()
+        if use_legacy:
+            if legacy.is_symlink():
+                raise ValueError('PAPER_KOL_PREPARATION_REFERENCE_SYMLINK')
+            ready = read_json(legacy)
+            preparation_path = Path(ready['preparation_path'])
+            prepared = preparation.read_preparation(preparation_path, now=self.now())
+            if (ready['binding'] != self.binding or prepared['binding'] != self.binding
+                    or ready['preparation_sha256'] != prepared['preparation_sha256']):
+                raise ValueError('PAPER_KOL_PREPARATION_OWNER_MISMATCH')
+        else:
+            from xiaocao.kol.selection_preview import registered_preparation
+            shared = registered_preparation(state_root, self.date, now=self.now())
+            if shared is None:
+                self._finish('deferred', 'PAPER_KOL_SHARED_PREPARATION_UNAVAILABLE')
+                return
+            preparation_path, prepared = shared
         summary = write_trading_projection(build_trading_context(repo_root=state_root,
             read_report_ids=[], include_report_bodies=False,
             history_fresh_through=self.date + "T11:30:00+08:00"), repo_root=state_root)
         inputs = preparation.input_payload(summary, binding=self.binding, repo_root=state_root)
         input_path = preparation.write_artifact(self.run_dir, inputs, ".kol-inputs.json")
+        adoption_path = None
+        if not use_legacy:
+            from xiaocao.kol.preparation_adoption import adoption
+            adopted = adoption(preparation_path, input_path, now=self.now())
+            adoption_path = self.run_dir / 'kol-preparation-adoption.json'
+            write_once(adoption_path, adopted)
         facts, risk = preview(self.root, deadline=self.cutoff)
         if self.now() >= self.cutoff:
             raise ValueError("PAPER_KOL_PREVIEW_DEADLINE")
@@ -185,10 +204,11 @@ class PaperKolReview:
             "strategy_sha": self.freeze["strategy_sha"], "candidates": rows,
             "account_facts": facts, "account_risk": risk}
         request = preparation.normalized_review_facts(request)
-        packet = preparation.opening_packet(Path(ready["preparation_path"]), input_path, request, now=self.now())
+        packet = preparation.opening_packet(preparation_path, input_path, request, now=self.now(),
+                                            adoption_path=adoption_path)
         packet_path = preparation.write_artifact(self.run_dir, packet, ".kol-packet.json")
         request["kol_inputs"] = {"packet_path": str(packet_path), "packet_sha256": packet["packet_sha256"],
-            "warm_worker": prepared["worker_id"], "input_path": str(input_path)}
+            "warm_worker": prepared["worker_id"] if adoption_path is None else None, "input_path": str(input_path)}
         request["dispatch_budget"] = {"observed_at": self.now().isoformat(),
             "total_remaining_seconds": max(0, (self.cutoff-self.now()).total_seconds()),
             "cutoff": self.cutoff.isoformat(), "includes": ["model", "source_verification", "independent_review", "publication"]}

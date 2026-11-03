@@ -14,19 +14,30 @@ def write_warm_dispatch(request: dict, request_path: Path, *, now: datetime) -> 
     inputs = request.get('kol_inputs') or {}
     packet_path = inputs.get('packet_path')
     worker = inputs.get('warm_worker')
-    if not packet_path or not worker:
+    if not packet_path:
+        return None
+    packet = json.loads(Path(packet_path).read_bytes())
+    shared = packet.get('preparation_adoption')
+    if not worker and not shared:
         return None
     cutoff = aware(request['review_wait_until'])
     if now.utcoffset() is None or not aware(request['requested_at']) <= now < cutoff:
         raise ValueError('MORNING_DISPATCH_ORIGINAL_CUTOFF')
-    packet = json.loads(Path(packet_path).read_bytes())
     original_facts = {k:v for k,v in request.items()
                       if k not in {'kol_inputs', 'dispatch_budget', 'request_id', 'request_sha256'}}
     if (packet.get('packet_sha256') != inputs.get('packet_sha256')
             or packet.get('packet_sha256') != canonical_sha256({k:v for k,v in packet.items() if k!='packet_sha256'})
-            or packet.get('worker_id') != worker or packet.get('cutoff') != request['review_wait_until']
+            or (not shared and packet.get('worker_id') != worker) or packet.get('cutoff') != request['review_wait_until']
             or packet.get('request_facts_sha256') != canonical_sha256(original_facts)):
         raise ValueError('MORNING_DISPATCH_PACKET_BINDING_MISMATCH')
+    if shared:
+        from xiaocao.kol.preparation_adoption import read_adoption
+        adopted = read_adoption(Path(shared['path']), Path(packet['preparation_path']),
+                                Path(packet['current_input_path']), now=now)
+        if (worker is not None or request.get('runtime') != 'paper'
+                or adopted['adoption_sha256'] != shared.get('sha256')
+                or adopted['binding'] != request.get('binding')):
+            raise ValueError('MORNING_DISPATCH_ADOPTION_BINDING_MISMATCH')
     path = request_path.with_suffix('.dispatch.json')
     identifier = request['request_sha256']
     # Ordinary COLD remains gated; the reviewed source-bound v2 exception is
@@ -67,6 +78,13 @@ def write_warm_dispatch(request: dict, request_path: Path, *, now: datetime) -> 
                 prepared_policy_path=str(candidate_path), prepared_policy_sha256=canonical_sha256(candidate))
     except (OSError,ValueError,KeyError,TypeError) as exc:
         value.update(next_action='dispatch_warm_worker', prepared_policy_unavailable=type(exc).__name__+':'+str(exc))
+        if shared:
+            # Source reasoning is reusable; an APP child is not addressable
+            # from a different Paper thread. Only current applicability is new.
+            value.update(next_action='dispatch_current_worker', tool_arguments={
+                'task_name': 'paper_kol_current_' + identifier[:12],
+                'model': 'gpt-6-sol', 'reasoning_effort': 'xhigh', 'fork_turns': 'none',
+                'message': message + '共享准备已完成全量来源阅读；只处理本Paper请求当前适用性及delta，不重做完整来源准备。'})
     value['sha256'] = canonical_sha256(value)
     atomic_write(path,json.dumps(value,ensure_ascii=False,sort_keys=True).encode(),immutable=True)
     return path
