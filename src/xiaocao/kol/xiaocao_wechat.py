@@ -426,6 +426,28 @@ def parse_xiaocao_live_messages(payload: dict[str, Any]) -> list[dict[str, Any]]
         published = datetime.strptime(
             timestamp.group("time"), "%Y-%m-%d %H:%M"
         ).replace(tzinfo=BEIJING)
+        # A clock-marked time on this original share is a bounded same-day
+        # session anchor. Ambiguous or earlier times do not produce an anchor.
+        clocks = list(re.finditer(r"(?m)^[ \t]*⏰\s*(\d{1,2})[:：](\d{2})\s*【密码", raw_message))
+        announced = ""
+        if (len(clocks) == 1 and raw_message.count("⏰") == 1
+            and len(list(_XIAOCAO_LIVE_MINI_PROGRAM.finditer(raw_message))) == 1):
+            clock = clocks[0]
+            previous_line = raw_message[:clock.start()].rstrip().rsplit("\n", 1)[-1]
+            previous_line = re.sub(r"^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}\]\s*[^:：\n]+[:：]\s*", "", previous_line)
+            # A clock by itself has no date. Only an adjacent explicit
+            # same-day session statement can bind it to this publication.
+            statement = previous_line.strip().rstrip("：:")
+            same_day = bool(re.fullmatch(r"(?:今天|今日)(?:直播|课程|开播)", statement))
+            dated = re.fullmatch(r"(?:(\d{4})年)?(\d{1,2})月(\d{1,2})日(?:直播|课程|开播)", statement)
+            if dated:
+                year, month, day = dated.groups()
+                same_day = (int(year or published.year), int(month), int(day)) == (published.year, published.month, published.day)
+            hour, minute = map(int, clock.groups())
+            if hour < 24 and minute < 60:
+                start = published.replace(hour=hour, minute=minute, second=0, microsecond=0)
+                if start >= published and same_day:
+                    announced = start.isoformat(timespec="seconds")
         for match in _XIAOCAO_LIVE_MINI_PROGRAM.finditer(raw_message):
             mini_program_name = match.group("name")
             mini_program_token = match.group("token")
@@ -442,6 +464,7 @@ def parse_xiaocao_live_messages(payload: dict[str, Any]) -> list[dict[str, Any]]
                 "mini_program_name": mini_program_name,
                 "mini_program_token": mini_program_token,
                 "message_sha256": _sha256_text(raw_message),
+                **({"announced_start_at": announced} if announced else {}),
             }
         # Discovery is already bound to the exact registered contact.  Message
         # copy is not a stable contract, so iterate every URL and rely on the
@@ -871,7 +894,7 @@ class XiaocaoLiveCaptureDriver:
     def observe_human_playback(self, identity: str, capture_job_id: str, *,
                                observed_after: datetime,
                                expected_source: str = "",
-                               published_at: str = "") -> dict[str, Any]:
+                               published_at: str = "", announced_start_at: str = "") -> dict[str, Any]:
         """Select only a unique fresh merchant source; the existing binder proves media."""
         service = self._service(identity)
         sources: dict[str, list[dict[str, Any]]] = {}
@@ -924,7 +947,7 @@ class XiaocaoLiveCaptureDriver:
                     armed_at=observed_after, captured_at=captured,
                     debug_root=(service.sniffer_binary.parent / "elive_live_debug")
                     if hasattr(service, "sniffer_binary") else None)
-                verification = verify_course_metadata(candidate, lineage, published_at)
+                verification = verify_course_metadata(candidate, lineage, published_at, announced_start_at=announced_start_at)
             except (EnrichmentError, ValueError, KeyError):
                 return {"observed": False, "reason": "course_metadata_unverified"}
         try:
@@ -2398,6 +2421,18 @@ class XiaocaoWechatLiveSubscription:
                     entry_receipt=receipt)
                 return item
         from urllib.error import URLError
+        attempted = getattr(self, "_announced_lookup_attempted", set())
+        self._announced_lookup_attempted = attempted
+        if not item.get("announced_start_at") and item["identity"] not in attempted:
+            attempted.add(item["identity"])
+            try:
+                originals = [row for row in parse_xiaocao_live_messages(self.history_reader())
+                    if row["identity"] == item["identity"] and row["message_sha256"] == item["message_sha256"]]
+            except EnrichmentError:
+                originals = []
+            if len(originals) == 1 and originals[0].get("announced_start_at"):
+                item = self._transition(manifest, item, item["status"],
+                    announced_start_at=originals[0]["announced_start_at"])
         try:
             with lifecycle_lease():
                 self.capture_driver.prepare_human_playback(item["identity"], item["capture_job_id"])
@@ -2406,6 +2441,7 @@ class XiaocaoWechatLiveSubscription:
                     item["identity"], item["capture_job_id"],
                     observed_after=datetime.fromisoformat(item["human_playback_started_at"]),
                     published_at=item["published_at"],
+                    announced_start_at=str(item.get("announced_start_at") or ""),
                     expected_source=str(item.get("source_identity") or item.get("human_confirmed_source_identity") or ""))
         except (SnifferError, URLError):
             observation = {"observed": False, "reason": "listener_transport_pending"}

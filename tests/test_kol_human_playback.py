@@ -144,6 +144,45 @@ def test_course_metadata_uses_merchant_title_and_original_session(bad):
         assert proof['title'] == candidate['title']
 
 
+def test_reused_entry_accepts_changing_title_with_matching_merchant_and_session():
+    title = '大师班复盘直播11月3日YJ'
+    lineage = {'course_title': title, 'course_start_at': 1793700000,
+               'metadata_anchors': [{'base_info_sha256': 'a' * 64}]}
+    proof = human.verify_course_metadata({'title': title}, lineage, '2026-11-03T17:30:00+08:00', announced_start_at='2026-11-03T18:00:00+08:00')
+    assert proof['title'] == proof['merchant_title'] == title
+    lineage['course_title'] = '大师班复盘直播11月2日YJ'
+    with pytest.raises(EnrichmentError):
+        human.verify_course_metadata({'title': title}, lineage, '2026-11-03T17:30:00+08:00', announced_start_at='2026-11-03T18:00:00+08:00')
+    lineage['course_title'] = '大师班复盘直播11月2日YJ'
+    with pytest.raises(EnrichmentError):
+        human.verify_course_metadata({'title': lineage['course_title']}, lineage, '2026-11-03T17:30:00+08:00', announced_start_at='2026-11-03T18:00:00+08:00')
+    lineage['course_title'] = title
+    with pytest.raises(EnrichmentError):
+        human.verify_course_metadata({'title': title}, lineage, '2026-11-03T17:30:00+08:00', announced_start_at='2026-11-03T19:00:00+08:00')
+
+
+def test_original_share_extracts_only_unambiguous_future_clock():
+    from xiaocao.kol.xiaocao_wechat import parse_xiaocao_live_messages
+    def parse(text):
+        payload = {'chat': '小花', 'username': 'contact', 'messages': [
+            '[2026-11-03 17:30] 小花: ' + text + ' #小程序://见势擒龙团/abc12345']}
+        return parse_xiaocao_live_messages(payload)[0]
+    assert parse('今天直播\n⏰18:00【密码666】')['announced_start_at'] == '2026-11-03T18:00:00+08:00'
+    assert parse('11月3日直播\n⏰18:00【密码666】')['announced_start_at'] == '2026-11-03T18:00:00+08:00'
+    assert 'announced_start_at' not in parse('明天怎么看？\n⏰18:00【密码666】')
+    assert 'announced_start_at' not in parse('11月4日直播\n⏰18:00【密码666】')
+    assert 'announced_start_at' not in parse('今天直播取消，下周直播\n⏰18:00【密码666】')
+    assert 'announced_start_at' not in parse('明天⏰18:00【密码666】')
+    assert 'announced_start_at' not in parse('明天 ⏰18:00【密码666】')
+    assert 'announced_start_at' not in parse('明天直播\n⏰18:00【密码666】')
+    assert 'announced_start_at' not in parse('明天\n⏰18:00【密码666】')
+    assert 'announced_start_at' not in parse('明晚直播：\n⏰18:00【密码666】')
+    assert 'announced_start_at' not in parse('明天下午课程：\n⏰18:00【密码666】')
+    assert 'announced_start_at' not in parse('⏰18:00【密码666】 ⏰19:00【密码666】')
+    assert 'announced_start_at' not in parse('⏰09:00【密码666】')
+    assert 'announced_start_at' not in parse('⏰18:00【密码666】 #小程序://见势擒龙团/other4567')
+
+
 @pytest.mark.parametrize('title,accepted', [
     ('大师班专场(18：00开播)', True),
     ('大师班专场（ 🔔️18:00 开播 ）', True),

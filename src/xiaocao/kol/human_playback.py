@@ -27,7 +27,7 @@ def _course_title_key(title: str) -> str:
     return "".join(normalized.replace("🔔", "").replace("\ufe0f", "").split())
 
 
-def verify_course_metadata(candidate: dict, lineage: dict, published_at: str) -> dict:
+def verify_course_metadata(candidate: dict, lineage: dict, published_at: str, *, announced_start_at: str = "") -> dict:
     """Match the observed title and merchant session to the original publication."""
     title = str(candidate.get("title") or "").strip()
     merchant_title = str(lineage.get("course_title") or "").strip()
@@ -51,7 +51,11 @@ def verify_course_metadata(candidate: dict, lineage: dict, published_at: str) ->
         title_key,
     ) is not None
     evening_feedback_title = title_key == "抽平板电脑|大师班回馈专场"
-    if ((morning and "盘前大师班" not in title_key and not dated_morning_title)
+    if announced_start_at:
+        announced = datetime.fromisoformat(announced_start_at)
+        if announced.tzinfo is None or announced != started:
+            raise EnrichmentError("merchant session conflicts with original announced start")
+    elif ((morning and "盘前大师班" not in title_key and not dated_morning_title)
         or (not morning and not evening_feedback_title
             and ("大师班专场" not in title_key or "盘前" in title_key))):
         raise EnrichmentError("course title does not match the original Xiaocao session")
@@ -67,7 +71,8 @@ def verify_course_metadata(candidate: dict, lineage: dict, published_at: str) ->
     return {"method": "merchant_title_and_session", "title": title,
             "merchant_title": merchant_title,
             "course_start_at": started.isoformat(), "source_published_at": published_at,
-            "metadata_anchors": lineage["metadata_anchors"]}
+            "metadata_anchors": lineage["metadata_anchors"],
+            **({"original_announced_start_at": announced_start_at} if announced_start_at else {})}
 
 
 def _claim_json(path: Path, value: dict) -> None:
