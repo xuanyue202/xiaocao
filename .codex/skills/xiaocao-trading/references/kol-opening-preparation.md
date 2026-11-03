@@ -6,30 +6,28 @@ only the existing final reviewed publication can influence Book B. Keep COLD's
 default gate, the explicit Xiaocao v2 exception, UNKNOWN, current account/risk,
 quote and exact-once gates. Never replay a completed run to validate this flow.
 
-## Before 09:20: prepare once
+## Before market data: shared rolling preparation
 
-APP consumes its original `book_b_kol_inputs_prepared` event directly and owns
-one complete conditional preparation. Its successful `accept` command publishes
-the shared source reference immediately under the same Automation/Thread; APP
-account readiness, final checklist acknowledgement and execution are separate.
+The existing remote source owner's early/evening slot prepares one reviewed
+rolling brief independently of APP. Follow [shared rolling preparation](kol-rolling-preparation.md)
+for its exact CLI, chronology, synthesis, validity and independent acceptance.
+Fresh APP/daily/Paper tasks consume it; they do not start another full-source
+preparation worker or wait for APP account/execution completion. Missing support
+stays explicitly deferred under the baseline/independently valid-policy gates.
 
-Paper starts its original supervisor at09:10 after calendar proof, without
-another source-preparation worker. At original freeze the supervisor reads the
-shared accepted brief once, builds its fresh cache-only projection and creates
-`kol-preparation-adoption.json` under its original run. This binds Paper's exact
-Automation/Thread/run, current input/rules/fingerprint and the original APP
-preparation path/hash/source binding. Source/viewpoint/evaluation/relation or
-rule changes, expiry, ambiguity and missing support defer KOL promptly; no
-APP-status polling, duplicated model preparation or extended budget. APP keeps
-its original owner and receipt; adoption grants no policy/account authority.
-Legacy exact Paper-owned preparation references remain readable.
+APP prepare_inputs adopts the rolling brief into its original checklist with
+preparation_adoption_path and source_worker_id; worker_id=null records that no
+APP child was dispatched. At original freeze its packet binds that adoption.
+Paper starts its original09:10 supervisor, creates its own current projection
+and adoption at freeze, and never polls APP or follows its source child.
+Rule changes, brief expiry and ambiguity defer support. Rolling source/viewpoint
+changes are bound as complete delta; affected implications are invalidated and
+require current review, never unchanged-template materialization.
+Legacy v1 APP/Paper-owned evidence remains readable for exact original readback.
 
-APP preparation owner only: dispatch one worker with `model=gpt-6-sol`, `reasoning_effort=xhigh`,
-`fork_turns=none`. Save actual accepted arguments/result, worker ID and aware
-`dispatched_at`; the dispatch JSON also contains `accepted=true`, model/effort,
-`input_sha256` (the input's runner hash) and exact `binding`. If routing or
-complete preparation cannot finish before 09:20, defer new model work and use
-only an independently valid policy or baseline under existing gates.
+The following source-preparation schema remains the common validation contract;
+new work uses v2 through the early/evening source owner. Full preparation must
+finish before09:20 for that morning; current-only dispatch retains09:27 cutoff.
 
 Give the worker the exact input, its complete compact projection, hash-bound
 rules and this schema. Run `scripts/kol_trading_prepare.py template --input
@@ -38,8 +36,8 @@ evaluation and necessary relation history once. It preserves published source
 semantics; it prepares their possible trading implications, not a second source
 summary. Fill the template:
 
-- `worker_id`, actual aware `prepared_at`, `valid_until` no later than today's
-  11:30 and applicable source validity.
+- `worker_id`, actual aware `prepared_at`, `valid_until` within24 hours for rolling v2; original viewpoint validity
+  independently constrains reuse. Legacy v1 retains its same-day11:30 bound.
 - `implications`: each has unique `id`, `viewpoint_ids`, `kind` (portfolio_posture,
   mode_focus, code_risk or counterevidence), `scope` (`kind=all|modes|codes`,
   `values=[]` for all, otherwise exact system modes or codes), and text fields
@@ -78,12 +76,23 @@ during preparation: buy_scale/skip_codes/exit_codes/rationale/
 invalidation_conditions/xiaocao_mode_overrides/mode_mappings, exact
 source_report_ids, request_conditions and unresolved_semantic_conditions.
 `prepared_policy.py` defines the executable schema; request conditions currently
-support explicit account_risk_status/account_deploy_factor predicates, while
+support explicit account_risk_status/account_deploy_factor, exact trade_date and
+actual session_phase predicates (opening_auction only09:25–09:30 on request date), while
 candidate conditions remain on each preference. Every important unrepresented
 semantic condition belongs in unresolved_semantic_conditions; an empty list
 must be justified by the analyst and independent parent, not assumed. Parent
 sets policy_template_reviewed=true after source/effect/condition review.
 Template acceptance grants no final decision review or publication authority.
+A source-justified auction WAIT may prepare buy_scale=0 under exact trade_date/
+session_phase predicates, with expiry no later than09:30. This is analyst-authored
+bounded risk judgment, not a permanent market gate. Retain later re-entry/follow-up
+conditions in the source synthesis; they do not authorize lifting WAIT. Only
+conditions that cannot change this restrictive branch may leave its unresolved
+list. Parent review must explicitly verify that distinction and set
+restrictive_branch_reviewed=true. Auction templates require an explicit
+trade_date eq YYYY-MM-DD predicate as well as session_phase; the materializer
+caps their final expiry at that date09:30. No source quote
+implies WAIT merely from vague “light position” or optional “may do nothing”.
 When no executable overlay is justified, the analyst may explicitly set
 policy_template.defer_if_no_effect=true and parent deferred_overlay_reviewed=true.
 This authorizes only prompt baseline fallback: unchanged full source/delta,
@@ -122,20 +131,12 @@ Seal through `kol_trading_prepare.py accept --input <input> --draft <worker JSON
 --review <parent JSON> --dispatch <actual dispatch JSON> --context <context JSON>
 --output-dir <dir>`. Preserve the returned preparation path/hash.
 
-APP worker loading receipt contains `worker_id`, `loaded_viewpoint_ids`,
-`dispatch_path`, **`preparation_path`**. Acknowledge it using the original
-`morning_checklist.py --checklist <path> --input <input> --loaded <receipt>` under
-its exact Automation/Thread. Paper resolves its original manifest-bound shared output mount to the canonical
-deployment state root for context caches; foreign/nested cache symlinks remain
-blocked. An early preparation failure is explicit and must be repaired before
-09:20 where possible; do not summarize it as successfully prepared.
-APP acknowledgement also registers the accepted preparation immutably for
-daily morning's local recommendation preview. Prepare preferences before the
-09:25 capture; the producer never waits or launches another analyst. This
-authority=0 preview has its own receipt and never counts as APP/Paper adoption.
-The shared reference is source reasoning only. Paper's adopted packet retains
-the source worker as provenance, never as a cross-thread follow-up target.
-Pre-read the final schema below during the original wait.
+APP's automatic rolling adoption and Paper's own adoption record reasoning
+reuse, with the original source owner/hash and current consumer inputs. No source
+worker is a cross-thread follow-up target. Producer reads the same reference for
+its authority=0 preview; actual policy/account adoption remains separate.
+Legacy loaded receipts are only for exact v1 owner continuation, never permission
+to create a second full analysis when a rolling brief is missing.
 
 ## At the original freeze: apply and verify changes
 
@@ -157,7 +158,7 @@ explicit KOL deferred receipt and continues its own valid-policy/baseline gates;
 read its known unresolved conditions without dispatching or publishing a neutral
 substitute. This is a separately reviewed fallback, not judgment completion.
 If next_action=dispatch_current_worker, spawn the exact provided gpt-6-sol/xhigh/
-fork-none worker in the Paper thread. Only current applicability/delta is new;
+fork-none worker in this consumer's thread. Only current applicability/delta is new;
 reuse the independently accepted prepared implications and conditions. Do not
 address an APP child agent or reread the complete unchanged source projection.
 If next_action=dispatch_warm_worker, immediately send exact tool_arguments to

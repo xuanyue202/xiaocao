@@ -67,6 +67,9 @@ kol-opening-preparation bytes. This refactor does not move their normative rules
 behind unbound annexes. New role guides route operations; they cannot add economic
 or strategy authority outside those canonical rules. Any future rule move must
 bind the whole operative closure and preserve existing immutable request handling.
+Rolling opening-preparation v2 additionally binds kol-rolling-preparation through
+its instruction_refs and the canonical strategy catalog through decision_catalog.
+Legacy v1 keeps its original three-file rule closure for exact readback.
 
 Semantic source packets v1/v2 keep exact reconstruction/wording for historical
 readback. V1 preparation is rejected as read-only; v2 re-prepare is byte-identical.

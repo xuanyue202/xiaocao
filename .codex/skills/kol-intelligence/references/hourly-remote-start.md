@@ -55,3 +55,12 @@ Book KOL-US, knowledge, ACK and claim=receipt/uncertain0/writer_progress termina
 Handoff is not all-complete. Empty queue is quiet; nonempty output is compact
 对象 | 状态 | 说明. No full-contract/durable-knowledge body edits during an active
 pinned semantic packet: those bytes participate in executable evidence hashes.
+
+## Early/evening shared trading reasoning
+
+After a safely completed hour-acquired07:30/21:30 slot, including a healthy empty
+queue, follow [shared rolling preparation](../../xiaocao-trading/references/kol-rolling-preparation.md).
+Keep output quiet. This additional authority0 phase uses already-published
+semantics to synthesize Xiaocao's recent judgments before market data; it performs
+no new source extraction/publication or financial effects. hour_busy or any
+unfinished/uncertain original branch still stops this additional phase.

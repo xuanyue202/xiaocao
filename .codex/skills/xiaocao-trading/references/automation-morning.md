@@ -586,23 +586,20 @@ under this Automation/Thread; choose recovered/degraded/blocked accurately.
 Record delivery and post-business accounting/history separately. A saved operator
 attestation is labelled as such; do not infer current API/account proof from it.
 
-On `book_b_kol_inputs_prepared`, consume the original input/projection and follow
-[kol-opening-preparation.md](kol-opening-preparation.md). Before 09:20 retain
-actual worker routing, full eligible viewpoint coverage, conditional implications,
-exact cited-source context and independent parent acceptance. Acknowledge only
-the sealed preparation; the worker loading receipt includes `preparation_path`.
-Do not build another APP projection or source summary. Paper uses the same
-interface during its earlier 09:10 prewake after calendar proof.
+On `book_b_kol_inputs_prepared`, consume the original input/projection and
+[opening preparation](kol-opening-preparation.md). Current APP inputs adopt the
+independent source owner's early/evening rolling brief; worker_id=null and an
+adoption path mean no APP source child was dispatched. Missing/expired support
+stays explicit; do not start another full preparation or wait for its owner.
+Only exact legacy-v1 owner continuation uses a warm-worker loading receipt.
 
-The frozen request carries `kol_inputs.packet_path/packet_sha256`. Read brief
-and packet and immediately dispatch to the same warm worker. The packet binds
-relevant prepared implications, global risks/counterevidence, all changed/added/
-removed viewpoints and the original request facts. Review the complete delta;
-unchanged source bodies and viewpoints need no repeat model scan. Rules changes
-or incomplete preparation defer new work. Record actual dispatch arguments/time
-and remaining total model + verification + parent review + publication budget.
-Keep 09:27 cutoff, account-risk no-buy bypass and all existing publication gates.
-The runner records successful boundary heartbeat observations independently.
+The frozen request carries kol_inputs.packet_path/packet_sha256 and dispatch_path.
+Read the one handoff and follow next_action: independently review an unapproved
+prepared draft, retain an explicit deferred baseline, or dispatch the provided
+current-only worker in this consumer's thread. Only a legacy-v1 owner may forward
+to its original warm worker. Review all source delta/current facts; invalidated
+implications cannot be reused. Keep the original09:27 cutoff, source verification,
+independent current review, account-risk bypass and all publication gates.
 
 The 09:24 native session recheck and 09:25 account/quote/market guards remain
 fresh action-time checks; a 09:00 green status cannot pre-authorize them.
@@ -713,8 +710,9 @@ Before 09:20 retain the immutable viewpoint projection path/hash and its quality
 summary and the reviewed conditional preparation under §1d; source semantics
 remain the published LiangHui records. After 09:24 react
 to runner stage events. When `dispatch_path` exists, read that one assembled
-handoff and immediately send its exact `tool_arguments` to the accepted warm
-worker. Otherwise read `brief_path` first and fetch exact missing fields only
+handoff and follow its exact next_action; dispatch tool_arguments only on
+a dispatch branch. Current shared preparation uses a current-only worker in
+this consumer thread; only exact legacy-v1 continuation follows a warm child. Otherwise read `brief_path` first and fetch exact missing fields only
 as needed. Why: duplicate pre-dispatch reads consume the original support budget.
 Select terminal fields from the original terminal artifact.
 Never print full candidate arrays, account tables, report-id arrays or source
@@ -749,8 +747,9 @@ Source events still identify the exact original request; a signal is not ready.
 Paper KOL resolves only its manifest-bound shared output mount to the canonical
 deployment root before the existing cache guard. Arbitrary/nested symlinks remain
 rejected. Both original consumers assemble an authority=0 `dispatch_path` at the
-review event; immediately read it and forward its exact `tool_arguments` to the
-same warm worker. Actual dispatch, independent review, publication and adoption
+review event; read it and follow exact next_action. Shared rolling adoption
+uses current-only dispatch in this consumer thread; materialized/deferred branches
+do not invoke a model. Legacy-v1 alone may follow its original warm child. Actual dispatch, independent review, publication and adoption
 remain separate receipts under the original 09:27 cutoff. Do not repeat old full
 projection/schema scans in this final handoff; no late publication or replay.
 

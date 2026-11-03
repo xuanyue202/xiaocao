@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import copy
 import math
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from time import perf_counter
 
 from .publication import canonical_sha256
@@ -17,12 +17,37 @@ from xiaocao.live import kol_policy
 _EFFECT_FIELDS = {'buy_scale','skip_codes','exit_codes','rationale','invalidation_conditions',
                   'xiaocao_mode_overrides','mode_mappings'}
 _TEMPLATE_FIELDS = _EFFECT_FIELDS | {'source_report_ids','request_conditions','unresolved_semantic_conditions'}
-_FACT_FIELDS = {'account_risk_status', 'account_deploy_factor'}
+_FACT_FIELDS = {'account_risk_status', 'account_deploy_factor', 'session_phase', 'trade_date'}
 
 
 def _require(ok: bool, reason: str) -> None:
     if not ok:
         raise SelectionError(reason)
+
+
+def current_facts(request: dict, *, now: datetime) -> dict:
+    """An actual session clock is observable; post-open acceptance is not inferred."""
+    from .opening_preparation import TZ
+    _require(now.utcoffset() is not None, 'PREPARED_POLICY_AWARE_TIME_REQUIRED')
+    local = now.astimezone(TZ)
+    date = request.get('trade_date')
+    auction = (local.date().isoformat() == date and (9, 25) <= (local.hour, local.minute) < (9, 30))
+    risk = request.get('account_risk') or {}
+    return {'trade_date': date, 'session_phase': 'opening_auction' if auction else 'other',
+            'account_risk_status': risk.get('status'), 'account_deploy_factor': risk.get('deploy_factor')}
+
+
+def preview_risk(prepared: dict, *, trade_date: str, now: datetime) -> dict | None:
+    """Only explicit reviewed conditions observable without an account can preview risk."""
+    template = prepared['draft'].get('policy_template')
+    if (not template or prepared['review'].get('policy_template_reviewed') is not True
+            or template['unresolved_semantic_conditions']
+            or not conditions_hold(current_facts({'trade_date': trade_date}, now=now), template['request_conditions'])
+            or (template['buy_scale'] == 1 and not template['skip_codes'])):
+        return None
+    return {'buy_scale': template['buy_scale'], 'skip_codes': template['skip_codes'],
+            'rationale': template['rationale'], 'conditions': template['request_conditions'],
+            'authority': 0, 'publication': 'not_performed', 'account_allocation': 'not_performed'}
 
 
 def validate_template(template: dict, reports: dict[str, dict]) -> None:
@@ -52,12 +77,21 @@ def validate_template(template: dict, reports: dict[str, dict]) -> None:
                  and condition['field'] in _FACT_FIELDS and isinstance(condition['evidence_ref'],str)
                  and bool(condition['evidence_ref'].strip()), 'PREPARED_POLICY_CONDITION_INVALID')
         op,value=condition['op'],condition['value']
+        if condition['field']=='session_phase':
+            _require(op=='eq' and value=='opening_auction', 'PREPARED_POLICY_PHASE_PREDICATE_INVALID')
         _require(op in {'eq','in','lt','lte','gt','gte'}, 'PREPARED_POLICY_OPERATOR_INVALID')
         values=value if op=='in' and isinstance(value,list) else [value]
         _require(op!='in' or isinstance(value,list) and bool(value), 'PREPARED_POLICY_VALUE_INVALID')
         _require(all(type(v) in (str,int,float,bool) and (type(v) not in (int,float) or math.isfinite(v))
                      for v in values) and (op in {'eq','in'} or type(value) in (int,float)),
                  'PREPARED_POLICY_VALUE_INVALID')
+    if any(c['field']=='session_phase' and c['op']=='eq' and c['value']=='opening_auction' for c in conditions):
+        dates=[c['value'] for c in conditions if c['field']=='trade_date' and c['op']=='eq']
+        _require(len(dates)==1 and isinstance(dates[0],str), 'PREPARED_POLICY_AUCTION_DATE_REQUIRED')
+        try:
+            _require(date.fromisoformat(dates[0]).isoformat()==dates[0], 'PREPARED_POLICY_AUCTION_DATE_INVALID')
+        except ValueError:
+            raise SelectionError('PREPARED_POLICY_AUCTION_DATE_INVALID') from None
 
 
 def _bound_template(prepared: dict, packet: dict, request: dict, now: datetime) -> tuple:
@@ -81,11 +115,12 @@ def _bound_template(prepared: dict, packet: dict, request: dict, now: datetime) 
     _require(now.utcoffset() is not None and aware(request['requested_at'])<=now<cutoff
              and now<aware(prepared['draft']['valid_until']), 'PREPARED_POLICY_ORIGINAL_DEADLINE')
     binding={k:request.get('freeze',{}).get(k) for k in kol_policy.SELECTION_BINDING_FIELDS}
+    source_date_matches = (prepared.get('schema_version') == 'kol-opening-preparation.v2'
+                           or prepared['binding']['trade_date'] == request['trade_date'])
     _require(binding['snapshot_sha256']==request.get('freeze_sha256')
-             and binding['market_date']==prepared['binding']['trade_date']==request['trade_date'],
+             and binding['market_date']==request['trade_date'] and source_date_matches,
              'PREPARED_POLICY_FREEZE_BINDING_INVALID')
-    risk=request.get('account_risk') or {}
-    facts={'account_risk_status':risk.get('status'),'account_deploy_factor':risk.get('deploy_factor')}
+    facts=current_facts(request, now=now)
     _require(conditions_hold(facts,template['request_conditions']), 'PREPARED_POLICY_CURRENT_CONDITION_UNPROVEN')
     preferences=prepared['draft'].get('selection_preferences',[])
     _require(packet.get('selection_preferences',[])==preferences, 'PREPARED_POLICY_PREFERENCE_DELTA')
@@ -130,7 +165,10 @@ def materialize(prepared: dict, packet: dict, request: dict, *, now: datetime) -
     template,reports,binding,preferences = _bound_template(prepared,packet,request,now)
     _require(not template['unresolved_semantic_conditions'], 'PREPARED_POLICY_SEMANTIC_REVIEW_NEEDED')
     ids=set(template['source_report_ids'])
-    until=min(aware(prepared['draft']['valid_until']),aware(prepared['binding']['trade_date']+'T11:30:00+08:00'))
+    until=min(aware(prepared['draft']['valid_until']),aware(request['trade_date']+'T11:30:00+08:00'))
+    if any(c['field']=='session_phase' and c['op']=='eq' and c['value']=='opening_auction'
+           for c in template['request_conditions']):
+        until=min(until,aware(request['trade_date']+'T09:30:00+08:00'))
     draft={'schema_version':kol_policy.SELECTION_SCHEMA_VERSION,
         'decision_id':'prepared-'+request['request_sha256'][:24], 'agent_id':prepared['worker_id'],
         'book':'B','runtime':request['runtime'],'as_of':now.astimezone(timezone.utc).isoformat().replace('+00:00','Z'),

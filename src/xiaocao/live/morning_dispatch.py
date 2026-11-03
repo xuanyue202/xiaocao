@@ -34,7 +34,7 @@ def write_warm_dispatch(request: dict, request_path: Path, *, now: datetime) -> 
         from xiaocao.kol.preparation_adoption import read_adoption
         adopted = read_adoption(Path(shared['path']), Path(packet['preparation_path']),
                                 Path(packet['current_input_path']), now=now)
-        if (worker is not None or request.get('runtime') != 'paper'
+        if (worker is not None or request.get('runtime') not in {'paper', 'live'}
                 or adopted['adoption_sha256'] != shared.get('sha256')
                 or adopted['binding'] != request.get('binding')):
             raise ValueError('MORNING_DISPATCH_ADOPTION_BINDING_MISMATCH')
@@ -82,9 +82,9 @@ def write_warm_dispatch(request: dict, request_path: Path, *, now: datetime) -> 
             # Source reasoning is reusable; an APP child is not addressable
             # from a different Paper thread. Only current applicability is new.
             value.update(next_action='dispatch_current_worker', tool_arguments={
-                'task_name': 'paper_kol_current_' + identifier[:12],
+                'task_name': request['runtime'] + '_kol_current_' + identifier[:12],
                 'model': 'gpt-6-sol', 'reasoning_effort': 'xhigh', 'fork_turns': 'none',
-                'message': message + '共享准备已完成全量来源阅读；只处理本Paper请求当前适用性及delta，不重做完整来源准备。'})
+                'message': message + '共享准备已完成全量来源阅读；只处理本请求当前适用性及delta，不重做完整来源准备。'})
     value['sha256'] = canonical_sha256(value)
     atomic_write(path,json.dumps(value,ensure_ascii=False,sort_keys=True).encode(),immutable=True)
     return path

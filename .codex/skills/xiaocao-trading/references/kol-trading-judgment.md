@@ -263,13 +263,14 @@ delta. Source publication continues to use the full current `context_path`.
 ## Morning preparation and final dispatch
 
 Apply Contract §1d and [kol-opening-preparation.md](kol-opening-preparation.md).
-Before 09:20 the APP preparation owner's routed worker covers every eligible published viewpoint once,
+The independent source owner prepares the previous evening/recent-days rolling judgment
+before market data; see [shared rolling preparation](kol-rolling-preparation.md). Its routed worker covers every eligible published viewpoint once,
 prepares conditional posture/mode/risk implications, and obtains independent
 parent acceptance with exact input, dispatch and source-context hashes. This is
 authority=0 preparation, not source re-authoring or a published policy.
 At the original freeze, dispatch the relevant prepared implications, complete
 source delta and current account/freeze/risk facts through the emitted next_action.
-Paper adopts the shared source brief with its own owner receipt, never duplicates
+APP and Paper adopt the shared source brief with its own owner receipt, never duplicates
 full preparation or follows up an APP child; dispatch_current_worker starts only
 its routed current-applicability analysis when needed. Final citation verification, independent review and publication all fit
 inside the original 09:27 cutoff. Reuse unchanged prepared work across the batch;

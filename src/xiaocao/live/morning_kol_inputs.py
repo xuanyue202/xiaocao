@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from xiaocao.kol.trading_context import build_trading_context, write_trading_projection
@@ -30,6 +30,28 @@ def prepare_inputs(checklist: MorningChecklist, *, repo_root: Path) -> dict:
                 "quality": payload["quality"], "viewpoint_ids_sha256": _hash(payload["viewpoint_ids"]), "rules_sha256": _hash(payload["rules"])}
     checklist.record("kol_projection", "passed" if payload["quality"] == "ready" else "degraded",
                      evidence=evidence, reason=None if payload["quality"] == "ready" else "SOURCE_COVERAGE_DEGRADED")
+    # The source writer's brief is independent of APP login/account readiness.
+    # Adoption records this consumer's identity; it is not a dispatch/approval.
+    try:
+        from xiaocao.kol.rolling_preparation import registered
+        from xiaocao.kol.preparation_adoption import adoption
+        from xiaocao.kol.opening_preparation import write_artifact
+        now = datetime.now(timezone.utc)
+        shared = registered(repo_root, now=now)
+        if shared is not None:
+            source_path, prepared = shared
+            adopted = adoption(source_path, path, now=now)
+            adopted_path = write_artifact(checklist.path.parent, adopted, '.adoption.json')
+            evidence.update(preparation_path=str(source_path), preparation_sha256=prepared['preparation_sha256'],
+                preparation_adoption_path=str(adopted_path), source_worker_id=prepared['worker_id'],
+                worker_id=None, authority=0, preparation_status='shared_rolling_adopted')
+            checklist.record('kol_inputs_loaded', 'passed', evidence=evidence,
+                             valid_until=datetime.fromisoformat(prepared['draft']['valid_until']))
+        else:
+            evidence['preparation_status'] = 'shared_rolling_unavailable'
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        evidence.update(preparation_status='deferred', preparation_reason=str(exc))
+        checklist.record('kol_inputs_loaded', 'degraded', evidence=evidence, reason=str(exc))
     return evidence
 
 

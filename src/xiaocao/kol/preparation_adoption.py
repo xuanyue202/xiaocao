@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import os
 from pathlib import Path
 
 from . import opening_preparation as prep
@@ -15,18 +16,29 @@ def adoption(preparation_path: Path, current_input_path: Path, *, now: datetime)
     current, projection = prep._inputs(current_input_path)
     source = prepared['binding']
     consumer = current['binding']
-    from xiaocao.live.paper_morning_kol import owner_binding
-    if owner_binding(current_input_path.parent, consumer['trade_date']) != consumer:
+    paper = consumer.get('automation_id') == 'xiaocao-daily-morning-execution'
+    live = consumer.get('automation_id') == 'xiaocao-book-b-live-morning'
+    rolling = prepared.get('schema_version') == 'kol-opening-preparation.v2'
+    if rolling and prep.aware(prepared['accepted_at']) >= prep.aware(consumer['trade_date']+'T09:20:00+08:00'):
+        raise ValueError('KOL_PREPARATION_ROLLING_LATE_FOR_OPENING')
+    if paper:
+        from xiaocao.live.paper_morning_kol import owner_binding
+        if owner_binding(current_input_path.parent, consumer['trade_date']) != consumer:
+            raise ValueError('KOL_PREPARATION_ADOPTION_OWNER_MISMATCH')
+    elif (not live or not rolling or consumer.get('automation_id') != os.environ.get('CODEX_AUTOMATION_ID')
+            or consumer.get('owner_thread_id') != os.environ.get('CODEX_THREAD_ID')
+            or consumer.get('runner_pid') != os.getpid()):
         raise ValueError('KOL_PREPARATION_ADOPTION_OWNER_MISMATCH')
-    if (source.get('automation_id') != 'xiaocao-book-b-live-morning'
-            or consumer.get('automation_id') != 'xiaocao-daily-morning-execution'
-            or not consumer.get('run_id') or source['trade_date'] != consumer['trade_date']
+    if ((not rolling and (source.get('automation_id') != 'xiaocao-book-b-live-morning'
+                         or not paper or source['trade_date'] != consumer['trade_date']))
+            or (rolling and source.get('automation_id') != 'xiaocao-kol-hourly-low-bandwidth-operation')
+            or (paper and not consumer.get('run_id'))
             or now.astimezone(prep.TZ).date().isoformat() != consumer['trade_date']
             or prep.aware(projection['as_of']) > now
             or prep.aware(projection['as_of']) < prep.aware(prepared['accepted_at'])
             or [r['sha256'] for r in prepared['rules']] != [r['sha256'] for r in current['rules']]):
         raise ValueError('KOL_PREPARATION_ADOPTION_BINDING_INVALID')
-    if (prepared['source_fingerprint'] != current['source_fingerprint']
+    if not rolling and (prepared['source_fingerprint'] != current['source_fingerprint']
             or prep.viewpoint_units(prep.read_projection(prepared['projection'])) != prep.viewpoint_units(projection)):
         raise ValueError('KOL_PREPARATION_ADOPTION_SOURCE_CHANGED')
     value = {'schema_version': 'kol-preparation-adoption.v1', 'authority': 0,
