@@ -39,6 +39,7 @@ import requests
 
 ROOT = Path(__file__).resolve().parent.parent
 _KOL_RECOMMENDATION_PREVIEW = None
+_KOL_RECOMMENDATION_ENABLED = True
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "kronos_screen" / "scripts"))
 
@@ -1263,11 +1264,13 @@ def _select_standby_candidates(
 
 
 def _main() -> None:
-    global _SOURCE_RECOVERY, _KOL_RECOMMENDATION_PREVIEW
+    global _SOURCE_RECOVERY, _KOL_RECOMMENDATION_PREVIEW, _KOL_RECOMMENDATION_ENABLED
     _KOL_RECOMMENDATION_PREVIEW = None
     script_entered_at = datetime.now(A_SHARE_TZ).isoformat()
     parser = argparse.ArgumentParser()
     parser.add_argument("--date", default="today")
+    parser.add_argument("--kol-preferences", choices=["prepared", "off"], default="prepared",
+                        help="使用已准备的 KOL 推荐偏好；off 用于保留确定性基线的对照运行")
     parser.add_argument("--basket-premium-pct", type=float,
                         help="覆盖 mode-specific basket premium；不传则按 mode + confidence 动态计算")
     parser.add_argument("--max-candidates", type=int, default=DEFAULT_MAX_CANDIDATES,
@@ -1291,6 +1294,7 @@ def _main() -> None:
     parser.add_argument("--kronos-top-n", type=int, default=3,
                         help="K→P 流水线标记的 ★ 优先候选数，默认 3")
     args = parser.parse_args()
+    _KOL_RECOMMENDATION_ENABLED = args.kol_preferences == "prepared"
 
     _ENTRY_DETAIL_CACHE.clear()
 
@@ -1913,6 +1917,8 @@ def _publish_original_batch(date_iso: str, readiness: dict, entered_at: str, sna
         "compatibility_freeze": compatibility}, ensure_ascii=False), file=sys.stderr)
     # The committed original is already available. This local recommendation
     # sidecar cannot delay its release, change its bytes or authorize a trade.
+    if not _KOL_RECOMMENDATION_ENABLED:
+        return
     try:
         from xiaocao.kol.selection_preview import preview
         from xiaocao.kol.opening_preparation import write_artifact
