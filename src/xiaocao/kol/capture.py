@@ -534,6 +534,20 @@ class SnifferClient:
         rows = data.get("list") if isinstance(data, dict) else []
         return [dict(row) for row in rows or [] if isinstance(row, dict)]
 
+    def complete_tasks_for_reconciliation(self) -> list[dict[str, Any]]:
+        """Return one verified complete provider page or fail closed."""
+        data = self._json("/api/task/list?page=1&page_size=500").get("data")
+        if not isinstance(data, dict):
+            raise SnifferError("provider task page is invalid")
+        rows, total = data.get("list"), data.get("total")
+        if (data.get("page") != 1 or data.get("page_size") != 500
+            or type(total) is not int or not 0 <= total <= 500
+            or not isinstance(rows, list) or len(rows) != total
+            or any(not isinstance(row, dict) or not row.get("id") for row in rows)
+            or len({str(row["id"]) for row in rows}) != total):
+            raise SnifferError("provider task page is incomplete or invalid")
+        return rows
+
     def resume_task(self, task_id: str) -> dict[str, Any]:
         data = self._json("/api/task/resume", method="POST", payload={"id": task_id}).get("data") or {}
         if data.get("id") != task_id:
