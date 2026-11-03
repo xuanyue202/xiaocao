@@ -64,3 +64,29 @@ def test_preview_missing_preparation_is_prompt_baseline_without_source_work(tmp_
     result=preview.preview([],{'market_date':'2026-10-23','snapshot_sha256':'a'*64},root=tmp_path,
         now=NOW,fingerprint_reader=forbidden)
     assert result['status']=='baseline' and result['selected_codes']==[]
+
+
+def test_accept_command_registers_source_before_app_checklist_completion(case, monkeypatch):
+    from scripts import kol_trading_prepare as cli
+    binding = case['inputs']['binding']
+    binding.update(automation_id='xiaocao-book-b-live-morning', owner_thread_id='owner')
+    save(case['path'], case['inputs'])
+    case['draft']['input_sha256'] = _hash(case['inputs'])
+    case['dispatch'].update(binding=binding, input_sha256=_hash(case['inputs']))
+    case['review'].update(draft_sha256=prep.canonical_sha256(case['draft']),
+                         dispatch_sha256=prep.canonical_sha256(case['dispatch']))
+    class Clock:
+        @classmethod
+        def now(cls, tz):
+            return NOW.astimezone(tz)
+    monkeypatch.setattr(cli, 'datetime', Clock)
+    monkeypatch.setenv('CODEX_AUTOMATION_ID', binding['automation_id'])
+    monkeypatch.setenv('CODEX_THREAD_ID', 'owner')
+    arguments = ['accept', '--root', str(case['root']), '--input', str(case['path']),
+                 '--output-dir', str(case['root'] / 'accepted')]
+    for name in ('draft', 'dispatch', 'review', 'context'):
+        arguments.extend(['--' + name, str(save(case['root'] / (name + '.json'), case[name]))])
+    assert cli.main(arguments) == 0
+    _, value = preview.registered_preparation(case['root'], binding['trade_date'], now=NOW)
+    assert value['input_sha256'] == _hash(case['inputs'])
+    assert value['authority'] == 0

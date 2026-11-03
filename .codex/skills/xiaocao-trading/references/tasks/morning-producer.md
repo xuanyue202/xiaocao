@@ -1,6 +1,6 @@
 # Original morning producer
 
-Role xiaocao-daily-morning. At09:18 prewake, after minimal skill/identity reading:
+Role xiaocao-daily-morning. At09:10 prewake, after minimal skill/identity reading:
 `CODEX_AUTOMATION_ID=xiaocao-daily-morning bash scripts/auto_daily.sh morning-prerecommend`
 once, short yield, retain original. Python owns09:25:01 gate; no model sleep.
 This task produces evidence, not paper/APP orders or KOL judgment.

@@ -1894,7 +1894,7 @@ def _publish_original_batch(date_iso: str, readiness: dict, entered_at: str, sna
             rows.append(row)
     payload = ("\n".join(json.dumps(r, ensure_ascii=False, sort_keys=True, default=str) for r in rows)
         + ("\n" if rows else "")).encode()
-    timing = {"configured_slot": f"{date_iso}T09:18:00+08:00", "script_entered_at": entered_at,
+    timing = {"configured_slot": f"{date_iso}T09:10:00+08:00", "script_entered_at": entered_at,
         "scheduler_dispatched_at": None, "task_started_at": None,
         "scheduler_timing_proof": "unavailable"}
     result = publish_captured_batch(OUT_DIR, date_iso, snapshot=payload,

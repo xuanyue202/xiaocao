@@ -9,13 +9,16 @@ rerun live_recommend, producer, paper_record or a completed/no-buy date.
 
 Read [shared contract](../automation-context.md), Contract §1c/1d/2a and
 [opening preparation](../kol-opening-preparation.md). After original calendar
-proof build ONE cache-only11:30-horizon projection. Bind inputs and acceptance
-to original Automation/Thread/run; pass original manifest execution_root as
---root to kol_trading_prepare.py inputs/accept. Before09:20 actual
- gpt-6-sol/xhigh/forknone warm worker covers every eligible typed viewpoint,
-conditions and counterevidence; verify exact cited bodies, independently seal
-and retain actual dispatch/coverage. No keyword/latest-N/backfill source work.
-Why: local preparation adapts published meanings, not a second semantic SSOT.
+proof, keep the original supervisor waiting. Do not build another full preparation
+projection, spawn a preparation worker or republish APP source reasoning.
+At the original freeze code reads the accepted shared source brief and creates
+an immutable `kol-preparation-adoption.json` bound to this Paper owner, current
+source fingerprint and rule hashes. It does not wait for APP account/login or
+execution. Missing/expired/changed support defers promptly to the original
+baseline and independent valid policy; no peer polling or duplicate preparation.
+Existing Paper-owned preparation receipts retain their exact readback path.
+See [opening preparation](../kol-opening-preparation.md) for shared-source and
+current applicability dispatch. Final Paper account/risk and policy are separate.
 
 Original supervisor's pinned runtime uses its manifest-bound shared output.
 Only this exact mount may resolve through the guard; foreign cache symlinks fail.
@@ -32,11 +35,15 @@ keyword scoring. Derived queue waits share original budget; timeout preserves
 baseline and explicit degradation. Intelligence on still needs same-batch support.
 On paper_kol_review_requested use original request/packet/hash. dispatch_path
 means read once and follow next_action: independently review its authority0
-materialized draft, or immediately send exact tool_arguments to the accepted
-warm worker when new semantic judgment is needed; otherwise read brief.
+materialized draft, spawn the provided current-applicability worker for shared
+preparation, or follow up the original warm worker only for a legacy Paper-owned
+preparation. Otherwise read the emitted brief.
 On continue_original_baseline_deferred, read the retained uncertainty and original
 deferred receipt; skip new model/publication and let the same writer continue
 under its independently loaded policy and account/execution gates.
+For `next_action=dispatch_current_worker`, spawn the exact provided routed
+worker in this Paper thread. It reads the prepared packet/current delta only;
+never follow up an APP child agent across threads or redo full source preparation.
 No duplicate full projection/schema scan. All
 source verification, independent review and runtime=paper publication bind
 original request and fit09:27. Intelligence completion does not close KOL wait.

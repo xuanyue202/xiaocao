@@ -13,7 +13,7 @@ from .selection import select_candidates
 
 
 def register_preparation(input_path: Path, path: Path, prepared: dict) -> None:
-    """Called only after the original APP owner's checklist accepted full coverage."""
+    """Register accepted full source coverage under its original APP owner."""
     binding = prepared['binding']
     if (binding.get('automation_id') != 'xiaocao-book-b-live-morning'
             or os.environ.get('CODEX_AUTOMATION_ID') != binding['automation_id']
@@ -38,6 +38,28 @@ def current_source_fingerprint(root: Path, now: datetime, trade_date: str) -> st
     return preparation.read_projection(summary)['source_fingerprint']
 
 
+def registered_preparation(root: Path, trade_date: str, *, now: datetime) -> tuple[Path, dict] | None:
+    """Read an accepted source brief without waiting for its APP owner."""
+    accepted = []
+    for path in sorted((root / 'output/live/kol_selection_preparations' / trade_date).glob('*.json')):
+        if path.is_symlink():
+            raise ValueError('PREPARATION_REFERENCE_SYMLINK')
+        reference = json.loads(path.read_bytes())
+        if path.name != canonical_sha256(reference) + '.json' or reference.get('authority') != 0:
+            raise ValueError('PREPARATION_REFERENCE_HASH_MISMATCH')
+        source_path = Path(reference['preparation_path'])
+        prepared = preparation.read_preparation(source_path, now=now)
+        if (reference.get('binding') != prepared['binding']
+                or reference.get('preparation_sha256') != prepared['preparation_sha256']
+                or prepared['binding'].get('automation_id') != 'xiaocao-book-b-live-morning'
+                or prepared['binding'].get('trade_date') != trade_date):
+            raise ValueError('PREPARATION_REFERENCE_BINDING_MISMATCH')
+        accepted.append((source_path, prepared))
+    if len(accepted) > 1:
+        raise ValueError('PREPARATION_REFERENCE_AMBIGUOUS')
+    return accepted[0] if accepted else None
+
+
 def preview(rows: list[dict], freeze: dict, *, root: Path, now: datetime,
             fingerprint_reader=current_source_fingerprint) -> dict:
     """Read local immutable evidence once; missing/stale support preserves baseline."""
@@ -48,25 +70,9 @@ def preview(rows: list[dict], freeze: dict, *, root: Path, now: datetime,
         'baseline_codes': baseline, 'selected_codes': baseline,
         'policy_adoption': 'not_performed', 'status': 'baseline', 'reason': 'PREPARATION_UNAVAILABLE'}
     try:
-        references = root / 'output/live/kol_selection_preparations' / freeze['market_date']
-        accepted = []
-        for path in sorted(references.glob('*.json')):
-            if path.is_symlink():
-                raise ValueError('PREPARATION_REFERENCE_SYMLINK')
-            reference = json.loads(path.read_bytes())
-            if path.name != canonical_sha256(reference) + '.json' or reference.get('authority') != 0:
-                raise ValueError('PREPARATION_REFERENCE_HASH_MISMATCH')
-            prepared = preparation.read_preparation(Path(reference['preparation_path']), now=now)
-            if (reference.get('binding') != prepared['binding']
-                    or reference.get('preparation_sha256') != prepared['preparation_sha256']
-                    or prepared['binding'].get('automation_id') != 'xiaocao-book-b-live-morning'
-                    or prepared['binding'].get('trade_date') != freeze['market_date']):
-                raise ValueError('PREPARATION_REFERENCE_BINDING_MISMATCH')
-            accepted.append(prepared)
+        accepted = registered_preparation(root, freeze['market_date'], now=now)
         if accepted:
-            if len(accepted) != 1:
-                raise ValueError('PREPARATION_REFERENCE_AMBIGUOUS')
-            prepared = accepted[0]
+            _, prepared = accepted
             preferences = prepared['draft'].get('selection_preferences', [])
             if preferences:
                 if fingerprint_reader(root, now, freeze['market_date']) != prepared['source_fingerprint']:

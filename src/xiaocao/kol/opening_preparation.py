@@ -238,12 +238,18 @@ def normalized_review_facts(request: dict) -> dict:
     return payload
 
 
-def opening_packet(preparation_path: Path, current_input_path: Path, request: dict, *, now: datetime) -> dict:
+def opening_packet(preparation_path: Path, current_input_path: Path, request: dict, *, now: datetime,
+                   adoption_path: Path | None = None) -> dict:
     request = normalized_review_facts(request)
     prepared = read_preparation(preparation_path, now=now)
     current, projection = _inputs(current_input_path)
+    adopted = None
+    if adoption_path is not None:
+        from .preparation_adoption import read_adoption
+        adopted = read_adoption(adoption_path, preparation_path, current_input_path, now=now)
     if (now.utcoffset() is None or not request.get("freeze_sha256") or not request.get("strategy_sha")
-            or prepared["binding"] != current["binding"] or prepared["rules"] != current["rules"]
+            or (not adopted and (prepared["binding"] != current["binding"] or prepared["rules"] != current["rules"]))
+            or (adopted is not None and (request.get('binding') != current['binding'] or request.get('runtime') != 'paper'))
             or request["trade_date"] != current["binding"]["trade_date"]
             or not (aware(request["requested_at"]) <= now < aware(request["review_wait_until"]))
             or aware(request["review_wait_until"]) > aware(request["trade_date"] + "T09:27:00+08:00")):
@@ -282,4 +288,8 @@ def opening_packet(preparation_path: Path, current_input_path: Path, request: di
         "coverage": {"prepared_count": len(old), "current_count": len(new),
                      "unchanged_count": len((new.keys() & old.keys()) - changed)},
         "instruction": "Review relevant implications, all delta and fresh original request facts. Reuse unchanged preparation; verify exact cited sources and independently review final policy before cutoff. This packet grants no policy or execution authority."}
+    if adopted is not None:
+        value['preparation_adoption'] = {'path': str(adoption_path.resolve()),
+            'sha256': adopted['adoption_sha256'], 'source_binding': adopted['source_binding'],
+            'binding': adopted['binding']}
     return {**value, "packet_sha256": canonical_sha256(value)}

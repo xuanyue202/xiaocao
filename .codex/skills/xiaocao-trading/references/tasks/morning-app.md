@@ -59,6 +59,9 @@ it. Before09:20 follow [opening preparation](../kol-opening-preparation.md):
 actual gpt-6-sol/xhigh/forknone warm worker, every eligible typed viewpoint,
 conditional implications/counterevidence, cited bodies, independent parent seal,
 actual dispatch/coverage and loaded receipt acknowledged by morning_checklist.
+The accepted source brief is registered for producer/Paper reuse at `accept`,
+independently of APP account/execution completion. Neither consumer waits for
+this task or follows up its child agent. Missing support stays explicit baseline.
 Missing/late preparation degrades to valid-policy/baseline; risk no-buy skips
 support waits. Preparation authority0 is not formal policy or trade authority.
 

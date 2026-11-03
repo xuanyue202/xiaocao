@@ -4,9 +4,9 @@ Read this file only when creating, changing or auditing Xiaocao schedules.
 
 ## Intended China-local cadence
 
-- Morning prerecommendation: wake 09:18 weekdays; capture gate 09:25:01.
+- Morning prerecommendation: wake 09:10 weekdays; capture gate 09:25:01.
 - Book-B Founder live morning: wake 08:53 weekdays; formal preparation gate 09:00, independently of paper execution.
-- Morning execution: wake 09:10 weekdays; calendar proof and KOL preparation before 09:20, consumption gate 09:25:01.
+- Morning execution: wake 09:10 weekdays; calendar proof, then adopt the existing shared source preparation at the original freeze. No duplicate preparation; consumption gate09:25:01.
 - Opening dense: 09:35, 09:45, 09:55.
 - Sparse monitor: 10:25, 10:55, 13:25, 13:55 only. On the `/Users/xuanyue202`
   remote host, the remote writer is the sole KOL write ingress; cross-machine
@@ -35,8 +35,8 @@ next-run times through Automation after updates, including actual local time.
 |---|---|---|
 | Remote writer | Atomically publish reports, viewpoints, evaluations and relations | Sole full reader for new/changed report bodies; LiangHui is the semantic SSOT |
 | 09:00 live morning | One native live runner, authentication probe, live current-applicability decision | Consume the compact viewpoint projection; never redo unchanged source semantics |
-| Original producer (09:18 wake /09:25:01 capture) | Produce the immutable recommendation/freeze and exit | No KOL semantic work |
-| 09:25 paper execution | Keep the original paper shell alive and complete paper current applicability | Consume the compact viewpoint projection; never redo unchanged source semantics or live work |
+| Original producer (09:10 wake /09:25:01 capture) | Produce the immutable recommendation/freeze and exit | No KOL semantic work |
+| 09:25 paper execution | Keep the original paper shell alive and complete paper current applicability | Adopt the shared source brief with own binding; no repeated full preparation or APP-task wait |
 | 09:35/09:45/09:55 opening | Protective paper/live checkpoints only | Consume an already-valid decision only; no context, model or publication work |
 | 10:25/10:55/13:25/13:55 sparse | One owner-bound tick claim and paper/live checkpoints | Only the claim owner may adapt the compact projection when its fingerprint changed or the decision expired |
 | 14:25 precheck | Protective paper/live checkpoints only | Consume an already-valid decision only; no context, model or publication work |
