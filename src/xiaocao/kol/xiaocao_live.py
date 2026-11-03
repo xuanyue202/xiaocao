@@ -1157,6 +1157,7 @@ class XiaocaoLiveService:
     ) -> list[dict[str, Any]]:
         candidate = capture.get("candidate") or {}
         expected_live = str(candidate.get("live_id") or "")
+        expected_capture = str(candidate.get("id") or "")
         matches = []
         for task in tasks:
             meta = task.get("meta") or {}
@@ -1164,6 +1165,13 @@ class XiaocaoLiveService:
             labels = meta.get("labels") or req.get("labels") or {}
             if (
                 str(labels.get("live_id") or "") == expected_live
+                and expected_capture
+                and (
+                    str(labels.get("capture_id") or "") == expected_capture
+                    or (not labels.get("capture_id") and capture.get("source_job_id")
+                        and capture.get("source_task_id")
+                        and str(task.get("id") or "") == capture.get("source_task_id"))
+                )
                 and str(labels.get("type") or "") == "live_capture"
                 and str(labels.get("compress") or "").lower() == "true"
             ):

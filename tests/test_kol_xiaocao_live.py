@@ -121,6 +121,33 @@ def test_claimed_transport_repair_preserves_native_arm_and_download_claim(tmp_pa
         assert calls[0][0]["download_idempotency_key"] == "original"
 
 
+def test_matching_download_requires_candidate_identity_when_live_room_reused():
+    capture = {"candidate": {"id": "today-media", "live_id": "shared-room"}}
+    def task(task_id, candidate):
+        return {"id": task_id, "meta": {"labels": {
+            "capture_id": candidate, "live_id": "shared-room",
+            "type": "live_capture", "compress": "true",
+        }}}
+    old, current = task("yesterday", "yesterday-media"), task("today", "today-media")
+    assert XiaocaoLiveService._matching_tasks(capture, [old, current]) == [current]
+    assert XiaocaoLiveService._matching_tasks(capture, [old]) == []
+
+
+def test_matching_download_accepts_only_exact_unlabelled_source_task():
+    capture = {"candidate": {"id": "today", "live_id": "room"},
+               "source_job_id": "source", "source_task_id": "exact"}
+    def task(task_id, candidate=None):
+        labels = {"live_id": "room", "type": "live_capture", "compress": "true"}
+        if candidate is not None:
+            labels["capture_id"] = candidate
+        return {"id": task_id, "meta": {"labels": labels}}
+    exact = task("exact")
+    assert XiaocaoLiveService._matching_tasks(capture, [exact]) == [exact]
+    assert XiaocaoLiveService._matching_tasks(capture, [task("other"), task("exact", "wrong")]) == []
+    assert XiaocaoLiveService._matching_tasks({**capture, "source_job_id": ""}, [exact]) == []
+    assert XiaocaoLiveService._matching_tasks({**capture, "source_task_id": ""}, [task("")]) == []
+
+
 @pytest.mark.parametrize("invalid", [None, "active", "changed", "wrong_capture", "unfinished"])
 def test_backend_install_after_exact_cleanup_never_starts_sniffer(tmp_path, monkeypatch, invalid):
     installed, replacement = tmp_path / "sniffer", tmp_path / "sniffer.repair"
