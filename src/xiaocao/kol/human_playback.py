@@ -46,7 +46,10 @@ def verify_course_metadata(candidate: dict, lineage: dict, published_at: str) ->
         or (started.hour < 12) != (published.hour < 12)):
         raise EnrichmentError("course session conflicts with original publication")
     morning = published.hour < 12
-    dated_morning_title = re.fullmatch(r"大师班直播\d{1,2}月\d{1,2}日", title_key) is not None
+    dated_morning_title = re.fullmatch(
+        r"(?:大师班直播\d{1,2}月\d{1,2}日|大师班早盘直播\d{1,2}月\d{1,2}日YJ)",
+        title_key,
+    ) is not None
     evening_feedback_title = title_key == "抽平板电脑|大师班回馈专场"
     if ((morning and "盘前大师班" not in title_key and not dated_morning_title)
         or (not morning and not evening_feedback_title

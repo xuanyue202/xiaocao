@@ -1157,6 +1157,7 @@ class XiaocaoLiveService:
     ) -> list[dict[str, Any]]:
         candidate = capture.get("candidate") or {}
         expected_live = str(candidate.get("live_id") or "")
+        expected_capture = str(candidate.get("id") or "")
         matches = []
         for task in tasks:
             meta = task.get("meta") or {}
@@ -1164,11 +1165,120 @@ class XiaocaoLiveService:
             labels = meta.get("labels") or req.get("labels") or {}
             if (
                 str(labels.get("live_id") or "") == expected_live
+                and expected_capture
+                and (
+                    str(labels.get("capture_id") or "") == expected_capture
+                    or (not labels.get("capture_id") and capture.get("source_job_id")
+                        and capture.get("source_task_id")
+                        and str(task.get("id") or "") == capture.get("source_task_id"))
+                )
                 and str(labels.get("type") or "") == "live_capture"
                 and str(labels.get("compress") or "").lower() == "true"
             ):
                 matches.append(task)
         return matches
+
+    def repair_misbound_prior_download(
+        self, capture_job_id: str, *, old_task_id: str, candidate_id: str,
+    ) -> dict[str, Any]:
+        """Correct one wrong prior task while holding the ordinary source slot."""
+        from .daily import DailyCoordinator
+
+        coordinator = DailyCoordinator(self.daily_output)
+        with coordinator._source_locked("xiaocao_wechat_live"):
+            return self._repair_misbound_prior_download(
+                capture_job_id, old_task_id=old_task_id, candidate_id=candidate_id,
+            )
+
+    def _repair_misbound_prior_download(
+        self, capture_job_id: str, *, old_task_id: str, candidate_id: str,
+    ) -> dict[str, Any]:
+        """Claim one correction when an older room task was adopted without a create call.
+
+        Call under the existing Xiaocao source slot. An interrupted dispatch is
+        never repeated here; reconcile the exact candidate with the provider first.
+        """
+        from .human_playback import _claim_json
+        from .xiaocao_wechat import _observed_native_finite_playlist
+
+        current = self.capture_store.latest(capture_job_id)
+        if not current or current.get("status") != "downloaded":
+            raise EnrichmentError("misbound repair requires the exact downloaded ledger state")
+        candidate = current.get("candidate") or {}
+        if (not candidate_id or candidate.get("id") != candidate_id
+            or current.get("download_task_id") != old_task_id or not old_task_id
+            or not current.get("source_subscription_id") or not current.get("source_published_at")
+            or not (current.get("native_media_lineage") or {}).get("media_resource_sha256")
+            or any(current.get(key) for key in ("netdisk_job_id", "handoff_id", "media_sha256"))):
+            raise EnrichmentError("misbound repair capture identity or downstream state is invalid")
+        if any(self._event(name, capture_job_id=capture_job_id) for name in
+               ("media_validated", "cloud_handoff_published", "netdisk_prepared")):
+            raise EnrichmentError("misbound repair has downstream evidence")
+        history = [row for row in self.capture_store.events() if row.get("job_id") == capture_job_id]
+        stages = [row for row in history if row.get("event") in {"download_claimed", "download_started", "download_completed"}]
+        if (len(stages) != 3 or [row.get("event") for row in stages] !=
+            ["download_claimed", "download_started", "download_completed"]
+            or stages[0].get("download_task_id") or stages[1].get("download_task_id") != old_task_id
+            or stages[2].get("download_task_id") != old_task_id):
+            raise EnrichmentError("download claim history is uncertain")
+        tasks = self.sniffer.complete_tasks_for_reconciliation()
+        old = [t for t in tasks if str(t.get("id") or "") == old_task_id]
+        if len(old) != 1:
+            raise EnrichmentError("misbound prior task is unavailable or ambiguous")
+        labels = ((old[0].get("meta") or {}).get("labels") or
+                  ((old[0].get("meta") or {}).get("req") or {}).get("labels") or {})
+        try:
+            earlier = datetime.fromisoformat(str(old[0]["createdAt"])) < datetime.fromisoformat(str(current["created_at"]))
+        except (KeyError, TypeError, ValueError):
+            earlier = False
+        if (not earlier or str(labels.get("capture_id") or "") in ("", candidate_id)
+            or labels.get("live_id") != candidate.get("live_id")
+            or str(old[0].get("status") or "").lower() != "done"):
+            raise EnrichmentError("prior task is not proven to be a different earlier candidate")
+        if any(str((((t.get("meta") or {}).get("labels") or
+                      ((t.get("meta") or {}).get("req") or {}).get("labels") or {}).get("capture_id")) or "") == candidate_id
+               for t in tasks):
+            raise EnrichmentError("candidate task already exists; reconcile it before repair")
+        try:
+            claimed_at = datetime.fromisoformat(str(stages[0]["updated_at"]))
+            for task in tasks:
+                created_at = datetime.fromisoformat(str(task["createdAt"]))
+                task_labels = ((task.get("meta") or {}).get("labels") or
+                               ((task.get("meta") or {}).get("req") or {}).get("labels") or {})
+                if created_at >= claimed_at and not task_labels.get("capture_id"):
+                    raise EnrichmentError("unlabelled recent provider task requires reconciliation")
+        except (KeyError, ValueError, TypeError) as exc:
+            raise EnrichmentError("provider task chronology is incomplete") from exc
+        fresh = resolve_candidate(current, self.sniffer.candidates())
+        url = urlsplit(str((fresh or {}).get("url") or ""))
+        resource_hash = hashlib.sha256(urlunsplit((url.scheme, url.netloc, url.path, "", "")).encode()).hexdigest()
+        if (not fresh or fresh.get("id") != candidate_id or fresh.get("media_type") != "m3u8"
+            or url.scheme != "https" or resource_hash != (current.get("native_media_lineage") or {}).get("media_resource_sha256")):
+            raise EnrichmentError("exact retained media candidate is unavailable")
+        try:
+            captured_at = datetime.fromisoformat(str(fresh["captured"]))
+            if captured_at.tzinfo is None:
+                captured_at = captured_at.replace(tzinfo=ZoneInfo("Asia/Shanghai"))
+            finite = _observed_native_finite_playlist(fresh, self.sniffer_binary.parent / "elive_live_debug",
+                datetime.fromisoformat(str(current["created_at"])), captured_at)
+        except (KeyError, OSError, ValueError) as exc:
+            raise EnrichmentError("finite replay evidence is unavailable") from exc
+        if finite.get("candidate_id") != candidate_id or finite.get("media_resource_sha256") != resource_hash:
+            raise EnrichmentError("finite replay evidence changed its resource binding")
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        claim = self.output_dir / f"misbound-download-repair-{capture_job_id}.json"
+        try:
+            _claim_json(claim, {"capture_job_id": capture_job_id, "old_task_id": old_task_id,
+                                "candidate_id": candidate_id, "state": "dispatch_claimed"})
+        except FileExistsError as exc:
+            raise EnrichmentError("repair dispatch already claimed; reconcile without resubmission") from exc
+        claimed = self.capture_store.transition(current, "misbound_download_repair_claimed",
+            status="misbound_repair_dispatch_claimed", misbound_old_task_id=old_task_id,
+            download_task_id=None, download_task=None, media_path=None,
+            misbound_repair_finite_playlist=finite)
+        task_id = self.sniffer.start_download(fresh)
+        return self.capture_store.transition(claimed, "misbound_download_repair_started",
+            status="downloading", download_task_id=task_id)
 
     @staticmethod
     def _candidate_from_source_task(

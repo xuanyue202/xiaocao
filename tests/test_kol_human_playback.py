@@ -260,9 +260,17 @@ def test_entry_refresh_refuses_capture_effects(monkeypatch,capture):
     ("大师班直播", "2026-10-29T08:30:00+08:00", "大师班直播", False),
     ("大师班直播10月29日", "2026-10-29T16:30:00+08:00", "大师班直播10月29日", False),
     ("大师班直播10月29日", "2026-10-29T08:30:00+08:00", "盘前大师班直播10月29日", False),
+    ("大师班早盘直播10月29日YJ", "2026-10-29T08:30:00+08:00", "大师班早盘直播10月29日YJ", True),
+    ("大师班早盘直播10月28日YJ", "2026-10-29T08:30:00+08:00", "大师班早盘直播10月28日YJ", False),
+    ("大师班早盘直播10月29日YJ", "2026-10-29T08:30:00+08:00", "大师班直播10月29日", False),
+    ("大师班早盘直播10月29日YJ", "2026-10-29T16:30:00+08:00", "大师班早盘直播10月29日YJ", False),
+    ("大师班早盘直播10月29日", "2026-10-29T08:30:00+08:00", "大师班早盘直播10月29日", False),
 ])
 def test_dated_morning_merchant_title(title, published, merchant_title, allowed):
-    started = datetime.fromisoformat("2026-10-29T09:20:00+08:00")
+    started = datetime.fromisoformat(
+        "2026-10-29T18:00:00+08:00" if "T16:" in published
+        else "2026-10-29T09:20:00+08:00"
+    )
     lineage = {"course_title": merchant_title, "course_start_at": started.timestamp(),
                "metadata_anchors": [{"live_id": "same-live"}]}
     if allowed:

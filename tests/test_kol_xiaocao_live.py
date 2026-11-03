@@ -11,6 +11,7 @@ import pytest
 from tests.kol_claim_fixture import attach_claim_contract
 from xiaocao.kol.capture import (
     CaptureJobStore,
+    SnifferClient,
     SnifferError,
     canonical_xiaoetong_source,
 )
@@ -119,6 +120,111 @@ def test_claimed_transport_repair_preserves_native_arm_and_download_claim(tmp_pa
         assert calls[0][1]["preserve_native_arm"] is True
         assert calls[0][0]["native_repair_armed_at"] == current["native_repair_armed_at"]
         assert calls[0][0]["download_idempotency_key"] == "original"
+
+
+def test_matching_download_requires_candidate_identity_when_live_room_reused():
+    capture = {"candidate": {"id": "today-media", "live_id": "shared-room"}}
+    def task(task_id, candidate):
+        return {"id": task_id, "meta": {"labels": {
+            "capture_id": candidate, "live_id": "shared-room",
+            "type": "live_capture", "compress": "true",
+        }}}
+    old, current = task("yesterday", "yesterday-media"), task("today", "today-media")
+    assert XiaocaoLiveService._matching_tasks(capture, [old, current]) == [current]
+    assert XiaocaoLiveService._matching_tasks(capture, [old]) == []
+
+
+def test_matching_download_accepts_only_exact_unlabelled_source_task():
+    capture = {"candidate": {"id": "today", "live_id": "room"},
+               "source_job_id": "source", "source_task_id": "exact"}
+    def task(task_id, candidate=None):
+        labels = {"live_id": "room", "type": "live_capture", "compress": "true"}
+        if candidate is not None:
+            labels["capture_id"] = candidate
+        return {"id": task_id, "meta": {"labels": labels}}
+    exact = task("exact")
+    assert XiaocaoLiveService._matching_tasks(capture, [exact]) == [exact]
+    assert XiaocaoLiveService._matching_tasks(capture, [task("other"), task("exact", "wrong")]) == []
+    assert XiaocaoLiveService._matching_tasks({**capture, "source_job_id": ""}, [exact]) == []
+    assert XiaocaoLiveService._matching_tasks({**capture, "source_task_id": ""}, [task("")]) == []
+
+
+@pytest.mark.parametrize("case", ["ok", "same_candidate", "old_after_arm", "existing_candidate", "downstream", "lost_response", "bad_resource", "no_end", "unlabelled_recent", "bad_history"])
+def test_misbound_prior_download_repair_is_exact_and_single_dispatch(tmp_path, case):
+    ledger = tmp_path / "capture.jsonl"
+    store = CaptureJobStore(ledger)
+    media_url = "https://encrypt-k-vod.xet.tech/path/playlist_eof.m3u8"
+    resource_hash = hashlib.sha256(media_url.encode()).hexdigest()
+    candidate = {"id": "today", "live_id": "room", "media_type": "m3u8", "url": media_url,
+                 "captured": "2026-11-03 14:02:22"}
+    claimed = store.transition(store.arm([]), "download_claimed", status="download_claimed",
+        created_at="2026-11-03T10:57:18+08:00",
+        candidate_key="live:room", candidate=candidate,
+        expected_source={"source_resource_id": "room"}, source_subscription_id="original",
+        source_published_at="2026-11-03T08:49:00+08:00",
+        native_media_lineage={"media_resource_sha256": resource_hash},
+        handoff_id="already" if case == "downstream" else None)
+    if case != "bad_history":
+        claimed = store.transition(claimed, "download_started", status="downloading", download_task_id="old")
+    current = store.transition(claimed, "download_completed", status="downloaded", download_task_id="old")
+    old = {"id": "old", "status": "done", "createdAt":
+           "2026-11-04T00:00:00+08:00" if case == "old_after_arm" else "2026-11-02T21:15:00+08:00",
+           "meta": {"labels": {"capture_id": "today" if case == "same_candidate" else "yesterday", "live_id": "room"}}}
+    tasks = [old] + ([{"id": "today-task", "meta": {"labels": {"capture_id": "today"}}}] if case == "existing_candidate" else [])
+    if case == "unlabelled_recent": tasks.append({"id": "unknown", "createdAt": "2099-01-01T00:00:00+08:00", "meta": {}})
+    root = tmp_path / "elive_live_debug"
+    (root / "m3u8").mkdir(parents=True)
+    playlist = root / "m3u8" / "capture.m3u8"
+    playlist.write_text("#EXTM3U\n#EXTINF:61,\nsegment.ts\n" + ("" if case == "no_end" else "#EXT-X-ENDLIST\n"))
+    (root / "events.jsonl").write_text(json.dumps({"kind": "response.body", "status": 200,
+        "url": media_url, "at": "2026-11-03T14:02:24+08:00", "file": str(playlist)}) + "\n")
+    calls = []
+    class Sniffer:
+        def complete_tasks_for_reconciliation(self): return tasks
+        def candidates(self): return [{**candidate, "url": media_url + ("changed" if case == "bad_resource" else "")}]
+        def start_download(self, candidate):
+            calls.append(candidate["id"])
+            if case == "lost_response": raise RuntimeError("lost")
+            return "new"
+    service = XiaocaoLiveService(tmp_path / "item", capture_ledger=ledger, sniffer_client=Sniffer(),
+                                 sniffer_binary=tmp_path / "sniffer", daily_output=tmp_path / "daily")
+    if case in {"same_candidate", "old_after_arm", "existing_candidate", "downstream", "bad_resource", "no_end", "unlabelled_recent", "bad_history"}:
+        with pytest.raises(EnrichmentError): service.repair_misbound_prior_download(current["job_id"], old_task_id="old", candidate_id="today")
+        assert calls == []
+    elif case == "lost_response":
+        with pytest.raises(RuntimeError): service.repair_misbound_prior_download(current["job_id"], old_task_id="old", candidate_id="today")
+        with pytest.raises(EnrichmentError): service.repair_misbound_prior_download(current["job_id"], old_task_id="old", candidate_id="today")
+        assert calls == ["today"]
+    else:
+        result = service.repair_misbound_prior_download(current["job_id"], old_task_id="old", candidate_id="today")
+        assert result["status"] == "downloading" and result["download_task_id"] == "new"
+        assert result["misbound_old_task_id"] == "old" and calls == ["today"]
+
+
+def test_misbound_repair_obeys_source_slot(tmp_path):
+    from xiaocao.kol.daily import DailyCoordinator, SourceExecutionBusy
+    daily = tmp_path / "daily"
+    service = XiaocaoLiveService(tmp_path / "item", capture_ledger=tmp_path / "capture.jsonl", daily_output=daily)
+    with DailyCoordinator(daily)._source_locked("xiaocao_wechat_live"):
+        with pytest.raises(SourceExecutionBusy):
+            service.repair_misbound_prior_download("capture", old_task_id="old", candidate_id="new")
+
+
+@pytest.mark.parametrize("case", ["complete", "truncated", "malformed", "wrong_page", "capped", "duplicate"])
+def test_repair_provider_readback_requires_complete_valid_page(monkeypatch, case):
+    rows = [{"id": "one"}, {"id": "two"}]
+    data = {"list": rows, "page": 1, "page_size": 500, "total": 2}
+    if case == "truncated": data["total"] = 3
+    if case == "malformed": rows[1] = None
+    if case == "wrong_page": data["page"] = 2
+    if case == "capped": data["page_size"] = 20
+    if case == "duplicate": rows[1] = {"id": "one"}
+    client = SnifferClient()
+    monkeypatch.setattr(SnifferClient, "_json", lambda *_args, **_kwargs: {"data": data})
+    if case == "complete":
+        assert client.complete_tasks_for_reconciliation() == rows
+    else:
+        with pytest.raises(SnifferError): client.complete_tasks_for_reconciliation()
 
 
 @pytest.mark.parametrize("invalid", [None, "active", "changed", "wrong_capture", "unfinished"])
