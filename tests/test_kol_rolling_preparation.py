@@ -62,9 +62,9 @@ def source(case, monkeypatch):
                 review=review, value=value, prepared_path=prepared_path, projection=projection)
 
 
-def current_input(source, binding):
+def current_input(source, binding, *, as_of=NOW):
     projection = copy.deepcopy(source['projection'])
-    projection['as_of'] = NOW.isoformat()
+    projection['as_of'] = as_of.isoformat()
     projection['projection_sha256'] = prep.canonical_sha256({k:v for k,v in projection.items() if k!='projection_sha256'})
     summary = {'projection_path': str(save(source['root']/'current-projection.json', projection)),
                'projection_sha256': projection['projection_sha256']}
@@ -146,6 +146,23 @@ def test_rolling_acceptance_preserves_source_review_and_time_boundaries(source, 
 def test_same_hash_does_not_renew_viewpoint_expiry(source):
     with pytest.raises(ValueError, match='SOURCE_EXPIRED'):
         rolling.validate_current_sources(source['value'], now=NOW.replace(hour=11))
+
+
+def test_late_source_seal_cannot_enter_original_opening_as_prepared(source, monkeypatch):
+    late=NOW.replace(minute=21)
+    review={**source['review'],'reviewed_at':late.isoformat()}
+    value=prep.accept_preparation(source['path'],source['draft'],review,source['dispatch'],source['context'],now=late)
+    path=save(source['root']/'late-prepared.json',value)
+    rolling.register(source['path'],path,value)
+    with pytest.raises(ValueError,match='LATE_FOR_OPENING'):
+        registered_preparation(source['root'],'2026-10-23',now=NOW.replace(minute=25))
+    binding=dict(automation_id='xiaocao-book-b-live-morning',owner_thread_id='app-owner',
+                 trade_date='2026-10-23',runner_pid=os.getpid())
+    monkeypatch.setenv('CODEX_AUTOMATION_ID',binding['automation_id'])
+    monkeypatch.setenv('CODEX_THREAD_ID',binding['owner_thread_id'])
+    current=current_input(source,binding,as_of=NOW.replace(minute=25))
+    with pytest.raises(ValueError,match='LATE_FOR_OPENING'):
+        adoption(path,current,now=NOW.replace(minute=25))
 
 
 def test_uncertain_brief_keeps_current_judgment_pending_without_expensive_fingerprint(source, monkeypatch):

@@ -43,6 +43,8 @@ def registered_preparation(root: Path, trade_date: str, *, now: datetime) -> tup
     from .rolling_preparation import registered
     rolling = registered(root, now=now)
     if rolling is not None:
+        if preparation.aware(rolling[1]['accepted_at']) >= preparation.aware(trade_date+'T09:20:00+08:00'):
+            raise ValueError('KOL_PREPARATION_ROLLING_LATE_FOR_OPENING')
         return rolling
     accepted = []
     for path in sorted((root / 'output/live/kol_selection_preparations' / trade_date).glob('*.json')):

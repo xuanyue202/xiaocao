@@ -19,6 +19,8 @@ def adoption(preparation_path: Path, current_input_path: Path, *, now: datetime)
     paper = consumer.get('automation_id') == 'xiaocao-daily-morning-execution'
     live = consumer.get('automation_id') == 'xiaocao-book-b-live-morning'
     rolling = prepared.get('schema_version') == 'kol-opening-preparation.v2'
+    if rolling and prep.aware(prepared['accepted_at']) >= prep.aware(consumer['trade_date']+'T09:20:00+08:00'):
+        raise ValueError('KOL_PREPARATION_ROLLING_LATE_FOR_OPENING')
     if paper:
         from xiaocao.live.paper_morning_kol import owner_binding
         if owner_binding(current_input_path.parent, consumer['trade_date']) != consumer:
