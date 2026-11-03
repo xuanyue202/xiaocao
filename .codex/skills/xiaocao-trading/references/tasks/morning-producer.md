@@ -28,7 +28,7 @@ news/report/queue enrichment; keep original economic fields, raw/canonical/count
 run/date/strategy/owner hashes and directory provenance. No second producer,
 refreeze, source/provider substitution or completed-day replay.
 
-After original commitment, code consumes an already accepted APP preparation
+After original commitment, code consumes an already accepted shared rolling preparation
 locally through the shared pure selector and writes a separate authority=0 KOL
 recommendation preview/receipt. It may reorder eligible original modes/sectors/
 candidates, never modify baseline bytes or wait for an account/model/policy.

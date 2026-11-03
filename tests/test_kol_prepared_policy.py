@@ -9,7 +9,7 @@ from xiaocao.kol.prepared_policy import materialize
 from xiaocao.live import kol_policy
 
 
-def prepared_packet(case, *, defer=False):
+def prepared_packet(case, *, defer=False, template_updates=None):
     case['context']['reports'][0].update(kol_id='kol-fixture',source_published_at='2026-10-22T00:00:00Z',
                                        received_at='2026-10-22T00:01:00Z')
     case['context']['context_sha256']=prep.canonical_sha256({k:v for k,v in case['context'].items() if k!='context_sha256'})
@@ -21,6 +21,7 @@ def prepared_packet(case, *, defer=False):
     if defer:
         template.update(defer_if_no_effect=True,unresolved_semantic_conditions=['No proved support/mapping for extra KOL effect.'])
         case['review']['deferred_overlay_reviewed']=True
+    template.update(template_updates or {})
     case['draft']['policy_template']=template
     case['review'].update(policy_template_reviewed=True,draft_sha256=prep.canonical_sha256(case['draft']))
     prepared=accept(case)
@@ -45,6 +46,25 @@ def test_unchanged_conditionally_prepared_policy_materializes_without_model_or_a
     # An actual independent final review is still mandatory; preparation review
     # has a different schema/hash and cannot be promoted by the materializer.
     with pytest.raises(kol_policy.KolPolicyError):kol_policy._validate_pair(decision,prepared['review'])
+
+
+def test_reviewed_wait_rule_materializes_only_in_its_dated_auction_phase(case):
+    prepared,packet,facts=prepared_packet(case,template_updates=dict(buy_scale=0,request_conditions=[
+        dict(field='session_phase',op='eq',value='opening_auction',evidence_ref='source-reviewed phase'),
+        dict(field='trade_date',op='eq',value='2026-10-23',evidence_ref='source date')]))
+    result=materialize(prepared,packet,facts,now=NOW.replace(minute=26))
+    assert result['decision']['buy_scale']==0 and result['review']=='not_performed'
+    assert result['decision']['valid_until']=='2026-10-23T01:30:00Z'
+    from xiaocao.kol.prepared_policy import current_facts,preview_risk
+    assert current_facts(facts,now=NOW.replace(minute=30))['session_phase']=='other'
+    assert preview_risk(prepared,trade_date='2026-10-24',now=NOW.replace(minute=26)) is None
+
+
+@pytest.mark.parametrize('phases', [['opening_auction'], ['opening_auction','other']])
+def test_auction_restriction_cannot_bypass_date_or_expiry_with_membership_predicate(case, phases):
+    with pytest.raises(ValueError,match='PHASE_PREDICATE_INVALID'):
+        prepared_packet(case,template_updates=dict(buy_scale=0, request_conditions=[
+            dict(field='session_phase',op='in',value=phases,evidence_ref='reviewed source')]))
 
 
 @pytest.mark.parametrize('damage',['delta','source','condition','unresolved','late','packet_hash','request_hash'])

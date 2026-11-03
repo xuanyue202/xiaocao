@@ -10,12 +10,13 @@ rerun live_recommend, producer, paper_record or a completed/no-buy date.
 Read [shared contract](../automation-context.md), Contract §1c/1d/2a and
 [opening preparation](../kol-opening-preparation.md). After original calendar
 proof, keep the original supervisor waiting. Do not build another full preparation
-projection, spawn a preparation worker or republish APP source reasoning.
+projection, spawn a preparation worker or republish shared source reasoning.
 At the original freeze code reads the accepted shared source brief and creates
 an immutable `kol-preparation-adoption.json` bound to this Paper owner, current
 source fingerprint and rule hashes. It does not wait for APP account/login or
-execution. Missing/expired/changed support defers promptly to the original
-baseline and independent valid policy; no peer polling or duplicate preparation.
+execution. Missing/expired support defers promptly to the original baseline and independent
+valid policy. A rolling source change invalidates affected implications and
+reaches current review as complete delta; no peer polling or duplicate preparation.
 Existing Paper-owned preparation receipts retain their exact readback path.
 See [opening preparation](../kol-opening-preparation.md) for shared-source and
 current applicability dispatch. Final Paper account/risk and policy are separate.

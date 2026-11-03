@@ -75,6 +75,9 @@ def _inputs(path: Path) -> tuple[dict, dict]:
     for rule in value["rules"]:
         if hashlib.sha256(Path(rule["path"]).read_bytes()).hexdigest() != rule["sha256"]:
             raise ValueError("KOL_PREPARATION_RULES_CHANGED")
+    if value.get('preparation_kind') == 'rolling':
+        from .rolling_preparation import validate_inputs
+        validate_inputs(value, projection)
     return value, projection
 
 
@@ -99,7 +102,9 @@ def viewpoint_units(projection: dict) -> dict:
 
 def draft_template(input_path: Path) -> dict:
     inputs, _ = _inputs(input_path)
-    return {"schema_version": SCHEMA, "authority": 0, "input_sha256": _hash(inputs),
+    rolling = inputs.get('preparation_kind') == 'rolling'
+    return {"schema_version": 'kol-opening-preparation.v2' if rolling else SCHEMA,
+        **({'synthesis': [], 'source_coverage_limits': []} if rolling else {}), "authority": 0, "input_sha256": _hash(inputs),
         "worker_id": "", "prepared_at": "", "valid_until": "",
         "selection_preferences": [],
         "implications": [], "coverage": [{"viewpoint_id": i, "implication_ids": [],
@@ -107,12 +112,14 @@ def draft_template(input_path: Path) -> dict:
 
 
 def _validate_draft(draft: dict, inputs: dict, projection: dict, now: datetime) -> set[str]:
-    if (draft.get("schema_version") != SCHEMA or draft.get("authority") != 0
+    rolling = inputs.get('preparation_kind') == 'rolling'
+    expected_schema = 'kol-opening-preparation.v2' if rolling else SCHEMA
+    if (draft.get("schema_version") != expected_schema or draft.get("authority") != 0
             or draft.get("input_sha256") != _hash(inputs) or not draft.get("worker_id")):
         raise ValueError("KOL_PREPARATION_DRAFT_BINDING_INVALID")
     date = inputs["binding"]["trade_date"]
     prepared, until = aware(draft["prepared_at"]), aware(draft["valid_until"])
-    if not (prepared <= now < until and prepared.astimezone(TZ).date().isoformat() == date
+    if not rolling and not (prepared <= now < until and prepared.astimezone(TZ).date().isoformat() == date
             and until <= aware(date + "T11:30:00+08:00")):
         raise ValueError("KOL_PREPARATION_EXPIRED_OR_FUTURE")
     units = viewpoint_units(projection)
@@ -121,6 +128,9 @@ def _validate_draft(draft: dict, inputs: dict, projection: dict, now: datetime) 
     if len(ids) != len(set(ids)) or any(not isinstance(i, str) or not i for i in ids):
         raise ValueError("KOL_PREPARATION_DUPLICATE_IMPLICATION")
     cited = set()
+    if rolling:
+        from .rolling_preparation import validate_synthesis
+        cited.update(validate_synthesis(draft, inputs, projection, now))
     for item in implications:
         sources = item["viewpoint_ids"]
         scope = item["scope"]
@@ -155,8 +165,9 @@ def accept_preparation(input_path: Path, draft: dict, review: dict, dispatch: di
                        context: dict, *, now: datetime) -> dict:
     inputs, projection = _inputs(input_path)
     cited = _validate_draft(draft, inputs, projection, now)
+    rolling = inputs.get('preparation_kind') == 'rolling'
     if (aware(projection["as_of"]) > aware(draft["prepared_at"])
-            or aware(projection["as_of"]).astimezone(TZ).date().isoformat() != inputs["binding"]["trade_date"]):
+            or (not rolling and aware(projection["as_of"]).astimezone(TZ).date().isoformat() != inputs["binding"]["trade_date"])):
         raise ValueError("KOL_PREPARATION_PROJECTION_TIME_INVALID")
     cutoff = aware(inputs["binding"]["trade_date"] + "T09:20:00+08:00")
     args, result = dispatch.get("tool_arguments", {}), dispatch.get("tool_result", {})
@@ -164,7 +175,8 @@ def accept_preparation(input_path: Path, draft: dict, review: dict, dispatch: di
             or dispatch.get("input_sha256") != _hash(inputs) or dispatch.get("binding") != inputs["binding"]
             or args.get("model") != "gpt-6-sol" or args.get("reasoning_effort") != "xhigh"
             or args.get("fork_turns") != "none" or result.get("task_name") != draft["worker_id"]
-            or not (aware(dispatch["dispatched_at"]) <= aware(draft["prepared_at"]) <= now < cutoff)):
+            or not (aware(dispatch["dispatched_at"]) <= aware(draft["prepared_at"]) <= now)
+            or (not rolling and now >= cutoff)):
         raise ValueError("KOL_PREPARATION_DISPATCH_OR_DEADLINE_INVALID")
     context_sha = canonical_sha256({k: v for k, v in context.items() if k != "context_sha256"})
     reports = {r["report_id"]: r for r in context.get("reports", [])}
@@ -200,7 +212,13 @@ def accept_preparation(input_path: Path, draft: dict, review: dict, dispatch: di
             or any(review.get(k) is not True for k in
                    ("all_viewpoints_covered", "source_fidelity_checked", "conditions_and_counterevidence_checked"))):
         raise ValueError("KOL_PREPARATION_INDEPENDENT_REVIEW_REQUIRED")
-    value = {"schema_version": SCHEMA, "authority": 0, "accepted_at": now.isoformat(),
+    if rolling and review.get('rolling_synthesis_reviewed') is not True:
+        raise ValueError('KOL_PREPARATION_ROLLING_REVIEW_REQUIRED')
+    if rolling and draft.get('policy_template', {}).get('buy_scale') == 0 and any(
+            c['field']=='session_phase' for c in draft.get('policy_template', {}).get('request_conditions', [])):
+        if review.get('restrictive_branch_reviewed') is not True:
+            raise ValueError('KOL_PREPARATION_RESTRICTIVE_BRANCH_REVIEW_REQUIRED')
+    value = {"schema_version": draft['schema_version'], "authority": 0, "accepted_at": now.isoformat(),
         "input_path": str(input_path.resolve()), "input_sha256": _hash(inputs),
         "worker_id": draft["worker_id"], "source_fingerprint": inputs["source_fingerprint"],
         "binding": inputs["binding"], "rules": inputs["rules"],
@@ -249,7 +267,9 @@ def opening_packet(preparation_path: Path, current_input_path: Path, request: di
         adopted = read_adoption(adoption_path, preparation_path, current_input_path, now=now)
     if (now.utcoffset() is None or not request.get("freeze_sha256") or not request.get("strategy_sha")
             or (not adopted and (prepared["binding"] != current["binding"] or prepared["rules"] != current["rules"]))
-            or (adopted is not None and (request.get('binding') != current['binding'] or request.get('runtime') != 'paper'))
+            or (adopted is not None and (request.get('binding') != current['binding']
+                or request.get('runtime') != ('paper' if current['binding']['automation_id'] ==
+                    'xiaocao-daily-morning-execution' else 'live')))
             or request["trade_date"] != current["binding"]["trade_date"]
             or not (aware(request["requested_at"]) <= now < aware(request["review_wait_until"]))
             or aware(request["review_wait_until"]) > aware(request["trade_date"] + "T09:27:00+08:00")):
@@ -288,6 +308,13 @@ def opening_packet(preparation_path: Path, current_input_path: Path, request: di
         "coverage": {"prepared_count": len(old), "current_count": len(new),
                      "unchanged_count": len((new.keys() & old.keys()) - changed)},
         "instruction": "Review relevant implications, all delta and fresh original request facts. Reuse unchanged preparation; verify exact cited sources and independently review final policy before cutoff. This packet grants no policy or execution authority."}
+    if prepared.get('schema_version') == 'kol-opening-preparation.v2':
+        value['source_coverage_limits'] = prepared['draft']['source_coverage_limits']
+        value['followup_conditions'] = prepared['draft'].get('followup_conditions', [])
+        value['synthesis'] = [item for item in prepared['draft']['synthesis']
+                              if not set(item['viewpoint_ids']) & (changed | removed)]
+        value['invalidated_synthesis'] = [item for item in prepared['draft']['synthesis']
+                                          if set(item['viewpoint_ids']) & (changed | removed)]
     if adopted is not None:
         value['preparation_adoption'] = {'path': str(adoption_path.resolve()),
             'sha256': adopted['adoption_sha256'], 'source_binding': adopted['source_binding'],

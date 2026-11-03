@@ -54,23 +54,20 @@ The original09:24 boundary refresh and heartbeats own later readiness; no blind
 model polling or repeated unchanged stdin calls during the quiet wait.
 
 On book_b_morning_checklist use its exact checklist_path. On
-book_b_kol_inputs_prepared consume that original input/projection, never rebuild
-it. Before09:20 follow [opening preparation](../kol-opening-preparation.md):
-actual gpt-6-sol/xhigh/forknone warm worker, every eligible typed viewpoint,
-conditional implications/counterevidence, cited bodies, independent parent seal,
-actual dispatch/coverage and loaded receipt acknowledged by morning_checklist.
-The accepted source brief is registered for producer/Paper reuse at `accept`,
-independently of APP account/execution completion. Neither consumer waits for
-this task or follows up its child agent. Missing support stays explicit baseline.
-Missing/late preparation degrades to valid-policy/baseline; risk no-buy skips
-support waits. Preparation authority0 is not formal policy or trade authority.
+book_b_kol_inputs_prepared consume that original input/projection and automatic
+shared rolling adoption. See [opening preparation](../kol-opening-preparation.md).
+preparation_status=shared_rolling_adopted proves reasoning reuse under this APP
+owner, with source_worker_id and preparation_adoption_path; no new full-source
+worker or loaded-receipt fabrication is needed. Missing/changed/expired support
+stays explicitly deferred; preserve baseline/independently valid-policy gates.
+Do not wait for the source owner. Source synthesis is prepared independently in
+its early/evening slot; only current applicability/delta is new at freeze.
 
 ## Frozen event: dispatch, policy, current account and batch
 
 On dispatch_path read that ONE assembled file. Follow next_action: independently
 review its unapproved prepared-policy draft when unchanged typed conditions
-allow materialization; otherwise send exact tool_arguments to the accepted
-warm worker and record actual dispatch. See opening preparation for both branches.
+allow materialization; otherwise follow exact tool_arguments for the current-only worker and record actual dispatch. See opening preparation for both branches.
 On continue_original_baseline_deferred, code continues valid-policy/baseline
 gates with an explicit deferred receipt and retained unknowns; no new dispatch
 or neutral-policy publication. This requires separate pre-window review.

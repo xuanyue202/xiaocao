@@ -75,6 +75,7 @@ def source_manifest(root: Path) -> dict[str, str]:
              root / 'docs/OPERATING_CONTRACT.md',
              root / '.codex/skills/xiaocao-trading/references/kol-trading-judgment.md',
              root / '.codex/skills/xiaocao-trading/references/kol-opening-preparation.md'}
+    paths.add(root / '.codex/skills/xiaocao-trading/references/kol-rolling-preparation.md')
     for name in ('scripts', 'src/xiaocao', 'kronos_screen/scripts', 'native', 'Kronos'):
         folder = root / name
         if folder.exists():

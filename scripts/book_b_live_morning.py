@@ -803,14 +803,18 @@ def _run(args, notices):
             "allocation_capsule_sha256": request["allocation_capsule_sha256"], "account_risk": request["account_risk"]})
         try:
             request = _normalized_review_request(request)
+            request['binding'] = checklist.binding
             fresh = prepare_inputs(checklist, repo_root=ROOT)
             loaded = checklist.read()["items"]["kol_inputs_loaded"]
             changed = kol_inputs is None or fresh["source_fingerprint"] != kol_inputs["source_fingerprint"]
             loaded_evidence = loaded.get("evidence") or {}
-            prepared = loaded["status"] == "passed" and bool(loaded_evidence.get("worker_id"))
+            prepared = loaded["status"] == "passed" and bool(loaded_evidence.get("worker_id")
+                or loaded_evidence.get('preparation_adoption_path'))
             from xiaocao.kol.opening_preparation import opening_packet, write_artifact
             packet = opening_packet(Path(loaded_evidence["preparation_path"]),
-                Path(fresh["input_path"]), request, now=datetime.now(ZoneInfo("Asia/Shanghai"))) if prepared else None
+                Path(fresh["input_path"]), request, now=datetime.now(ZoneInfo("Asia/Shanghai")),
+                adoption_path=Path(loaded_evidence['preparation_adoption_path'])
+                    if loaded_evidence.get('preparation_adoption_path') else None) if prepared else None
             if packet is not None and packet["preparation_sha256"] != loaded_evidence.get("preparation_sha256"):
                 raise ValueError("MORNING_KOL_PREPARATION_BINDING_MISMATCH")
             packet_path = write_artifact(checklist.path.parent, packet, ".kol-packet.json") if packet else None

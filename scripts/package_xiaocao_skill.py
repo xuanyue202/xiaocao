@@ -41,6 +41,7 @@ SKILL_REFERENCE_FILES = [
     "automation-morning.md",
     "kol-source-preparation.md",
     "kol-opening-preparation.md",
+    "kol-rolling-preparation.md",
     "book-b-live-repair.md",
     "automation-intraday.md",
     "automation-eod.md",
