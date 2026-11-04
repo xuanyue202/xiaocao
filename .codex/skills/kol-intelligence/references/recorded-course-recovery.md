@@ -52,6 +52,11 @@ inventory item. A configured `navigation_source_url` may identify the verified
 history catalogue link when the raw message explicitly labels it
 `历史直播回放点击链接学习` and includes exactly one same-message branded mini with
 the configured token. Generic or differently sourced URLs remain independent.
+The role may have a circled or decimal list prefix, such as
+`②历史直播回放点击链接学习：...`; the prefix changes presentation only. It does not
+relax the exact URL, same-message identity or merchant/course checks. A saved
+navigation item is not a completed recording and never invokes the legacy
+live-room identity resolver in recorded mode.
 
 Anonymous `is_subscribe=0`/`is_unlock=0` describes that anonymous session, not
 the human's account. The human's Nov4 recorded-course recovery task authorizes

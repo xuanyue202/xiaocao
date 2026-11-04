@@ -1,5 +1,6 @@
 """Catalogue-first local acquisition; the native room route stays archived."""
 from datetime import datetime, timedelta
+import hashlib
 import json
 from pathlib import Path
 from urllib.parse import urlencode
@@ -42,6 +43,7 @@ def annotate_inventory(originals,config_path):
             and p.get('published_at')==row.get('published_at')
             and p.get('contact_username')==row.get('contact_username')]
         if (row.get('recorded_navigation_marker') and row.get('source_url')==navigation
+            and row.get('recorded_navigation_url_sha256')==hashlib.sha256(navigation.encode()).hexdigest()
             and len(peers)==1 and peers[0].get('mini_program_token')==config.mini_program_token):
             row.update(recorded_inventory_reason='catalogue_navigation',alternate_entry_of=peers[0]['identity'])
     return originals

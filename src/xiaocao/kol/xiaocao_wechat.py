@@ -428,8 +428,16 @@ def parse_xiaocao_live_messages(payload: dict[str, Any]) -> list[dict[str, Any]]
         ).replace(tzinfo=BEIJING)
         header=re.sub(r'\s+','',raw_message.split('文字复盘总结',1)[0])
         future_notice=bool(re.search(r'存好别丢.*?以后听课固定这(?:一个)?链接.*?明天.*?到点点开',header))
-        navigation=re.search(r'(?m)^\s*历史直播回放点击链接学习[:：]\s*(https://\S+)\s*$',raw_message)
+        navigation=re.search(
+            r'(?m)^[ \t]*(?:[①-⑳]|[0-9]{1,2}[.、．)）])?[ \t]*'
+            r'历史直播回放点击链接学习[:：][ \t]*(https://\S+)[ \t]*$',
+            raw_message,
+        )
         navigation_url=_normalized_live_url(navigation.group(1)) if navigation else None
+        navigation_raw_urls={
+            value for value in _URL.findall(raw_message)
+            if navigation_url and _normalized_live_url(value)==navigation_url
+        }
         # A clock-marked time on this original share is a bounded same-day
         # session anchor. Ambiguous or earlier times do not produce an anchor.
         clocks = list(re.finditer(r"(?m)^[ \t]*⏰\s*(\d{1,2})[:：](\d{2})\s*【密码", raw_message))
@@ -489,7 +497,10 @@ def parse_xiaocao_live_messages(payload: dict[str, Any]) -> list[dict[str, Any]]
                 "published_at": published.isoformat(timespec="seconds"),
                 "source_url": source_url,
                 "message_sha256": _sha256_text(raw_message),
-                **({'recorded_navigation_marker':True} if source_url==navigation_url else {}),
+                **({'recorded_navigation_marker':True,
+                    'recorded_navigation_url_sha256':_sha256_text(navigation.group(1))}
+                   if source_url==navigation_url
+                   and navigation_raw_urls=={navigation.group(1)} else {}),
             }
     return sorted(
         items.values(),

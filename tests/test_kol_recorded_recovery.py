@@ -396,16 +396,78 @@ def test_inventory_execution_filter_is_mode_scoped_and_preserves_bound_work():
     assert XiaocaoWechatLiveSubscription._next_pending(manifest,recorded=True)['identity']==IDENTITY
 
 
-@pytest.mark.parametrize('change',[None,'different_url','no_role','wrong_token'])
-def test_catalogue_navigation_needs_exact_descriptor_role_and_same_original(tmp_path,change):
+@pytest.mark.parametrize('prefix',['','②','2. ','2、'])
+@pytest.mark.parametrize('change',[None,'different_url','no_role','wrong_token','query','fragment','slash'])
+def test_catalogue_navigation_needs_exact_descriptor_role_and_same_original(tmp_path,change,prefix):
     from xiaocao.kol.xiaocao_wechat import parse_xiaocao_live_messages
     from xiaocao.kol.recorded_flow import annotate_inventory
     cfg=tmp_path/'bridge.json';cfg.write_text(json.dumps(dict(replay_catalog=dict(app_id=APP,course_id=COURSE,
         mini_program_token='Token123',acquisition_mode='recorded_course',navigation_source_url='https://yv9lc.xetslk.com/s/4uRHyc'))))
     token='Other123' if change=='wrong_token' else 'Token123'
     url='https://yv9lc.xetslk.com/s/other' if change=='different_url' else 'https://yv9lc.xetslk.com/s/4uRHyc'
+    url+={'query':'?course=other','fragment':'#other','slash':'/'}.get(change,'')
     role='独立另一课程：' if change=='no_role' else '历史直播回放点击链接学习：'
     rows=parse_xiaocao_live_messages(dict(chat='registered',username='exact',messages=[
-        f'[2026-11-04 09:04] 小草: #小程序://见势擒龙团/{token}\n{role}{url}']))
+        f'[2026-11-04 09:04] 小草: #小程序://见势擒龙团/{token}\n{prefix}{role}{url}']))
     rows=annotate_inventory(rows,cfg);share=next(r for r in rows if r.get('source_url'))
     assert ('recorded_inventory_reason' in share)==(change is None)
+
+
+def test_numbered_catalogue_notice_discovery_and_exact_resume_have_no_capture_effect(tmp_path):
+    from xiaocao.kol.xiaocao_wechat import (
+        DEFAULT_CONTACT, XiaocaoWechatLiveSubscription, parse_xiaocao_live_messages,
+    )
+    root=tmp_path/'subscription';root.mkdir()
+    config=tmp_path/'native_share_bridge.json'
+    config.write_text(json.dumps(dict(replay_catalog=dict(app_id=APP,course_id=COURSE,
+        mini_program_token='Token123',acquisition_mode='recorded_course',
+        navigation_source_url='https://yv9lc.xetslk.com/s/4uRHyc'))))
+    history=dict(chat=DEFAULT_CONTACT,username='exact',messages=[
+        '[2026-11-04 22:37] ①盘前早盘+晚盘：#小程序://见势擒龙团/Token123\n\n'
+        '②历史直播回放点击链接学习：https://yv9lc.xetslk.com/s/4uRHyc\n'
+        '链接存好别丢，以后听课固定这一个链接，明天早盘，到点点开。'])
+    originals=parse_xiaocao_live_messages(history)
+    items={r['identity']:{**r,'status':'discovered'} for r in originals}
+    share=next(r for r in originals if r.get('source_url'))
+    # Reproduce the already-discovered item from the old parser.
+    items[share['identity']].pop('recorded_navigation_marker')
+    (root/'manifest.json').write_text(json.dumps(dict(schema_version=1,
+        initialized_at='2026-11-04T06:00:00+08:00',items=items)))
+    driver=SimpleNamespace()
+    sub=XiaocaoWechatLiveSubscription(root,history_reader=lambda:history,
+        browser_exchange=lambda _:pytest.fail('navigation must not request Browser'),
+        capture_driver=driver,clock=lambda:__import__('datetime').datetime.fromisoformat(
+            '2026-11-05T07:00:00+08:00'))
+    result=sub.run_once(opencli_session='test',only_identity=share['identity'])
+    assert result['inventory_only'] is True and result['already_completed'] is False
+    sub.discover()
+    saved=sub._load()
+    assert sub._next_pending(saved,recorded=True) is None
+    assert saved['items'][share['identity']]['status']=='discovered'
+    assert saved['items'][share['identity']]['recorded_inventory_eligible'] is True
+    assert all(not item.get('capture_job_id') for item in saved['items'].values())
+
+
+def test_catalogue_role_in_unrelated_copy_is_not_navigation(tmp_path):
+    from xiaocao.kol.xiaocao_wechat import parse_xiaocao_live_messages
+    for prefix in ('备注：', '③另外一门课 ', 'x'):
+        rows=parse_xiaocao_live_messages(dict(chat='registered',username='exact',messages=[
+            '[2026-11-04 22:37] #小程序://见势擒龙团/Token123\n'
+            f'{prefix}历史直播回放点击链接学习：https://yv9lc.xetslk.com/s/4uRHyc']))
+        assert not any(row.get('recorded_navigation_marker') for row in rows)
+
+
+def test_catalogue_navigation_does_not_hide_an_altered_url_with_same_canonical_identity(tmp_path):
+    from xiaocao.kol.xiaocao_wechat import parse_xiaocao_live_messages
+    from xiaocao.kol.recorded_flow import annotate_inventory
+    cfg=tmp_path/'bridge.json'
+    cfg.write_text(json.dumps(dict(replay_catalog=dict(app_id=APP,course_id=COURSE,
+        mini_program_token='Token123',acquisition_mode='recorded_course',
+        navigation_source_url='https://yv9lc.xetslk.com/s/4uRHyc'))))
+    rows=parse_xiaocao_live_messages(dict(chat='registered',username='exact',messages=[
+        '[2026-11-04 22:37] #小程序://见势擒龙团/Token123\n'
+        '②历史直播回放点击链接学习：https://yv9lc.xetslk.com/s/4uRHyc\n'
+        '③另外一门课程：https://yv9lc.xetslk.com/s/4uRHyc?course=other']))
+    share=next(row for row in annotate_inventory(rows,cfg) if row.get('source_url'))
+    assert not share.get('recorded_navigation_marker')
+    assert not share.get('recorded_inventory_reason')
