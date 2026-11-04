@@ -10,7 +10,7 @@ import pytest
 from tests.test_inherited_execution_isolation import old_buy, marked, snapshot, NOW
 from xiaocao.live.incident_dispositions import refresh, consume
 from xiaocao.live.eod_reconciliation import assess_eod
-from xiaocao.live.trading_execution import ExecutionStore, ExecutionState
+from xiaocao.live.trading_execution import ExecutionReceipt, ExecutionStore, ExecutionState
 
 pytestmark=pytest.mark.app_simulation
 
@@ -144,3 +144,48 @@ def test_environment_identity_alone_is_not_an_accepted_next_owner(tmp_path,monke
         assert body['accepted_handoff'] and body['dated_lock_owner']['thread_id']=='original-owner'
         wrong=document(consume(tmp_path,trade_date='2026-10-31',run_id='different-date',now=NOW))
         assert not wrong['accepted_handoff']
+
+
+def legacy_skip_without_intent(root, **changes):
+    from tests.test_foundersc_native_broker import _plan
+    plan = _plan()
+    store = ExecutionStore(root / 'events.jsonl')
+    first = ExecutionReceipt(plan.plan_id, plan.plan_hash, ExecutionState.PLANNED)
+    store.append(plan=plan, receipt=replace(first, **changes), kind='plan_created')
+    store.append(plan=plan, receipt=replace(first, state=ExecutionState.SKIPPED,
+        reason='LIMIT_DOWN_CHECK_UNAVAILABLE'), kind='transition')
+    return plan
+
+
+def test_legacy_guard_skip_without_intent_remains_explicit_without_blocking_incident_view(tmp_path):
+    plan = legacy_skip_without_intent(tmp_path)
+    before = (tmp_path / 'events.jsonl').read_bytes()
+    ref = refresh(tmp_path, trade_date='2026-10-30', stage='post_business', now=NOW)
+    view = document(ref)
+    assert view['records'] == [] and view['admission_authority'] == 'none'
+    skipped = view['execution_source']['legacy_pre_submit_skips_without_intent']
+    assert len(skipped) == 1 and skipped[0]['plan_id'] == plan.plan_id
+    assert skipped[0]['plan_hash'] == plan.plan_hash and skipped[0]['event_hash']
+    assert (tmp_path / 'events.jsonl').read_bytes() == before
+
+
+@pytest.mark.parametrize('changes', [
+    {'submit_claim_id': 'claimed'}, {'cancel_claim_id': 'claimed'},
+    {'broker_order_id': '1234567'}, {'filled_shares': 1},
+    {'submit_chain_uncertain': True}, {'cancel_chain_uncertain': True},
+    {'active': True}, {'attempt': 1}, {'locator_proof': {'submitted': True}},
+])
+def test_missing_intent_with_any_possible_order_effect_stays_unproved(tmp_path, changes):
+    legacy_skip_without_intent(tmp_path, **changes)
+    with pytest.raises(ValueError, match='EXECUTION_SOURCE_UNPROVEN'):
+        refresh(tmp_path, trade_date='2026-10-30', stage='post_business', now=NOW)
+
+
+def test_legacy_skip_does_not_excuse_a_changed_event_chain(tmp_path):
+    legacy_skip_without_intent(tmp_path)
+    path = tmp_path / 'events.jsonl'
+    rows = [json.loads(line) for line in path.read_text().splitlines()]
+    rows[0]['receipt']['reason'] = 'changed after hashing'
+    path.write_text('\n'.join(json.dumps(row) for row in rows) + '\n')
+    with pytest.raises(ValueError, match='EXECUTION_SOURCE_UNPROVEN'):
+        refresh(tmp_path, trade_date='2026-10-30', stage='post_business', now=NOW)

@@ -2141,7 +2141,7 @@ def run_book_b_live_morning(
                             "allocation_facts_path": str(config.allocation_facts_path.resolve()),
                             "allocation_capsule_sha256": allocation_payload["allocation_capsule_sha256"],
                             "account_facts": allocation.canonical_payload(),
-                            "account_risk": asdict(review_risk),
+                            "account_risk": review_risk.as_dict(),
                             "requested_at": current.isoformat(), "entry_deadline": deadline.isoformat(),
                             "review_wait_until": review_until.isoformat(),
                             "max_wait_seconds": min(120.0, max(0.0, (review_until - current).total_seconds()))

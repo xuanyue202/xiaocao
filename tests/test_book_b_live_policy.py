@@ -562,6 +562,7 @@ def test_recovery_of_scaled_intent_keeps_original_hash_when_policy_relaxes(tmp_p
     assert plan_audit_path(config.state_dir, original.plan_id).read_bytes() == audit_before
 
 
+@pytest.mark.app_simulation
 def test_review_request_only_new_candidates_and_bounded_by_entry_window(tmp_path):
     config = _morning(tmp_path)
     requests = []
@@ -569,6 +570,9 @@ def test_review_request_only_new_candidates_and_bounded_by_entry_window(tmp_path
     clock = MORNING.replace(hour=3, minute=29)
 
     def review(request):
+        # The strict policy hash is also used before draft materialization.
+        decision_sha256(request)
+        assert request['account_risk'] == _risk(clock).as_dict()
         requests.append(request)
         assert not list((config.state_dir / "plan_intents").glob("*.json"))
         return {"status": "timed_out", "fallback": "neutral", "request_sha256": digest(request)}
