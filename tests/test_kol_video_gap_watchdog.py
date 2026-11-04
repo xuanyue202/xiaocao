@@ -174,3 +174,25 @@ def test_history_pagination_uses_exact_contact_and_rejects_failed_readback():
         return SimpleNamespace(stdout=json.dumps({"chat":DEFAULT_CONTACT,"failures":["unavailable"]}))
     with pytest.raises(ValueError, match="history_readback_incomplete"):
         module.read_history("2026-10-19","2026-10-21",Path("wechat-cli"),failed)
+
+
+def test_recorded_navigation_inventory_never_hides_a_bound_task(tmp_path):
+    tmp_path=tmp_path/'subscription';tmp_path.mkdir()
+    history=dict(chat=DEFAULT_CONTACT,username='exact-contact',messages=[
+        '[2026-10-19 21:30] 存好别丢，以后听课固定这链接，明天早盘到点点开。#小程序://见势擒龙团/ExampleToken'],failures=[])
+    item,=parse_xiaocao_live_messages(history)
+    item.update(status='capture_armed',capture_job_id='original',recorded_inventory_eligible=True)
+    manifest=tmp_path/'manifest.json';manifest.write_text(json.dumps(dict(items={item['identity']:item})))
+    cfg=tmp_path.parent/'native_share_bridge.json';cfg.write_text(json.dumps(dict(replay_catalog=dict(
+        acquisition_mode='recorded_course',app_id='appExample',course_id='course_Example',mini_program_token='ExampleToken'))))
+    before=manifest.read_bytes()
+    result=inspect_video_gaps(tmp_path,['2026-10-19','2026-10-20'],NOW,history)
+    assert result['gaps']==[] and result['items'][0]['navigation_inventory'] is True
+    assert result['items'][0]['handoff_recorded'] is False and result['items'][0]['user_excluded'] is False
+    folder=tmp_path/'items'/item['identity'];folder.mkdir(parents=True)
+    (folder/'capture_jobs.jsonl').write_text(json.dumps(dict(job_id='original',status='downloading',download_task_id='same-task'))+'\n')
+    assert inspect_video_gaps(tmp_path,['2026-10-19','2026-10-20'],NOW,history)['gaps'][0]['identity']==item['identity']
+    assert manifest.read_bytes()==before
+    cfg.write_text(json.dumps(dict(replay_catalog=dict(acquisition_mode='native_human'))))
+    (folder/'capture_jobs.jsonl').unlink()
+    assert inspect_video_gaps(tmp_path,['2026-10-19','2026-10-20'],NOW,history)['gaps'][0]['identity']==item['identity']

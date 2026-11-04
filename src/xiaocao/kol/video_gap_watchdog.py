@@ -88,6 +88,7 @@ def _item_state(root: Path, item: dict[str, Any], acknowledgments: list[dict[str
             "media_received_at": media.get("updated_at") if acquired else None,
             "remote_ack_recorded": bool(handoff and ack),
             "human_playback_deferred": item.get("human_playback_deferred") is True,
+            "capture_bound": any(capture.get(k) for k in ('expected_source','candidate','source_job_id','download_task_id')),
             "user_excluded": (item.get("manual_backfill_excluded") is True
                               or item.get("human_playback_deferred") is True)}
 
@@ -100,6 +101,11 @@ def inspect_video_gaps(root: Path, trade_days: list[str], now: datetime,
     if history.get("chat") != DEFAULT_CONTACT:
         raise ValueError("history_contact_mismatch")
     observed = parse_xiaocao_live_messages(history)
+    from .recorded_flow import recorded_mode, annotate_inventory
+    config_path=root.parent/'native_share_bridge.json'
+    recorded=recorded_mode(config_path)
+    observed=annotate_inventory(observed,config_path)
+    inventory={r['identity'] for r in observed if r.get('recorded_inventory_reason')}
     manifest = json.loads((root / "manifest.json").read_text())
     items = manifest["items"]
     start = datetime.combine(date.fromisoformat(coverage_start or trade_days[0]), time(), CHINA)
@@ -119,13 +125,18 @@ def inspect_video_gaps(root: Path, trade_days: list[str], now: datetime,
                 "stage": "not_discovered", "media_receipted": False,
                 "media_received_at": None, "remote_ack_recorded": False,
                 "handoff_recorded": False, "user_excluded": False}
+    for state in states.values():
+        item=items.get(state['identity']) or {}
+        state['navigation_inventory']=bool(recorded and state['identity'] in inventory
+            and item.get('recorded_inventory_eligible',not bool(item)) is True
+            and not state.get('capture_bound') and not state['media_receipted'])
     eligible = [s for s in states.values() if not s["user_excluded"]]
     source_counts = {day: sum(s["media_receipted"] and s["published_at"][:10] == day for s in eligible)
               for day in trade_days}
     counts = {day: sum(bool(s["media_received_at"]) and datetime.fromisoformat(s["media_received_at"]).astimezone(CHINA).date().isoformat() == day for s in eligible)
               for day in trade_days}
     received_today = sum(bool(s["media_received_at"]) and datetime.fromisoformat(s["media_received_at"]).astimezone(CHINA).date() == now.astimezone(CHINA).date() for s in eligible)
-    gaps = [s for s in eligible if not s["handoff_recorded"]
+    gaps = [s for s in eligible if not s["handoff_recorded"] and not s['navigation_inventory']
             and datetime.fromisoformat(s["published_at"]) <= now - timedelta(hours=grace_hours)]
     gaps.sort(key=lambda s: (s["published_at"], s["identity"]))
     excluded_days = [day for day in trade_days if any(s["published_at"][:10] == day for s in states.values())

@@ -1601,6 +1601,8 @@ def test_repair_validation_accepts_xiaocao_wechat_source_profile(
         "tests/test_kol_xiaocao_live.py",
         "tests/test_kol_xiaocao_wechat.py",
         "tests/test_kol_writer_progress.py",
+        "tests/test_kol_recorded_recovery.py",
+        "tests/test_kol_replay_catalog.py",
         "-q",
         "-k",
         (
@@ -1628,7 +1630,7 @@ def test_repair_validation_accepts_xiaocao_wechat_source_profile(
             "compressed_capture_wait_has_durable_poll_deadline or "
             "advance_rechecks_historical_cleanup_without_stopping_shared_capture or "
             "pending_cloud_handoff_resumes_exact_job_after_stale_playback_state or "
-            "repair_closure_accepts_xiaocao_wechat_source_profile"
+            "repair_closure_accepts_xiaocao_wechat_source_profile or recorded or catalog"
         ),
     )
     service = RepairValidationService(

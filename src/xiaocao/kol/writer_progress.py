@@ -943,6 +943,8 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
         "tests/test_kol_xiaocao_live.py",
         "tests/test_kol_xiaocao_wechat.py",
         "tests/test_kol_writer_progress.py",
+        "tests/test_kol_recorded_recovery.py",
+        "tests/test_kol_replay_catalog.py",
         "-q",
         "-k",
         (
@@ -970,7 +972,7 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
             "compressed_capture_wait_has_durable_poll_deadline or "
             "advance_rechecks_historical_cleanup_without_stopping_shared_capture or "
             "pending_cloud_handoff_resumes_exact_job_after_stale_playback_state or "
-            "repair_closure_accepts_xiaocao_wechat_source_profile"
+            "repair_closure_accepts_xiaocao_wechat_source_profile or recorded or catalog"
         ),
     ),
 }
@@ -1084,6 +1086,9 @@ _TARGETED_REPAIR_IMPLEMENTATION_PATHS: dict[str, frozenset[str]] = {
             "src/xiaocao/kol/xiaocao_live.py",
             "src/xiaocao/kol/xiaocao_wechat.py",
             "src/xiaocao/kol/writer_progress.py",
+            "src/xiaocao/kol/recorded_flow.py",
+            "src/xiaocao/kol/recorded_recovery.py",
+            "src/xiaocao/kol/replay_catalog.py",
         }
     ),
 }
@@ -1199,6 +1204,8 @@ _TARGETED_REPAIR_TEST_PATHS: dict[str, frozenset[str]] = {
             "tests/test_kol_xiaocao_live.py",
             "tests/test_kol_xiaocao_wechat.py",
             "tests/test_kol_writer_progress.py",
+            "tests/test_kol_recorded_recovery.py",
+            "tests/test_kol_replay_catalog.py",
         }
     ),
 }
