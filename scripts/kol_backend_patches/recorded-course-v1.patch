@@ -1,0 +1,417 @@
+diff --git a/internal/api/elive_download_ticket.go b/internal/api/elive_download_ticket.go
+index ac3b2b3a..01d398d2 100644
+--- a/internal/api/elive_download_ticket.go
++++ b/internal/api/elive_download_ticket.go
+@@ -10,0 +11 @@ import (
++	"regexp"
+@@ -25 +26,2 @@ func resolveXiaocaoCaptureDownload(body *DownloadTaskPayload, rootDir string) er
+-	if id == "" || liveID == "" {
++	recorded := recordedResourceID.MatchString(body.Extra["recorded_resource_id"]) && recordedFileID.MatchString(body.Extra["recorded_media_file_id"])
++	if id == "" || liveID == "" && !recorded {
+@@ -44,0 +47,25 @@ func resolveXiaocaoCaptureDownload(body *DownloadTaskPayload, rootDir string) er
++	if aliasID := body.Extra["recorded_ticket_candidate_id"]; aliasID != "" {
++		var alias *eliveLiveCandidate
++		for i := range items {
++			if items[i].ID == aliasID {
++				if alias != nil {
++					return fmt.Errorf("xiaocao ticket alias ambiguous")
++				}
++				alias = &items[i]
++			}
++		}
++		if alias == nil {
++			return fmt.Errorf("xiaocao ticket alias missing")
++		}
++		ticket := livecapture.ResolveCandidateURL(aliasID)
++		u, e := url.Parse(ticket)
++		original, oe := url.Parse(selected.URL)
++		at, ae := time.ParseInLocation("2006-01-02 15:04:05", alias.Captured, time.Local)
++		if ticket == "" || e != nil || oe != nil || ae != nil || at.Before(time.Now().Add(-20*time.Minute)) || at.After(time.Now().Add(30*time.Second)) ||
++			alias.MediaType != "m3u8" || alias.SourceURL != selected.SourceURL || alias.SourcePath != selected.SourcePath ||
++			u.Scheme != original.Scheme || u.Host != original.Host || u.Path != original.Path ||
++			!hasObservedEndedRecordedPlaylist(rootDir, *alias, u, body.Extra) {
++			return fmt.Errorf("xiaocao ticket alias differs from exact recording")
++		}
++		raw = ticket
++	}
+@@ -59,0 +87 @@ func resolveXiaocaoCaptureDownload(body *DownloadTaskPayload, rootDir string) er
++		(liveID == "" && !hasObservedEndedRecordedPlaylist(rootDir, *selected, observed, body.Extra)) ||
+@@ -61 +89,2 @@ func resolveXiaocaoCaptureDownload(body *DownloadTaskPayload, rootDir string) er
+-			!hasObservedEndedNativePlaylist(rootDir, *selected, observed)) {
++			!hasObservedEndedNativePlaylist(rootDir, *selected, observed) &&
++			!hasObservedEndedRecordedPlaylist(rootDir, *selected, observed, body.Extra)) {
+@@ -77,0 +107,30 @@ func hasObservedEndedNativePlaylist(rootDir string, candidate eliveLiveCandidate
++	return hasObservedFinitePlaylist(rootDir, candidate, media, true)
++}
++
++// Recorded-course recovery keeps the exact browser-issued ticket in memory.
++// Its independent resource/file binding is verified by the capture coordinator;
++// the singleton independently requires the actual finite playlist observation.
++var recordedResourceID = regexp.MustCompile(`^v_[0-9a-f]{24}$`)
++var recordedFileID = regexp.MustCompile(`^[0-9]{8,}$`)
++var recordedPlaylistName = regexp.MustCompile(`^v\.f[0-9]+\.m3u8$`)
++var recordedFileComponent = regexp.MustCompile(`^[0-9a-f]{8}([0-9]{8,})$`)
++
++func hasObservedEndedRecordedPlaylist(rootDir string, candidate eliveLiveCandidate, media *url.URL, extra map[string]string) bool {
++	if !recordedResourceID.MatchString(extra["recorded_resource_id"]) ||
++		!recordedFileID.MatchString(extra["recorded_media_file_id"]) ||
++		candidate.SourceURL != "https://appsnm3rlcp3566.h5.xiaoeknow.com/xe.material-center.play/getPlayUrl" ||
++		candidate.SourcePath != "/xe.material-center.play/getPlayUrl" ||
++		media.Hostname() != "encrypt-k-vod.xet.tech" ||
++		!recordedPlaylistName.MatchString(filepath.Base(media.Path)) {
++		return false
++	}
++	matched := false
++	for _, part := range strings.Split(media.Path, "/") {
++		if match := recordedFileComponent.FindStringSubmatch(part); len(match) == 2 && match[1] == extra["recorded_media_file_id"] {
++			matched = true
++		}
++	}
++	return matched && hasObservedFinitePlaylist(rootDir, candidate, media, false)
++}
++
++func hasObservedFinitePlaylist(rootDir string, candidate eliveLiveCandidate, media *url.URL, requireVOD bool) bool {
+@@ -109 +168 @@ func hasObservedEndedNativePlaylist(rootDir string, candidate eliveLiveCandidate
+-		if e != nil || at.Before(captured) || at.After(captured.Add(20*time.Minute)) {
++		if e != nil || at.Before(captured) {
+@@ -111,0 +171,12 @@ func hasObservedEndedNativePlaylist(rootDir string, candidate eliveLiveCandidate
++		if requireVOD {
++			if at.After(captured.Add(20 * time.Minute)) {
++				continue
++			}
++		} else {
++			// Recorded candidate IDs keep their first-seen clock. Require a
++			// recent real response for the exact resource after a normal replay.
++			now := time.Now()
++			if at.Before(now.Add(-20*time.Minute)) || at.After(now.Add(30*time.Second)) {
++				continue
++			}
++		}
+@@ -132 +203 @@ func hasObservedEndedNativePlaylist(rootDir string, candidate eliveLiveCandidate
+-		vod, valid, count, segments, duration := false, true, 0, 0, 0.0
++		vod, eventStream, valid, count, segments, duration := false, false, true, 0, 0, 0.0
+@@ -136,0 +208,3 @@ func hasObservedEndedNativePlaylist(rootDir string, candidate eliveLiveCandidate
++			if line == "#EXT-X-PLAYLIST-TYPE:EVENT" {
++				eventStream = true
++			}
+@@ -148 +222 @@ func hasObservedEndedNativePlaylist(rootDir string, candidate eliveLiveCandidate
+-		if vod && valid && count > 0 && count == segments && duration >= 60 {
++		if (vod || !requireVOD) && !eventStream && valid && count > 0 && count == segments && duration >= 60 {
+diff --git a/internal/api/elive_download_ticket_test.go b/internal/api/elive_download_ticket_test.go
+index a86d90aa..339bd4bd 100644
+--- a/internal/api/elive_download_ticket_test.go
++++ b/internal/api/elive_download_ticket_test.go
+@@ -14,0 +15,99 @@ import (
++func TestRecordedCourseRequiresExactFileAndObservedFinitePlaylist(t *testing.T) {
++	for _, invalid := range []string{"", "no_type", "no_live_context", "retained_candidate", "ticket_alias", "wrong_alias", "stale_alias", "missing_alias", "stale_response", "future_response", "event_stream", "short_file", "wrong_file", "wrong_source", "no_end", "missing_resource", "wrong_path"} {
++		t.Run(invalid, func(t *testing.T) {
++			root := t.TempDir()
++			dir := filepath.Join(root, "elive_live_debug", "m3u8")
++			os.MkdirAll(dir, 0700)
++			resource := "https://encrypt-k-vod.xet.tech/account/c700e05f5001834826931137742/drm/v.f421220.m3u8"
++			c := eliveLiveCandidate{ID: "recorded-" + invalid, LiveID: "l_observed_room", URL: resource,
++				Captured: time.Now().Format("2006-01-02 15:04:05"), MediaType: "m3u8",
++				SourceURL:  "https://appsnm3rlcp3566.h5.xiaoeknow.com/xe.material-center.play/getPlayUrl",
++				SourcePath: "/xe.material-center.play/getPlayUrl"}
++			if invalid == "no_live_context" {
++				c.LiveID = ""
++			}
++			if invalid == "retained_candidate" || invalid == "stale_response" {
++				c.Captured = time.Now().Add(-34 * time.Minute).Format("2006-01-02 15:04:05")
++			}
++			if invalid == "wrong_source" {
++				c.SourceURL = "https://other.example/xe.material-center.play/getPlayUrl"
++			}
++			data, _ := json.Marshal(c)
++			os.WriteFile(filepath.Join(root, "elive_live_debug", "candidates.jsonl"), append(data, '\n'), 0600)
++			playlist := "#EXTM3U\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXTINF:120,\nsegment.ts\n#EXT-X-ENDLIST\n"
++			if invalid == "no_type" {
++				playlist = strings.ReplaceAll(playlist, "#EXT-X-PLAYLIST-TYPE:VOD\n", "")
++			}
++			if invalid == "event_stream" {
++				playlist = strings.ReplaceAll(playlist, "VOD", "EVENT")
++			}
++			if invalid == "no_end" {
++				playlist = strings.ReplaceAll(playlist, "#EXT-X-ENDLIST\n", "")
++			}
++			path := filepath.Join(dir, "recorded.m3u8")
++			os.WriteFile(path, []byte(playlist), 0600)
++			at := time.Now()
++			if invalid == "stale_response" {
++				at = at.Add(-25 * time.Minute)
++			}
++			if invalid == "future_response" {
++				at = at.Add(2 * time.Minute)
++			}
++			event, _ := json.Marshal(map[string]any{"kind": "response.body", "status": 200, "url": resource,
++				"at": at.Format(time.RFC3339Nano), "file": path})
++			os.WriteFile(filepath.Join(root, "elive_live_debug", "events.jsonl"), append(event, '\n'), 0600)
++			extra := map[string]string{"type": "live_capture", "source": "xiaocao", "capture_id": c.ID,
++				"live_id": c.LiveID, "recorded_resource_id": "v_6aeac14ce4b023c0863c984c", "recorded_media_file_id": "5001834826931137742"}
++			aliasCase := strings.HasSuffix(invalid, "alias")
++			if aliasCase {
++				alias := c
++				alias.ID = "fresh-ticket"
++				alias.LiveID = ""
++				if invalid == "wrong_alias" {
++					alias.URL = strings.Replace(resource, "5001834826931137742", "5001834826931139999", 1)
++				}
++				if invalid == "stale_alias" {
++					alias.Captured = time.Now().Add(-25 * time.Minute).Format("2006-01-02 15:04:05")
++				}
++				if invalid != "missing_alias" {
++					f, _ := os.OpenFile(filepath.Join(root, "elive_live_debug", "candidates.jsonl"), os.O_APPEND|os.O_WRONLY, 0600)
++					b, _ := json.Marshal(alias)
++					f.Write(append(b, '\n'))
++					f.Close()
++					livecapture.RememberCandidateURL(alias.ID, alias.URL+"?sign=fresh")
++				}
++				extra["recorded_ticket_candidate_id"] = alias.ID
++			}
++			if invalid == "wrong_file" {
++				extra["recorded_media_file_id"] = "1234567890"
++			}
++			if invalid == "short_file" {
++				extra["recorded_media_file_id"] = "1834826931137742"
++			}
++			if invalid == "missing_resource" {
++				delete(extra, "recorded_resource_id")
++			}
++			raw := resource + "?sign=private&t=ffffffff"
++			if !aliasCase {
++				livecapture.RememberCandidateURL(c.ID, raw)
++			} else {
++				raw = resource + "?sign=fresh"
++			}
++			body := DownloadTaskPayload{URL: resource, Extra: extra}
++			if invalid == "wrong_path" {
++				body.URL = "https://encrypt-k-vod.xet.tech/another/drm/v.f421220.m3u8"
++			}
++			err := resolveXiaocaoCaptureDownload(&body, root)
++			if invalid != "" && invalid != "no_type" && invalid != "retained_candidate" && invalid != "ticket_alias" && invalid != "no_live_context" {
++				if err == nil {
++					t.Fatal("unbound recording accepted")
++				}
++				return
++			}
++			if err != nil || body.URL != raw {
++				t.Fatalf("exact recording rejected: %v", err)
++			}
++		})
++	}
++}
++
+diff --git a/pkg/gopeed/internal/protocol/stream/replay_cache.go b/pkg/gopeed/internal/protocol/stream/replay_cache.go
+index 6f938e78..2b35c082 100644
+--- a/pkg/gopeed/internal/protocol/stream/replay_cache.go
++++ b/pkg/gopeed/internal/protocol/stream/replay_cache.go
+@@ -39,0 +40,2 @@ type replayResource struct {
++	aesKey   bool
++	keyBytes []byte
+@@ -180 +182 @@ func newReplayCache(rawURL string, headers map[string]string, root, binding stri
+-	rewrite := func(reference string, segment bool) (string, error) {
++	rewrite := func(reference string, segment, aesKey bool) (string, error) {
+@@ -186 +188 @@ func newReplayCache(rawURL string, headers map[string]string, root, binding stri
+-		if (absolute.Scheme != "http" && absolute.Scheme != "https") || absolute.User != nil || !allowedReplayResource(base, absolute, headers) {
++		if (absolute.Scheme != "http" && absolute.Scheme != "https") || absolute.User != nil || (!allowedReplayResource(base, absolute, headers) && !(aesKey && allowedRecordedAESKey(base, absolute, headers))) {
+@@ -195,0 +198 @@ func newReplayCache(rawURL string, headers map[string]string, root, binding stri
++			prior.aesKey = prior.aesKey || aesKey
+@@ -197 +200 @@ func newReplayCache(rawURL string, headers map[string]string, root, binding stri
+-			c.resources[key] = &replayResource{upstream: absolute.String(), segment: segment}
++			c.resources[key] = &replayResource{upstream: absolute.String(), segment: segment, aesKey: aesKey}
+@@ -205 +208 @@ func newReplayCache(rawURL string, headers map[string]string, root, binding stri
+-			line, err = rewrite(trimmed, true)
++			line, err = rewrite(trimmed, true, false)
+@@ -210 +213 @@ func newReplayCache(rawURL string, headers map[string]string, root, binding stri
+-				local, e := rewrite(match[1], false)
++				local, e := rewrite(match[1], false, strings.HasPrefix(trimmed, "#EXT-X-KEY:METHOD=AES-128,"))
+@@ -386,0 +390,54 @@ func (c *replayCache) Close() {
++	for _, r := range c.resources {
++		r.mu.Lock()
++		for i := range r.keyBytes {
++			r.keyBytes[i] = 0
++		}
++		r.keyBytes = nil
++		r.mu.Unlock()
++	}
++}
++
++func (c *replayCache) aesKeyBytes(resource *replayResource) ([]byte, error) {
++	resource.mu.Lock()
++	defer resource.mu.Unlock()
++	var terminal struct {
++		Status int `json:"status"`
++	}
++	if body, err := os.ReadFile(filepath.Join(c.root, "terminal.json")); err == nil {
++		if json.Unmarshal(body, &terminal) != nil || (terminal.Status != 401 && terminal.Status != 403) {
++			return nil, fmt.Errorf("invalid key terminal checkpoint")
++		}
++		return nil, replayHTTPError{terminal.Status}
++	} else if !os.IsNotExist(err) {
++		return nil, fmt.Errorf("key terminal checkpoint unreadable")
++	}
++	if len(resource.keyBytes) == 16 {
++		return append([]byte(nil), resource.keyBytes...), nil
++	}
++	req, err := http.NewRequestWithContext(c.context, "GET", resource.upstream, nil)
++	if err != nil {
++		return nil, fmt.Errorf("invalid replay key request")
++	}
++	for k, v := range c.headers {
++		req.Header.Set(k, v)
++	}
++	response, err := c.client.Do(req)
++	if err != nil {
++		return nil, fmt.Errorf("replay key transport failed")
++	}
++	defer response.Body.Close()
++	if response.StatusCode == 401 || response.StatusCode == 403 {
++		if err := writeReplayJSON(filepath.Join(c.root, "terminal.json"), map[string]int{"status": response.StatusCode}); err != nil {
++			return nil, fmt.Errorf("replay key rejection persistence failed")
++		}
++		return nil, replayHTTPError{response.StatusCode}
++	}
++	if response.StatusCode != 200 {
++		return nil, fmt.Errorf("replay key status rejected")
++	}
++	body, err := io.ReadAll(io.LimitReader(response.Body, 17))
++	if err != nil || len(body) != 16 {
++		return nil, fmt.Errorf("replay AES key length invalid")
++	}
++	resource.keyBytes = body
++	return append([]byte(nil), body...), nil
+@@ -545,0 +603,15 @@ func (c *replayCache) serve(w http.ResponseWriter, r *http.Request) {
++	if resource.aesKey {
++		body, err := c.aesKeyBytes(resource)
++		if err != nil {
++			var status replayHTTPError
++			if errors.As(err, &status) {
++				http.Error(w, "replay authentication rejected", status.status)
++				return
++			}
++			http.Error(w, "replay key unavailable", http.StatusBadGateway)
++			return
++		}
++		w.Header().Set("Content-Type", "application/octet-stream")
++		w.Write(body)
++		return
++	}
+@@ -631,0 +704,9 @@ func allowedReplayResource(origin, resource *url.URL, headers map[string]string)
++
++// Only the ordinary AES-128 key URI actually named by this finite recording.
++// No custom headers cross origins, and no license/CDM endpoint is supported.
++func allowedRecordedAESKey(origin, resource *url.URL, headers map[string]string) bool {
++	return len(headers) == 0 && origin.Scheme == "https" && origin.Host == "encrypt-k-vod.xet.tech" &&
++		strings.Contains(origin.Path, "/drm/") && regexp.MustCompile(`^v\.f[0-9]+\.m3u8$`).MatchString(filepath.Base(origin.Path)) &&
++		resource.Scheme == "https" && resource.Host == "app.xiaoe-tech.com" && resource.User == nil &&
++		resource.Path == "/get_video_key.php" && resource.RawQuery != "" && resource.Fragment == ""
++}
+diff --git a/pkg/gopeed/internal/protocol/stream/replay_cache_test.go b/pkg/gopeed/internal/protocol/stream/replay_cache_test.go
+index b18fcd8a..fe2bbf28 100644
+--- a/pkg/gopeed/internal/protocol/stream/replay_cache_test.go
++++ b/pkg/gopeed/internal/protocol/stream/replay_cache_test.go
+@@ -343,0 +344,104 @@ func TestObservedXiaoetongCrossOriginSegments(t *testing.T) {
++
++func TestRecordedAESKeyAllowsOnlyExactProviderWithoutHeaders(t *testing.T) {
++	origin, _ := url.Parse("https://encrypt-k-vod.xet.tech/account/file/drm/v.f421220.m3u8?sign=private")
++	for _, tc := range []struct {
++		key     string
++		headers map[string]string
++		valid   bool
++	}{
++		{"https://app.xiaoe-tech.com/get_video_key.php?ticket=private", nil, true},
++		{"https://app.xiaoe-tech.com/get_video_key.php?ticket=private", map[string]string{"Cookie": "private"}, false},
++		{"https://app.xiaoe-tech.com/license?ticket=private", nil, false},
++		{"https://other.example/get_video_key.php?ticket=private", nil, false},
++		{"https://app.xiaoe-tech.com:444/get_video_key.php?ticket=private", nil, false},
++		{"https://app.xiaoe-tech.com/get_video_key.php", nil, false},
++	} {
++		u, _ := url.Parse(tc.key)
++		if allowedRecordedAESKey(origin, u, tc.headers) != tc.valid {
++			t.Fatal("recorded key origin policy mismatch")
++		}
++	}
++}
++
++func TestReplayAESKeyFetchNeverPersistsKeyMaterial(t *testing.T) {
++	key := []byte("0123456789abcdef")
++	var calls atomic.Int32
++	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		switch r.URL.Path {
++		case "/recorded.m3u8":
++			fmt.Fprint(w, "#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"/key.php?ticket=private\"\n#EXTINF:5,\nsource.ts\n#EXT-X-ENDLIST\n")
++		case "/key.php":
++			calls.Add(1)
++			w.Write(key)
++		}
++	}))
++	defer origin.Close()
++	root := t.TempDir()
++	c, err := newReplayCache(origin.URL+"/recorded.m3u8", nil, root, "same-task")
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer c.Close()
++	match := replayURI.FindStringSubmatch(string(c.playlist))
++	if len(match) != 2 {
++		t.Fatal("key not rewritten")
++	}
++	for i := 0; i < 2; i++ {
++		resp, e := http.Get("http://" + c.listener.Addr().String() + match[1])
++		if e != nil {
++			t.Fatal(e)
++		}
++		body, _ := io.ReadAll(resp.Body)
++		resp.Body.Close()
++		if string(body) != string(key) {
++			t.Fatal("key response mismatch")
++		}
++	}
++	if calls.Load() != 1 {
++		t.Fatal("key must be reused only in memory")
++	}
++	filepath.Walk(root, func(path string, info os.FileInfo, e error) error {
++		if e != nil {
++			return e
++		}
++		if !info.IsDir() {
++			body, _ := os.ReadFile(path)
++			if strings.Contains(string(body), string(key)) || strings.Contains(string(body), "ticket=private") {
++				t.Fatal("key material or ticket persisted")
++			}
++		}
++		return nil
++	})
++}
++
++func TestReplayAESKeyRejectionIsTerminalWithoutRepeatedProviderCalls(t *testing.T) {
++	var calls atomic.Int32
++	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		if r.URL.Path == "/key" {
++			calls.Add(1)
++			w.WriteHeader(403)
++			return
++		}
++		fmt.Fprint(w, "#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"/key?ticket=private\"\n#EXTINF:5,\nsegment.ts\n#EXT-X-ENDLIST\n")
++	}))
++	defer origin.Close()
++	c, err := newReplayCache(origin.URL+"/source.m3u8", nil, t.TempDir(), "same-task")
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer c.Close()
++	match := replayURI.FindStringSubmatch(string(c.playlist))
++	for i := 0; i < 2; i++ {
++		resp, e := http.Get("http://" + c.listener.Addr().String() + match[1])
++		if e != nil {
++			t.Fatal(e)
++		}
++		resp.Body.Close()
++		if resp.StatusCode != 403 {
++			t.Fatal("key auth failure must remain terminal")
++		}
++	}
++	if calls.Load() != 1 {
++		t.Fatal("rejected credential was sent again")
++	}
++}

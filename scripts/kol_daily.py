@@ -708,6 +708,7 @@ def _read_agent_line(request: dict[str, Any]) -> str:
             "initialize_liuguan_native_replay": 180,
             "activate_xiaoetong_mini_program": 20 * 60,
             "resolve_xiaoetong_page": 20 * 60,
+            "observe_authorized_recorded_course": 20 * 60,
         }.get(request.get("action"))
         emitted = dict(request)
         deadline = None

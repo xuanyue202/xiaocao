@@ -96,7 +96,15 @@ evidence ambiguity, requested edits, or explicit historical aggregation.
 
 ## Non-negotiable semantic boundaries
 
-- Automatic local Xiaocao capture uses native WeChat mini-program only. H5 is
+- Local Xiaocao acquisition with private `replay_catalog.acquisition_mode=recorded_course`
+  uses [the recorded-course workflow](references/recorded-course-recovery.md):
+  exact cached original, dated catalogue resource, normal entitled Browser
+  recording, finite media and same-capture cloud/mailbox acceptance. The
+  [old fixed-room route is archived](references/archive/native-human-20261104.md)
+  and requires a direct human rollback instruction. It is not an automatic
+  fallback for unpublished or unavailable recordings. No H5 live player,
+  credential export, access bypass or agent WeChat UI is authorized.
+- For the explicitly restored legacy mode, automatic local Xiaocao capture uses native WeChat mini-program only. H5 is
   a credential-free identity anchor, never a player/login/fallback. A configured
   human-assisted route follows its own same-capture contract; remote Baidu player
   operations follow video-player-safety.md. For automatic native input follow the SOP:

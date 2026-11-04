@@ -426,6 +426,10 @@ def parse_xiaocao_live_messages(payload: dict[str, Any]) -> list[dict[str, Any]]
         published = datetime.strptime(
             timestamp.group("time"), "%Y-%m-%d %H:%M"
         ).replace(tzinfo=BEIJING)
+        header=re.sub(r'\s+','',raw_message.split('文字复盘总结',1)[0])
+        future_notice=bool(re.search(r'存好别丢.*?以后听课固定这(?:一个)?链接.*?明天.*?到点点开',header))
+        navigation=re.search(r'(?m)^\s*历史直播回放点击链接学习[:：]\s*(https://\S+)\s*$',raw_message)
+        navigation_url=_normalized_live_url(navigation.group(1)) if navigation else None
         # A clock-marked time on this original share is a bounded same-day
         # session anchor. Ambiguous or earlier times do not produce an anchor.
         clocks = list(re.finditer(r"(?m)^[ \t]*⏰\s*(\d{1,2})[:：](\d{2})\s*【密码", raw_message))
@@ -465,6 +469,7 @@ def parse_xiaocao_live_messages(payload: dict[str, Any]) -> list[dict[str, Any]]
                 "mini_program_token": mini_program_token,
                 "message_sha256": _sha256_text(raw_message),
                 **({"announced_start_at": announced} if announced else {}),
+                **({'recorded_inventory_reason':'future_fixed_entry_notice'} if future_notice else {}),
             }
         # Discovery is already bound to the exact registered contact.  Message
         # copy is not a stable contract, so iterate every URL and rely on the
@@ -484,6 +489,7 @@ def parse_xiaocao_live_messages(payload: dict[str, Any]) -> list[dict[str, Any]]
                 "published_at": published.isoformat(timespec="seconds"),
                 "source_url": source_url,
                 "message_sha256": _sha256_text(raw_message),
+                **({'recorded_navigation_marker':True} if source_url==navigation_url else {}),
             }
     return sorted(
         items.values(),
@@ -1115,8 +1121,9 @@ class XiaocaoLiveCaptureDriver:
 class XiaocaoWechatLiveSubscription:
     """Exactly-once WeChat discovery and capture state machine.
 
-    The browser/H5 route is identity-resolution-only. Playback and media
-    evidence are always owned by the native WeChat mini-program and sniffer.
+    Configured recorded-course acquisition uses the normally entitled Browser
+    and exact downloader HTTP evidence. The archived mini-program route keeps
+    all WeChat UI human-owned; both routes preserve original capture identities.
     """
 
     def __init__(
@@ -1233,6 +1240,13 @@ class XiaocaoWechatLiveSubscription:
         if str(payload.get("chat") or "") != self.contact:
             raise EnrichmentError("WeChat history resolved another contact")
         observed = parse_xiaocao_live_messages(payload)
+        from .recorded_flow import annotate_inventory
+        observed=annotate_inventory(observed,self.output_dir.parent/'native_share_bridge.json')
+        for original in observed:
+            existing=manifest['items'].get(original['identity'])
+            if existing and existing.get('message_sha256')==original['message_sha256']:
+                for key in ('recorded_inventory_reason','alternate_entry_of'):
+                    if key in original:existing[key]=original[key]
         new_items = [
             item for item in observed if item["identity"] not in manifest["items"]
         ]
@@ -1251,6 +1265,12 @@ class XiaocaoWechatLiveSubscription:
                 "status": "discovered",
                 "updated_at": self._now(),
             }
+        for item in manifest['items'].values():
+            if item.get('recorded_inventory_reason'):
+                unbound=not any(item.get(k) for k in ('source_identity','candidate_id','media_request_observed','handoff_id'))
+                check=getattr(self.capture_driver,'can_expire_wait',None)
+                job=item.get('capture_job_id')
+                item['recorded_inventory_eligible']=bool(unbound and (not job or (check and check(item['identity'],job))))
         self._save(manifest)
 
     def discover(self) -> dict[str, Any]:
@@ -1464,12 +1484,13 @@ class XiaocaoWechatLiveSubscription:
         )
 
     @staticmethod
-    def _next_pending(manifest: dict[str, Any]) -> dict[str, Any] | None:
+    def _next_pending(manifest: dict[str, Any], *, recorded: bool = False) -> dict[str, Any] | None:
         pending = [
             dict(item)
             for item in manifest["items"].values()
             if item.get("status") not in _TERMINAL
             and item.get("human_playback_deferred") is not True
+            and not (recorded and item.get('recorded_inventory_reason') and item.get('recorded_inventory_eligible') is True)
         ]
         if not pending:
             return None
@@ -1590,7 +1611,10 @@ class XiaocaoWechatLiveSubscription:
         waiting_item["playback_route"] = str(
             item.get("playback_route") or self.playback_route
         )
-        if item.get("human_playback_started_at") and item.get("activated") is not True:
+        if item.get('acquisition_mode')=='recorded_course' and item.get('activated') is not True:
+            waiting_item.update(stage='recorded_catalog',code=item['recorded_catalog_state'],
+                next_poll_not_before=item['recorded_next_poll_at'],operator='browser')
+        elif item.get("human_playback_started_at") and item.get("activated") is not True:
             waiting_item.update(
                 status="awaiting_human_playback", stage="human_playback",
                 code="human_playback_pending", operator="human",
@@ -1864,13 +1888,14 @@ class XiaocaoWechatLiveSubscription:
         *,
         reason: str,
     ) -> dict[str, Any]:
-        """Use native WeChat playback while keeping an H5 identity anchor.
+        """Route recorded-course acquisition or the archived mini-program path.
 
-        The mini-program is the user-visible playback surface.  The local
-        ``wx_channels_download`` sniffer observes its requests and the source
-        job later proves the same ``live_id`` before creating a download task.
-        No signed media URL is accepted from this structured input.
+        Signed media tickets remain inside the downloader singleton. The
+        configured route independently proves its original source and media.
         """
+        from .recorded_flow import recorded_mode, check_recorded_playback
+        if recorded_mode(self.output_dir.parent / 'native_share_bridge.json'):
+            return check_recorded_playback(self,manifest,item,reason=reason)
         from .human_playback import human_playback_enabled
         if human_playback_enabled(self.output_dir.parent / "native_share_bridge.json"):
             return self._check_human_playback(manifest, item, reason=reason)
@@ -2563,17 +2588,28 @@ class XiaocaoWechatLiveSubscription:
         backfill_since: str | None = None,
     ) -> dict[str, Any]:
         manifest = self._load()
+        from .recorded_flow import recorded_mode
+        recorded=recorded_mode(self.output_dir.parent/'native_share_bridge.json')
         deferred = manifest["items"].get(only_identity) if only_identity else None
         if isinstance(deferred, dict) and deferred.get("human_playback_deferred") is True:
             return {"status": "deferred", "identity": deferred["identity"],
                     "capture_job_id": deferred["capture_job_id"], "already_completed": False,
                     "reason": "direct_user_defer", "user_resume_required": True}
+        if only_identity and recorded:
+            original_item=manifest['items'].get(only_identity)
+            if original_item and not any(original_item.get(k) for k in ('source_identity','candidate_id','media_request_observed','handoff_id')):
+                from .recorded_flow import annotate_inventory
+                originals=annotate_inventory(parse_xiaocao_live_messages(self.history_reader()),self.output_dir.parent/'native_share_bridge.json')
+                exact=[r for r in originals if r['identity']==only_identity and r['message_sha256']==original_item['message_sha256']]
+                check=getattr(self.capture_driver,'can_expire_wait',None);job=original_item.get('capture_job_id')
+                if len(exact)==1 and exact[0].get('recorded_inventory_reason') and (not job or (check and check(only_identity,job))):
+                    return {'status':'no_update','identity':only_identity,'inventory_only':True,'already_completed':False}
         if backfill_since is not None:
             self._prepare_manual_backfill(manifest, only_identity, backfill_since)
         if only_identity is None:
             self._poll(manifest)
             self.expire_stale_waits(manifest)
-            item = self._next_pending(manifest)
+            item = self._next_pending(manifest,recorded=recorded)
         else:
             self.expire_stale_waits(
                 manifest, skip_identity=only_identity if backfill_since is not None else None,

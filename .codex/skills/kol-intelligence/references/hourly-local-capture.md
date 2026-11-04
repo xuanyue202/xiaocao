@@ -69,6 +69,13 @@ entry. Preserve the original successful dispatch and all IDs, use a separate
 nonce/session-bound receipt, and never restart a capture or reopen on each poll.
 A historical launch is not proof of a current visible window.
 
+Since the human's 2026-11-04 instruction, primary mode is
+`replay_catalog.acquisition_mode=recorded_course`. Read
+[recorded-course recovery](recorded-course-recovery.md) for the emitted
+`observe_authorized_recorded_course` Browser action. The previous fixed-room
+workflow is [archived](archive/native-human-20261104.md) for explicit rollback;
+unpublished recordings never trigger automatic Caoliao/live-room fallback.
+
 For a reused fixed room that now shows another session, read
 [recorded-course recovery](recorded-course-recovery.md) and inspect the configured
 history catalogue before another unbound entry. A published independent recording

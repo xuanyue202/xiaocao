@@ -200,6 +200,29 @@ def inspect_identity(
     snapshot_meta = snapshot_task.get("meta") or {}
     snapshot_labels = snapshot_meta.get("labels") or (snapshot_meta.get("req") or {}).get("labels") or {}
     snapshot_candidate = capture.get("candidate") or {}
+    recorded_binding = capture.get('recorded_replay_binding') or {}
+    recorded_source_bound = False
+    if recorded_binding:
+        try:
+            from .recorded_recovery import validate_recorded_proof
+            proof_path = Path(recorded_binding['proof_path'])
+            proof_body = proof_path.read_bytes()
+            proof = json.loads(proof_body)
+            validate_recorded_proof(proof,item,capture_job_id)
+            recorded_source_bound = bool(
+                hashlib.sha256(proof_body).hexdigest() == recorded_binding['proof_sha256']
+                and (capture.get('expected_source') or {}).get('source_identity') == source_identity
+                and source_identity.endswith(':'+proof['recording']['resource_id'])
+                and capture.get('expected_media_file_id') == proof['media_file_id']
+                and snapshot_candidate.get('id') == proof['candidate_id'] == item.get('candidate_id')
+                and snapshot_labels.get('capture_id') == proof['candidate_id']
+                and snapshot_labels.get('recorded_resource_id') == proof['recording']['resource_id']
+                and snapshot_labels.get('recorded_media_file_id') == proof['media_file_id'])
+            # Keep the observed transport room separate from the independent
+            # recorded resource; the original live ID is not recording proof.
+            live_id = str(snapshot_candidate.get('live_id') or '')
+        except (OSError,ValueError,KeyError,TypeError,EnrichmentError):
+            recorded_source_bound = False
     reconciled_artifact = (
         completed_snapshot and snapshot_task.get("status") == "pause"
         and _reconciled_full_artifact(capture, snapshot_labels)
@@ -223,7 +246,8 @@ def inspect_identity(
         and (capture.get("expected_source") or {}).get("source_identity") == source_identity
         and bool(snapshot_candidate.get("id"))
         and snapshot_candidate.get("live_id") == live_id
-        and capture.get("candidate_key") == f"live:{live_id}"
+        and capture.get("candidate_key") == (
+            f"id:{snapshot_candidate.get('id')}" if recorded_source_bound else f"live:{live_id}")
         and snapshot_identity_fresh
         and snapshot_labels.get("capture_id") == snapshot_candidate.get("id")
         and snapshot_labels.get("live_id") == live_id
@@ -318,13 +342,13 @@ def inspect_identity(
         "media_request_observed": item.get("media_request_observed") is True,
         "no_protection_terminal": item.get("observed_page_state")
         in {"mini_program_media_observed", "playable"},
-        "source_job_bound": native_source_bound or (
+        "source_job_bound": recorded_source_bound or native_source_bound or (
             bool(source_job_id)
             and source_job.get("id") == source_job_id
             and source_job.get("live_id") == live_id
         ),
         "source_task_created": bool(task_id) and (
-            native_source_bound or source_job.get("status") == "task_created"
+            recorded_source_bound or native_source_bound or source_job.get("status") == "task_created"
         ),
         "download_completion_verified": task.get("status") == "done" or (
             snapshot_bound and reconciled_artifact
@@ -340,9 +364,16 @@ def inspect_identity(
             media.get("updated_at"), not_before
         ),
     }
+    if recorded_binding:
+        checks.pop('wechat_mini_program_surface')
+        checks['recorded_course_surface'] = (recorded_source_bound
+            and item.get('playback_surface') == 'authorized_recorded_course_web')
+        checks['no_protection_terminal'] = (recorded_source_bound
+            and item.get('observed_page_state') == 'recorded_course_playable')
     return {
         "identity": identity,
         "live_id": live_id,
+        "acceptance_identity": source_identity if recorded_source_bound else live_id,
         "capture_job_id": capture_job_id,
         "source_job_id": source_job_id,
         "task_id": task_id,
@@ -382,15 +413,18 @@ def inspect_acceptance(
     live_ids = [str(row.get("live_id") or "") for row in rows]
     passed_rows = [row for row in rows if row.get("passed") is True]
     distinct_live_ids = {live_id for live_id in live_ids if live_id}
+    distinct_acceptance_ids = {str(row.get('acceptance_identity') or '') for row in rows}
+    distinct_acceptance_ids.discard('')
     passed = (
         len(identities) >= required_count
         and len(passed_rows) == len(identities)
-        and len(distinct_live_ids) == len(identities)
+        and len(distinct_acceptance_ids) == len(identities)
     )
     return {
         "status": "passed" if passed else "failed",
         "required_count": required_count,
         "identity_count": len(identities),
         "distinct_live_id_count": len(distinct_live_ids),
+        "distinct_source_identity_count":len(distinct_acceptance_ids),
         "items": rows,
     }

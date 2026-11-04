@@ -251,6 +251,8 @@ def _safe_download_task(row: dict[str, Any]) -> dict[str, Any]:
             "media_repair_previous_name",
             "media_repair_task_id",
             "live_id",
+            "recorded_resource_id",
+            "recorded_media_file_id",
             "media_type",
             "source",
             "source_estimated_size",
@@ -343,7 +345,8 @@ def resolve_candidate(
     ]
     expected_source = current.get("expected_source") or {}
     media_file_id = str(current.get("expected_media_file_id") or "")
-    resource_sha = (current.get("native_media_lineage") or {}).get("media_resource_sha256")
+    recorded = current.get("recorded_replay_binding") or {}
+    resource_sha = (current.get("native_media_lineage") or recorded).get("media_resource_sha256")
     if resource_sha:
         matches = [
             row for row in matches
@@ -360,7 +363,20 @@ def resolve_candidate(
             for row in candidates
             if _matches_recorded_media_file(row, media_file_id)
         ]
-    return max(matches, key=_captured_sort_key) if matches else None
+    if recorded:
+        matches = [row for row in matches if row.get('id') == recorded.get('candidate_id')
+            and hashlib.sha256(urlunsplit((*urlsplit(str(row.get('url') or ''))[:3],'','')).encode()).hexdigest() == resource_sha]
+    selected = max(matches, key=_captured_sort_key) if matches else None
+    if selected and recorded:
+        title = recorded['recording']['title']
+        day = datetime.fromisoformat(recorded['published_at']).strftime('%Y%m%d')
+        result = {**selected, 'live_id':str(selected.get('live_id') or ''), 'title': title, 'filename': f'{day} {title}.mp4',
+            'recorded_resource_id': recorded['recording']['resource_id'],
+            'recorded_media_file_id': recorded['media_file_id']}
+        if current.get('recorded_ticket_refresh'):
+            result['recorded_ticket_candidate_id']=current['recorded_ticket_refresh']['candidate_id']
+        return result
+    return selected
 
 
 class SnifferError(RuntimeError):
@@ -662,6 +678,9 @@ class SnifferClient:
         }
         if force:
             payload["force"] = True
+        for key in ('recorded_resource_id', 'recorded_media_file_id', 'recorded_ticket_candidate_id'):
+            if candidate.get(key):
+                payload['extra'][key] = candidate[key]
         data = self._json("/api/task/create2", method="POST", payload=payload).get("data") or {}
         task_id = str(data.get("id") or "") if isinstance(data, dict) else ""
         if not task_id:
@@ -866,9 +885,10 @@ class CaptureJobStore:
             row
             for row in candidates
             if (
-                not expected_resource_id
-                or str(row.get("live_id") or row.get("source_resource_id") or "")
-                == expected_resource_id
+                (_matches_recorded_media_file(row, str(current.get('expected_media_file_id') or ''))
+                 if expected_resource_id.startswith('v_') else
+                 (not expected_resource_id or str(row.get("live_id") or row.get("source_resource_id") or "")
+                  == expected_resource_id))
             )
         ]
         matches = [
@@ -886,7 +906,8 @@ class CaptureJobStore:
             "capture_detected",
             status="captured",
             candidate=_safe_candidate(candidate),
-            candidate_key=_candidate_key(candidate),
+            candidate_key=_candidate_key_for_capture(candidate,expected_source=expected_source,
+                expected_media_file_id=str(current.get('expected_media_file_id') or '')),
         )
 
     def reconcile_download(

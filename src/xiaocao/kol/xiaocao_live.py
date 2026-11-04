@@ -1612,7 +1612,7 @@ class XiaocaoLiveService:
         candidate = current.get("candidate") or {}
         if (
             task.get("status") != ("running" if stalled_media_repair else "pause") or task.get("protocol") != "stream"
-            or not candidate.get("id") or not candidate.get("live_id")
+            or not candidate.get("id") or (not candidate.get("live_id") and not self._recorded_task_binding(current,labels))
             or labels.get("capture_id") != candidate["id"]
             or labels.get("live_id") != candidate["live_id"]
             or labels.get("type") != "live_capture"
@@ -1683,7 +1683,7 @@ class XiaocaoLiveService:
         live_id = str(candidate.get("live_id") or "")
         capture_id = str(candidate.get("id") or "")
         if (
-            not live_id
+            (not live_id and not self._recorded_task_binding(current,labels))
             or not capture_id
             or str(labels.get("live_id") or "") != live_id
             or str(labels.get("capture_id") or "") != capture_id
@@ -1752,6 +1752,21 @@ class XiaocaoLiveService:
             expected_duration_seconds=expected_duration,
             reconciliation_reason="sniffer_interrupted_after_complete_media",
         )
+
+    @staticmethod
+    def _recorded_task_binding(capture: dict[str, Any], labels: dict[str, Any]) -> bool:
+        binding=capture.get('recorded_replay_binding') or {}
+        source=capture.get('expected_source') or {}
+        path=Path(str(binding.get('proof_path') or ''))
+        try:
+            return bool(binding and path.is_file()
+                and hashlib.sha256(path.read_bytes()).hexdigest()==binding.get('proof_sha256')
+                and source==canonical_xiaoetong_source(f"https://{binding['app_id']}.h5.xiaoeknow.com/p/course/video/{binding['recording']['resource_id']}")
+                and labels.get('recorded_resource_id')==binding['recording']['resource_id']
+                and labels.get('recorded_media_file_id')==capture.get('expected_media_file_id')==binding['media_file_id']
+                and labels.get('capture_id')==(capture.get('candidate') or {}).get('id')==binding['candidate_id'])
+        except (OSError,KeyError,TypeError,ValueError):
+            return False
 
     @staticmethod
     def _capture_contract(capture: dict[str, Any]) -> dict[str, Any]:
@@ -2375,6 +2390,11 @@ class XiaocaoLiveService:
             "netdisk_job_snapshot_sha256": _sha256_text(_canonical(snapshot)),
         }
         capture = self.capture_store.latest(capture_job_id) or {}
+        recorded_binding = capture.get('recorded_replay_binding') or {}
+        if recorded_binding:
+            handoff.update(recorded_resource_id=recorded_binding['recording']['resource_id'],
+                recorded_media_file_id=recorded_binding['media_file_id'],
+                acquisition_method='authorized_recorded_course_web')
         if capture.get("source_published_at"):
             dated_media = re.match(r"^(\d{8})\s", media_basename)
             if dated_media:

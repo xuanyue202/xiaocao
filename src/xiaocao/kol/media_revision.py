@@ -145,13 +145,26 @@ def _unstarted_finite_task(task: dict, media: Path, current: dict) -> bool:
     finite_verified = (labels.get('hls_finite') == 'true' or (finite.get('ended') is True
         and finite.get('candidate_id') == (current.get('candidate') or {}).get('id')
         and finite.get('media_resource_sha256') == (current.get('native_media_lineage') or {}).get('media_resource_sha256')))
+    recorded=current.get('recorded_replay_binding') or {}
+    recorded_source=False
+    if recorded:
+        proof_path=Path(str(recorded.get('proof_path') or ''))
+        recorded_source=(proof_path.is_file()
+            and hashlib.sha256(proof_path.read_bytes()).hexdigest()==recorded.get('proof_sha256')
+            and url.scheme=='https' and url.netloc=='encrypt-k-vod.xet.tech'
+            and labels.get('recorded_resource_id')==(current.get('expected_source') or {}).get('source_resource_id')==recorded['recording']['resource_id']
+            and labels.get('recorded_media_file_id')==current.get('expected_media_file_id')==recorded['media_file_id']
+            and labels.get('capture_id')==(current.get('candidate') or {}).get('id')==recorded['candidate_id']
+            and hashlib.sha256((url.scheme+'://'+url.netloc+url.path).encode()).hexdigest()==recorded.get('media_resource_sha256')
+            and recorded.get('finite_playlist',{}).get('ended') is True)
+    finite_verified=finite_verified or recorded_source
     return (finite_verified and not labels.get('checkpoint_basis')
         and int((task.get('progress') or {}).get('downloaded') or 0) == 0
         and not media.exists() and not Path(str(media) + '.hls-cache').exists()
-        and url.scheme == 'https' and url.netloc == 'live-ex-speed.xiaoeknow.com'
-        and not url.query and not url.fragment and url.username is None
-        and hashlib.sha256((url.scheme + '://' + url.netloc + url.path).encode()).hexdigest()
-            == (current.get('native_media_lineage') or {}).get('media_resource_sha256')
+        and not url.fragment and url.username is None
+        and (recorded_source or (url.scheme == 'https' and url.netloc == 'live-ex-speed.xiaoeknow.com'
+            and not url.query and hashlib.sha256((url.scheme + '://' + url.netloc + url.path).encode()).hexdigest()
+                == (current.get('native_media_lineage') or {}).get('media_resource_sha256')))
         and all(((task.get('meta') or {}).get('opts') or {}).get(key)
             == (((current.get('download_task') or {}).get('meta') or {}).get('opts') or {}).get(key)
             for key in ('path', 'name')))

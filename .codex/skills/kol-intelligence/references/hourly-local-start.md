@@ -18,7 +18,15 @@ send_mailbox_message/get_mailbox_message arguments; return the receipt compactly
 to original stdin. For a successful get, wrap the unchanged structured message as
 `{"operation":"get_mailbox_message","message":<structured message>}`; the bare
 message is not a valid reply. Do not substitute Codex task messaging.
-For native WeChat interaction read hourly-local-native-capture.md/current SOP;
+Current Xiaocao primary mode `replay_catalog.acquisition_mode=recorded_course`
+routes `observe_authorized_recorded_course` to
+[the recorded Browser SOP](recorded-course-recovery.md). Return its exact
+structured reply to the same PTY. Inspect the dated catalogue first; unpublished
+recordings stay pending, without launching the next live room. The
+[old native workflow is archived](archive/native-human-20261104.md); use it only
+after a direct human rollback instruction and exact claim reconciliation.
+
+For explicitly restored legacy native interaction read hourly-local-native-capture.md/current SOP;
 known live capture has its10-second fast-start route. Keep WeChat running,
 close only exact captured course window, verify absence; no guessed coordinates,
 H5 playback/login, exploratory refresh/relaunch or blind media controls.
