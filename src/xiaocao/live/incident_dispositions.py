@@ -12,6 +12,7 @@ import inspect
 import json
 import marshal
 import os
+import re
 from collections import Counter
 from contextlib import contextmanager
 from datetime import datetime
@@ -49,6 +50,32 @@ def _quarantine_pointer(root: Path) -> None:
         atomic_write(path, raw, immutable=True)
 
 
+def _legacy_pre_submit_skip(plan_id: str, rows: list[dict]) -> bool:
+    """Recognize only the old guard-skip chain, with no possible order effect."""
+    if [(row.get('kind'), row.get('state')) for row in rows] != [
+            ('plan_created', 'planned'), ('transition', 'skipped')]:
+        return False
+    plan_hash = rows[0].get('plan_hash')
+    if not isinstance(plan_hash, str) or re.fullmatch(r'[0-9a-f]{64}', plan_hash) is None:
+        return False
+    for row in rows:
+        receipt = row.get('receipt') or {}
+        if (row.get('details') != {} or row.get('plan_hash') != plan_hash or receipt.get('plan_id') != plan_id
+                or receipt.get('plan_hash') != plan_hash or receipt.get('state') != row['state']
+                or type(receipt.get('filled_shares')) is not int or receipt['filled_shares'] != 0
+                or type(receipt.get('attempt')) is not int or receipt['attempt'] != 0
+                or receipt.get('locator_proof') != {}):
+            return False
+        if any(receipt.get(key) is not None for key in (
+                'submit_claim_id', 'cancel_claim_id', 'broker_order_id', 'broker_strategy_id',
+                'broker_status', 'order_price', 'fill_price', 'active', 'receipt_mapping', 'absence_proof')):
+            return False
+        if any(receipt.get(key) is not None and receipt[key] is not False for key in (
+                'submit_chain_uncertain', 'submit_uncertain', 'cancel_chain_uncertain')):
+            return False
+    return True
+
+
 def _sources(root: Path) -> tuple[dict, list[dict], dict]:
     from .book_b_live_morning import _event_chain_proven
     intents = load_execution_intents(root)
@@ -57,8 +84,12 @@ def _sources(root: Path) -> tuple[dict, list[dict], dict]:
     for event in events:
         grouped.setdefault(event['plan_id'], []).append(event)
     for plan_id, rows in grouped.items():
-        if plan_id not in intents or not _event_chain_proven(plan_id, rows):
+        if not _event_chain_proven(plan_id, rows):
             raise ValueError('INCIDENT_DISPOSITION_EXECUTION_SOURCE_UNPROVEN')
+        if plan_id not in intents:
+            if not _legacy_pre_submit_skip(plan_id, rows):
+                raise ValueError('INCIDENT_DISPOSITION_EXECUTION_SOURCE_UNPROVEN')
+            continue
         if any(row['plan_hash'] != digest(intents[plan_id]) for row in rows):
             raise ValueError('INCIDENT_DISPOSITION_INTENT_SOURCE_UNPROVEN')
     return intents, events, grouped
@@ -135,7 +166,11 @@ def _refresh_locked(root: Path, *, trade_date: str, stage: str, now: datetime,
         'fund_account_binding_sha256': binding, 'admission_authority': 'none',
         'source_owner': {'automation_id': os.environ.get('CODEX_AUTOMATION_ID'),
                          'thread_id': os.environ.get('CODEX_THREAD_ID')},
-        'execution_source': {'event_count': len(events), 'events_sha256': digest(events)},
+        'execution_source': {'event_count': len(events), 'events_sha256': digest(events),
+            'legacy_pre_submit_skips_without_intent': [
+                {'plan_id': plan_id, 'plan_hash': rows[-1]['plan_hash'],
+                 'event_hash': rows[-1]['event_hash']}
+                for plan_id, rows in grouped.items() if plan_id not in intents]},
         'records': records}
     generation = digest(body)
     folder = root / 'incident_dispositions'
