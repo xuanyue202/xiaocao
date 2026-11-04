@@ -1669,6 +1669,99 @@ def test_xiaocao_completed_handoff_requires_hash_bound_terminal(
         runtime.xiaocao()
 
 
+def test_xiaocao_completed_mailbox_reads_terminal_without_replaying_effects(
+    tmp_path, monkeypatch,
+):
+    xiaocao_output = tmp_path / "xiaocao"
+    handoff_dir = xiaocao_output / "imported_handoffs"
+    handoff_dir.mkdir(parents=True)
+    handoff_id = "a" * 64
+    handoff = {
+        "schema_version": 1,
+        "handoff_id": handoff_id,
+        "capture_job_id": "kol-current",
+        "netdisk_job_id": "kol-netdisk-current",
+        "published_at": "2026-08-06T16:00:00+08:00",
+        "large_payload_local_bytes": 0,
+        "source_mode": "cloud_handoff",
+    }
+    handoff["handoff_sha256"] = _canonical_sha256(handoff)
+    (handoff_dir / "kol-current.json").write_text(json.dumps(handoff))
+    terminal = {
+        "kind": "source_event",
+        "event_id": "kol-current",
+        "content_value": {
+            "status": "promoted", "tier": "alert_eligible",
+            "reason": "有当前决策价值。",
+        },
+        "gray_report": {
+            "status": "published", "receipt": "gray-receipt",
+            "detail_url": "https://reader.example/report-1", "terminal_order": 1,
+        },
+        "alert": {
+            "status": "delivered", "receipt": "alert-receipt",
+            "all_recipients": True, "stable_link_count": 1,
+            "stable_report_url": "https://reader.example/report-1",
+            "terminal_order": 3,
+        },
+        "book_kol_us": {
+            "book": "KOL-US", "paper_only": True, "status": "no_trade",
+            "reason": "没有可验证的美股入场条件。", "terminal_order": 2,
+        },
+        "knowledge_effect": {"status": "reusable_knowledge"},
+    }
+    result_path = tmp_path / "decision-result.json"
+    result_path.write_text(json.dumps({"items": [{"daily_terminal": terminal}]}))
+
+    class FakeNetdisk:
+        @staticmethod
+        def status(job_id):
+            assert job_id == "kol-netdisk-current"
+            return {
+                "status": "decided",
+                "decision_result_path": str(result_path),
+                "decision_result_sha256": hashlib.sha256(
+                    result_path.read_bytes()
+                ).hexdigest(),
+            }
+
+        @staticmethod
+        def decide(*args, **kwargs):
+            pytest.fail("completed mailbox must not repeat business effects")
+
+    class FakeService:
+        def __init__(self, *args, **kwargs):
+            self.netdisk = FakeNetdisk()
+
+        @staticmethod
+        def import_handoff_capsule(capsule):
+            assert capsule == handoff
+
+    monkeypatch.setattr(kol_daily_script, "XiaocaoLiveService", FakeService)
+    runtime = DailyRuntime.__new__(DailyRuntime)
+    runtime.args = SimpleNamespace(
+        xiaocao_output_dir=xiaocao_output,
+        decision_output_dir=tmp_path / "decisions",
+    )
+
+    result = runtime._process_mailbox_message({
+        "message_id": handoff_id,
+        "payload": handoff,
+    })
+
+    assert result["business_complete"] is True
+    assert result["events"] == [terminal]
+    progress = result["writer_progress"]
+    assert progress["status"] == "terminal"
+    assert progress["gray_report_terminal"] == "published"
+    assert progress["reminder_terminal"] == "delivered"
+    assert progress["book_terminal"] == "no_trade"
+    assert progress["knowledge_terminal"] == "reusable_knowledge"
+    assert progress["claim_receipt_summary"] == {
+        "claim_count": 2, "receipt_count": 2, "uncertain_effect_count": 0,
+    }
+
+
 def test_daily_runtime_runs_xiaocao_wechat_subscription(tmp_path, monkeypatch):
     calls: list[tuple[str, object]] = []
     sessions = []
@@ -2586,9 +2679,11 @@ def test_mailbox_processor_reports_unsupported_route_as_contract_error(
     assert captured.value.diagnostic_stage == "mailbox_routing"
 
 
-def test_xiaocao_completed_receipt_exposes_empty_terminal_events(
+@pytest.mark.parametrize("selector", ["handoff", "capture", "discovery"])
+def test_xiaocao_completed_receipt_exposes_terminal_only_for_exact_readback(
     tmp_path,
     monkeypatch,
+    selector,
 ):
     handoff_dir = tmp_path / "xiaocao" / "imported_handoffs"
     handoff_dir.mkdir(parents=True)
@@ -2641,9 +2736,14 @@ def test_xiaocao_completed_receipt_exposes_empty_terminal_events(
         opencli_profile=None,
     )
 
-    assert runtime.xiaocao(handoff_id=handoff_id) == {
+    selectors = {
+        "handoff": {"handoff_id": handoff_id},
+        "capture": {"only_identity": "kol-completed"},
+        "discovery": {},
+    }
+    assert runtime.xiaocao(**selectors[selector]) == {
         "status": "completed",
-        "events": [],
+        "events": [] if selector == "discovery" else [{"kind": "source_event"}],
         "completed_handoff_ids": [handoff_id],
     }
 

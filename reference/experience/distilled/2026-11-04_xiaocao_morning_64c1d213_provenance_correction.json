@@ -1,0 +1,160 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-04",
+  "kind": "provenance_correction",
+  "title": "知识反馈证据哈希的追加式纠正",
+  "author": "小草",
+  "source": "小草直播",
+  "authority": 0,
+  "corrected_at": "2026-11-04T10:33:38Z",
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261104_17_01a1a5e2/knowledge_feedback.txt",
+      "sha256": "f5997c2c18c37ddb8262edc74a7c616693f520268834a04d2e6fda9b736e2828",
+      "size": 3001
+    }
+  ],
+  "source_refs": [
+    {
+      "kind": "source_evidence",
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_netdisk_enrichment/artifacts/kol-netdisk-e00af0dc9aedafcf/20261104 大师班早盘直播11月4日-compressed.txt",
+      "sha256": "64c1d2135ff5036656c3433dff9ca08bbd2ff5140c28735de02ef000fad3dc24"
+    },
+    {
+      "kind": "market_evidence",
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261104_17_01a1a5e2/market_evidence.json",
+      "sha256": "633c225ff8cbe6a5bd9b9d53bbf30e8fb3161e885d8966542d6f9d7dd7306323"
+    },
+    {
+      "kind": "knowledge_feedback",
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261104_17_01a1a5e2/knowledge_feedback.txt",
+      "sha256": "f5997c2c18c37ddb8262edc74a7c616693f520268834a04d2e6fda9b736e2828"
+    },
+    {
+      "kind": "corrected_knowledge_artifact",
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_xiaocao_live/semantic_requests/kol-e407e756fa16/.semantic_delegation/0b9d7697dcf7a3663b0b8897c9d1ca254a7f5119a6b636a684f5e71835c57e61/context-df45c6d88695040294973cd533d071484c46f3c1acee64bbfc174df714f2ab30/knowledge_draft.json",
+      "sha256": "f13ffa9cf842bf315ab0fd5997abeeb01ea6780fa9727313b8e5119f67064cfb"
+    },
+    {
+      "kind": "corrected_semantic_artifact",
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_xiaocao_live/semantic_requests/kol-e407e756fa16/.semantic_delegation/0b9d7697dcf7a3663b0b8897c9d1ca254a7f5119a6b636a684f5e71835c57e61/context-df45c6d88695040294973cd533d071484c46f3c1acee64bbfc174df714f2ab30/semantic_draft.json",
+      "sha256": "92f16d7e6d03e28478a47cf1633cdd10604585078fe2d6ca2dee80bfce128981"
+    }
+  ],
+  "source_basis": {
+    "original_source_evidence": {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_netdisk_enrichment/artifacts/kol-netdisk-e00af0dc9aedafcf/20261104 大师班早盘直播11月4日-compressed.txt",
+      "sha256": "64c1d2135ff5036656c3433dff9ca08bbd2ff5140c28735de02ef000fad3dc24",
+      "status": "unchanged"
+    },
+    "knowledge_feedback_binding": {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261104_17_01a1a5e2/knowledge_feedback.txt",
+      "market_evidence_file_sha256": "633c225ff8cbe6a5bd9b9d53bbf30e8fb3161e885d8966542d6f9d7dd7306323",
+      "market_evidence_bound_feedback_sha256": "f5997c2c18c37ddb8262edc74a7c616693f520268834a04d2e6fda9b736e2828",
+      "actual_file_sha256": "f5997c2c18c37ddb8262edc74a7c616693f520268834a04d2e6fda9b736e2828",
+      "read_to_eof": true
+    },
+    "original_knowledge": {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_xiaocao_live/semantic_requests/kol-e407e756fa16/.semantic_delegation/0b9d7697dcf7a3663b0b8897c9d1ca254a7f5119a6b636a684f5e71835c57e61/context-df45c6d88695040294973cd533d071484c46f3c1acee64bbfc174df714f2ab30/knowledge_draft.json",
+      "sha256": "f13ffa9cf842bf315ab0fd5997abeeb01ea6780fa9727313b8e5119f67064cfb",
+      "operative_hypothesis_count": 1,
+      "operative_hypothesis_status": "retained_unchanged_in_original_artifact"
+    }
+  },
+  "correction": {
+    "scope": "provenance_only",
+    "incorrect_sha256": "f5997c2e0412b94fd353e14229761b127bd7bcac3abff607c6911a08f4626a2e",
+    "correct_sha256": "f5997c2c18c37ddb8262edc74a7c616693f520268834a04d2e6fda9b736e2828",
+    "corrects": [
+      {
+        "artifact_kind": "knowledge_draft",
+        "artifact_path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_xiaocao_live/semantic_requests/kol-e407e756fa16/.semantic_delegation/0b9d7697dcf7a3663b0b8897c9d1ca254a7f5119a6b636a684f5e71835c57e61/context-df45c6d88695040294973cd533d071484c46f3c1acee64bbfc174df714f2ab30/knowledge_draft.json",
+        "artifact_sha256": "f13ffa9cf842bf315ab0fd5997abeeb01ea6780fa9727313b8e5119f67064cfb",
+        "field": "source_refs[kind=knowledge_feedback].sha256",
+        "incorrect_value": "f5997c2e0412b94fd353e14229761b127bd7bcac3abff607c6911a08f4626a2e",
+        "correct_value": "f5997c2c18c37ddb8262edc74a7c616693f520268834a04d2e6fda9b736e2828",
+        "mutation": "none_append_only_correction"
+      },
+      {
+        "artifact_kind": "semantic_draft",
+        "artifact_path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_xiaocao_live/semantic_requests/kol-e407e756fa16/.semantic_delegation/0b9d7697dcf7a3663b0b8897c9d1ca254a7f5119a6b636a684f5e71835c57e61/context-df45c6d88695040294973cd533d071484c46f3c1acee64bbfc174df714f2ab30/semantic_draft.json",
+        "artifact_sha256": "92f16d7e6d03e28478a47cf1633cdd10604585078fe2d6ca2dee80bfce128981",
+        "field": "source_evidence_audit.knowledge_feedback_sha256",
+        "incorrect_value": "f5997c2e0412b94fd353e14229761b127bd7bcac3abff607c6911a08f4626a2e",
+        "correct_value": "f5997c2c18c37ddb8262edc74a7c616693f520268834a04d2e6fda9b736e2828",
+        "mutation": "none_append_only_correction"
+      }
+    ],
+    "invariants": [
+      "原始直播证据路径、字节与SHA-256不变。",
+      "原semantic、knowledge、bundle、receipt及已经发生的外部效果均不修改、不重放。",
+      "本次不新增、删除、改写或重新解释任何投资观点、候选假设、家庭建议、提醒或Book判断。",
+      "原knowledge_draft中的一个短线第三日对第二日退出候选继续保留在原不可变产物中；本纠正文件的hypotheses为空。"
+    ]
+  },
+  "summary": "本记录只纠正两个不可变草稿中对knowledge_feedback.txt的SHA-256引用：旧值f5997c2e0412b94fd353e14229761b127bd7bcac3abff607c6911a08f4626a2e应为与实际文件和market_evidence绑定一致的f5997c2c18c37ddb8262edc74a7c616693f520268834a04d2e6fda9b736e2828。原直播证据哈希、全部语义结论、候选假设、posture、playbook、报告、提醒和Book判断均不变。",
+  "posture": {
+    "status": "no_change",
+    "regime": "unchanged_from_original_knowledge_draft",
+    "dominant_style": "unchanged_from_original_knowledge_draft",
+    "risk": "provenance_correction_only_no_trading_effect",
+    "style_ranking": [
+      "no_change：不重新解释原场市场风格。",
+      "no_change：不改变原资格、持有或退出候选。"
+    ]
+  },
+  "regime_call": {
+    "horizon": "not_applicable",
+    "call": "本记录不提出市场状态判断，只纠正知识反馈文件的证据哈希引用。",
+    "what_would_falsify": [
+      "重新读取同一路径的knowledge_feedback.txt所得字节SHA-256不再为f5997c2c18c37ddb8262edc74a7c616693f520268834a04d2e6fda9b736e2828。",
+      "绑定market_evidence.json不再记录该正确哈希。"
+    ],
+    "authority": 0
+  },
+  "directions": [],
+  "stocks": [],
+  "method_principles": [
+    "不可变产物被消费后，provenance字段错误只能通过绑定原产物哈希的追加式记录纠正，不回写历史字节。",
+    "证据引用应以实际文件字节SHA-256和其绑定证据一致性为准；纠正引用不等于改写来源或重新评价语义。"
+  ],
+  "exit_lessons": [],
+  "hypotheses": [],
+  "timing_notes": [
+    "纠正于2026-11-04T10:33:38Z完成。",
+    "market_evidence中的行情as_of、原longitudinal projection的evaluated_at及所有valid_until均未修改。"
+  ],
+  "typo_corrections": [],
+  "decision_trace": [
+    {
+      "observation": "原knowledge_draft与semantic_draft都引用了一个和实际knowledge_feedback.txt字节不一致的SHA-256。",
+      "inference": "错误只影响知识反馈证据的provenance引用；实际文件SHA-256与market_evidence中的绑定值一致，原直播来源SHA-256正确。",
+      "action": "保留全部已消费产物不变，仅写入本追加式纠正记录，并将hypotheses保持为空。",
+      "why": "这样既修复证据追溯，又不会重放报告、提醒、Book、知识入库或改变任何投资语义。"
+    }
+  ],
+  "judgment_heuristics": [
+    {
+      "heuristic": "区分证据引用错误与语义内容错误。",
+      "limit": "本次只证明反馈文件引用哈希错误，不重新验证或推广原候选假设。"
+    }
+  ],
+  "limitations": [
+    "本文件不替换或修改原semantic_draft、knowledge_draft、bundle或receipt，只提供由原产物哈希绑定的追加式纠正。",
+    "本文件不触发知识入库、action log刷新、现实校准、posture更新、playbook更新、发布、提醒、Book或账户效果。"
+  ],
+  "action_summary": {
+    "posture_update": "no_change：provenance-only纠正，不修改posture_current或时间线。",
+    "playbook_update": "no_change：不修改playbook、参数或交易规则。",
+    "hypothesis_update": "no_change：hypotheses=[]；原knowledge_draft中的一个operative candidate hypothesis保留在原不可变产物中，不重入库、不重新编号。",
+    "audit_evidence": "完整读取knowledge_feedback.txt至EOF；实际文件SHA-256与market_evidence.knowledge_feedback_evidence.sha256均为f5997c2c18c37ddb8262edc74a7c616693f520268834a04d2e6fda9b736e2828，并绑定原knowledge与semantic文件路径和SHA-256。",
+    "instrumentation_todo": "not_applicable：无需新增研究或交易观测；下游只需把本文件作为原两份不可变产物的provenance纠正旁证。",
+    "routing": [
+      "no_reingest：不得对本纠正文件或原knowledge_draft执行知识入库、现实校准、候选新ID分配或原候选重复入库。",
+      "index_refresh_allowed：父级可对已归档的本纠正记录执行一次确定性refresh-action-log，使生成的消费索引能发现纠正引用；该索引重建不改变原候选或产生经济效果。",
+      "no_effects：不得重放发布、提醒、Book、通知、账户或其他外部效果。",
+      "original_operative_hypothesis_retained：原knowledge_draft中的短线第三日对第二日退出候选保持原状，本文件不复制、不覆盖。",
+      "authority=0：仅作证据追溯纠正，不具备策略或参数权威。"
+    ]
+  }
+}

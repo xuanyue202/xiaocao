@@ -4275,6 +4275,8 @@ class DailyRuntime:
                             raise DailyError(
                                 "Xiaocao decision result changed"
                             )
+                        if handoff_id is not None or only_identity is not None:
+                            events.append(value["items"][0]["daily_terminal"])
                         completed_handoff_ids.append(str(handoff["handoff_id"]))
                         continue
                 else:
