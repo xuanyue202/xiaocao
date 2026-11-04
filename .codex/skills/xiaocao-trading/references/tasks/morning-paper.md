@@ -11,6 +11,12 @@ Read [shared contract](../automation-context.md), Contract §1c/1d/2a and
 [opening preparation](../kol-opening-preparation.md). After original calendar
 proof, keep the original supervisor waiting. Do not build another full preparation
 projection, spawn a preparation worker or republish shared source reasoning.
+The original supervisor emits paper_kol_current_warmup before waiting for the
+freeze. Follow [current analyst preload](../kol-current-review.md): one Paper-owned
+current-only worker, exact spawn/load registration before09:20 and a retained
+read-only code wait. Reuse source reasoning and review all early delta; no duplicate
+source synthesis or APP-child dependency. Prepare independent review/source checks
+before opening. Missing readiness retains the original explicit fallback.
 At the original freeze code reads the accepted shared source brief and creates
 an immutable `kol-preparation-adoption.json` bound to this Paper owner, current
 source fingerprint and rule hashes. It does not wait for APP account/login or
@@ -34,7 +40,10 @@ Consume dated immutable queue/evidence_freeze_ref; structured intelligence
 reviews use agent_intelligence_review with exact --evidence-freeze-ref, never
 keyword scoring. Derived queue waits share original budget; timeout preserves
 baseline and explicit degradation. Intelligence on still needs same-batch support.
-On paper_kol_review_requested use original request/packet/hash. dispatch_path
+On paper_kol_review_requested use original request/packet/hash. When
+next_action=await_preloaded_current_worker, the original supervisor already
+delivered directly to its waiting worker; complete independent parent review and
+publication without another dispatch. dispatch_path
 means read once and follow next_action: independently review its authority0
 materialized draft, spawn the provided current-applicability worker for shared
 preparation, or follow up the original warm worker only for a legacy Paper-owned

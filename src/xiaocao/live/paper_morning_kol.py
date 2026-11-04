@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import math
 import os
 import signal
@@ -57,21 +58,33 @@ def _read_account_preview(root: Path) -> tuple[dict, dict]:
     """Read/mark consistent paper B facts; no risk-head or account writes."""
     from xiaocao.api.client import XiaocaoClient
     def read():
-        account = read_json(root / "output/live/paper_account.json")
-        positions = paper.read_paper_positions(root / "output/live/positions.jsonl")
-        return account, positions
+        paths = (root / 'output/live/paper_account.json', root / 'output/live/positions.jsonl')
+        raw = [path.read_bytes() if path.exists() else b'' for path in paths]
+        account = read_json(paths[0])
+        positions = [json.loads(line) for line in raw[1].decode().splitlines()
+                     if line.strip() and not line.lstrip().startswith('#')]
+        # Legacy optional model scores are unavailable, not economic NaN values.
+        # Preserve exact ledger bytes for concurrency checks and leave every
+        # quantity, cash, price and fee field to the existing strict risk gate.
+        for row in positions:
+            for key in ('k_score', 'p_score'):
+                value = row.get(key)
+                if isinstance(value, float) and not math.isfinite(value):
+                    row[key] = None
+        preparation.canonical_sha256([account, positions])
+        return account, positions, [hashlib.sha256(item).hexdigest() for item in raw]
     with paper.paper_ledger_lock(root):
-        account, positions = read()
-    initial_hash = preparation.canonical_sha256([account, positions])
+        account, positions, initial_hash = read()
     marks = paper.fetch_paper_marks(XiaocaoClient(timeout=3, retries=0), positions)
     with paper.paper_ledger_lock(root):
         current = read()
-        if preparation.canonical_sha256(list(current)) != initial_hash:
+        if current[2] != initial_hash:
             raise ValueError("PAPER_KOL_ACCOUNT_CHANGED_DURING_MARKS")
         observed = datetime.now(A_SHARE_TZ)
         risk = paper.evaluate_paper_risk(root, account, positions, now=observed,
                                        mark_provider=lambda code: marks.get(code, {}), persist=False)
-    return {"account": account, "positions": positions, "marks": marks,
+    return {"account": account, "positions": paper._open_lots(positions), "marks": marks,
+            "ledger_byte_hashes": initial_hash,
             "observed_at": observed.isoformat(), "authority": "preview_only"}, risk
 
 
@@ -103,13 +116,17 @@ def account_preview(root: Path, *, deadline: datetime) -> tuple[dict, dict]:
             try:
                 signal.signal(signal.SIGTERM, terminate)
                 signal.pthread_sigmask(signal.SIG_SETMASK, mask)
-                stdout, _ = child.communicate(timeout=max(0, (deadline - datetime.now(A_SHARE_TZ)).total_seconds()))
+                stdout, stderr = child.communicate(timeout=max(0, (deadline - datetime.now(A_SHARE_TZ)).total_seconds()))
             except BaseException as exc:
                 # Only this read-only child's newly created group, never our owner.
                 try:
                     os.killpg(child.pid, signal.SIGKILL)
                 except ProcessLookupError:
                     pass
+                except PermissionError:
+                    # The child's own absolute alarm can win the kill race on
+                    # macOS. Reap that exact child; never signal another group.
+                    child.wait(timeout=0.2)
                 child.communicate()
                 if isinstance(exc, _PreviewTerminated):
                     signal.signal(signal.SIGTERM, previous)
@@ -120,6 +137,21 @@ def account_preview(root: Path, *, deadline: datetime) -> tuple[dict, dict]:
             if datetime.now(A_SHARE_TZ) >= deadline:
                 raise ValueError("PAPER_KOL_PREVIEW_DEADLINE")
             if child.returncode:
+                # The child emits fixed error metadata only, never account data
+                # or arbitrary exception text. Keep it outside stdout JSON.
+                try:
+                    reported = json.loads(stderr)
+                    if (not isinstance(reported, dict) or reported.get('code') != 'preview_read_failed'
+                            or not isinstance(reported.get('exception_type'), str)
+                            or not reported['exception_type'].isidentifier()):
+                        raise ValueError('unrecognized child diagnostic')
+                    diagnostic = {key: reported[key] for key in ('code', 'exception_type')}
+                except (ValueError, KeyError):
+                    diagnostic = {'code': 'unstructured_child_error',
+                                  'stderr_sha256': hashlib.sha256(stderr.encode()).hexdigest()}
+                error = {'event': 'paper_kol_preview_failed', 'returncode': child.returncode,
+                         'diagnostic': diagnostic}
+                print(json.dumps(error, sort_keys=True), file=sys.stderr, flush=True)
                 raise ValueError("PAPER_KOL_PREVIEW_UNAVAILABLE")
     finally:
         signal.signal(signal.SIGTERM, previous)
@@ -209,6 +241,10 @@ class PaperKolReview:
         packet_path = preparation.write_artifact(self.run_dir, packet, ".kol-packet.json")
         request["kol_inputs"] = {"packet_path": str(packet_path), "packet_sha256": packet["packet_sha256"],
             "warm_worker": prepared["worker_id"] if adoption_path is None else None, "input_path": str(input_path)}
+        from .current_review import warmup_path
+        current_warmup = warmup_path(self.run_dir, self.binding)
+        if current_warmup.exists():
+            request['kol_inputs']['current_warmup_path'] = str(current_warmup)
         request["dispatch_budget"] = {"observed_at": self.now().isoformat(),
             "total_remaining_seconds": max(0, (self.cutoff-self.now()).total_seconds()),
             "cutoff": self.cutoff.isoformat(), "includes": ["model", "source_verification", "independent_review", "publication"]}
@@ -288,4 +324,9 @@ if __name__ == "__main__":
     # Also self-limit if the original owner dies without a catchable signal.
     signal.signal(signal.SIGALRM, lambda *_: os.killpg(os.getpgrp(), signal.SIGKILL))
     signal.setitimer(signal.ITIMER_REAL, remaining)
-    print(json.dumps(_read_account_preview(Path(sys.argv[1])), ensure_ascii=False, allow_nan=False))
+    try:
+        print(json.dumps(_read_account_preview(Path(sys.argv[1])), ensure_ascii=False, allow_nan=False))
+    except Exception as exc:
+        print(json.dumps({'code': 'preview_read_failed', 'exception_type': type(exc).__name__}),
+              file=sys.stderr, flush=True)
+        raise SystemExit(2)

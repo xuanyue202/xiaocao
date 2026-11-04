@@ -326,3 +326,49 @@ def test_app_relative_default_paths_use_same_real_packet_facts(owner,monkeypatch
     assert result['dispatch']['status']=='assembled_not_dispatched' and result['dispatch']['error'] is None
     handoff=json.loads(Path(result['dispatch']['path']).read_bytes())
     assert handoff['packet']['request_facts_sha256']==prep.canonical_sha256(cli._normalized_review_request(original))
+
+
+def test_preview_keeps_closed_optional_nan_out_of_request(tmp_path):
+    """Real preview child must survive legacy auxiliary scores, without repairs."""
+    import json
+    from datetime import datetime, timedelta
+    from tests.test_paper_decision_support import account
+    live = tmp_path / 'output/live'
+    save(live / 'paper_account.json', account())
+    positions = live / 'positions.jsonl'
+    positions.write_text(json.dumps({'book': 'B', 'code': '300665.XSHE', 'status': 'closed',
+        'entry_date': '2026-07-17', 'exit_date': '2026-07-20', 'exit_price': 12,
+        'shares': 100, 'p_score': float('nan')}) + '\n')
+    before = positions.read_bytes()
+    facts, risk = paper.account_preview(tmp_path,
+        deadline=datetime.now(paper.A_SHARE_TZ) + timedelta(seconds=5))
+    assert risk['status'] == 'NORMAL'
+    assert positions.read_bytes() == before
+    json.dumps([facts, risk], allow_nan=False)
+    assert not (paper.paper.risk_directory(tmp_path) / 'risk_latest.json').exists()
+
+
+@pytest.mark.parametrize('field', ['shares', 'exit_price', 'entry_cash_out'])
+def test_closed_economic_nan_remains_blocked(tmp_path, field):
+    import json
+    from tests.test_paper_decision_support import account
+    live=tmp_path/'output/live'
+    save(live/'paper_account.json',account())
+    row=dict(book='B',code='300665.XSHE',exit_date='2026-07-20',shares=100,exit_price=12)
+    row[field]=float('nan')
+    (live/'positions.jsonl').write_text(json.dumps(row)+'\n')
+    with pytest.raises(ValueError):paper._read_account_preview(tmp_path)
+
+
+def test_byte_change_during_marks_is_rejected(tmp_path,monkeypatch):
+    import json
+    from tests.test_paper_decision_support import account
+    live=tmp_path/'output/live'
+    save(live/'paper_account.json',account())
+    p=live/'positions.jsonl';p.write_text('')
+    def mutate(*args):
+        p.write_text('# concurrent writer\n')
+        return {}
+    monkeypatch.setattr(paper.paper,'fetch_paper_marks',mutate)
+    with pytest.raises(ValueError,match='ACCOUNT_CHANGED_DURING_MARKS'):
+        paper._read_account_preview(tmp_path)

@@ -28,8 +28,14 @@ before this gate. Why: an ineligible tick cannot acquire semantic/writer work.
 
 Read [shared contract](../automation-context.md) and
 [kol-trading-judgment.md](../kol-trading-judgment.md) only on an owned run.
-need_semantic_review=false means no KOL work. If true, build one cache-only
-projection; every explicitly typed still-valid book_b_short_term current view
+need_semantic_review=false means no KOL work. If true, after protective monitors,
+follow the emitted semantic_support command once: `kol_trading_context.py shared
+--summary`. It returns accepted source synthesis, full invalidation/delta and the
+reusable citation context, as described in [current review](../kol-current-review.md).
+Reuse unchanged source reasoning and exact body cache; independently judge only
+current runtime facts and all delta. New citations recover their exact report
+context before final verification/publication. If shared support is unavailable,
+retain that explicit status and use the existing cache-only projection fallback; every explicitly typed still-valid book_b_short_term current view
 is covered. Uncertain/non-short/unclassified/incomplete are counts, not model
 inputs. source_fingerprint change matters; audit projection hash change alone
 is not a new meaning. No latest-N, keyword/holdings scope or classification_backfill.
