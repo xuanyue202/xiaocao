@@ -63,8 +63,17 @@ stays explicitly deferred; preserve baseline/independently valid-policy gates.
 Do not wait for the source owner. Source synthesis is prepared independently in
 its early/evening slot; only current applicability/delta is new at freeze.
 
+On current_warmup_path before09:20, read its exact tool_arguments and follow
+[current analyst preload](../kol-current-review.md): dispatch once, register the
+actual loaded receipt and keep its code wait alive. The parent reviews prepared
+conditions and source/schema prerequisites while the worker waits. This is an
+APP-owned current analyst, independent of the shared source writer.
+
 ## Frozen event: dispatch, policy, current account and batch
 
+On await_preloaded_current_worker, the original runner has delivered directly to
+that already-waiting worker. Keep it; prepare independent final review and source
+verification immediately, with no second spawn or schema/full-source read.
 On dispatch_path read that ONE assembled file. Follow next_action: independently
 review its unapproved prepared-policy draft when unchanged typed conditions
 allow materialization; otherwise follow exact tool_arguments for the current-only worker and record actual dispatch. See opening preparation for both branches.

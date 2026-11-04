@@ -360,9 +360,16 @@ def poll(root: Path = ROOT, *, now: datetime | None = None,
             claim["token"] = _digest(claim)
             state["claim"] = claim
             _save(directory, state)
-            return _result("run", "CLAIMED", **{key: claim[key] for key in (
+            result = _result("run", "CLAIMED", **{key: claim[key] for key in (
                 "token", "cadence_slot", "fingerprint", "decision_fingerprint", "decision_changed",
                 "need_semantic_review", "regular_monitor", "owner_thread_id", "deferred_reconcile_plan_ids")})
+            if semantic:
+                result['semantic_support'] = {
+                    'after': 'original protective paper and APP checkpoints',
+                    'command': ['scripts/kol_trading_context.py', 'shared', '--summary', '--root', str(root)],
+                    'scope': 'reuse accepted source reasoning; review complete delta and current facts',
+                    'authority': 0}
+            return result
     except (OSError, ValueError, TypeError, KeyError, AttributeError):
         return _result("reconcile_required", "LOCAL_GATE_READBACK_REQUIRED")
 

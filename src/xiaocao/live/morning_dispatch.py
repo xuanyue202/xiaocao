@@ -85,8 +85,24 @@ def write_warm_dispatch(request: dict, request_path: Path, *, now: datetime) -> 
                 'task_name': request['runtime'] + '_kol_current_' + identifier[:12],
                 'model': 'gpt-6-sol', 'reasoning_effort': 'xhigh', 'fork_turns': 'none',
                 'message': message + '共享准备已完成全量来源阅读；只处理本请求当前适用性及delta，不重做完整来源准备。'})
+    delivered = None
+    warm_path = inputs.get('current_warmup_path')
+    if value['next_action'] == 'dispatch_current_worker' and warm_path:
+        from .current_review import deliver
+        try:
+            delivered = deliver(Path(warm_path).parent, request, path, now=now, publish=False)
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            # Readiness is supporting evidence. Its failure must leave the
+            # original current analyst route usable within the same cutoff.
+            value['current_warmup_unavailable'] = type(exc).__name__
+        if delivered is not None:
+            value.update(next_action='await_preloaded_current_worker',
+                         current_worker_id=delivered['worker_id'],
+                         delivery=delivered, tool_arguments=None)
     value['sha256'] = canonical_sha256(value)
     atomic_write(path,json.dumps(value,ensure_ascii=False,sort_keys=True).encode(),immutable=True)
+    if delivered is not None:
+        deliver(Path(warm_path).parent, request, path, now=now)
     return path
 
 

@@ -47,6 +47,8 @@ log() { export XIAOCAO_DAILY_STAGE="$*"; echo "[$(date '+%F %T')] $*" | tee -a "
 run_book_b_morning() {
   local FREEZE_STATUS FREEZE_EXIT REVIEW_RENDEZVOUS FREEZE_RECEIPT
   FREEZE_RECEIPT="output/live/morning_consumers/paper-${TODAY}.json"
+  log "prepare current-only KOL analyst from accepted shared source (no source synthesis)"
+  run_python scripts/kol_current_review.py paper-prepare --root "$ROOT" || true
   log "morning execute: wait for dated frozen recommendation + review queue (never rerun live_recommend)"
   FREEZE_STATUS="$(run_python scripts/wait_for_morning_freeze.py --date "$TODAY" --snapshot-path "output/live/book_b_live_freeze_${TODAY}.jsonl" --receipt-path "$FREEZE_RECEIPT" --timeout-sec "${XIAOCAO_MORNING_FREEZE_TIMEOUT_SEC:--1}" --poll-sec 2 2>&1)"
   FREEZE_EXIT=$?
