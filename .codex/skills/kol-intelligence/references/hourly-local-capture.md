@@ -69,6 +69,12 @@ entry. Preserve the original successful dispatch and all IDs, use a separate
 nonce/session-bound receipt, and never restart a capture or reopen on each poll.
 A historical launch is not proof of a current visible window.
 
+For a reused fixed room that now shows another session, read
+[recorded-course recovery](recorded-course-recovery.md) and inspect the configured
+history catalogue before another unbound entry. A published independent recording
+is the recovery lead; keep the original capture instead of waiting for that
+room's next live session or guessing a media URL.
+
 For a validated local `wechat_official_accounts` repair, use
 `resume-source-repair --source-adapter wechat_official_accounts
 --failure-fingerprint <exact fingerprint> --local-capture`.
