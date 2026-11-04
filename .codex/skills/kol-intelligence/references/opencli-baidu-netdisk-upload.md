@@ -100,6 +100,15 @@ the browser command's empty queue or healthy page is not uploader evidence.
 | U4 | Require the same page's 100 ms event-loop probe to finish; then credentialed paginated `/api/list` must prove exact folder, `errno=0`, complete scan, and 0 or 1 exact basename. Inspection changes no ads, styles or file inputs. | A synchronous read, `selected=true`, or `--window foreground` alone is not readiness. Use the emitted stage diagnostic; do not turn a timeout hint into a claim that a native dialog exists. |
 | U5 | For a new prepared claim: persist claim, verify media hash/size, mark one file input, native-click the exact filename header, require user activation, attach once and bind its receipt. Existing claims follow only the recovery APIs below. | From `attach.begin` onward, absent receipt means uncertain effect, never permission to retry. |
 | U6 | Keep the same item PTY running until later exact cloud readback yields `video_ready`; feed the exact LiangHui operation/receipt as specified by the local entry. | Attachment is not cloud completion; mailbox creation is `Handoff完成`, not remote `全部完成`. |
+| U7 | After exact cloud `video_ready`, capture acceptance and `Handoff完成` with authoritative same-ID/content/media-hash mailbox readback, delete the corresponding local video when no active capture, upload, recovery or acceptance step still needs it. Immediately before deletion verify the ledger-bound path is a regular non-symlink file with the same size and SHA-256; stop on any mismatch. | Never delete on attachment or uncertain/incomplete readback. Preserve the cloud file, original IDs, hashes, claims, receipts and other local files; verify the exact local path is absent and record the outcome. Remote ACK is separate, not a deletion prerequisite. |
+
+The current capture acceptance command requires the local artifact on every run.
+Preserve its successful pre-deletion result and the deletion record. Before any
+later acceptance recheck, restore the exact cloud video to its ledger-bound local
+path, verify its size and SHA-256 against the original media receipt, then run
+acceptance. Missing or mismatched restored bytes are a failed recheck, never a
+reason to overwrite evidence or claim acceptance. The same U7 conditions apply
+again before removing the restored copy.
 
 For diagnosis only, run the adapter with the existing ledger values and
 `--inspect-only true --timeout 25 --site-session persistent --keep-tab true

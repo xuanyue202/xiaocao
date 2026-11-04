@@ -14,8 +14,10 @@ publication/notification/Book writer. Why: local Netdisk fallback must not creat
 active-active writers or a second source interpretation.
 
 On daily_lianghui_mailbox_input_required, use exact supplied LiangHui MCP
-send_mailbox_message/get_mailbox_message arguments; return exact structured
-receipt compactly to original stdin. Do not substitute Codex task messaging.
+send_mailbox_message/get_mailbox_message arguments; return the receipt compactly
+to original stdin. For a successful get, wrap the unchanged structured message as
+`{"operation":"get_mailbox_message","message":<structured message>}`; the bare
+message is not a valid reply. Do not substitute Codex task messaging.
 For native WeChat interaction read hourly-local-native-capture.md/current SOP;
 known live capture has its10-second fast-start route. Keep WeChat running,
 close only exact captured course window, verify absence; no guessed coordinates,
