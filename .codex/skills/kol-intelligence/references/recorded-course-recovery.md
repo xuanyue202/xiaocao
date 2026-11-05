@@ -18,6 +18,51 @@ for the same file; preserve original bindings and prove any ticket alias separat
 The standalone helper below is only for a reconciled idle
 same-original repair with no active capture runner.
 
+## Browser transport recovery through OpenCLI
+
+Codex CUA `native pipe closed before response` does not establish an Edge,
+OpenCLI, account or course failure. Under the human's Nov5 repair request,
+OpenCLI is an authorized Browser path for this normally entitled recording.
+Check the pinned CLI's `daemon status` and `doctor` first; an extension connection
+alone is not a successful page read. Reuse the connected Edge profile and a
+single `xiaocao-recorded-course` Browser session. Do not restart the user's Edge,
+copy a profile, inspect cookies/passwords, change extension access or bypass a
+policy denial. Login, CAPTCHA and agreements retain their human action gates.
+
+```bash
+npx --yes @jackwener/opencli@1.8.6 daemon status
+npx --yes @jackwener/opencli@1.8.6 doctor
+npx --yes @jackwener/opencli@1.8.6 browser xiaocao-recorded-course tab list
+npx --yes @jackwener/opencli@1.8.6 browser xiaocao-recorded-course state --window foreground
+```
+
+After reconciling old ownership, keep the exact `capture-xiaocao-item` or original
+hourly runner alive in its PTY. The runner must arm listening under its network
+guardian before Browser media requests. In OpenCLI, open the emitted `course_url`
+to obtain fresh parent-catalogue evidence, then open the emitted exact
+`recording_url` (or its visible same-course row). Reading only public catalogue
+metadata or CLI connectivity cannot satisfy the entitled source/media contract.
+
+Use `browser ... eval` only for safe DOM facts: `document.title`,
+`location.pathname`, and video `duration`, `readyState`, `paused`. Never return
+`currentSrc`, signed URLs, hidden inputs, storage or network ticket bodies.
+Read the exact candidate ID through the existing credential-free downloader API;
+the collector independently proves catalogue/detail/play/material/finite-HLS
+lineage. Leave the player using `browser ... back`, then verify the same course
+path and zero video elements. Return only the original request's exact
+action/subscription/candidate/duration/player-left fields to the same PTY.
+This changes Browser transport, not source/capture/task identity or acceptance.
+
+If the pinned CLI transport fails, reuse only the transport checks, existing
+Edge profile and at-most-once daemon restart from
+[OpenCLI Edge recovery](opencli-edge-recovery.md) steps 2–4. Verify the emitted
+course/recording path and collector evidence afterward; its Netdisk folder,
+`/api/list`, saved-login and extension-permission steps do not apply to this
+recording session. Retain the original claims and this section's human
+authentication gates. It permits no WeChat UI operation. Netdisk upload
+still uses the separate repository-owned adapter `site:baidu-netdisk`; this
+Browser session's empty queue cannot reconcile an uploader effect.
+
 Use when a fixed Xiaocao room now announces a later session or its original
 replay has disappeared. Read the original message through the cached reader.
 Stop the exact idle polling runner when the human asks to stop waiting; verify

@@ -104,6 +104,9 @@ evidence ambiguity, requested edits, or explicit historical aggregation.
   and requires a direct human rollback instruction. It is not an automatic
   fallback for unpublished or unavailable recordings. No H5 live player,
   credential export, access bypass or agent WeChat UI is authorized.
+  On a Codex Browser transport failure, check the pinned OpenCLI Edge path in
+  that recorded-course SOP before requesting a Codex restart. Preserve the
+  original retained runner and independently verified source/media evidence.
 - For the explicitly restored legacy mode, automatic local Xiaocao capture uses native WeChat mini-program only. H5 is
   a credential-free identity anchor, never a player/login/fallback. A configured
   human-assisted route follows its own same-capture contract; remote Baidu player
