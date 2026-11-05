@@ -105,7 +105,8 @@ def preview(rows: list[dict], freeze: dict, *, root: Path, now: datetime,
                     result['current_source_head'] = 'local_fingerprint_changed'
                     raise ValueError('PREPARATION_SOURCE_CHANGED')
                 result['current_source_head'] = 'fingerprint_matched'
-            executable = any(item['applicability']=='supported' for item in preferences)
+            executable = (any(item['applicability']=='supported' for item in preferences)
+                          and not (rolling and result['unresolved_semantic_conditions']))
             from .prepared_policy import preview_risk
             risk = preview_risk(prepared, trade_date=freeze['market_date'], now=now) if rolling else None
             if (preferences and (executable or not rolling)) or risk is not None:
@@ -134,9 +135,11 @@ def preview(rows: list[dict], freeze: dict, *, root: Path, now: datetime,
                         risk_adjustment=risk, portfolio_diff=selection_diff(rows, adjusted),
                         current_applicability='explicit_prepared_conditions_satisfied')
             else:
-                result['reason'] = ('CURRENT_APPLICABILITY_REVIEW_REQUIRED' if rolling and
+                result['reason'] = ('CONDITIONAL_PLAN_NOT_EXECUTABLE' if rolling and
                     result['unresolved_semantic_conditions'] else 'PREPARATION_NO_SELECTION_PREFERENCE')
                 if rolling:
+                    if result['unresolved_semantic_conditions']:
+                        result['current_applicability'] = 'deferred_unresolved_conditions'
                     # Complete observable unchanged comparison; this is not
                     # source revalidation or a completed neutral judgment.
                     result['selection'] = select_candidates(rows, [], trade_date=freeze['market_date'],
@@ -179,6 +182,8 @@ def render(value: dict) -> str:
         synthesis += '\n当前未完成的适用条件：\n' + '\n'.join('- ' + item for item in unresolved) + '\n'
     if value.get('current_applicability') == 'not_completed':
         synthesis += '\n本轮保留基线，当前适用性判断未完成；本预览不会启动后续评审。\n'
+    if value.get('current_applicability') == 'deferred_unresolved_conditions':
+        synthesis += '\n盘前条件方案缺证，本轮明确降级并保留基线；早盘不补做新语义判断。\n'
     return (f"\n## KOL 候选偏好（推荐预览）\n\n"
         f"状态：{value['status']}；原因：{value['reason']}。\n\n"
         f"冻结基线：{baseline}。\n\nKOL 推荐：{selected}。\n\n"

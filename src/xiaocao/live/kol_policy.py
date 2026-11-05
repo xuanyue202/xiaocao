@@ -443,8 +443,9 @@ def review_publication_fence(receipt: dict | None) -> dict:
     # retain their separate UTC-only format contract.
     requested = _clock(datetime.fromisoformat(receipt["requested_at"].replace("Z", "+00:00")))
     deadline = _clock(datetime.fromisoformat(receipt["entry_deadline"].replace("Z", "+00:00")))
-    return {"morning_request_sha256": receipt["request_sha256"], "publication_deadline": min(
-        deadline, requested + timedelta(seconds=budget))}
+    from .morning_support import conditional_first, support_deadline
+    limit = support_deadline(receipt) if conditional_first(receipt) else min(deadline, requested + timedelta(seconds=budget))
+    return {"morning_request_sha256": receipt["request_sha256"], "publication_deadline": limit}
 
 
 def load_decision(root: Path, book: str, runtime: str, now: datetime, *,

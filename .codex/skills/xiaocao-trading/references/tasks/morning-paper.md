@@ -11,12 +11,11 @@ Read [shared contract](../automation-context.md), Contract §1c/1d/2a and
 [opening preparation](../kol-opening-preparation.md). After original calendar
 proof, keep the original supervisor waiting. Do not build another full preparation
 projection, spawn a preparation worker or republish shared source reasoning.
-The original supervisor emits paper_kol_current_warmup before waiting for the
-freeze. Follow [current analyst preload](../kol-current-review.md): one Paper-owned
-current-only worker, exact spawn/load registration before09:20 and a retained
-read-only code wait. Reuse source reasoning and review all early delta; no duplicate
-source synthesis or APP-child dependency. Prepare independent review/source checks
-before opening. Missing readiness retains the original explicit fallback.
+The original supervisor emits paper_kol_conditional_preparation, a cache-only
+readiness observation; do not preload a current worker. Read
+[conditional-first morning](../kol-conditional-morning.md). Source semantics and
+machine-checkable predicates are independently reviewed before09:20. Missing
+readiness retains the original explicit fallback.
 At the original freeze code reads the accepted shared source brief and creates
 an immutable `kol-preparation-adoption.json` bound to this Paper owner, current
 source fingerprint and rule hashes. It does not wait for APP account/login or
@@ -40,23 +39,17 @@ Consume dated immutable queue/evidence_freeze_ref; structured intelligence
 reviews use agent_intelligence_review with exact --evidence-freeze-ref, never
 keyword scoring. Derived queue waits share original budget; timeout preserves
 baseline and explicit degradation. Intelligence on still needs same-batch support.
-On paper_kol_review_requested use original request/packet/hash. When
-next_action=await_preloaded_current_worker, the original supervisor already
-delivered directly to its waiting worker; complete independent parent review and
-publication without another dispatch. dispatch_path
-means read once and follow next_action: independently review its authority0
-materialized draft, spawn the provided current-applicability worker for shared
-preparation, or follow up the original warm worker only for a legacy Paper-owned
-preparation. Otherwise read the emitted brief.
-On continue_original_baseline_deferred, read the retained uncertainty and original
-deferred receipt; skip new model/publication and let the same writer continue
-under its independently loaded policy and account/execution gates.
-For `next_action=dispatch_current_worker`, spawn the exact provided routed
-worker in this Paper thread. It reads the prepared packet/current delta only;
-never follow up an APP child agent across threads or redo full source preparation.
-No duplicate full projection/schema scan. All
-source verification, independent review and runtime=paper publication bind
-original request and fit09:27. Intelligence completion does not close KOL wait.
+On paper_kol_review_requested read the one original dispatch artifact.
+For conditional_first_v1, independently_review_prepared_draft means immediately
+review its exact unapproved decision/context and actual current facts, then normal
+source verification and runtime=paper publication. continue_original_baseline_deferred
+means preserve named uncertainty, skip model/publication and continue original
+writer under independently valid policy/baseline gates. Missing/changed/unresolved
+conditions defer immediately; never dispatch a current or full-source worker.
+All steps finish as soon as ready, within original max120 seconds and hard09:27:30.
+Legacy immutable requests retain original09:27 and their exact bound handler;
+[legacy current review](../kol-current-review.md) never extends those budgets.
+Intelligence completion does not close KOL wait.
 Missing preparation/expiry/timeout/baseline is not completed neutral judgment.
 
 Paper B and T wait/run independently in original supervisor; T's fill wait is

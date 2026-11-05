@@ -41,8 +41,11 @@ Investigate exact mode definitions in decision_catalog before the window.
 Family membership does not establish an explicit mode-follow/COLD exception.
 Sector preferences need the existing canonical map proof. Never invent an opening
 threshold, a percentage from “轻仓”, or future market confirmation. Keep meaningful
-unresolved conditions for the current-only worker; empty preferences alone are
-not a reason for defer_if_no_effect. The parent independently reviews synthesis
+unresolved conditions explicitly. Prepare executable source-justified branches
+before09:20 using the existing policy_template and typed preference predicates.
+Do not leave source reading/mapping work for the opening consumer. Unrepresentable
+conditions stay unresolved and cause prompt opening deferral; empty preferences
+alone are not proof of a completed neutral judgment. The parent independently reviews synthesis
 and sets rolling_synthesis_reviewed=true plus existing coverage/source flags.
 
 Run context-check before accepting. `accept` registers the immutable shared
@@ -63,7 +66,10 @@ without reusing its old effect or repeating the entire unchanged synthesis.
 The original emitted packet includes synthesis, retained coverage limits,
 relevant implications, complete delta and current facts. Follow its next_action:
 reuse an unapproved materialized draft only when every condition is proved;
-otherwise dispatch one current-only worker in this consumer's own thread.
-Final source verification, independent review, account checks and publication
-remain inside that request's original09:27 deadline. Preparation/preview/adoption
+otherwise explicitly defer immediately for new conditional-first requests.
+No new opening current-worker or semantic synthesis runs on that path. Final source
+verification, independent review, account checks and publication finish as soon as
+ready, before min(original120-second budget, earlier owner deadline,09:27:30).
+Legacy requests retain their original09:27 deadline. See
+[conditional-first opening](kol-conditional-morning.md). Preparation/preview/adoption
 of reasoning never proves formal policy adoption, order, fill or profitability.

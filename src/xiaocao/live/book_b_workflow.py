@@ -65,6 +65,9 @@ def _review_completion(policy: dict, judgment: dict, support: dict | None) -> di
             request_sha = support["request_sha256"]
             completed = datetime.fromisoformat(support["completed_at"])
             deadline = datetime.fromisoformat(support["entry_deadline"])
+            from .morning_support import conditional_first, support_deadline
+            if conditional_first(support):
+                deadline = min(deadline, support_deadline(support))
             budget = float(support["max_wait_seconds"])
             bound = (re.fullmatch(r"[0-9a-f]{64}", request_sha) is not None
                      and 0 <= budget <= 120 and requested <= as_of <= completed < deadline

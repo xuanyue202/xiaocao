@@ -16,6 +16,28 @@ from xiaocao.runner_recovery import _hash
 EARLY = datetime.fromisoformat('2026-10-22T21:10:00+08:00')
 
 
+def test_source_owner_rebuilds_after_known_instruction_closure_upgrade(source, monkeypatch, capsys):
+    from scripts import kol_trading_prepare as cli
+    from xiaocao.kol import trading_context as tc
+    prior = prep.read_json(source['path'])
+    prior['rules'].pop()
+    save(source['path'], prior)
+    monkeypatch.setattr(tc, 'build_trading_context', lambda **kw: {})
+    monkeypatch.setattr(tc, 'write_trading_projection', lambda *a, **kw: source['inputs']['projection'])
+    class Clock:
+        @classmethod
+        def now(cls, tz):
+            return EARLY.astimezone(tz)
+    monkeypatch.setattr(cli, 'datetime', Clock)
+    directory = source['root']/'rebuilt'
+    assert cli.main(['rolling-inputs', '--root', str(source['root']), '--output-dir', str(directory)]) == 0
+    capsys.readouterr()
+    fresh = prep.read_json(next(directory.glob('*.rolling-inputs.json')))
+    assert len(fresh['rules']) == len(prep.RULES)
+    assert fresh['rules'][-1]['path'].endswith('kol-conditional-morning.md')
+    assert not (source['root']/'output/live/kol_policy/decisions').exists()
+
+
 @pytest.fixture
 def source(case, monkeypatch):
     root = case['root']
@@ -188,10 +210,10 @@ def test_uncertain_brief_checks_current_sources_without_granting_judgment(source
                    now=NOW.replace(hour=11) if state == 'expired' else NOW,
                    fingerprint_reader=fingerprint)
     assert calls == ([] if state == 'expired' else [True])
-    assert result['current_applicability']=='not_completed'
+    assert result['current_applicability']==('deferred_unresolved_conditions' if state=='unchanged' else 'not_completed')
     assert result['reason'] == {'changed': 'PREPARATION_SOURCE_CHANGED',
         'expired': 'KOL_PREPARATION_ROLLING_SOURCE_EXPIRED',
-        'unchanged': 'CURRENT_APPLICABILITY_REVIEW_REQUIRED'}[state]
+        'unchanged': 'CONDITIONAL_PLAN_NOT_EXECUTABLE'}[state]
     assert result['unresolved_semantic_conditions']==['Opening acceptance unknown.']
     assert result['current_source_head'] == {'changed': 'local_fingerprint_changed',
         'expired': 'not_checked', 'unchanged': 'fingerprint_matched'}[state]

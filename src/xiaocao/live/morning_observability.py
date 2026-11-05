@@ -20,9 +20,11 @@ _CANDIDATE_FIELDS = (
 
 def review_brief(request: dict) -> dict:
     """Project decision-bearing fields without replacing the source artifact."""
+    from .morning_support import conditional_first, support_deadline
     requested = datetime.fromisoformat(request['requested_at'])
     entry = datetime.fromisoformat(request['entry_deadline'])
-    deadline = min(entry, requested + timedelta(seconds=min(120, request['max_wait_seconds'])))
+    deadline = (support_deadline(request) if conditional_first(request)
+                else min(entry, requested + timedelta(seconds=min(120, request['max_wait_seconds']))))
     return {
         'schema_version': 'book-b-live-review-brief.v1',
         **{k: request.get(k) for k in (
@@ -32,6 +34,7 @@ def review_brief(request: dict) -> dict:
             'allocation_facts_path', 'allocation_capsule_sha256',
             'account_facts', 'account_risk', 'kol_inputs', 'dispatch_budget',
         )},
+        **({'judgment_mode': request['judgment_mode']} if 'judgment_mode' in request else {}),
         'review_deadline': deadline.isoformat(),
         'candidates': [{k: row[k] for k in _CANDIDATE_FIELDS if k in row}
                        for row in request.get('candidates', [])],

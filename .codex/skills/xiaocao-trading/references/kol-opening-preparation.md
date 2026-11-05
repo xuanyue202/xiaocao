@@ -1,3 +1,5 @@
+<!-- New morning routing is governed by kol-conditional-morning.md; worker
+branches below describe legacy or separately authorized nonopening requests. -->
 # KOL opening preparation
 
 Use after the original owner's trading-day proof. This implements Operating
@@ -27,7 +29,9 @@ Legacy v1 APP/Paper-owned evidence remains readable for exact original readback.
 
 The following source-preparation schema remains the common validation contract;
 new work uses v2 through the early/evening source owner. Full preparation must
-finish before09:20 for that morning; current-only dispatch retains09:27 cutoff.
+finish before09:20 for that morning. New requests use
+[conditional-first opening](kol-conditional-morning.md): no post-freeze semantic
+worker; original120-second budget and hard09:27:30. Legacy requests keep09:27.
 
 Give the worker the exact input, its complete compact projection, hash-bound
 rules and this schema. Run `scripts/kol_trading_prepare.py template --input
@@ -184,7 +188,7 @@ hold no ledger lock. Original writer rechecks current account/risk and binds the
 support receipt in strategy_adjudication; its actual consumption proves adoption.
 Book T keeps its independent branch. No parent-constructed substitute request or
 second paper writer is needed. The original wait budget is retained and KOL
-support never extends past 09:27. Both consumers exclude publications bound to
+new conditional-first support never extends past09:27:30 or its earlier original budget; legacy support keeps09:27. Both consumers exclude publications bound to
 this exact request at/after its original deadline at every policy read. A still-valid
 independent policy remains reusable, and a newer independent judgment still
 supersedes it; actual expiry and store-integrity gates remain current.

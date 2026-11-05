@@ -370,13 +370,8 @@ def _morning_deadline(decision: dict, review: dict, request: dict | None) -> dat
              "morning_request_date_mismatch")
     budget = float(request["max_wait_seconds"])
     _require(math.isfinite(budget) and 0 <= budget <= 120, "morning_request_budget_invalid")
-    deadline = min(_time(request["entry_deadline"]), requested + timedelta(seconds=budget))
-    if request.get("review_wait_until"):
-        deadline = min(deadline, _time(request["review_wait_until"]))
-    local_requested = requested.astimezone(ZoneInfo("Asia/Shanghai"))
-    if (local_requested.hour, local_requested.minute) < (9, 30):
-        deadline = min(deadline, _time(request["trade_date"] + "T09:27:00+08:00"))
-    return deadline
+    from xiaocao.live.morning_support import support_deadline
+    return support_deadline(request)
 
 
 def publish_trading_decision(root: Path, decision: dict, review: dict, context: dict, *,
