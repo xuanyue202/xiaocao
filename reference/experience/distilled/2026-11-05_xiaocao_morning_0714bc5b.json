@@ -1,0 +1,373 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-05",
+  "processing_date": "2026-11-05",
+  "kind": "早盘大师班直播",
+  "summary": "本场可复用的零级知识不是某只股票的事后涨幅，而是一条带边界的短线决策链：先把环境识别为偏空轮动，仓位随环境改善程度分档；当高位短线环境尚可时，红盘起爆、人气股低吸与连板接力只是候选模式，连板还要同时满足竞王分、开盘幅度和可承受波动等条件。作者反复提出同一模式第一、第二名组合，也提到不同模式并用，但没有给出等权、固定总风险、相关性或样本外风险改善证据。历史赢家、八月回看和约99点口算只可用于生成待检验问题，不能当成可复制业绩。来源中的当日盘中结论在处理时已收盘；若次日复用，必须重新取得环境、分数、候选首次出现、价格与可成交证据。",
+  "author": "小草",
+  "source": "小草直播",
+  "authority": 0,
+  "action_summary": {
+    "posture_update": "no_update：全局姿态截至2026-07-03已过期，本场早盘混合盘中来源不续期。",
+    "playbook_update": "proposal_only：环境分档仓位、连板分数与高开、前二组合和时点原则只保留为authority=0研究材料。",
+    "hypothesis_update": "no_ingest：XH-078、XH-276、XH-332均只有部分支持，不记recurrence、不新增近重复。",
+    "audit_evidence": "完整读取并复核58个稳定段；莱美药业记录为本地同日emitted_strategy_hit与emitted_qibao_hit，同时保留COLD、不可执行、无成交。",
+    "instrumentation_todo": "补齐下一交易日环境、私有分数、候选首次出现、开盘、可成交、费用、退出与固定总风险的样本外研究。",
+    "routing": [
+      "research_candidate_only",
+      "no_auto_tune",
+      "no_posture_renewal",
+      "human_gate_required"
+    ]
+  },
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_netdisk_enrichment/artifacts/kol-netdisk-1182754346708ca1/20261105 大师班早盘直播11月5日-compressed.txt",
+      "sha256": "0714bc5b4a7073add2f20649a5415aee3efaa611a382e0041a96e179bf73585c",
+      "size": 21311
+    }
+  ],
+  "posture": {
+    "regime": "作者在11月5日早盘口述市场仍偏空轮动、多数时候空仓，但高位短期环境尚可；低开可能带来当日修复。",
+    "event_time_call": "作者在11月5日早盘把市场称为偏空轮动：科技在前一日大涨后低开回吐，低开增加盘中修复机会，但多数情形仍以空仓为主；高位短线环境则被判断为尚可。",
+    "current_status": "当日盘中判断在23:15处理时已经收盘，不能自动续到11月6日；本场不更新全局姿态。",
+    "dominant_style": "高位、连板和20厘米候选只在模式分数、开盘幅度与波动承受力同时合格时参与；白酒、医药、传媒与科技之间更像资金跷跷板而非稳定主线。",
+    "risk": "把低开修复预期当成保证、追逐过高开盘、用最终排名替代首次出现、用历史赢家替代全样本、增加总仓位来伪造组合稳定性。",
+    "style_ranking": [
+      "来源当时优先红盘起爆与人气股低吸",
+      "竞王分大于300且开盘不过高时才观察连板接力",
+      "环境只改善但未转强时维持中等仓位",
+      "环境不上来时保持清仓"
+    ],
+    "global_posture_update": false,
+    "global_posture_reason": "现行全局姿态截至2026-07-03已过期；一场早盘至盘中的混合来源不足以续期或改写全局姿态。"
+  },
+  "regime_call": {
+    "call": "偏空轮动中先看修复而不预设反转；环境不改善以现金为主，改善但未转强只用中等仓位。高位短线环境若仍可、竞王分超过300且开盘不过度，则可观察连板接力。",
+    "horizon": "来源当日盘中；方法可用于未来同类场景，但每次必须重新确认。",
+    "attribution": "system_synthesis_from_kol_claims",
+    "what_would_falsify": [
+      "低开后的修复概率并不高于平开后下跌，且扣除成交约束后无优势",
+      "竞王分超过300与连板次日收益、封板率或左尾风险没有样本外关系",
+      "对过高开盘施加惩罚不能改善含成本风险调整收益",
+      "前二组合在固定总风险下不能降低回撤或尾部损失",
+      "所谓科技与白酒医药跷跷板在更长样本中没有稳定负相关"
+    ]
+  },
+  "directions": [
+    {
+      "name": "偏空轮动中的仓位分档",
+      "stance": "行情好才提高仓位，只有局部改善时维持中等仓位，环境不改善则清仓或持有现金。",
+      "conditions": [
+        "作者口述‘行情好’时仓位多",
+        "作者口述‘行情上来’时仓位中",
+        "作者口述‘行情不上来’时保持清仓"
+      ],
+      "boundary": "来源没有给出可执行的百分比仓位、退出条件或次日续期规则。",
+      "system_research_design": [
+        "研究前冻结风险预算",
+        "用可复现环境指标区分盘中修复与趋势转强"
+      ]
+    },
+    {
+      "name": "红盘起爆与人气股低吸",
+      "stance": "作者把两者作为当时的主要模式，并主张在轮动过渡期按模式而不是凭叙事临时猜方向。",
+      "conditions": [
+        "来源当时勾选红盘起爆",
+        "来源当时勾选人气股低吸",
+        "作者把两种模式用于轮动过渡"
+      ],
+      "boundary": "来源没有给出候选全集、触发快照、成交和退出路径。",
+      "system_research_design": [
+        "记录候选首次出现及当时真实可成交性",
+        "保存模式资格失效时点"
+      ]
+    },
+    {
+      "name": "连板接力",
+      "stance": "只供能承受大波动者观察；一进二弱转强、高位追涨均应同时看竞王分与开盘幅度。作者偏好约3%至4%开盘，5%至6%仅勉强可接受，约18%被认为过高。",
+      "conditions": [
+        "作者判断高位短期环境还可以",
+        "作者要求竞王分超过300",
+        "作者偏好约3%至4%开盘，5%至6%勉强，约18%过高",
+        "作者认为越早出现越好，较晚信号需逐股判断"
+      ],
+      "boundary": "300分和开盘幅度均为作者经验口径，未经过前瞻、含成本和不可成交检验。",
+      "system_research_design": [
+        "用连续分组而非事后单点阈值比较分数与高开",
+        "纳入费用、涨跌停不可成交和退出"
+      ]
+    },
+    {
+      "name": "模式与候选组合",
+      "stance": "作者主张同一模式第一、第二名都可买并组合，也提到红盘起爆和人气股低吸并用。",
+      "conditions": [
+        "作者口述第一名和第二名都可以买",
+        "作者口述红盘起爆与人气股低吸可以同时使用"
+      ],
+      "boundary": "本场没有等权、模式间权重、相关性、回撤改善或收益让渡数据，不能宣称组合已经打败概率。",
+      "system_research_design": [
+        "固定总风险，不以增加总仓位伪造稳定性",
+        "分别记录同模式前二与跨模式组合",
+        "事前冻结权重和退出规则"
+      ]
+    }
+  ],
+  "stocks": [
+    {
+      "surface_form": "皇台酒业、莱美药业",
+      "role": "当日白酒医药与科技跷跷板的盘中观察",
+      "lesson": "只说明资金竞争和盘中反转可能，不是处理时点的可追单建议。",
+      "resolution": "皇台酒业000995.XSHE、莱美药业300006.XSHE；来源没有唯一成交证据。"
+    },
+    {
+      "surface_form": "力王、果麦、襄阳轴承、华阳智能、明星",
+      "role": "当日盘中高分、拉升或排名候选",
+      "lesson": "分数随秒级时点变化，最终排名不能代替首次出现和可成交性。",
+      "resolution": "襄阳轴承、华阳智能为原声完整名称；‘力王’疑似力王股份、‘果麦’疑似果麦文化，但仅凭本地目录不能唯一升格；‘明星’保持未解析。"
+    },
+    {
+      "surface_form": "慈文传媒、奥雅股份、被测力/贝特利、闽发铝业、龙头股份",
+      "role": "前一日或更早的模式与前二组合案例",
+      "lesson": "作者以涨停、20厘米或涨幅支持模式，但处理时没有全样本、买卖时点和账本闭环。",
+      "resolution": "慈文、奥雅、闽发铝业、龙头股份可按同场完整称谓归一；‘被测力/贝特利’仅疑似倍杰特，不在主字段中升格。"
+    },
+    {
+      "surface_form": "利欧、美丽云、中电电机、百花医药/百花生物、白普赛斯、玉衡药业、黄氏集团、亚邦股份、大众交通、万邦医药、金螳螂、金路电子、澄迈科技、日出东方、通鼎互联、宇皇数控、湖南白银、天商生物、万象德龙",
+      "role": "作者用于支持八月连板环境的历史回看样本",
+      "lesson": "只能生成研究样本表，不能把挑出的赢家和约99点口算当成可复制收益。",
+      "resolution": "利欧、中电电机、亚邦股份、大众交通、万邦医药、金螳螂、日出东方、通鼎互联、湖南白银可按同场语境归一；其余音似名只保留疑似映射，不升格为规范名。"
+    }
+  ],
+  "method_principles": [
+    "环境先于模式：偏空轮动时，盘中修复不等于趋势反转，仓位先服从环境改善程度。",
+    "连板候选同时受分数、开盘幅度、出现时点和可成交性约束，不能只看榜单名次。",
+    "系统研究设计：同模式前二组合与跨模式组合是两个不同命题，研究时必须分开。",
+    "系统研究设计：所有组合比较固定总风险；否则增加总仓位会伪造收益和稳定性。",
+    "历史赢家和口算收益必须补齐候选全集、费用、涨跌停不可成交与退出路径。",
+    "当日盘中模式在收盘后失效，次日必须重新验证而不是回看补单。"
+  ],
+  "exit_lessons": [
+    "作者没有提供这些当日候选的完整退出规则，因此任何次日持有或补单都缺少闭环。",
+    "过高开盘会放大连板接力的波动与追高风险；较晚出现的信号不能沿用较早信号的同一评价。",
+    "科技与白酒医药的盘中跷跷板可能反复，单次拉升不能视为稳定主线确认。",
+    "高抛低吸缺少明确对象；五日线表述明确指向奥雅，但没有仓位、破位确认和退出定义，只能保留为待细化方法。"
+  ],
+  "hypotheses": [],
+  "hypothesis_generation_decision": {
+    "status": "no_ingestible_hypothesis",
+    "reason": "本场与相关既有候选只达到部分支持，未完整复现原claim；没有创建近重复的新命题，也没有把部分支持伪装成recurrence。",
+    "authority": 0
+  },
+  "prior_comparison": {
+    "status": "completed_read_only",
+    "compared_at": "2026-11-05T15:24:24Z",
+    "backlog_path": "reference/experience/xiaocao_hypotheses.jsonl",
+    "backlog_sha256": "69e4722981d6f4318d7d6af1bc3506bd716735871dcc93a444d12ea6b5434be9",
+    "feedback_path": "output/automation_audit/kol_hourly_20261105_21_01a1abeb/xiaocao_knowledge_feedback.txt",
+    "feedback_sha256": "3b6d8f474c444b922b98708a0678547dbad20f2ccc591f30bf2a58f9b9663957",
+    "backlog_total": 341,
+    "max_id_reported_by_parent": "XH-344",
+    "relationships": [
+      {
+        "prior_hypothesis_id": "XH-078",
+        "relationship": "partial_support",
+        "result": "本场完整支持同一模式第一、第二名都可买并组合，但没有等权、固定总风险、降低单票方差或少量收益让渡，故不构成原claim复现。"
+      },
+      {
+        "prior_hypothesis_id": "XH-276",
+        "relationship": "partial_support",
+        "result": "本场同时使用红盘起爆与人气股低吸，能支持多模式并用的表层动作；但作者的主要组合论述是同模式前二，也没有固定总风险、波动下降或执行一致性证据，不能等同跨模式组合原claim。"
+      },
+      {
+        "prior_hypothesis_id": "XH-332",
+        "relationship": "partial_support",
+        "result": "本场明确偏好3%至4%开盘、认为5%至6%勉强和18%过高，并以‘第一名开太高了，看第二个金螳螂涨停’完整出现选择稍后低高开候选的机制；但没有证明风险调整收益改善，故仍只记部分支持，不能记recurrence。"
+      }
+    ],
+    "same_batch_dedup": "同模式前二只对照XH-078；不同模式并用只对照XH-276；连板高开惩罚只对照XH-332。三者均为部分支持，不新增、不入库。",
+    "standing_posture": {
+      "as_of": "2026-07-01",
+      "valid_until": "2026-07-03",
+      "status": "expired",
+      "action": "no_update"
+    }
+  },
+  "timing_notes": [
+    "上游08:42时间锚与逐字稿内10:04盘中叙述冲突；08:42不能作为完整逐字稿已发布的确定时间，只保留为原始时间粒度限制。",
+    "处理时为当日收盘后，盘中候选、分数和涨幅均不得追认或延长到下一交易日。",
+    "‘更早一点’是作者方向性偏好，没有给出统一截止秒点；较晚信号须逐股判断。",
+    "短期高位环境尚可只是一场直播的局部判断，不续期全局姿态。",
+    "历史回看主体反复被作者称为八月份，但末段又口述‘十月份连板接力’；月份存在来源内部矛盾，未擅自消解。"
+  ],
+  "typo_corrections": [
+    {
+      "raw": "皇台、黄台、黄牌",
+      "corrected": "皇台酒业",
+      "basis": "同场先出现完整名称，后续语境连续。",
+      "uncertainty": "只校正名称，不补成交。"
+    },
+    {
+      "raw": "齿纹、指纹",
+      "corrected": "慈文传媒",
+      "basis": "同场明确出现‘做传媒’且本地证券表存在唯一近音名称。",
+      "uncertainty": "涨幅与模式归属仍是来源口述。"
+    },
+    {
+      "raw": "被测力、贝特利",
+      "corrected": "疑似倍杰特",
+      "basis": "20厘米、一字板和前一日红盘起爆第二名的连续语境。",
+      "uncertainty": "逐字稿未出现规范全名，保持疑似。"
+    },
+    {
+      "raw": "美丽云、黄氏集团、金路电子、澄迈科技、宇皇数控、天商生物、万象德龙",
+      "corrected": "疑似美利云、皇氏集团、金禄电子、诚迈科技、宇环数控、天山生物、万向德农",
+      "basis": "股票语境、读音和本地证券表。",
+      "uncertainty": "名称归一不证明八月行情、排名或收益。"
+    },
+    {
+      "raw": "王凯涨停、华氏精胺、汉兴、一笑、神州、家物装备、明星",
+      "corrected": "保持未解析",
+      "basis": "上下文不足以唯一确认正式证券名称。",
+      "uncertainty": "不得猜测代码、交易所或收益。"
+    }
+  ],
+  "decision_trace": [
+    {
+      "observation": "科技前一日大涨后低开回吐，开盘跌股超过3000家，作者同时看到高位环境相对尚可。",
+      "inference": "市场偏空轮动但可能盘中修复，不能把局部高位机会外推为全面转强。",
+      "action": "环境不改善以现金为主；仅在模式合格时观察红盘起爆、人气股低吸和连板接力。",
+      "why": "仓位和模式应由环境与实时资格共同约束。"
+    },
+    {
+      "observation": "连板前两名竞王分约344与326，开盘约5%至6%，作者认为勉强可接受且波动较大。",
+      "inference": "分数高不足以消除追高与波动风险，开盘幅度是独立过滤维度。",
+      "action": "只在能承受大波动且开盘不过高时观察；约18%高开明确排除。",
+      "why": "高开会改变盈亏比和可成交性。"
+    },
+    {
+      "observation": "作者反复用第一、第二名的事后表现说明组合。",
+      "inference": "组合构造值得研究，但事后赢家不能证明风险调整优势。",
+      "action": "研究时固定总风险，拆开同模式前二与跨模式组合，使用全样本。",
+      "why": "只有这样才能排除加仓、择优和回看偏差。"
+    }
+  ],
+  "judgment_heuristics": [
+    "先判环境与仓位，再判模式，再判候选。",
+    "分数、开盘幅度、时点和成交缺一不可。",
+    "同模式组合与跨模式组合分开记账。",
+    "盘中结论收盘即失去直接执行资格。",
+    "历史口算收益全部降为待检验零级知识。"
+  ],
+  "strategy_hit_audit": {
+    "status": "completed_one_emitted_benchmark_overlap_no_executable_trade",
+    "local_facts_sha256": "4ada874f978f29bf6249cc241bc173a267f0f70d6d8053d95b5fcedc3d461e16",
+    "teacher_named_winners": [
+      "慈文传媒",
+      "被测力/贝特利（疑似倍杰特）",
+      "莱美药业",
+      "力王（疑似力王股份）",
+      "闽发铝业",
+      "利欧股份",
+      "美丽云（疑似美利云）",
+      "汉兴（未解析）",
+      "一笑（未解析）",
+      "神州（未解析）",
+      "家物装备（未解析）",
+      "中电电机",
+      "百花医药",
+      "白普赛斯（疑似百普赛斯）",
+      "玉衡药业（疑似誉衡药业）",
+      "黄氏集团（疑似皇氏集团）",
+      "亚邦股份",
+      "大众交通",
+      "万邦医药",
+      "金螳螂",
+      "金路电子（疑似金禄电子）",
+      "澄迈科技（疑似诚迈科技）",
+      "日出东方",
+      "通鼎互联",
+      "宇皇数控（疑似宇环数控）",
+      "湖南白银",
+      "天商生物（疑似天山生物）",
+      "万象德龙（疑似万向德农）"
+    ],
+    "teacher_named_negative_or_mixed_cases": [
+      {
+        "name": "龙头股份",
+        "role": "前二组合中的负例",
+        "source_result": "作者称昨日亏5.9点、今日微涨后仍亏5个多点，不属于老师具名赢家。"
+      }
+    ],
+    "local_strategy_benchmark_hits": [
+      {
+        "source_surface": "莱美/莱美药业",
+        "local_name": "莱美药业",
+        "code": "300006.XSHE",
+        "classifications": [
+          "emitted_strategy_hit",
+          "emitted_qibao_hit"
+        ],
+        "captured_at": "2026-11-05T09:25:39+08:00",
+        "local_mode": "标杆短线起爆",
+        "rawQibaoRank": 1,
+        "qibaoRankScore": 240.0,
+        "local_xcjw": 294.4,
+        "mode_state": "COLD",
+        "mode_trade_eligible": false,
+        "star_e": "NONE",
+        "fill_status": "no_fill",
+        "interpretation": "老师具名与本地同日推荐/信号真实重合，按durable-knowledge属于本地策略benchmark hit；COLD、不可执行、无持仓、无paper trade和无成交必须同时保留，不能把重合写成已交易赢家。"
+      }
+    ],
+    "direction_core_observations": [
+      {
+        "name": "莱美药业",
+        "observation": "来源盘中称莱美拉升；本地同日方向/起爆候选也发出该名称。",
+        "boundary": "方向与具名重合成立，但不证明来源模式与本地模式相同，也不证明成交或本地赢家。"
+      }
+    ],
+    "named_stock_classification": [
+      {"source_surface":"皇台/黄台/黄牌","resolved_name":"皇台酒业","classifications":["not_emitted","no_evidence"],"scope_note":"same_day_unique_identity"},
+      {"source_surface":"莱美/莱美药业","resolved_name":"莱美药业","classifications":["emitted_strategy_hit","emitted_qibao_hit"],"scope_note":"same_day_unique_identity"},
+      {"source_surface":"慈文/齿纹/指纹/慈慈传媒","resolved_name":"慈文传媒","classifications":["no_evidence"],"scope_note":"historical_scope_unreviewed"},
+      {"source_surface":"奥雅","resolved_name":"奥雅股份","classifications":["no_evidence"],"scope_note":"historical_scope_unreviewed"},
+      {"source_surface":"果麦","resolved_name":"疑似果麦文化","classifications":["no_evidence"]},
+      {"source_surface":"力王","resolved_name":"疑似力王股份","classifications":["no_evidence"]},
+      {"source_surface":"襄阳轴承","resolved_name":"襄阳轴承","classifications":["not_emitted","no_evidence"],"scope_note":"same_day_unique_identity"},
+      {"source_surface":"华阳智能","resolved_name":"华阳智能","classifications":["not_emitted","no_evidence"],"scope_note":"same_day_unique_identity"},
+      {"source_surface":"明星","resolved_name":null,"classifications":["no_evidence"]},
+      {"source_surface":"被测力/贝特利","resolved_name":"疑似倍杰特","classifications":["no_evidence"],"scope_note":"historical_scope_unreviewed"},
+      {"source_surface":"闽发铝业","resolved_name":"闽发铝业","classifications":["no_evidence"],"scope_note":"historical_scope_unreviewed"},
+      {"source_surface":"龙头股份","resolved_name":"龙头股份","classifications":["no_evidence"],"scope_note":"historical_scope_unreviewed_negative_case"},
+      {"source_surface":"利欧","resolved_name":"利欧股份","classifications":["no_evidence"],"scope_note":"historical_scope_unreviewed"},
+      {"source_surface":"美丽云","resolved_name":"疑似美利云","classifications":["no_evidence"],"scope_note":"historical_scope_unreviewed"},
+      {"source_surface":"汉兴","resolved_name":null,"classifications":["no_evidence"],"scope_note":"historical_scope_unreviewed"},
+      {"source_surface":"一笑","resolved_name":null,"classifications":["no_evidence"],"scope_note":"historical_scope_unreviewed"},
+      {"source_surface":"神州","resolved_name":null,"classifications":["no_evidence"],"scope_note":"historical_scope_unreviewed"},
+      {"source_surface":"家物装备","resolved_name":null,"classifications":["no_evidence"],"scope_note":"historical_scope_unreviewed"},
+      {"source_surface":"中电电机","resolved_name":"中电电机","classifications":["no_evidence"],"scope_note":"historical_scope_unreviewed"},
+      {"source_surface":"百花医药/百花生物","resolved_name":"百花医药","classifications":["no_evidence"],"scope_note":"historical_scope_unreviewed"},
+      {"source_surface":"白普赛斯","resolved_name":"疑似百普赛斯","classifications":["no_evidence"],"scope_note":"historical_scope_unreviewed"},
+      {"source_surface":"玉衡药业","resolved_name":"疑似誉衡药业","classifications":["no_evidence"],"scope_note":"historical_scope_unreviewed"},
+      {"source_surface":"黄氏集团","resolved_name":"疑似皇氏集团","classifications":["no_evidence"],"scope_note":"historical_scope_unreviewed"},
+      {"source_surface":"亚邦股份","resolved_name":"亚邦股份","classifications":["no_evidence"],"scope_note":"historical_scope_unreviewed"},
+      {"source_surface":"大众交通","resolved_name":"大众交通","classifications":["no_evidence"],"scope_note":"historical_scope_unreviewed"},
+      {"source_surface":"万邦医药","resolved_name":"万邦医药","classifications":["no_evidence"],"scope_note":"historical_scope_unreviewed"},
+      {"source_surface":"金螳螂","resolved_name":"金螳螂","classifications":["no_evidence"],"scope_note":"historical_scope_unreviewed"},
+      {"source_surface":"金路电子","resolved_name":"疑似金禄电子","classifications":["no_evidence"],"scope_note":"historical_scope_unreviewed"},
+      {"source_surface":"澄迈科技","resolved_name":"疑似诚迈科技","classifications":["no_evidence"],"scope_note":"historical_scope_unreviewed"},
+      {"source_surface":"日出东方","resolved_name":"日出东方","classifications":["no_evidence"],"scope_note":"historical_scope_unreviewed"},
+      {"source_surface":"通鼎互联","resolved_name":"通鼎互联","classifications":["no_evidence"],"scope_note":"historical_scope_unreviewed"},
+      {"source_surface":"宇皇数控","resolved_name":"疑似宇环数控","classifications":["no_evidence"],"scope_note":"historical_scope_unreviewed"},
+      {"source_surface":"湖南白银","resolved_name":"湖南白银","classifications":["no_evidence"],"scope_note":"historical_scope_unreviewed"},
+      {"source_surface":"天商生物","resolved_name":"疑似天山生物","classifications":["no_evidence"],"scope_note":"historical_scope_unreviewed"},
+      {"source_surface":"万象德龙","resolved_name":"疑似万向德农","classifications":["no_evidence"],"scope_note":"historical_scope_unreviewed"},
+      {"source_surface":"王凯涨停","resolved_name":null,"classifications":["no_evidence"]},
+      {"source_surface":"华氏精胺","resolved_name":null,"classifications":["no_evidence"]}
+    ],
+    "book_b_execution": "当日positions与paper_trades为0行；Book B决策日志为空仓持有现金，没有动作。",
+    "signal_gate": "当日7条信号全部COLD且mode_trade_eligible=false，★E=NONE。",
+    "no_false_matches": "不以同板块其他股票代替具名重合；莱美的同日emitted/recommended重合如实保留，但不把榜单候选、观察行或作者口述涨幅当作本地成交。"
+  }
+}
