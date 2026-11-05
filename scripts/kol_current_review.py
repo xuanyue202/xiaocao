@@ -46,12 +46,7 @@ def main():
         elif a.command == 'register':
             value = current_review.register(a.warmup, prep.read_json(a.dispatch), prep.read_json(a.loaded), now=now)
         else:
-            warmup = current_review.read_warmup(a.warmup)
-            loaded = {'worker_id':a.worker_id, 'warmup_sha256':warmup['warmup_sha256'],
-                      'preparation_sha256':warmup['preparation_sha256'], 'loaded_at':now.isoformat()}
-            if warmup.get('early_packet_sha256'):
-                loaded['early_packet_sha256'] = warmup['early_packet_sha256']
-            current_review._write(a.warmup.with_suffix('.loaded.json'), loaded)
+            current_review.record_loaded(a.warmup, worker_id=a.worker_id, now=now)
             print(json.dumps({'event':'current_worker_preloaded', 'loaded_path':str(a.warmup.with_suffix('.loaded.json'))}), flush=True)
             value = current_review.wait(a.warmup, worker_id=a.worker_id)
         print(json.dumps(value, ensure_ascii=False))

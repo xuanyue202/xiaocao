@@ -37,6 +37,10 @@ enrichment; final rendering places KOL choices above baseline details.
 Missing/expired/changed support reports baseline/degraded explicitly. The dated
 recommendation shows the actual baseline→KOL codes; formal APP/Paper adoption,
 allocation, orders and fills remain separate pipeline observations.
+Even a baseline preview verifies the accepted viewpoints' expiry and current local
+source fingerprint. Show the latest registered Xiaocao report's inclusion/exclusion
+counts and the exact unresolved conditions. Local registry parity is separate
+from remote source verification; an unfinished preview review is not a queued job.
 
 ## Recovery events
 

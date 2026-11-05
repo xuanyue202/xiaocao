@@ -119,6 +119,25 @@ def register(path: Path, dispatch: dict, loaded: dict, *, now: datetime) -> dict
     return value
 
 
+def record_loaded(path: Path, *, worker_id: str, now: datetime) -> dict:
+    """Reuse the worker's original reading receipt when entering its wait."""
+    warm = read_warmup(path)
+    target = path.with_suffix('.loaded.json')
+    expected = {'worker_id': worker_id, 'warmup_sha256': warm['warmup_sha256'],
+                'preparation_sha256': warm['preparation_sha256']}
+    if warm.get('early_packet_sha256'):
+        expected['early_packet_sha256'] = warm['early_packet_sha256']
+    loaded = read_json(target) if target.exists() else {**expected, 'loaded_at': now.isoformat()}
+    if (not worker_id or target.is_symlink()
+            or any(loaded.get(key) != value for key, value in expected.items())
+            or not prep.aware(warm['prepared_at']) <= prep.aware(loaded['loaded_at']) <= now
+            or prep.aware(loaded['loaded_at']) >= prep.aware(warm['binding']['trade_date']+'T09:20:00+08:00')):
+        raise ValueError('CURRENT_REVIEW_LOADED_BINDING_INVALID')
+    if not target.exists():
+        _write(target, loaded)
+    return loaded
+
+
 def deliver(directory: Path, request: dict, dispatch_path: Path, *, now: datetime,
             publish: bool = True) -> dict | None:
     """Original consumer sends to its already waiting worker without parent hops."""
