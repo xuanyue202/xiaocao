@@ -27,6 +27,7 @@ import math
 import os
 import re
 import tempfile
+import time
 from collections import Counter
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
@@ -288,13 +289,14 @@ def _sync(directory: Path) -> None:
 
 
 @contextmanager
-def _locked(directory: Path) -> Iterator[None]:
+def _locked(directory: Path, *, deadline: datetime | None = None, clock=None,
+            monotonic_deadline: float | None = None) -> Iterator[None]:
     directory.mkdir(parents=True, exist_ok=True)
     _require(directory.resolve() == directory.absolute(), "store_symlink_forbidden")
     _sync(directory.parent)
     fd = os.open(directory / ".lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
     try:
-        fcntl.flock(fd, fcntl.LOCK_EX)
+        kol_policy._exclusive_lock(fd, deadline=deadline, clock=clock, monotonic_deadline=monotonic_deadline)
         _require(not list(directory.glob(".pending-*")), "incomplete_durable_write")
         yield
     finally:
@@ -310,15 +312,18 @@ def _stored(path: Path) -> dict:
     return record
 
 
-def _append(directory: Path, identifier: str, payload: dict, now: datetime) -> dict:
+def _append(directory: Path, identifier: str, payload: dict, now: datetime, *,
+            deadline=None, clock=None, monotonic_deadline=None) -> dict:
     _require(_id(identifier), "invalid_durable_id")
     path = directory / (identifier + ".json")
-    with _locked(directory):
+    with _locked(directory, deadline=deadline, clock=clock, monotonic_deadline=monotonic_deadline):
         if path.exists() or path.is_symlink():
             record = _stored(path)
             _require(canonical_bytes(record["payload"]) == canonical_bytes(payload), "immutable_id_conflict")
             _require(_time(record["recorded_at"]) <= now, "future_durable_record")
             return record
+        _require(monotonic_deadline is None or time.monotonic() < monotonic_deadline,
+                 'morning_publication_deadline')
         record = {"payload": payload, "recorded_at": _iso(now)}
         record["record_sha256"] = canonical_sha256(record)
         fd, temporary = tempfile.mkstemp(prefix=".pending-", dir=directory)
@@ -385,12 +390,15 @@ def publish_trading_decision(root: Path, decision: dict, review: dict, context: 
     as having passed this CLI's source verification.
     """
     try:
+        started = time.monotonic()
         now = _time(clock())
         # Detach all caller-owned dictionaries; retain the policy JSON encoding
         # for its decision/review hashes (RFC 8785 would normalize 1.0 to 1).
         decision, review, context = json.loads(json.dumps([decision, review, context], allow_nan=False))
         selected = _validate_inputs(decision, review, context, now, fresh=False)
         deadline = _morning_deadline(decision, review, morning_request)
+        monotonic_deadline = (started + max(0, (deadline-now).total_seconds())
+                              if deadline is not None else None)
         directory = Path(root).absolute() / POLICY_PATH
         identifier = decision["decision_id"]
         binding = {"schema_version": "kol-source-verification.v1", "decision_id": identifier,
@@ -399,12 +407,14 @@ def publish_trading_decision(root: Path, decision: dict, review: dict, context: 
                    "coverage_scope": "registry_only", "sources": [
                        {**_source(row), "manifest_sha256": row["manifest_sha256"]} for row in selected],
                    "received_at_basis": "context_consumer_observation"}
-        with _locked(directory / "publication_control"):
+        with _locked(directory / "publication_control", deadline=deadline, clock=clock,
+                     monotonic_deadline=monotonic_deadline):
             prior = _prior_decision(directory / "decisions", identifier)
             if prior:
                 _require(kol_policy.decision_sha256(prior["decision"]) == binding["decision_sha256"]
                          and kol_policy.decision_sha256(prior["review"]) == binding["review_sha256"], "decision_id_conflict")
-                with _locked(directory / "source_verifications"):
+                with _locked(directory / "source_verifications", deadline=deadline, clock=clock,
+                             monotonic_deadline=monotonic_deadline):
                     proof = _stored(directory / "source_verifications" / (identifier + ".json"))
                 _require(proof["payload"] == binding, "verification_binding_mismatch")
                 _require(_time(proof["recorded_at"]) <= _time(prior["receipt"]["published_at"]) <= now,
@@ -413,10 +423,12 @@ def publish_trading_decision(root: Path, decision: dict, review: dict, context: 
             _validate_inputs(decision, review, context, now, fresh=True)
             now = _time(clock()) if deadline is not None else now
             _require(deadline is None or now < deadline, "morning_publication_deadline")
+            _require(monotonic_deadline is None or time.monotonic() < monotonic_deadline, "morning_publication_deadline")
             per_source_timeout_seconds = 10
             total_timeout_seconds = max(60, per_source_timeout_seconds * (len(selected) + 1))
             if deadline is not None:
-                total_timeout_seconds = min(total_timeout_seconds, (deadline-now).total_seconds())
+                total_timeout_seconds = min(total_timeout_seconds, (deadline-now).total_seconds(),
+                                             monotonic_deadline-time.monotonic())
             transport = trading_context.ReadOnlyPublicationTransport(client,
                 timeout_seconds=per_source_timeout_seconds, retries=0, max_read_calls=256,
                 total_timeout_seconds=total_timeout_seconds)
@@ -433,10 +445,13 @@ def publish_trading_decision(root: Path, decision: dict, review: dict, context: 
             finished = _time(clock())
             _require(finished >= now, "clock_regressed")
             _require(deadline is None or finished < deadline, "morning_publication_deadline")
+            _require(monotonic_deadline is None or time.monotonic() < monotonic_deadline, "morning_publication_deadline")
             _validate_inputs(decision, review, context, finished, fresh=True)
-            proof = _append(directory / "source_verifications", identifier, binding, finished)
+            proof = _append(directory / "source_verifications", identifier, binding, finished,
+                            deadline=deadline, clock=clock, monotonic_deadline=monotonic_deadline)
             receipt = kol_policy.publish_decision(directory / "decisions", decision, review, finished,
-                **({"publication_deadline":deadline, "clock":clock} if deadline is not None else {}))
+                **({"publication_deadline":deadline, "clock":clock,
+                    "monotonic_deadline":monotonic_deadline} if deadline is not None else {}))
             return _publish_receipt(receipt, proof)
     except TradingDecisionError:
         raise

@@ -56,6 +56,78 @@ def test_old_rule_closure_invalidates_for_source_owner_reprepare(case):
         prep._inputs(case['path'])
 
 
+def test_policy_reader_cannot_wait_behind_writer_through_opening_deadline(tmp_path):
+    import fcntl
+    import subprocess
+    import sys
+    code = '''
+import fcntl,json,sys
+from pathlib import Path
+from datetime import datetime,timezone
+from xiaocao.live.kol_policy import load_decision
+p=Path(sys.argv[1]);lock=(p/'.lock').open('a+')
+fcntl.flock(lock,fcntl.LOCK_EX)
+busy=load_decision(p,'B','paper',datetime.now(timezone.utc))
+fcntl.flock(lock,fcntl.LOCK_UN)
+clear=load_decision(p,'B','paper',datetime.now(timezone.utc))
+print(json.dumps([busy,clear]))
+'''
+    result = subprocess.run([sys.executable, '-c', code, str(tmp_path)],
+                            capture_output=True, text=True, timeout=3, check=True)
+    import json
+    busy, clear = json.loads(result.stdout)
+    assert busy['status'] == 'blocked' and 'KOL_POLICY_STORE_BUSY' in busy['reason']
+    assert clear['status'] == 'no_decision'
+
+
+@pytest.mark.parametrize('lock_kind', ['publication_control', 'source_verifications', 'decisions', 'released_control', 'sequential'])
+def test_morning_publisher_locks_share_original_budget_without_losing_serialization(tmp_path, lock_kind):
+    import subprocess
+    import sys
+    code = '''
+import fcntl,json,sys,threading
+from pathlib import Path
+from datetime import timedelta
+from tests.test_kol_trading_decision import bundle,morning_bundle,NOW
+from xiaocao.kol import trading_decision as td
+from xiaocao.live import kol_policy
+p=Path(sys.argv[1]);kind=sys.argv[2]
+decision,review,context,reader,request=morning_bundle(bundle.__wrapped__(p))
+budget=.5 if kind in {'released_control','sequential'} else .05
+request.update(max_wait_seconds=budget,entry_deadline=(NOW+timedelta(seconds=budget)).isoformat(),
+               review_wait_until=(NOW+timedelta(seconds=budget)).isoformat())
+request['request_sha256']=kol_policy.decision_sha256({k:v for k,v in request.items() if k!='request_sha256'})
+decision['morning_request_sha256']=review['morning_request_sha256']=request['request_sha256']
+review['decision_sha256']=kol_policy.decision_sha256(decision)
+directory=p/td.POLICY_PATH/('publication_control' if kind in {'released_control','sequential'} else kind)
+directory.mkdir(parents=True,exist_ok=True);lock=(directory/'.lock').open('a+')
+fcntl.flock(lock,fcntl.LOCK_EX)
+timer=None
+second_timer=None
+if kind=='released_control':
+ timer=threading.Timer(.05,lambda:fcntl.flock(lock,fcntl.LOCK_UN));timer.start()
+if kind=='sequential':
+ second=p/td.POLICY_PATH/'source_verifications';second.mkdir(parents=True,exist_ok=True)
+ second_lock=(second/'.lock').open('a+');fcntl.flock(second_lock,fcntl.LOCK_EX)
+ timer=threading.Timer(.3,lambda:fcntl.flock(lock,fcntl.LOCK_UN));timer.start()
+ second_timer=threading.Timer(.75,lambda:fcntl.flock(second_lock,fcntl.LOCK_UN));second_timer.start()
+try:
+ result=td.publish_trading_decision(p,decision,review,context,client=reader,clock=lambda:NOW,morning_request=request)
+ assert kind=='released_control' and result['status']=='published'
+ assert kol_policy.load_decision(p/td.POLICY_PATH/'decisions','B','live',NOW)['status']=='validated'
+except td.TradingDecisionError:
+ assert kind!='released_control'
+ assert not list((p/td.POLICY_PATH/'decisions').glob('*.json'))
+finally:
+ if timer:timer.join()
+ if second_timer:second_timer.join()
+print('bounded')
+'''
+    result = subprocess.run([sys.executable, '-c', code, str(tmp_path), lock_kind],
+                            capture_output=True, text=True, timeout=3, check=True)
+    assert result.stdout.strip() == 'bounded'
+
+
 @pytest.mark.parametrize('failure', ['missing', 'unresolved', 'changed', 'condition', 'late'])
 def test_conditional_dispatch_degrades_without_current_worker(case, monkeypatch, failure):
     from xiaocao.live import current_review

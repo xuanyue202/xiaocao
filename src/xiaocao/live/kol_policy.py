@@ -41,6 +41,7 @@ import math
 import os
 import re
 import stat
+import time
 import tempfile
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
@@ -290,14 +291,48 @@ def _validate_record(record: dict) -> None:
     _require(reviewed_at <= _time(receipt["published_at"]) < until, "PUBLICATION_TIME_ORDER")
 
 
+def _exclusive_lock(fd: int, *, deadline: datetime | None = None, clock=None,
+                    monotonic_deadline: float | None = None) -> None:
+    if deadline is None:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        return
+    clock = clock or (lambda: datetime.now(timezone.utc))
+    end = time.monotonic() + max(0, (deadline - _clock(clock())).total_seconds())
+    if monotonic_deadline is not None:
+        end = min(end, monotonic_deadline)
+    first = True
+    while True:
+        # One immediate attempt preserves exact completed receipt readback even
+        # after its old deadline. New publication still checks admission time.
+        if not first:
+            _require(_clock(clock()) < deadline and time.monotonic() < end, 'MORNING_LOCK_DEADLINE')
+        first = False
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return
+        except BlockingIOError:
+            remaining = min((deadline - _clock(clock())).total_seconds(), end - time.monotonic())
+            _require(remaining > 0, 'MORNING_LOCK_DEADLINE')
+            time.sleep(min(0.01, remaining))
+
+
 @contextmanager
-def _lock(root: Path, *, write: bool) -> Iterator[None]:
+def _lock(root: Path, *, write: bool, deadline: datetime | None = None, clock=None,
+          monotonic_deadline: float | None = None) -> Iterator[None]:
     _require(not root.is_symlink() and root.is_dir(), "INVALID_STORE_DIRECTORY")
     flags = os.O_RDWR | os.O_CREAT if write else os.O_RDONLY
     fd = os.open(root / ".lock", flags | os.O_NOFOLLOW, 0o600)
     try:
         _require(stat.S_ISREG(os.fstat(fd).st_mode), "INVALID_STORE_LOCK")
-        fcntl.flock(fd, fcntl.LOCK_EX if write else fcntl.LOCK_SH)
+        try:
+            if write:
+                _exclusive_lock(fd, deadline=deadline, clock=clock, monotonic_deadline=monotonic_deadline)
+            else:
+                fcntl.flock(fd, fcntl.LOCK_SH | fcntl.LOCK_NB)
+        except BlockingIOError:
+            # A supporting reader must not wait behind a writer through the
+            # opening window. Unknown policy remains blocked, never neutral.
+            raise KolPolicyError('KOL_POLICY_STORE_BUSY') from None
         yield
     finally:
         os.close(fd)
@@ -363,21 +398,27 @@ def _persist(root: Path, record: dict) -> None:
 
 
 def publish_decision(root: Path, decision: dict, review: dict, now: datetime, *,
-                     publication_deadline: datetime | None = None, clock=None) -> dict:
+                     publication_deadline: datetime | None = None, clock=None,
+                     monotonic_deadline: float | None = None) -> dict:
     """Validate and durably append; exact retries return the original receipt.
 
     Failures raise KolPolicyError. A leftover .pending-* is an audit failure
     requiring reconciliation, never permission to retry with a different ID.
     """
     try:
+        started = time.monotonic()
         now = _clock(now)
+        if publication_deadline is not None:
+            end = started + max(0, (_clock(publication_deadline) - now).total_seconds())
+            monotonic_deadline = end if monotonic_deadline is None else min(end, monotonic_deadline)
         # Detach caller-owned objects before validation and acquiring the lock.
         decision, review = json.loads(_canonical(decision)), json.loads(_canonical(review))
         as_of, until, reviewed_at = _validate_pair(decision, review)
         _require(as_of <= now and reviewed_at <= now, "FUTURE_DECISION_OR_REVIEW")
         root = Path(root)
         _make_store(root)
-        with _lock(root, write=True):
+        with _lock(root, write=True, deadline=publication_deadline, clock=clock,
+                   monotonic_deadline=monotonic_deadline):
             for existing in _records(root):
                 if existing["decision"]["decision_id"] == decision["decision_id"]:
                     _require(_canonical(existing["decision"]) == _canonical(decision)
@@ -385,6 +426,7 @@ def publish_decision(root: Path, decision: dict, review: dict, now: datetime, *,
                     _require(_time(existing["receipt"]["published_at"]) <= now, "FUTURE_PUBLICATION")
                     return existing["receipt"]
             if publication_deadline is not None:
+                _require(time.monotonic() < monotonic_deadline, 'MORNING_PUBLICATION_DEADLINE')
                 # Admission after acquiring the store lock uses actual time,
                 # not the earlier remote-verification completion timestamp.
                 admission = _clock(clock() if clock is not None else datetime.now(timezone.utc))
