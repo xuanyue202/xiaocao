@@ -235,12 +235,15 @@ Cloud scans and absence claims first read
 
 ## Semantic loading gate
 
-For Xiaocao transcript semantic input (`daily_analysis_input_required` and
-subscriptions), read
-[semantic-model-routing.md](semantic-model-routing.md) completely. Other authors
-retain the canonical-bundle route. Read `full-contract.md` completely before
-acceptance; its current hash must match the request if pinned. Return only
-`{"bundle_path":"<validated-absolute-json-path>"}` plus a newline; no legacy bypass.
+For every new KOL source semantic input, including articles and transcripts,
+read [semantic-model-routing.md](semantic-model-routing.md) completely. Feed the
+canonical bundle only after the configured analyst's exact draft has passed
+independent parent review and `verify-result` reports `parent_accepted`.
+Read `full-contract.md` completely before acceptance; its current hash must match
+the request if pinned. Return only
+`{"bundle_path":"<validated-absolute-json-path>"}` plus a newline.
+Reconcile historical effects through read-only receipts, without reanalysis or
+replaying publication, notification, Book, knowledge, or ACK effects.
 
 For `daily_official_article_image_input_required`, inspect every image once and
 write UTF-8 Markdown headed `# 图片信息转写` with index/SHA,

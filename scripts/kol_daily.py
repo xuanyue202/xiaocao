@@ -1004,13 +1004,8 @@ def _require_canonical_semantic_artifact(
             ),
         },
     )
-    # Roll out the user-approved Xiaocao pilot only; other authors retain their
-    # existing route. Keep legacy receipt readers read-only for reconciliation.
-    if (
-        binding_request.get("adapter") != "xiaocao_live"
-        and binding_request.get("author") != "小草"
-    ):
-        return bundle_path
+    # Every new source consumer needs delegated analysis and parent acceptance.
+    # Legacy read-only reconciliation continues through read_validated_bundle.
     try:
         if not request_path_value:
             raise ValueError("persisted analysis request path is required")
