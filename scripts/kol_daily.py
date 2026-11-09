@@ -1744,6 +1744,15 @@ def _classified_source(name: str, runner):
                     "账号或课程口令问题。完成微信客户端登录后保持目标课程可访问，"
                     "系统会复核同一任务并继续。",
                 ) from exc
+            if diagnostic_code == "recorded_course_account_login_required":
+                raise UserActionBlocker(
+                    "xiaocao-recorded-course-login",
+                    "当前 Edge 中的小鹅通/eLink 历史录播需要重新登录或加入学习。"
+                    "请在现有 xiaocao-recorded-course 页面完成正常账号操作；"
+                    "无需把账号、密码或验证码提供给 Agent。完成后系统会续办"
+                    "同一课程和 capture，不会重新创建任务。",
+                    waiting_items=getattr(exc, "waiting_items", None),
+                ) from exc
             if diagnostic_code == "mac_locked_manual_unlock_required":
                 raise UserActionBlocker(
                     "xiaocao-mac-unlock",

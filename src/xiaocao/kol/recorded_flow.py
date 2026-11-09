@@ -102,9 +102,22 @@ def check_recorded_playback(sub,manifest,item,*,reason):
         recording_url=f"{config.origin}/p/course/video/{recording['resource_id']}?"+urlencode(dict(product_id=config.course_id,course_id=config.course_id)),
         instructions='仅用已登录Browser正常打开精确历史录制；核对日期标题和有限时长，捕获实际HTTP后离开播放器。不要操作微信或打开直播间，不导出票据。',
         required_response=dict(action='observe_authorized_recorded_course',subscription_id=identity,
-            candidate_id='exact observed candidate',player_duration_seconds='actual finite duration',player_left=True))
+            status='observed|account_login_required',
+            candidate_id='exact observed candidate; omit when account login is required',
+            player_duration_seconds='actual finite duration; omit when account login is required',
+            player_left='true; omit when account login is required'))
     response=sub._exchange_browser(request,item)
     sub._validate_browser_response(request,response)
+    if response.get('status')=='account_login_required':
+        error=EnrichmentDiagnosticError(
+            'recorded course account login is required',
+            category='authentication_error',
+            code='recorded_course_account_login_required',
+            stage='recorded_course_authorization',
+        )
+        error.waiting_items=[dict(identity=identity,capture_job_id=capture_id,
+            stage='recorded_course_authorization')]
+        raise error
     sub.capture_driver.require_idle_human_entry(identity,capture_id)
     proof=collect_recorded_proof(root,identity,capture_id,response['candidate_id'],
         player_duration=response['player_duration_seconds'],player_left=response['player_left'],

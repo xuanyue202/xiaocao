@@ -9,7 +9,10 @@ from xiaocao.kol.capture import CaptureJobStore, resolve_candidate
 from xiaocao.kol.recorded_recovery import (
     collect_recorded_proof, bind_recorded_recovery, validate_recorded_proof,
 )
-from xiaocao.kol.enrichment_types import EnrichmentError
+from xiaocao.kol.enrichment_types import (
+    EnrichmentDiagnosticError,
+    EnrichmentError,
+)
 
 
 IDENTITY='kol-wechat-'+'a'*24
@@ -303,6 +306,28 @@ def test_catalog_first_flow_binds_same_capture_using_normal_recorded_browser(rec
     assert result['status']=='playback_activated' and result['capture_job_id']==CAPTURE
     assert result['playback_surface']=='authorized_recorded_course_web'
     assert result.get('human_confirmed_source_identity') is None
+
+
+def test_catalog_first_flow_reports_account_login_without_waiting_for_timeout(
+    recorded, monkeypatch,
+):
+    flow,sub,item=_recorded_sub(recorded,monkeypatch,'2026-11-04T15:09:59+08:00')
+    requests=[]
+    sub.browser_exchange=lambda request:(requests.append(request) or dict(
+        action=request['action'],subscription_id=IDENTITY,
+        status='account_login_required'))
+    before=sub._load()
+    with pytest.raises(EnrichmentDiagnosticError) as captured:
+        flow.check_recorded_playback(sub,sub._load(),item,reason='initial')
+    assert captured.value.diagnostic_code=='recorded_course_account_login_required'
+    assert captured.value.diagnostic_stage=='recorded_course_authorization'
+    assert captured.value.waiting_items==[dict(
+        identity=IDENTITY,capture_job_id=CAPTURE,
+        stage='recorded_course_authorization')]
+    assert requests[0]['required_response']['status']==(
+        'observed|account_login_required'
+    )
+    assert sub._load()==before
 
 
 def test_recorded_mode_requires_explicit_descriptor_and_rejects_typos(tmp_path):

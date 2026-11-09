@@ -6836,6 +6836,29 @@ def test_source_classifier_keeps_wechat_client_login_distinct():
     assert "不是小鹅通账号" in captured.value.action
 
 
+def test_source_classifier_surfaces_recorded_course_login_immediately():
+    error=EnrichmentDiagnosticError(
+        "recorded course account login is required",
+        category="authentication_error",
+        code="recorded_course_account_login_required",
+        stage="recorded_course_authorization",
+    )
+    error.waiting_items=[dict(
+        identity="kol-wechat-original",capture_job_id="kol-original",
+        stage="recorded_course_authorization",
+    )]
+    runner=_classified_source(
+        "xiaocao_wechat_live",
+        lambda: (_ for _ in ()).throw(error),
+    )
+    with pytest.raises(UserActionBlocker) as captured:
+        runner()
+    assert captured.value.blocker_key=="xiaocao-recorded-course-login"
+    assert "小鹅通/eLink" in captured.value.action
+    assert "无需把账号、密码或验证码提供给 Agent" in captured.value.action
+    assert captured.value.waiting_items==error.waiting_items
+
+
 def test_source_classifier_reports_mac_unlock_without_wechat_login():
     runner = _classified_source(
         "xiaocao_wechat_live",
