@@ -471,6 +471,23 @@ func TestRecordedReplayRejectsHeadersAndSameOriginKey(t *testing.T) {
 	}
 }
 
+func TestRecordedReplayRejectsSameOriginPathRedirectBeforeKeyFetch(t *testing.T) {
+	var redirectedManifest, keyCalls atomic.Int32
+	original, _ := url.Parse("https://t-vod.h5.xed.plus/account/file/drm/v.f421220.m3u8?sign=private")
+	redirected, _ := url.Parse("https://t-vod.h5.xed.plus/other/source.m3u8")
+	if allowedReplayRedirect(original, redirected, true) {
+		redirectedManifest.Add(1)
+		keyCalls.Add(1)
+	}
+	if redirectedManifest.Load() != 0 || keyCalls.Load() != 0 {
+		t.Fatal("recorded redirect reached changed manifest or key")
+	}
+	samePath, _ := url.Parse("https://t-vod.h5.xed.plus/account/file/drm/v.f421220.m3u8?sign=fresh")
+	if !allowedReplayRedirect(original, samePath, true) {
+		t.Fatal("same recorded path redirect rejected")
+	}
+}
+
 func TestReplayAESKeyRejectionIsTerminalWithoutRepeatedProviderCalls(t *testing.T) {
 	var calls atomic.Int32
 	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

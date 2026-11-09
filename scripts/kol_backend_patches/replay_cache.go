@@ -130,7 +130,9 @@ func newReplayCache(rawURL string, headers map[string]string, root, binding stri
 	if err != nil || (base.Scheme != "http" && base.Scheme != "https") || base.User != nil {
 		return nil, fmt.Errorf("invalid replay origin")
 	}
-	if recordedReplayOrigin(base) && len(headers) != 0 {
+	original := *base
+	recorded := recordedReplayOrigin(&original)
+	if recorded && len(headers) != 0 {
 		return nil, fmt.Errorf("recorded replay headers rejected")
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -165,7 +167,7 @@ func newReplayCache(rawURL string, headers map[string]string, root, binding stri
 	}
 	c.client.Transport = transport
 	c.client.CheckRedirect = func(next *http.Request, prior []*http.Request) error {
-		if len(prior) >= 5 || next.URL.Scheme+"://"+next.URL.Host != prior[0].URL.Scheme+"://"+prior[0].URL.Host {
+		if len(prior) >= 5 || !allowedReplayRedirect(&original, next.URL, recorded) {
 			return fmt.Errorf("cross-origin media redirect rejected")
 		}
 		return nil
@@ -220,7 +222,11 @@ func newReplayCache(rawURL string, headers map[string]string, root, binding stri
 		absolute := base.ResolveReference(parsed)
 		allowed := allowedReplayResource(base, absolute, headers)
 		if aesKey {
-			allowed = allowedReplayAESKey(base, absolute, headers)
+			keyOrigin := base
+			if recorded {
+				keyOrigin = &original
+			}
+			allowed = allowedReplayAESKey(keyOrigin, absolute, headers)
 		}
 		if (absolute.Scheme != "http" && absolute.Scheme != "https") || absolute.User != nil || !allowed {
 			return "", fmt.Errorf("invalid replay resource scheme")
@@ -752,6 +758,14 @@ func allowedReplayResource(origin, resource *url.URL, headers map[string]string)
 		return true
 	}
 	return len(headers) == 0 && origin.RawQuery == "" && origin.Fragment == "" && resource.Fragment == "" && origin.Scheme == "https" && origin.Host == "live-ex-speed.xiaoeknow.com" && resource.Scheme == "https" && resource.Host == "encrypt-k-vod.xet.tech" && resource.User == nil
+}
+
+func allowedReplayRedirect(original, next *url.URL, recorded bool) bool {
+	if recorded {
+		return next.Scheme == original.Scheme && next.Host == original.Host &&
+			next.Path == original.Path
+	}
+	return next.Scheme+"://"+next.Host == original.Scheme+"://"+original.Host
 }
 
 func recordedReplayOrigin(origin *url.URL) bool {
