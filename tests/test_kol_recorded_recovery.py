@@ -9,7 +9,10 @@ from xiaocao.kol.capture import CaptureJobStore, resolve_candidate
 from xiaocao.kol.recorded_recovery import (
     collect_recorded_proof, bind_recorded_recovery, validate_recorded_proof,
 )
-from xiaocao.kol.enrichment_types import EnrichmentError
+from xiaocao.kol.enrichment_types import (
+    EnrichmentDiagnosticError,
+    EnrichmentError,
+)
 
 
 IDENTITY='kol-wechat-'+'a'*24
@@ -270,7 +273,8 @@ def _recorded_sub(recorded,monkeypatch,now):
     root,item,driver,service,_,proof,_=recorded
     sub=XiaocaoWechatLiveSubscription(root,history_reader=lambda:{},capture_driver=driver,
         browser_exchange=lambda request:dict(action=request['action'],subscription_id=IDENTITY,
-            candidate_id='exact',player_duration_seconds=2310.761,player_left=True),
+            status='observed',candidate_id='exact',
+            player_duration_seconds=2310.761,player_left=True),
         clock=lambda:datetime.fromisoformat(now))
     monkeypatch.setattr(flow,'enable_capture_listener_pac',lambda:None)
     driver.prepare_human_playback=lambda *a:None
@@ -303,6 +307,50 @@ def test_catalog_first_flow_binds_same_capture_using_normal_recorded_browser(rec
     assert result['status']=='playback_activated' and result['capture_job_id']==CAPTURE
     assert result['playback_surface']=='authorized_recorded_course_web'
     assert result.get('human_confirmed_source_identity') is None
+
+
+def test_catalog_first_flow_reports_account_login_without_waiting_for_timeout(
+    recorded, monkeypatch,
+):
+    flow,sub,item=_recorded_sub(recorded,monkeypatch,'2026-11-04T15:09:59+08:00')
+    requests=[]
+    sub.browser_exchange=lambda request:(requests.append(request) or dict(
+        action=request['action'],subscription_id=IDENTITY,
+        status='account_login_required'))
+    before=sub._load()
+    with pytest.raises(EnrichmentDiagnosticError) as captured:
+        flow.check_recorded_playback(sub,sub._load(),item,reason='initial')
+    assert captured.value.diagnostic_code=='recorded_course_account_login_required'
+    assert captured.value.diagnostic_stage=='recorded_course_authorization'
+    assert captured.value.waiting_items==[dict(
+        identity=IDENTITY,capture_job_id=CAPTURE,
+        stage='recorded_course_authorization')]
+    assert requests[0]['required_response']['one_of']==[
+        dict(status='observed',candidate_id='non-empty string',
+            player_duration_seconds='positive finite number',player_left=True),
+        dict(status='account_login_required'),
+    ]
+    assert sub._load()==before
+
+
+@pytest.mark.parametrize('response',[
+    dict(status='unknown'),
+    dict(status='observed',candidate_id='',player_duration_seconds=1,player_left=True),
+    dict(status='observed',candidate_id='exact',player_duration_seconds=True,player_left=True),
+    dict(status='observed',candidate_id='exact',player_duration_seconds=1,player_left=False),
+    dict(status='account_login_required',candidate_id='must-not-be-present'),
+    dict(status='account_login_required',password='must-not-be-present'),
+    dict(status='observed',candidate_id='exact',player_duration_seconds=1,
+        player_left=True,currentSrc='must-not-be-present'),
+])
+def test_catalog_first_flow_rejects_malformed_response_variants(
+    recorded, monkeypatch, response,
+):
+    flow,sub,item=_recorded_sub(recorded,monkeypatch,'2026-11-04T15:09:59+08:00')
+    sub.browser_exchange=lambda request:dict(
+        action=request['action'],subscription_id=IDENTITY,**response)
+    with pytest.raises(EnrichmentError):
+        flow.check_recorded_playback(sub,sub._load(),item,reason='initial')
 
 
 def test_recorded_mode_requires_explicit_descriptor_and_rejects_typos(tmp_path):
@@ -440,9 +488,10 @@ def test_numbered_catalogue_notice_discovery_and_exact_resume_have_no_capture_ef
             '2026-11-05T07:00:00+08:00'))
     result=sub.run_once(opencli_session='test',only_identity=share['identity'])
     assert result['inventory_only'] is True and result['already_completed'] is False
-    sub.discover()
+    discovery=sub.discover()
     saved=sub._load()
     assert sub._next_pending(saved,recorded=True) is None
+    assert discovery['pending_items']==[]
     assert saved['items'][share['identity']]['status']=='discovered'
     assert saved['items'][share['identity']]['recorded_inventory_eligible'] is True
     assert all(not item.get('capture_job_id') for item in saved['items'].values())
@@ -471,3 +520,74 @@ def test_catalogue_navigation_does_not_hide_an_altered_url_with_same_canonical_i
     share=next(row for row in annotate_inventory(rows,cfg) if row.get('source_url'))
     assert not share.get('recorded_navigation_marker')
     assert not share.get('recorded_inventory_reason')
+
+
+@pytest.mark.parametrize('mode,expected_count',[('recorded_course',1),('native_human',2)])
+def test_discovery_reports_course_but_not_catalogue_navigation_in_recorded_mode(
+    tmp_path, mode, expected_count,
+):
+    from xiaocao.kol.xiaocao_wechat import (
+        DEFAULT_CONTACT, XiaocaoWechatLiveSubscription,
+    )
+    root=tmp_path/'subscription';root.mkdir()
+    (root/'manifest.json').write_text(json.dumps(dict(
+        schema_version=1,initialized_at='2026-11-09T06:00:00+08:00',items={})))
+    (tmp_path/'native_share_bridge.json').write_text(json.dumps(dict(
+        replay_catalog=dict(app_id=APP,course_id=COURSE,
+            mini_program_token='Token123',acquisition_mode=mode,
+            navigation_source_url='https://yv9lc.xetslk.com/s/4uRHyc'))))
+    history=dict(chat=DEFAULT_CONTACT,username='exact',messages=[
+        '[2026-11-09 08:56] 盘前早盘：#小程序://见势擒龙团/Token123\n'
+        '②历史直播回放点击链接学习：https://yv9lc.xetslk.com/s/4uRHyc'])
+    sub=XiaocaoWechatLiveSubscription(
+        root,history_reader=lambda:history,
+        browser_exchange=lambda _:pytest.fail('discovery must not request Browser'),
+        capture_driver=SimpleNamespace(),
+        clock=lambda:__import__('datetime').datetime.fromisoformat(
+            '2026-11-09T11:00:00+08:00'))
+    discovery=sub.discover()
+    assert len(discovery['pending_items'])==expected_count
+    pending={row['identity'] for row in discovery['pending_items']}
+    saved=sub._load()['items']
+    course=next(item for item in saved.values()
+        if item.get('entry_kind')=='wechat_mini_program')
+    navigation=next(item for item in saved.values() if item.get('source_url'))
+    assert course['identity'] in pending
+    assert (navigation['identity'] in pending)==(mode=='native_human')
+    assert navigation.get('recorded_inventory_reason')==(
+        'catalogue_navigation' if mode=='recorded_course' else None
+    )
+
+
+def test_discovery_reports_bound_catalogue_navigation_as_pending(tmp_path):
+    from xiaocao.kol.xiaocao_wechat import (
+        DEFAULT_CONTACT, XiaocaoWechatLiveSubscription,
+        parse_xiaocao_live_messages,
+    )
+    root=tmp_path/'subscription';root.mkdir()
+    (tmp_path/'native_share_bridge.json').write_text(json.dumps(dict(
+        replay_catalog=dict(app_id=APP,course_id=COURSE,
+            mini_program_token='Token123',acquisition_mode='recorded_course',
+            navigation_source_url='https://yv9lc.xetslk.com/s/4uRHyc'))))
+    history=dict(chat=DEFAULT_CONTACT,username='exact',messages=[
+        '[2026-11-09 08:56] 盘前早盘：#小程序://见势擒龙团/Token123\n'
+        '②历史直播回放点击链接学习：https://yv9lc.xetslk.com/s/4uRHyc'])
+    originals=parse_xiaocao_live_messages(history)
+    navigation=next(item for item in originals if item.get('source_url'))
+    navigation.update(status='capture_armed',capture_job_id='original-capture')
+    (root/'manifest.json').write_text(json.dumps(dict(
+        schema_version=1,initialized_at='2026-11-09T06:00:00+08:00',
+        items={navigation['identity']:navigation})))
+    driver=SimpleNamespace(can_expire_wait=lambda *_:False)
+    sub=XiaocaoWechatLiveSubscription(
+        root,history_reader=lambda:history,
+        browser_exchange=lambda _:pytest.fail('discovery must not request Browser'),
+        capture_driver=driver,clock=lambda:__import__('datetime').datetime.fromisoformat(
+            '2026-11-09T11:00:00+08:00'))
+    discovery=sub.discover()
+    pending={row['identity'] for row in discovery['pending_items']}
+    assert navigation['identity'] in pending
+    assert len(pending)==2
+    saved=sub._load()['items'][navigation['identity']]
+    assert saved['recorded_inventory_reason']=='catalogue_navigation'
+    assert saved['recorded_inventory_eligible'] is False

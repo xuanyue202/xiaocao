@@ -100,6 +100,21 @@ def human_playback_enabled(config_path: Path) -> bool:
     return mode == "human"
 
 
+def capture_network_owner_enabled(config_path: Path) -> bool:
+    """Guard PAC changes for human playback or recorded-course capture."""
+    if human_playback_enabled(config_path):
+        return True
+    try:
+        config = json.loads(config_path.read_text())
+    except FileNotFoundError:
+        return False
+    replay_catalog = config.get("replay_catalog")
+    return (
+        isinstance(replay_catalog, dict)
+        and replay_catalog.get("acquisition_mode") == "recorded_course"
+    )
+
+
 def next_human_poll(now: datetime, attempt: int) -> datetime:
     if now.tzinfo is None or type(attempt) is not int or attempt < 0:
         raise EnrichmentError("invalid human playback poll state")
@@ -171,7 +186,7 @@ def enable_capture_listener_pac() -> None:
 @contextmanager
 def human_capture_network_owner(config_path: Path):
     """Restore capture-owned PAC on runner exit, including a lost parent pipe."""
-    if not human_playback_enabled(config_path):
+    if not capture_network_owner_enabled(config_path):
         yield
         return
     from xiaocao.yangsheng import network

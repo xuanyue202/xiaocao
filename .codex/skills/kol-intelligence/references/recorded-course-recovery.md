@@ -10,11 +10,17 @@ switch back. Keep the existing schedule and sole remote post-Handoff writer.
 The normal hourly retained runner now emits `observe_authorized_recorded_course`
 after its replay-check time and unique catalogue match. Handle this in the SAME
 PTY using Browser, not by launching the standalone helper. Return the exact
-`action`, `subscription_id`, fresh observed `candidate_id`, finite
+`action`, `subscription_id`, `status=observed`, fresh observed `candidate_id`, finite
 `player_duration_seconds` and `player_left=true`. Require fresh exact merchant and
 finite-HLS responses after the observation boundary. A retained candidate can
 keep its first-seen time, while a URL refresh can create a new ticket candidate
 for the same file; preserve original bindings and prove any ticket alias separately.
+If the exact recording redirects to the Xiaoetong/eLink account-login surface,
+immediately return the same `action` and `subscription_id` with
+`status=account_login_required`; omit media fields. This is an observed human
+authentication boundary, not a native-input timeout or failed recording. The
+runner must preserve the original capture and release its network guardian
+without waiting out the 20-minute input deadline.
 The standalone helper below is only for a reconciled idle
 same-original repair with no active capture runner.
 

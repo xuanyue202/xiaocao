@@ -2,6 +2,7 @@
 from datetime import datetime, timedelta
 import hashlib
 import json
+import math
 from pathlib import Path
 from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
@@ -27,6 +28,27 @@ def recorded_mode(config_path):
     if mode not in {'recorded_course','native_human'}:
         raise EnrichmentError('unknown recorded acquisition mode')
     return mode=='recorded_course'
+
+
+def _validate_recorded_browser_response(response):
+    status=response.get('status')
+    common_fields={'action','subscription_id','status'}
+    media_fields=('candidate_id','player_duration_seconds','player_left')
+    if status=='account_login_required':
+        if set(response)!=common_fields:
+            raise EnrichmentError('recorded account-login response fields invalid')
+        return
+    if status!='observed':
+        raise EnrichmentError('recorded Browser response status invalid')
+    if set(response)!=common_fields|set(media_fields):
+        raise EnrichmentError('recorded Browser observation response fields invalid')
+    candidate=response.get('candidate_id')
+    duration=response.get('player_duration_seconds')
+    if (not isinstance(candidate,str) or not candidate.strip()
+        or isinstance(duration,bool) or not isinstance(duration,(int,float))
+        or not math.isfinite(duration) or duration<=0
+        or response.get('player_left') is not True):
+        raise EnrichmentError('recorded Browser observation response invalid')
 
 
 def annotate_inventory(originals,config_path):
@@ -102,9 +124,24 @@ def check_recorded_playback(sub,manifest,item,*,reason):
         recording_url=f"{config.origin}/p/course/video/{recording['resource_id']}?"+urlencode(dict(product_id=config.course_id,course_id=config.course_id)),
         instructions='仅用已登录Browser正常打开精确历史录制；核对日期标题和有限时长，捕获实际HTTP后离开播放器。不要操作微信或打开直播间，不导出票据。',
         required_response=dict(action='observe_authorized_recorded_course',subscription_id=identity,
-            candidate_id='exact observed candidate',player_duration_seconds='actual finite duration',player_left=True))
+            one_of=[
+                dict(status='observed',candidate_id='non-empty string',
+                    player_duration_seconds='positive finite number',player_left=True),
+                dict(status='account_login_required'),
+            ]))
     response=sub._exchange_browser(request,item)
     sub._validate_browser_response(request,response)
+    _validate_recorded_browser_response(response)
+    if response.get('status')=='account_login_required':
+        error=EnrichmentDiagnosticError(
+            'recorded course account login is required',
+            category='authentication_error',
+            code='recorded_course_account_login_required',
+            stage='recorded_course_authorization',
+        )
+        error.waiting_items=[dict(identity=identity,capture_job_id=capture_id,
+            stage='recorded_course_authorization')]
+        raise error
     sub.capture_driver.require_idle_human_entry(identity,capture_id)
     proof=collect_recorded_proof(root,identity,capture_id,response['candidate_id'],
         player_duration=response['player_duration_seconds'],player_left=response['player_left'],
