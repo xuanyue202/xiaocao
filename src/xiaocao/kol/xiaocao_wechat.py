@@ -1290,9 +1290,18 @@ class XiaocaoWechatLiveSubscription:
         previous = set(manifest["items"])
         self._poll(manifest)
         expired = self.expire_stale_waits(manifest)
+        from .recorded_flow import recorded_mode
+        recorded = recorded_mode(
+            self.output_dir.parent / "native_share_bridge.json"
+        )
         pending = sorted(
             (item for item in manifest["items"].values()
-             if item.get("status") not in _TERMINAL),
+             if item.get("status") not in _TERMINAL
+             and not (
+                 recorded
+                 and item.get("recorded_inventory_reason")
+                 and item.get("recorded_inventory_eligible") is True
+             )),
             key=lambda item: (item["published_at"], item["identity"]),
             reverse=True,
         )

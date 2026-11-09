@@ -440,9 +440,10 @@ def test_numbered_catalogue_notice_discovery_and_exact_resume_have_no_capture_ef
             '2026-11-05T07:00:00+08:00'))
     result=sub.run_once(opencli_session='test',only_identity=share['identity'])
     assert result['inventory_only'] is True and result['already_completed'] is False
-    sub.discover()
+    discovery=sub.discover()
     saved=sub._load()
     assert sub._next_pending(saved,recorded=True) is None
+    assert discovery['pending_items']==[]
     assert saved['items'][share['identity']]['status']=='discovered'
     assert saved['items'][share['identity']]['recorded_inventory_eligible'] is True
     assert all(not item.get('capture_job_id') for item in saved['items'].values())
