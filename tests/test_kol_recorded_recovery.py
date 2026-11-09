@@ -339,6 +339,9 @@ def test_catalog_first_flow_reports_account_login_without_waiting_for_timeout(
     dict(status='observed',candidate_id='exact',player_duration_seconds=True,player_left=True),
     dict(status='observed',candidate_id='exact',player_duration_seconds=1,player_left=False),
     dict(status='account_login_required',candidate_id='must-not-be-present'),
+    dict(status='account_login_required',password='must-not-be-present'),
+    dict(status='observed',candidate_id='exact',player_duration_seconds=1,
+        player_left=True,currentSrc='must-not-be-present'),
 ])
 def test_catalog_first_flow_rejects_malformed_response_variants(
     recorded, monkeypatch, response,

@@ -32,13 +32,16 @@ def recorded_mode(config_path):
 
 def _validate_recorded_browser_response(response):
     status=response.get('status')
+    common_fields={'action','subscription_id','status'}
     media_fields=('candidate_id','player_duration_seconds','player_left')
     if status=='account_login_required':
-        if any(field in response for field in media_fields):
-            raise EnrichmentError('recorded account-login response contains media fields')
+        if set(response)!=common_fields:
+            raise EnrichmentError('recorded account-login response fields invalid')
         return
     if status!='observed':
         raise EnrichmentError('recorded Browser response status invalid')
+    if set(response)!=common_fields|set(media_fields):
+        raise EnrichmentError('recorded Browser observation response fields invalid')
     candidate=response.get('candidate_id')
     duration=response.get('player_duration_seconds')
     if (not isinstance(candidate,str) or not candidate.strip()
