@@ -22,6 +22,7 @@ APP='appsnm3rlcp3566'
 COURSE='course_Example123'
 ORIGIN=f'https://{APP}.h5.xiaoeknow.com'
 MEDIA='https://encrypt-k-vod.xet.tech/account/c700e05f5001834826931137742/drm/v.f421220.m3u8'
+ALT_MEDIA='https://t-vod.h5.xed.plus/account/c700e05f5001834826931137742/drm/v.f421220.m3u8'
 
 
 @pytest.fixture
@@ -76,6 +77,35 @@ def test_recorded_proof_binds_merchant_course_media_and_finite_playlist_without_
     assert proof['media_file_id']=='5001834826931137742'
     assert proof['finite_playlist']['ended'] is True
     assert 'sign=private' not in json.dumps(proof)
+
+
+def test_recorded_proof_accepts_only_authorized_exact_xed_media_host(recorded):
+    root,_,driver,service,candidate,_,folder=recorded
+    candidate['url']=ALT_MEDIA
+    debug=root.parent/'backend'/'elive_live_debug'
+    play=next(debug.glob('json/2.json'));payload=json.loads(play.read_text())
+    payload['data']['opaque-private']['play_list']['url']=ALT_MEDIA+'?sign=private'
+    play.write_text(json.dumps(payload))
+    events=[json.loads(line) for line in (debug/'events.jsonl').read_text().splitlines()]
+    events[-1]['url']=ALT_MEDIA
+    (debug/'events.jsonl').write_text(''.join(json.dumps(row)+'\n' for row in events))
+    proof=collect_recorded_proof(
+        root,IDENTITY,CAPTURE,'exact',player_duration=2310.761,
+        player_left=True,driver=driver,observation_path=folder/'observation.json',
+    )
+    assert proof['candidate_id']=='exact'
+    for host in (
+        'other.h5.xed.plus',
+        't-vod.h5.xed.plus.evil.test',
+        't-vod.h5.xed.plus:444',
+    ):
+        candidate['url']=ALT_MEDIA.replace('t-vod.h5.xed.plus',host)
+        with pytest.raises(EnrichmentError):
+            collect_recorded_proof(
+                root,IDENTITY,CAPTURE,'exact',player_duration=2310.761,
+                player_left=True,driver=driver,
+                observation_path=folder/'observation.json',
+            )
 
 
 def test_reused_candidate_needs_fresh_exact_hls_after_new_observation(recorded):

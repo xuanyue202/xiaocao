@@ -32,6 +32,8 @@ def main() -> int:
     if any(states) and not all(states):
         raise RuntimeError('partially applied backend integration requires diagnosis')
     copies={
+        'elive_download_ticket.go':'internal/api/elive_download_ticket.go',
+        'elive_download_ticket_test.go':'internal/api/elive_download_ticket_test.go',
         'replay_cache.go':'pkg/gopeed/internal/protocol/stream/replay_cache.go',
         'replay_cache_test.go':'pkg/gopeed/internal/protocol/stream/replay_cache_test.go',
         'replay_ffmpeg_test.go':'pkg/gopeed/internal/protocol/stream/replay_ffmpeg_test.go',

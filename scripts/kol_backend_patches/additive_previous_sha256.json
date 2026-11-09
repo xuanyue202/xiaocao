@@ -1,4 +1,10 @@
 {
+  "elive_download_ticket.go": [
+    "8e11495189633dd2109de025a7e42625a6c844dc37141f67e673a3f3b1d4f6fa"
+  ],
+  "elive_download_ticket_test.go": [
+    "b151d24820a6bd69a794928fa72d4ea224a0db23a869685dceb76c4b8570da4c"
+  ],
   "replay_cache.go": [
     "eecbe2669ebc5898c969b8a1c15a24d946bc11735cd2e31437d6e9c5f7b4bce0",
     "4d60e92ac326b0f023547a3a02b4b2527983ec616d1bcc3a0d6131d037ca113b",

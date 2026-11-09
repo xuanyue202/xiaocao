@@ -49,6 +49,9 @@ _TRUSTED_XIAOETONG_MEDIA_SUFFIXES = (
     ".xet.tech",
     ".xiaoeknow.com",
 )
+_TRUSTED_XIAOETONG_RECORDED_MEDIA_HOSTS = {
+    "t-vod.h5.xed.plus",
+}
 _XIAOETONG_SAFE_NAVIGATION_QUERY = (
     "app_id",
     "pro_id",
@@ -129,9 +132,12 @@ def _matches_recorded_media_file(
     host = (parsed.hostname or "").lower()
     if (
         parsed.scheme != "https"
-        or not any(
-            host.endswith(suffix)
-            for suffix in _TRUSTED_XIAOETONG_MEDIA_SUFFIXES
+        or not (
+            any(
+                host.endswith(suffix)
+                for suffix in _TRUSTED_XIAOETONG_MEDIA_SUFFIXES
+            )
+            or parsed.netloc in _TRUSTED_XIAOETONG_RECORDED_MEDIA_HOSTS
         )
         or str(row.get("media_type") or "m3u8").lower() != "m3u8"
     ):

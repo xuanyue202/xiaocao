@@ -278,6 +278,32 @@ def test_recorded_media_url_rehydrates_only_exact_signed_path():
         )
 
 
+def test_recorded_media_file_binding_accepts_only_exact_authorized_xed_host():
+    candidate={
+        "id":"candidate-bound-video","media_type":"m3u8",
+        "url":(
+            "https://t-vod.h5.xed.plus/vod/"
+            "773e679a5001834815942190711/drm/v.f421220.m3u8"
+        ),
+    }
+    signed=candidate["url"]+"?sign=fresh"
+    assert bind_recorded_media_url(
+        candidate,signed,media_file_id="5001834815942190711",
+    )["url"]==signed
+    for host in (
+        "other.h5.xed.plus",
+        "t-vod.h5.xed.plus.evil.test",
+        "t-vod.h5.xed.plus:444",
+    ):
+        changed={**candidate,"url":candidate["url"].replace(
+            "t-vod.h5.xed.plus",host)}
+        with pytest.raises(InvalidSourcePage):
+            bind_recorded_media_url(
+                changed,changed["url"]+"?sign=fresh",
+                media_file_id="5001834815942190711",
+            )
+
+
 def test_recorded_candidate_rehydrates_by_file_when_ephemeral_id_rotates():
     current = {
         "candidate_key": "id:expired-candidate",

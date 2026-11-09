@@ -130,6 +130,12 @@ native entry receipts.
 The detail's opaque `play_sign` must equal the actual play-response map key and
 its material ID must match before using that block's media. Compare it in memory;
 persist only its hash. Never borrow another block or export/decode the ticket.
+Recorded-course media hosts are exact, not suffix-based. The approved set is
+`encrypt-k-vod.xet.tech` plus the human-authorized `t-vod.h5.xed.plus`; the
+latter is accepted only for this same merchant play-response route, exact
+resource/material/file binding, finite HLS duration/segment proof and the
+existing in-memory AES-128 key gate. Other `xed.plus` subdomains, lookalikes,
+custom ports, HTTP, foreign source routes and extra headers remain denied.
 If interrupted between source/candidate/manifest writes, resume the SAME proof
 using `--proof-path <original saved proof>`; do not create a new observation.
 
