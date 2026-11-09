@@ -45,14 +45,9 @@ def prepare_inputs(checklist: MorningChecklist, *, repo_root: Path) -> dict:
             evidence.update(preparation_path=str(source_path), preparation_sha256=prepared['preparation_sha256'],
                 preparation_adoption_path=str(adopted_path), source_worker_id=prepared['worker_id'],
                 worker_id=None, authority=0, preparation_status='shared_rolling_adopted')
-            from .current_review import prepare
-            try:
-                warm_path = prepare(checklist.path.parent, checklist.binding, source_path,
-                                    now=now, root=repo_root, current_input_path=path)
-                evidence['current_warmup_path'] = str(warm_path) if warm_path else None
-            except (OSError, ValueError, KeyError, TypeError) as exc:
-                evidence.update(current_warmup_path=None, current_warmup_status='deferred',
-                                current_warmup_reason=type(exc).__name__)
+            from .morning_support import CONDITIONAL_FIRST
+            evidence.update(judgment_mode=CONDITIONAL_FIRST, current_warmup_path=None,
+                            current_warmup_status='not_required_conditional_first')
             checklist.record('kol_inputs_loaded', 'passed', evidence=evidence,
                              valid_until=datetime.fromisoformat(prepared['draft']['valid_until']))
         else:

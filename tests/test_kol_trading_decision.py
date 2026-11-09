@@ -200,8 +200,8 @@ def test_morning_publication_keeps_original_budget_through_store_admission(tmp_p
         return result
     reader.call_tool = read
     original_persist = td._append
-    def append(*args):
-        result = original_persist(*args)
+    def append(*args, **kwargs):
+        result = original_persist(*args, **kwargs)
         if late == "store_admission": current[0] = NOW+timedelta(seconds=5)
         return result
     monkeypatch.setattr(td, "_append", append)

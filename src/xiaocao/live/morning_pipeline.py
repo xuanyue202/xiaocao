@@ -31,8 +31,11 @@ def _remaining(deadline, now):
 
 def pipeline_status(live_dir: Path, date: str) -> dict:
     now = datetime.now(A_SHARE_TZ)
+    from .morning_support import CONDITIONAL_FIRST, opening_cutoff
     result = {"market_date": date, "observed_at": now.isoformat(),
-        "support_cutoff": f"{date}T09:27:00+08:00", "owners": [], "app": [],
+        "support_cutoff": opening_cutoff(date, mode=CONDITIONAL_FIRST).isoformat(),
+        "support_cutoff_basis": "new_conditional_first_requests_only_original_receipts_keep_own_deadlines",
+        "owners": [], "app": [],
         "meaning": "observations_only_producer_ready_is_not_consumer_success"}
     for path in sorted((live_dir / "auto/runs").glob("*/manifest.json")):
         manifest, ref = _evidence(path)

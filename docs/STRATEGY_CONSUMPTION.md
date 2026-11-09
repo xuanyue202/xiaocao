@@ -68,8 +68,12 @@ look-ahead or correctness. The detailed review records that limit explicitly.
   cash/owned marks/risk may coexist with unknown final fees/PnL. No invented NAV,
   automatic cash classification, reset high-water/pause or manual-lot absorption.
 - Old service uncertainty stays on its original claim. It does not by itself prove
-  today's whole account unusable; §1e requires real current affected scope. The
-  bounded isolation executor is still an implementation gap, not a prompt waiver.
+  today's whole account unusable; §1e requires real current affected scope.
+  The bounded inherited-BUY isolation path is implemented; the original
+  2026-11-02 morning independently bought 300561 while retaining the old UNKNOWN.
+  Each new batch still needs fresh cash, potential-reserve/exposure and risk
+  proof. This acceptance does not prove old-order finality or complete accounting;
+  see [the weekly execution review](reviews/2026-11-06-weekly-execution-review.md).
 - Soft exit deferral avoids sparse morning-low liquidation; hard/protective exits
   retain actual permissions. Use current closing launcher/exit_policy timing,
   not a historical14:55 sentence or new research feature.

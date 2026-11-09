@@ -15,6 +15,15 @@ def owner(case, monkeypatch):
     binding = {"trade_date": "2026-10-23", "owner_thread_id": "owner", "run_id": "original-run",
                "automation_id": "xiaocao-daily-morning-execution"}
     case["inputs"]["binding"] = binding
+    case['context']['reports'][0].update(kol_id='kol-fixture', source_published_at='2026-10-22T00:00:00Z',
+                                       received_at='2026-10-22T00:01:00Z')
+    case['context']['context_sha256'] = prep.canonical_sha256({k:v for k,v in case['context'].items() if k!='context_sha256'})
+    case['review']['context_sha256'] = case['context']['context_sha256']
+    case['draft']['policy_template'] = dict(buy_scale=1, skip_codes=[], exit_codes=[],
+        rationale='Reviewed unchanged baseline.', invalidation_conditions=['New source or facts.'],
+        xiaocao_mode_overrides=[], mode_mappings=[], source_report_ids=['r'],
+        request_conditions=[], unresolved_semantic_conditions=[])
+    case['review']['policy_template_reviewed'] = True
     save(case["path"], case["inputs"])
     case["draft"]["input_sha256"] = _hash(case["inputs"])
     case["review"]["draft_sha256"] = prep.canonical_sha256(case["draft"])
@@ -32,7 +41,9 @@ def owner(case, monkeypatch):
     monkeypatch.setattr(paper, "write_trading_projection", lambda *a, **kw: case["inputs"]["projection"])
     monkeypatch.setattr(paper, "read_consumed_rows", lambda *a, **kw: [{"code":"002172", "mode":"N字低吸"}])
     clock = [NOW.replace(minute=25, second=30)]
-    freeze = {"snapshot_sha256": "b"*64, "checkpoint_sha256": "c"*64, "strategy_sha": "d"*40}
+    freeze = {"snapshot_sha256": "b"*64, "checkpoint_sha256": "c"*64, "strategy_sha": "d"*40,
+              "market_date":"2026-10-23", "strategy_run_id":"original", "snapshot_raw_sha256":"e"*64,
+              "snapshot_row_count":1}
     events = []
     return case, run, freeze, clock, events
 
@@ -80,10 +91,9 @@ def test_paper_reuses_source_without_app_task_or_worker_dependency(shared_owner)
     assert not (owner[1] / 'kol-preparation.json').exists()
     assert review.request['kol_inputs']['warm_worker'] is None
     handoff = prep.read_json(Path(owner[4][0]['dispatch_path']))
-    assert handoff['next_action'] == 'dispatch_current_worker'
-    assert handoff['tool_arguments']['model'] == 'gpt-6-sol'
-    assert handoff['tool_arguments']['fork_turns'] == 'none'
-    assert 'target' not in handoff['tool_arguments']
+    assert handoff['next_action'] == 'independently_review_prepared_draft'
+    assert review.request['judgment_mode'] == 'conditional_first_v1'
+    assert 'current_warmup_path' not in review.request['kol_inputs']
 
 
 def test_changed_shared_source_defers_without_account_or_model_wait(shared_owner, monkeypatch):
@@ -168,13 +178,13 @@ def test_current_request_waits_for_bound_policy_and_records_adoption_evidence(ow
     assert len(owner[4]) == 1
 
 
-def test_paper_support_keeps_original_0927_cutoff(owner, monkeypatch):
+def test_paper_support_keeps_new_092730_cutoff(owner, monkeypatch):
     review = start(owner)
     monkeypatch.setattr(paper.kol_policy, "load_decision", lambda *a: {"status":"no_decision"})
-    owner[3][0] = NOW.replace(minute=27)
+    owner[3][0] = NOW.replace(minute=27,second=30)
     assert review.tick()
     assert review.receipt["status"] == "timed_out"
-    assert review.receipt["max_wait_seconds"] == 90
+    assert review.receipt["max_wait_seconds"] == 120
 
 
 @pytest.mark.parametrize("cause", ["risk", "missing", "late"])
@@ -281,7 +291,8 @@ def test_original_request_assembles_exact_ready_to_send_warm_handoff(owner):
     assert handoff['authority'] == 0 and handoff['actual_dispatch'] == 'not_observed'
     assert handoff['request_sha256'] == review.request['request_sha256']
     assert handoff['packet']['packet_sha256'] == review.request['kol_inputs']['packet_sha256']
-    assert handoff['tool_arguments']['target'] == handoff['packet']['worker_id']
+    assert handoff['next_action'] == 'independently_review_prepared_draft'
+    assert prep.read_json(Path(handoff['prepared_policy_path']))['review'] == 'not_performed'
     assert handoff['brief']['account_risk'] == review.request['account_risk']
     assert handoff['cutoff'] == review.cutoff.isoformat()
     assert not (owner[0]['root']/'output/live/kol_policy/decisions').exists()
@@ -293,10 +304,11 @@ def test_warm_handoff_rejects_stale_account_facts_and_late_dispatch(owner,monkey
     review=start(owner)
     request=deepcopy(review.request)
     request['account_facts']['changed_after_packet']=True
-    with pytest.raises(ValueError,match='PACKET_BINDING_MISMATCH'):
-        write_warm_dispatch(request,owner[1]/'changed.request.json',now=owner[3][0])
-    with pytest.raises(ValueError,match='ORIGINAL_CUTOFF'):
-        write_warm_dispatch(review.request,owner[1]/'late.request.json',now=review.cutoff)
+    changed = write_warm_dispatch(request,owner[1]/'changed.request.json',now=owner[3][0])
+    late = write_warm_dispatch(review.request,owner[1]/'late.request.json',now=review.cutoff)
+    from xiaocao.live.morning_dispatch import read_deferred_overlay
+    assert 'PACKET_BINDING_MISMATCH' in read_deferred_overlay(changed,request['request_sha256'])['reason']
+    assert 'ORIGINAL_CUTOFF' in read_deferred_overlay(late,review.request['request_sha256'])['reason']
 
 
 @pytest.mark.app_simulation

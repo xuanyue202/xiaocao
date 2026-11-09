@@ -10,7 +10,42 @@ from xiaocao.utils.atomic_files import atomic_write
 from .morning_observability import review_brief
 
 
+def deferred_dispatch(request: dict, request_path: Path, *, now: datetime, reason: str) -> Path:
+    """A version-bound optional-support failure is terminal, never semantic approval."""
+    from .morning_support import conditional_first
+    if not conditional_first(request):
+        raise ValueError('MORNING_DISPATCH_CONDITIONAL_MODE_REQUIRED')
+    deferred = {'schema_version': 'kol-prepared-deferred-overlay.v1', 'authority': 0,
+        'status': 'deferred', 'reason': reason, 'request_sha256': request['request_sha256'],
+        'observed_at': now.isoformat(), 'fallback': 'original_baseline_under_current_policy',
+        'semantic_review_completed': False, 'model_dispatch': 'not_performed', 'publication': 'not_performed'}
+    deferred['sha256'] = canonical_sha256(deferred)
+    value = {'schema_version': 'morning-warm-dispatch.v1', 'authority': 0,
+        'request_sha256': request['request_sha256'], 'request_path': str(request_path.resolve()),
+        'prepared_at': now.isoformat(), 'cutoff': request['review_wait_until'],
+        'next_action': 'continue_original_baseline_deferred', 'deferred_overlay': deferred,
+        'actual_dispatch': 'not_performed', 'publication': 'not_performed', 'tool_arguments': None}
+    value['sha256'] = canonical_sha256(value)
+    path = request_path.with_suffix('.dispatch.json')
+    atomic_write(path, json.dumps(value, ensure_ascii=False, sort_keys=True).encode(), immutable=True)
+    return path
+
+
 def write_warm_dispatch(request: dict, request_path: Path, *, now: datetime) -> Path | None:
+    from .morning_support import conditional_first
+    if not conditional_first(request):
+        return _assemble_dispatch(request, request_path, now=now)
+    try:
+        path = _assemble_dispatch(request, request_path, now=now)
+        if path is not None:
+            return path
+        reason = 'CONDITIONAL_PREPARATION_UNAVAILABLE'
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        reason = 'CONDITIONAL_PREPARATION_UNAVAILABLE:' + type(exc).__name__ + ':' + str(exc)
+    return deferred_dispatch(request, request_path, now=now, reason=reason)
+
+
+def _assemble_dispatch(request: dict, request_path: Path, *, now: datetime) -> Path | None:
     inputs = request.get('kol_inputs') or {}
     packet_path = inputs.get('packet_path')
     worker = inputs.get('warm_worker')
@@ -20,7 +55,8 @@ def write_warm_dispatch(request: dict, request_path: Path, *, now: datetime) -> 
     shared = packet.get('preparation_adoption')
     if not worker and not shared:
         return None
-    cutoff = aware(request['review_wait_until'])
+    from .morning_support import support_deadline
+    cutoff = support_deadline(request)
     if now.utcoffset() is None or not aware(request['requested_at']) <= now < cutoff:
         raise ValueError('MORNING_DISPATCH_ORIGINAL_CUTOFF')
     original_facts = {k:v for k,v in request.items()
@@ -77,6 +113,11 @@ def write_warm_dispatch(request: dict, request_path: Path, *, now: datetime) -> 
             value.update(next_action='independently_review_prepared_draft',
                 prepared_policy_path=str(candidate_path), prepared_policy_sha256=canonical_sha256(candidate))
     except (OSError,ValueError,KeyError,TypeError) as exc:
+        from .morning_support import conditional_first
+        if conditional_first(request):
+            # Never turn missing/new semantics into a post-freeze model task.
+            return deferred_dispatch(request, request_path, now=now,
+                reason='CONDITIONAL_PLAN_NOT_EXECUTABLE:' + type(exc).__name__ + ':' + str(exc))
         value.update(next_action='dispatch_warm_worker', prepared_policy_unavailable=type(exc).__name__+':'+str(exc))
         if shared:
             # Source reasoning is reusable; an APP child is not addressable

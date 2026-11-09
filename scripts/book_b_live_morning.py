@@ -317,7 +317,8 @@ def _review_rendezvous(request: dict, *, now=None, sleep=None, monotonic=None,
     if not math.isfinite(budget) or budget < 0 or not math.isfinite(poll_seconds) or poll_seconds <= 0:
         raise ValueError("LIVE_REVIEW_WAIT_BUDGET_INVALID")
     budget = min(120.0, budget)
-    deadline = min(entry_deadline, requested + timedelta(seconds=budget))
+    from xiaocao.live.morning_support import support_deadline
+    deadline = support_deadline(payload)
     payload["max_wait_seconds"] = budget
     payload["freeze_path"] = str(Path(payload["freeze_path"]).resolve())
     payload["policy_root"] = str(Path(payload["policy_root"]).resolve())
@@ -328,7 +329,6 @@ def _review_rendezvous(request: dict, *, now=None, sleep=None, monotonic=None,
     artifact = {**payload, "request_id": identifier, "request_sha256": identifier}
     _write_review_immutable(request_path, artifact)
     brief_path = root / f"{identifier}.brief.json"
-    _write_review_immutable(brief_path, review_brief(artifact))
     if receipt_path.exists():
         receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
         body = {key: value for key, value in receipt.items() if key != "receipt_sha256"}
@@ -336,6 +336,7 @@ def _review_rendezvous(request: dict, *, now=None, sleep=None, monotonic=None,
                 or receipt.get("request_id") != identifier):
             raise ValueError("LIVE_REVIEW_RECEIPT_BINDING_MISMATCH")
         return receipt
+    _write_review_immutable(brief_path, review_brief(artifact))
     from xiaocao.live.morning_dispatch import write_warm_dispatch
     dispatch_path, dispatch_error = None, None
     try:
@@ -378,6 +379,10 @@ def _review_rendezvous(request: dict, *, now=None, sleep=None, monotonic=None,
         if deferred_overlay is not None:
             status, reason = 'deferred', deferred_overlay['reason']
             break
+        from xiaocao.live.morning_support import conditional_first
+        if conditional_first(payload) and (dispatch_error or dispatch_path is None):
+            status, reason = 'deferred', 'CONDITIONAL_PREPARATION_UNAVAILABLE:' + str(dispatch_error or 'missing')
+            break
         if remaining <= 0 or monotonic() - started >= budget or now() >= deadline:
             break
         sleep(min(1.0, poll_seconds, remaining))
@@ -386,6 +391,7 @@ def _review_rendezvous(request: dict, *, now=None, sleep=None, monotonic=None,
         "request_sha256": identifier, "request_path": str(request_path), "receipt_path": str(receipt_path),
         "requested_at": requested.isoformat(), "completed_at": now().isoformat(),
         "entry_deadline": entry_deadline.isoformat(), "max_wait_seconds": budget,
+        "review_wait_until": deadline.isoformat(), "judgment_mode": payload.get('judgment_mode'),
         "waited_seconds": max(0.0, monotonic() - started), "status": status, "reason": reason,
         "supporting_health": "healthy" if status == "validated" else "degraded",
         "fallback": "neutral" if status == "timed_out" else None,
@@ -844,8 +850,9 @@ def _run(args, notices):
             return {"status": "timed_out", "reason": "LIVE_REVIEW_TIMEOUT_NEUTRAL_FALLBACK", "supporting_health": "degraded"}
         request = {**request, "dispatch_budget": {"observed_at": clock.isoformat(),
             "total_remaining_seconds": max(0.0, (cutoff-clock).total_seconds()),
-            "includes": ["model", "source_verification", "independent_review", "publication"],
-            "cutoff": cutoff.isoformat(), "dispatch": "immediate_to_warm_worker"}}
+            "includes": ["source_verification", "independent_review", "publication"],
+            "cutoff": cutoff.isoformat(), "dispatch": "conditional_draft_or_deferred"
+                if request.get('judgment_mode') == 'conditional_first_v1' else "immediate_to_warm_worker"}}
         result = _review_rendezvous(request, poll_seconds=args.poll_seconds)
         record_checklist("kol_decision", "passed" if result["status"] == "validated" else "degraded",
             evidence={"receipt_path": result["receipt_path"], "request_sha256": result["request_sha256"]},

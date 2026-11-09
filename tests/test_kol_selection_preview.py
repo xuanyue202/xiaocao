@@ -27,14 +27,16 @@ def prepared(case, monkeypatch):
     return value
 
 
-def test_accepted_preference_changes_producer_recommendation_and_preserves_freeze(case, monkeypatch):
+@pytest.mark.parametrize('reader_shape', ['string', 'snapshot'])
+def test_accepted_preference_changes_producer_recommendation_and_preserves_freeze(case, monkeypatch, reader_shape):
     value = prepared(case, monkeypatch)
     rows = [row('000001.XSHE','A',1),row('000002.XSHE','B',4)]
     for item in rows: item['date']=value['binding']['trade_date']
     before=copy.deepcopy(rows)
     freeze={'market_date':value['binding']['trade_date'],'snapshot_sha256':'a'*64}
     result=preview.preview(rows,freeze,root=case['root'],now=NOW,
-        fingerprint_reader=lambda *a:value['source_fingerprint'])
+        fingerprint_reader=lambda *a:(value['source_fingerprint'] if reader_shape == 'string' else
+            {'source_fingerprint': value['source_fingerprint'], 'source_coverage': {}}))
     assert result['status']=='prepared_preview' and result['selected_codes'][0]=='000002.XSHE'
     assert result['authority']==0 and result['policy_adoption']=='not_performed'
     assert rows==before and '000002.XSHE' in preview.render(result)
@@ -90,3 +92,21 @@ def test_accept_command_registers_source_before_app_checklist_completion(case, m
     _, value = preview.registered_preparation(case['root'], binding['trade_date'], now=NOW)
     assert value['input_sha256'] == _hash(case['inputs'])
     assert value['authority'] == 0
+
+
+def test_latest_report_coverage_explains_exclusion_without_promoting_viewpoint():
+    from xiaocao.kol.trading_context import latest_report_coverage
+    context = {'as_of': '2026-11-05T01:00:00Z', 'evaluations': [],
+        'report_index': [{'kol_id': 'kol-xiaocao', 'report_id': 'latest',
+            'source_published_at': '2026-11-04T01:04:00Z', 'longitudinal_loaded': True}],
+        'viewpoints': [{'record_id': 'uncertain', 'report_id': 'latest', 'latest_status': 'uncertain'},
+                       {'record_id': 'expired', 'report_id': 'latest', 'latest_status': 'expired'}]}
+    projection = {'active_viewpoints': [{'kol_id': 'kol-xiaocao',
+                                        'source_published_at': '2026-11-03T09:30:00Z'}]}
+    before = copy.deepcopy((context, projection))
+    result = latest_report_coverage(context, projection, kol_id='kol-xiaocao')
+    latest = result['latest_reports'][0]
+    assert latest['viewpoint_count'] == 2 and latest['eligible_count'] == 0
+    assert latest['excluded_by_reason'] == {'status_expired': 1, 'status_uncertain': 1}
+    assert result['latest_eligible_source_published_at'] == '2026-11-03T09:30:00Z'
+    assert (context, projection) == before

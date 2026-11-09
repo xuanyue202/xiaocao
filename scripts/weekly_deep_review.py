@@ -1415,7 +1415,7 @@ def _render_report(plan: dict, *, mode: str, validation: list[str], created_issu
     if incident:
         lines += [f"- 执行事故复核：{incident['conclusion']}",
                   f"- 当前修复负责人：{incident['owner']}；验收边界：{incident['next_verification']}",
-                  f"- 完整订单、任务轨迹、5 Why 与修复证据：[执行复核]({incident['report_path']})。"]
+                  f"- 完整订单、任务轨迹、5 Why 与修复证据：[执行复核]({os.path.relpath(ROOT / incident['report_path'], WEEKLY_DIR)})。"]
     lines.extend(_render_kol_system_review(plan))
     lines += ["", *weekly_evidence.render_weekly_evidence(
         plan.get("data_evidence_review") or {},

@@ -1,0 +1,352 @@
+{
+  "schema_version": 1,
+  "knowledge_status": "reusable_knowledge",
+  "authority": 0,
+  "date": "2026-11-05",
+  "kind": "review",
+  "summary": "本场可复用的核心不是作者对A股必然回本的信心，而是他亲历的大仓位、连续补仓和巨大回撤所暴露的风险结构：不用杠杆只能排除融资强平，不能消除集中度、补仓节奏和情绪承压。另有三条可检验方法：主营高度依赖受制裁一侧时要重估退出条件；缺少个股研究能力时指数可作为默认工具；AI降低影视制作成本并不自动形成投资壁垒，必须继续验证壁垒在哪里。全部内容仅作为吕晓彤来源归属下的authority=0候选，不修改小草姿态、确定性策略、账户或参数。",
+  "author": "吕晓彤",
+  "source": "百度网盘订阅视频《11月5日直播》",
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_subscription_videos/enrichment/beb63d11b4ae4bdc58354439ba4642bd4457bfd4bda4df404ab9a80c3450fb64/artifacts/kol-netdisk-cloud-fdf5178807819c66/11月5日.txt",
+      "sha256": "042ffb57d04367f0c58bfd10b8eb7ca3347672cf93ed6ad20ce0b104ed72317a",
+      "size": 58824
+    }
+  ],
+  "independent_verification": {
+    "market_evidence_path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261106_07_01a1ae0e/market_evidence.json",
+    "market_evidence_sha256": "f12c4756da83948c223b5d2a421af7fb78abd07be4980e185163f45dfb12eee7",
+    "as_of": "2026-11-06T07:39:13.982177+08:00",
+    "market_boundary": "其中指数数值来自保存的分钟线15:00日期价格点，不冒充交易所正式收盘价；本知识草稿不依赖这些数值形成候选。",
+    "issuer_url": "https://ir.beautyfarm.com.cn/cn/news-events/news-releases/20260827/",
+    "issuer_publication_date": "2026-08-28",
+    "issuer_read_at": "2026-11-06T07:39:13.982177+08:00",
+    "issuer_supported": "仅支持美丽田园医疗健康02373及CellCare秀可儿品牌身份；不支持作者持仓、消费经历、疗效或投资价值。"
+  },
+  "posture": {
+    "regime": "not_applied_other_author",
+    "dominant_style": "把持有、补仓、集中度和杠杆四件事拆开；先验证原始逻辑和最大风险预算，再决定是否继续暴露。",
+    "risk": "把无杠杆误当作低风险、把指数弹性误当作必然回本、把连续补仓误当作耐心，都会放大集中度、路径依赖与情绪风险；制裁和商业壁垒不清则会使基本面或主题逻辑失效。",
+    "style_ranking": [
+      "先区分持有原仓与新增补仓，不把两者合并为等待",
+      "再核总风险预算、资金来源、失效条件和情绪承受能力",
+      "主营依赖遭受制裁时优先重做基本面与退出判断",
+      "缺少个股研究能力时用宽基指数降低单一公司风险",
+      "主题降本叙事最后必须落到可持续壁垒和可验证现金回报"
+    ],
+    "provenance": "system_posture_synthesis_not_author_posture",
+    "source_basis": "作者给出个人仓位、补仓、等待、制裁退出、指数偏好和AI壁垒观察；本节的排序、风险预算和验证顺序均为系统整理，不是作者的完整规则。"
+  },
+  "regime_call": {
+    "horizon": "跨回撤、补仓和基本面事件周期",
+    "claim": "没有融资杠杆并不等于仓位安全；连续补仓只有在原始逻辑未失效、总风险预算预先冻结且加仓触发可验证时才可能是纪律，否则只是扩大集中暴露。",
+    "what_would_falsify": "在可比资产、相同初始风险和完整成交成本下，若不设总风险上限与失效条件的连续补仓长期稳定取得更高风险调整收益、更浅最大回撤且更少被迫减仓，则该约束应被否定或收窄。",
+    "provenance": "system_research_synthesis_from_attributed_source",
+    "source_basis": "来源只自述不用杠杆、A股仓位为个人历史最大、反复买入、回撤巨大且主要问题是太急；总风险预算、可比组和风险调整收益均为系统研究扩展。"
+  },
+  "directions": [
+    {
+      "name": "仓位、补仓与无杠杆边界",
+      "view": "不用杠杆只排除融资强平；历史最大仓位、连续追加现金和过早抄底仍可造成巨大回撤与情绪失控，必须分开评价持有与新增。",
+      "authority": 0,
+      "provenance": "source_observation_plus_system_boundary",
+      "source_basis": "来源明确自述无杠杆、历史最大A股仓位、连续买入、回撤和太急；‘必须分开评价’是系统方法。"
+    },
+    {
+      "name": "制裁冲击与基本面退出",
+      "view": "若公司主营高度依赖受制裁一侧，制裁可能直接破坏原始盈利逻辑；继续持有需要新的业务与现金流证据，不能只靠价格反弹期待。",
+      "authority": 0,
+      "provenance": "source_exit_view_plus_system_verification",
+      "source_basis": "来源说主营靠受制裁一方时‘就应该结束了’；收入、供应链和现金流核验是系统扩展。"
+    },
+    {
+      "name": "普通投资者的工具选择",
+      "view": "缺乏公司研究能力与稳定心智时，宽基指数可以作为降低单一个股认知错误的默认工具，但具体指数、估值、节奏和风险预算仍须独立确定。",
+      "authority": 0,
+      "provenance": "source_preference_plus_system_product_boundary",
+      "source_basis": "来源只说普通人缺乏心智和理解时更适合买指数；宽基、风险预算和产品评估由系统扩展。"
+    },
+    {
+      "name": "AI影视降本与竞争壁垒",
+      "view": "AI降低短剧和电影制作成本只说明供给成本变化，不自动证明可持续超额利润；投资前必须识别制作门槛下降后真正保留下来的壁垒。",
+      "authority": 0,
+      "provenance": "source_theme_view_plus_system_profit_bridge",
+      "source_basis": "来源认为AI降本逻辑好且制作门槛、壁垒需研究；供给竞争和超额利润传导由系统扩展。"
+    },
+    {
+      "name": "职业焦虑与投资逃生叙事",
+      "view": "把股票投资当作摆脱劳动收入或职业焦虑的捷径，容易促成超出能力圈的风险承担；更稳妥的方法是先保留现金流与既有技能，再以可验证的小步扩展寻找机会。",
+      "authority": 0,
+      "provenance": "source_behavioral_view_plus_system_risk_extension",
+      "source_basis": "来源说以大A钱生钱跳出职业框架很难且轻易跳出往往亏钱；现金流、能力圈和小步试验是系统扩展。"
+    }
+  ],
+  "stocks": [
+    {
+      "name": "美丽田园医疗健康（02373.HK）",
+      "role": "作者自述投资多年并以个人消费体验作补充的案例",
+      "boundary": "公司资料只确认发行人身份和CellCare秀可儿品牌，不能确认作者持仓、门店经历、疗效或任何买入价值；来源没有给增持、减持、估值和退出条件。"
+    },
+    {
+      "name": "A股宽基指数（未指定产品）",
+      "role": "作者给缺乏个股研究能力者的替代工具",
+      "boundary": "来源只说普通人更适合买指数，没有指定指数、基金、价格、仓位或入场时点；不能据此映射为某只产品。"
+    },
+    {
+      "name": "匿名受制裁公司",
+      "role": "主营依赖受制裁一侧时应结束持有的风险案例",
+      "boundary": "完整逐字稿没有名称、代码、制裁主体、日期或业务依赖比例；只能蒸馏方法，不能生成证券指令。"
+    },
+    {
+      "name": "AI短剧与电影制作主题",
+      "role": "成本下降但竞争壁垒尚待研究的主题案例",
+      "boundary": "来源没有具名公司、可投资工具、成本统计、演员就业统计或执行条件；只保留壁垒验证框架。"
+    },
+    {
+      "name": "匿名连续两日上涨约10%的资产",
+      "role": "作者说明次日表现仍依赖外部市场和运气的短线例子",
+      "boundary": "标的完全未识别，且约10%为来源口述；不沉淀为追涨规则。"
+    }
+  ],
+  "method_principles": [
+    "把持有原仓、追加现金、使用融资和总风险集中度分别记录；无融资杠杆不能替代仓位上限。",
+    "每次补仓前冻结最大总预算、触发条件、失效条件和下一次复核时间；若只是因为下跌而追加，不视为已验证策略。",
+    "把回本信念与可验证路径分开：指数或市场有弹性不等于单个账户、单只股票或特定成本必然回本。",
+    "公司受到制裁时先量化受影响收入、供应链、许可、替代市场与现金流，再判断原始基本面是否已经失效。",
+    "当个股研究能力不足时，比较宽基指数与自选股在分散度、成本、最大回撤和长期超额收益上的实际差异。",
+    "面对AI降本主题，先验证成本下降是否扩大总需求，再验证利润是否被竞争吸收以及可持续壁垒能否形成。",
+    "职业或收入焦虑不能充当股票风险预算；保留既有现金流、在能力圈内小步试验，再按证据扩大。"
+  ],
+  "method_principles_provenance": {
+    "provenance": "system_method_synthesis",
+    "source_basis": [
+      "来源自述不用杠杆、A股仓位为个人历史最大、连续买入、回撤巨大并自评太急。",
+      "来源说A股有弹性但需要运气，并区分当下等待与匿名对象次日表现。",
+      "来源说主营靠受制裁一方时应结束，普通人更适合买指数，AI制作门槛和壁垒需要研究。",
+      "来源把因职业焦虑去大A钱生钱视为高难度路径。"
+    ],
+    "system_only_elements": "冻结预算、阈值、测试期限、宽基对照、现金流面板、风险调整收益和研究仪器均由系统提出，不是作者断言。"
+  },
+  "exit_lessons": [
+    "巨大回撤和情绪受扰已经说明仓位路径有问题时，不能用‘没有杠杆’否认集中度风险。",
+    "作者自评本轮主要问题是太急；等待反弹与继续补仓不是同一动作，后者必须重新经过预算和失效条件。",
+    "主营高度依赖受制裁一侧时，若替代收入、许可或供应链证据不足，应把它当成原始逻辑失效候选，而不是只等下一波反弹。",
+    "宽基指数可以降低单一公司风险，但不能把市场弹性写成必然回本，也不能省略估值、节奏与家庭风险预算。",
+    "AI制作成本下降若同时降低进入门槛，主题热度可能先于盈利兑现；看不到壁垒时只保留研究，不把故事直接变成仓位。"
+  ],
+  "exit_lessons_provenance": {
+    "provenance": "system_lessons_from_source_observations",
+    "source_basis": "作者明确给出太急、连续补仓、大回撤、制裁时结束和AI壁垒待研究；仓位上限、替代收入、估值节奏与利润传导是系统边界。"
+  },
+  "hypotheses": [
+    {
+      "claim": "收入高度依赖受制裁市场的公司，在制裁事件后会出现更深的盈利预期下修和更慢的估值修复。",
+      "implied_rule": "制裁事件后按收入依赖、供应链替代、许可状态和现金流缓冲分层，而不是统一等待反弹。",
+      "falsifiable_test": "构建制裁事件样本，按受影响收入或供应链依赖分组，比较公告后5日、20日、60日盈利修正、超额收益和最大回撤。",
+      "expected_effect": "高依赖且无替代证据组应有更深回撤和更弱盈利修正；若长期无差异，则依赖度框架需收窄。",
+      "category": "sanctions_risk",
+      "provenance": "exact_existing_claim_reused_with_new_source_support",
+      "source_basis": "来源原话是‘你在被制裁的时候就应该结束了，因为你的业务主业都是靠那边的’；盈利下修、估值修复、分组窗口和比较指标来自既有XH-213的系统研究设计，不是作者本场原话。",
+      "related_existing_ids": ["XH-213"],
+      "dedup_action": "reuse_exact_claim_XH-213_add_source_support_only",
+      "dedup_boundary": "与XH-213的核心命题完整复现，不登记新假设；本场只追加来源支持和对象未识别限制，不能扩展为所有制裁公司统一卖出。"
+    },
+    {
+      "claim": "AI降低影视制作成本而未形成可验证壁垒时，供给扩张和竞争会吸收大部分降本收益，主题公司未必获得持续超额利润。",
+      "implied_rule": "AI影视主题评价同时跟踪单位制作成本、内容供给量、付费或广告变现、毛利率和竞争集中度。",
+      "falsifiable_test": "对采用AI制作的短剧或影视公司建立季度面板，比较降本幅度与后续毛利率、现金流、用户留存和市场份额的关系。",
+      "expected_effect": "只有同时形成可验证壁垒的公司才能把降本转成持续利润；若普遍转化，则壁垒前置条件被否定。",
+      "category": "ai_content_economics",
+      "provenance": "system_research_synthesis_from_attributed_source",
+      "source_basis": "来源只说AI短剧/电影降本逻辑好，并追问制作门槛和最终壁垒；供给扩张、竞争吸收降本和持续超额利润是系统待验假设。",
+      "related_existing_ids": ["XH-232"],
+      "dedup_action": "new_distinct_candidate_after_full_backlog_review",
+      "dedup_boundary": "XH-232研究短剧平台使用时长向收入和留存的传导；本候选研究AI制作降本、供给竞争和内容/分发壁垒向利润的传导，研究变量不同，不合并。"
+    },
+    {
+      "claim": "把股票投资视为逃离劳动收入的捷径，会提高超出能力圈交易、过度集中和亏损的概率。",
+      "implied_rule": "研究投资行为时记录收入焦虑、现金流稳定性、能力圈偏离、换手和仓位集中度。",
+      "falsifiable_test": "对个人投资者问卷与账户数据按‘替代劳动收入’动机分组，比较后续换手、集中度、融资使用、回撤与风险调整收益。",
+      "expected_effect": "逃生动机更强的组应有更高换手与集中度、更深回撤和更差风险调整收益；若无差异则假设不成立。",
+      "category": "behavioral_risk",
+      "provenance": "system_research_synthesis_from_attributed_source",
+      "source_basis": "来源把因焦虑到大A用钱生钱、轻易跳出职业框架与亏钱风险相连；问卷分组、换手、融资、集中度和风险调整收益均为系统研究扩展。",
+      "related_existing_ids": ["XH-202", "XH-072"],
+      "dedup_action": "new_distinct_candidate_after_full_backlog_review",
+      "dedup_boundary": "XH-202研究为证明独立而偏离能力圈，XH-072研究家庭劳动收入、教育和创业叠加的偿付压力；本候选专门研究把股票投资当作逃离劳动收入路径的动机偏差，不与两者强合并。"
+    }
+  ],
+  "non_ingest_appendix": {
+    "status": "support_only_not_hypotheses",
+    "items": [
+      {
+        "topic": "position_sizing",
+        "source_observation": "作者自述不用杠杆、个人历史最大A股仓位、连续买入、巨大回撤、情绪受扰和‘主要是太急’。",
+        "system_extension_not_author_claim": "设定总风险上限、分批触发和失效条件会取得更优风险调整结果。",
+        "related_existing_ids": ["XH-070", "XH-088"],
+        "dedup_boundary": "XH-070研究现金预算耗尽后的停止追加，XH-088研究入场确认失败后的停止追加；本次来源未给预算耗尽或入场确认失败，因此只作为部分支持，不新增、不摄取。"
+      },
+      {
+        "topic": "instrument_choice",
+        "source_observation": "作者只说缺乏心智和理解的普通人更适合买指数。",
+        "system_extension_not_author_claim": "宽基在三年、五年窗口的风险调整收益和回撤体验优于高换手自选股。",
+        "related_existing_ids": ["XH-201", "XH-057"],
+        "dedup_boundary": "XH-201含规则化现金缓冲与高换手对照，XH-057限定恐慌期和单一高波动科技股；本场均未给出，只作为部分支持，不新增、不摄取。"
+      }
+    ]
+  },
+  "timing_notes": [
+    "来源发表于2026年11月5日晚，‘明天’指向2026年11月6日A股交易日；作者关于等待、外部市场和匿名连续两日上涨约10%资产的短线表述不能沉淀为永久规则。",
+    "截至2026年11月6日07:39+08:00，绑定行情材料只保存11月5日分钟线的15:00日期价格点，不把它写成已由交易所权威核实的正式收盘价；这些单日点位也不能证明A股弹性必然回本。",
+    "小草2026年11月5日早盘报告讨论偏空轮动、低开修复与高位接力条件；吕晓彤晚间讨论持仓等待、制裁退出和指数替代，两者时点与对象不同，不能相互外推为11月6日条件已满足。",
+    "现行小草姿态材料的有效期停在2026年7月3日；本场是其他作者来源，只回应方法先验，不更新或续期该姿态。",
+    "AI短剧观点是当前主题观察，持久知识只保留‘降本后验证壁垒’的方法，不保留任何未具名交易窗口。"
+  ],
+  "typo_corrections": [
+    {
+      "raw": "美丽天园／美利坚原",
+      "normalized": "美丽田园医疗健康",
+      "reason": "上下文同时提及秀可儿；公司投资者关系资料https://ir.beautyfarm.com.cn/cn/news-events/news-releases/20260827/（发布2026-08-28，读取2026-11-06 07:39+08:00）只确认美丽田园医疗健康、香港上市代码02373及品牌身份，不确认作者持仓或消费效果。"
+    },
+    {
+      "raw": "秀可儿／修可儿",
+      "normalized": "CellCare秀可儿",
+      "reason": "同一公司投资者关系资料https://ir.beautyfarm.com.cn/cn/news-events/news-releases/20260827/（读取2026-11-06 07:39+08:00）确认CellCare秀可儿品牌；品牌身份不等于医美疗效核验。"
+    },
+    {
+      "raw": "某某某",
+      "normalized": null,
+      "reason": "连续两日约10%的资产没有任何名称、代码或唯一业务信息。"
+    },
+    {
+      "raw": "它有一些东西，就是说你在被制裁的时候就应该结束了",
+      "normalized": null,
+      "reason": "制裁对象、制裁方和主营依赖方向均未指明，只保留方法边界。"
+    },
+    {
+      "raw": "财富值指数",
+      "normalized": "作者社群内部内容或指标，具体定义不明",
+      "reason": "没有证据表明它是可投资的市场指数或基金。"
+    },
+    {
+      "raw": "五幺世界",
+      "normalized": null,
+      "reason": "来源只把它作为深圳参访目的地，名称未独立核验，也没有投资主张。"
+    }
+  ],
+  "action_summary": {
+    "posture_update": "not_applied：吕晓彤是其他作者；小草现行姿态材料又已于2026年7月3日到期，本条不修改或续期小草全局姿态与时间线。",
+    "playbook_update": "no_deterministic_change：可摄取假设仅为XH-213精确复用及AI内容经济、职业逃生动机两个新候选；补仓总风险和指数替代只放非摄取支持附录。",
+    "hypothesis_update": "dedup_complete_pending_research：制裁依赖复用XH-213；仓位与指数仅部分支持XH-070/XH-088和XH-201/XH-057，不登记同义新项；AI内容经济与职业逃生动机为两个差异化新候选，仍待research_run与人工门。",
+    "audit_evidence": "bound_to_complete_transcript_sha256_042ffb57d04367f0c58bfd10b8eb7ca3347672cf93ed6ad20ce0b104ed72317a",
+    "instrumentation_todo": "建立补仓路径与最大回撤面板、制裁业务依赖表、AI内容降本与利润转化面板、宽基对自选基准以及投资动机行为数据。",
+    "routing": [
+      "authority=0候选知识",
+      "已完成341条完整backlog精确去重",
+      "待research_run验证",
+      "不更新小草全局姿态",
+      "不修改确定性策略、账户或参数"
+    ]
+  },
+  "decision_trace": [
+    {
+      "observation": "作者自述不用杠杆，但A股仓位达到历史最大，并在下跌中反复补仓，随后出现巨大回撤和明显情绪影响，且自评主要问题是太急。",
+      "inference": "融资杠杆、集中度与补仓路径是不同风险；无融资强平不代表总风险可控。",
+      "action": "形成固定总风险和补仓触发的候选研究，不把作者继续等待或回本信心写成加仓规则。",
+      "evidence": {
+        "segment_ids": [
+          "b94a8dd3d71ca1db6da8cf9d62145f2dbc5d37f4769ef1dfa431ef154ac36313",
+          "cd74287310e899b7ed1569bde84739bd9f586bd1a4bdd883ef22af6eb1d43645",
+          "930951ae928ea51d3da9439b55947cd22dd032b568f6a66f43a02a9c89bc665b",
+          "1d36bc47ff7c63e049588a7611e2bafb972865a471e615a76069dca809b78f0b"
+        ],
+        "quote": "我不用杠杆的啊，我从来不用杠杆……不停的买……主要是太急"
+      }
+    },
+    {
+      "observation": "作者说某些资产在主营依赖的一侧受到制裁时就应该结束持有。",
+      "inference": "若政策冲击直接破坏主营收入或供应链，价格回撤可能是基本面失效而不是单纯情绪。",
+      "action": "提出按业务依赖度分层的制裁事件研究；因对象未识别，不生成证券动作。",
+      "evidence": {
+        "segment_ids": [
+          "b009046eb85df906dde51ce96aa2c35eb18b3bcbaa24524d771f537e1536bdee",
+          "8a7a947950b9d7012361913af0386dd8f1da88a3727b50934a96856cd36c2c7e"
+        ],
+        "quote": "你在被制裁的时候就应该结束了……因为你的业务主业都是靠那边的"
+      }
+    },
+    {
+      "observation": "作者认为普通人如果缺乏心智与理解力，只适合买指数。",
+      "inference": "宽基可降低个股认知错误与集中风险，但仍需以真实长期表现和风险预算检验。",
+      "action": "建立宽基与无稳定研究流程自选股的行为和收益对照，不直接映射某只基金。",
+      "evidence": {
+        "segment_ids": [
+          "8a7a947950b9d7012361913af0386dd8f1da88a3727b50934a96856cd36c2c7e",
+          "42db483eda04dd6103cdc4e8a3486fb9db8b3573760e3517277265748b2a14fb"
+        ],
+        "quote": "对于绝大多数人来说……你只适合去买指数"
+      }
+    },
+    {
+      "observation": "作者认可AI短剧和电影降本逻辑，同时追问制作门槛下降后真正的壁垒在哪里。",
+      "inference": "成本下降可能同时扩大供给，只有壁垒与变现证据才能连接到持续利润。",
+      "action": "形成AI内容经济性候选，不把主题热度或演员失业口述当成已验证投资结论。",
+      "evidence": {
+        "segment_ids": [
+          "7ce00a2b50542c238ea0ad7acb40bd3f1a8db07d146fa913d7acfd5094117864",
+          "eb0485a60d22783c4ec1a562d57b7ee8688917c0ae664cec99024a26ee712d97"
+        ],
+        "quote": "AI会让电影大幅下降成本……最后的这个制作门槛，最终他的这个壁垒在什么地方"
+      }
+    },
+    {
+      "observation": "作者把用股票钱生钱视为逃离劳动收入焦虑的常见路径，同时强调钱生钱很难，轻易跳出既有框架往往只会亏损。",
+      "inference": "职业焦虑可能把投资从资产配置变成逃生赌注，放大能力圈偏离和仓位错误。",
+      "action": "提出投资动机与账户行为的可检验假设；不把职业建议变成短线交易内容。",
+      "evidence": {
+        "segment_ids": [
+          "4be686e6255db7324235c44c06b94c137872daaefb6b6ba90c839c72236511dd",
+          "696e6c9667a179c5abf890d2e9c54587ba693613645cbf4b83e25eb31f5187bf"
+        ],
+        "quote": "希望能去用钱生钱，但是钱生钱又是非常非常难的事情……轻易的跳出自己的这个框架之后，最终留给他的结局就是毁灭就是亏钱"
+      }
+    }
+  ],
+  "judgment_heuristics": [
+    "先拆融资杠杆、总仓位、补仓路径和资金来源，再评价风险。",
+    "先写补仓触发、总预算和失效条件，再允许新增暴露。",
+    "先证明确属价格错杀，再把下跌当成机会；弹性不是回本保证。",
+    "先量化制裁对主营的依赖与替代路径，再判断持有或退出。",
+    "先确认个股研究能力，再决定个股或宽基工具。",
+    "先找到AI降本后的可持续壁垒，再把主题故事转成盈利假设。",
+    "先分离职业焦虑与投资风险预算，再讨论用钱生钱。",
+    "实体不唯一时只保留方法和边界，不配代码、不执行。"
+  ],
+  "judgment_heuristics_provenance": {
+    "provenance": "system_judgment_synthesis",
+    "source_basis": "来源提供无杠杆、最大A股仓位、连续补仓、太急、制裁时结束、普通人买指数、AI壁垒待研究和职业焦虑等观察；所有‘先……再……’步骤、预算、量化和执行边界均由系统派生。"
+  },
+  "prior_feedback_response": {
+    "status": "refines_without_calibration_promotion",
+    "current_posture": "未更新。反馈中的小草姿态有效期已停在2026年7月3日，本场来源是其他作者且没有同口径现实验证。",
+    "playbook_comparison": [
+      "本场‘已经跌到这种程度不能乱动’与既有‘不对单日或数日回调恐慌空仓’方向相近，但作者同时承认过早、连续补仓造成巨大回撤；这说明持有与加仓必须分开，不能把不恐慌卖出扩张成无限补仓。",
+      "本场没有高位核心、低中位补涨、轮动频率或5日线的同口径证据，不确认也不证伪‘轮涨和高低切分阶段’先验。",
+      "11月5日小草早盘的偏空轮动、低开修复与高位接力条件和吕晓彤晚间的等待回弹处于不同来源与时点；只记录条件差异，不形成全局校准。"
+    ],
+    "calibration_action": "no_change：没有同口径现实结果，不能新增playbook校准行。"
+  },
+  "deduplication_review": {
+    "status": "full_backlog_review_complete_pending_ingestion_gate",
+    "reviewed_backlog_count": 341,
+    "reason": "已以完整341条backlog为源逐条做语义检索，并特别核对XH-070、XH-088、XH-213、XH-201、XH-057、XH-232、XH-202和XH-072；40条候选文件只用于缩小查重，不作为来源完整性或重要性筛选。",
+    "outcomes": [
+      {"candidate":"position_sizing","decision":"partial_support_only","related_existing_ids":["XH-070","XH-088"],"boundary":"来源未给预算耗尽或入场确认失败，不登记同义新项。"},
+      {"candidate":"sanctions_risk","decision":"exact_reuse","related_existing_ids":["XH-213"],"boundary":"复用XH-213 exact claim，只增加本场来源支持。"},
+      {"candidate":"instrument_choice","decision":"partial_support_only","related_existing_ids":["XH-201","XH-057"],"boundary":"来源未给现金缓冲、高换手对照或恐慌期，不登记同义新项。"},
+      {"candidate":"ai_content_economics","decision":"new_distinct_candidate","related_existing_ids":["XH-232"],"boundary":"研究AI制作降本与壁垒，不同于平台时长向变现传导。"},
+      {"candidate":"behavioral_risk","decision":"new_distinct_candidate","related_existing_ids":["XH-202","XH-072"],"boundary":"研究逃离劳动收入的股票动机，不同于证明独立的能力圈偏离或家庭创业偿付风险。"}
+    ]
+  }
+}

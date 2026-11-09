@@ -1020,6 +1020,29 @@ def _short_term_selection(
     return selected, selection, quality_issues
 
 
+def latest_report_coverage(context: dict, projection: dict, *, kol_id: str) -> dict:
+    """Explain latest registered reports without promoting excluded viewpoints."""
+    reports = [row for row in context['report_index'] if row['kol_id'] == kol_id]
+    latest = max((_timestamp(row['source_published_at']) for row in reports), default=None)
+    coverage = []
+    for report in reports:
+        if _timestamp(report['source_published_at']) != latest:
+            continue
+        rows = {row['record_id']: row for row in context['viewpoints']
+                if row['report_id'] == report['report_id']}
+        _, selected, _ = _short_term_selection(context=context, viewpoints=rows)
+        coverage.append({key: report.get(key) for key in
+                         ('report_id', 'content_sha256', 'source_published_at',
+                          'longitudinal_loaded', 'evidence_mode', 'verified_at')})
+        coverage[-1].update(viewpoint_count=len(rows), eligible_count=selected['eligible_count'],
+                            excluded_by_reason=selected['excluded_by_reason'])
+    active = [row for row in projection['active_viewpoints'] if row['kol_id'] == kol_id]
+    return {'scope': 'registered_publications_only', 'as_of': context['as_of'],
+            'registered_report_count': len(reports), 'latest_reports': coverage,
+            'latest_eligible_source_published_at': max(
+                (row['source_published_at'] for row in active), key=_timestamp, default=None)}
+
+
 def write_trading_projection(
     context: dict,
     *,

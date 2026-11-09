@@ -31,11 +31,17 @@ def register_preparation(input_path: Path, path: Path, prepared: dict) -> None:
 
 
 def current_source_fingerprint(root: Path, now: datetime, trade_date: str) -> str:
-    from .trading_context import build_trading_context, write_trading_projection
+    return current_source_snapshot(root, now, trade_date)['source_fingerprint']
+
+
+def current_source_snapshot(root: Path, now: datetime, trade_date: str) -> dict:
+    from .trading_context import build_trading_context, write_trading_projection, latest_report_coverage
     context = build_trading_context(repo_root=root, read_report_ids=[], include_report_bodies=False,
         as_of=now, history_fresh_through=trade_date + 'T11:30:00+08:00')
     summary = write_trading_projection(context, repo_root=root)
-    return preparation.read_projection(summary)['source_fingerprint']
+    projection = preparation.read_projection(summary)
+    return {'source_fingerprint': projection['source_fingerprint'],
+            'source_coverage': latest_report_coverage(context, projection, kol_id='kol-xiaocao')}
 
 
 def registered_preparation(root: Path, trade_date: str, *, now: datetime) -> tuple[Path, dict] | None:
@@ -67,7 +73,7 @@ def registered_preparation(root: Path, trade_date: str, *, now: datetime) -> tup
 
 
 def preview(rows: list[dict], freeze: dict, *, root: Path, now: datetime,
-            fingerprint_reader=current_source_fingerprint) -> dict:
+            fingerprint_reader=current_source_snapshot) -> dict:
     """Read local immutable evidence once; missing/stale support preserves baseline."""
     started = perf_counter()
     baseline = [r['code'] for r in rows if r.get('mode_exec_star') is True]
@@ -89,15 +95,26 @@ def preview(rows: list[dict], freeze: dict, *, root: Path, now: datetime,
                         'unresolved_semantic_conditions', []),
                     current_applicability='not_completed',
                     current_source_head='not_checked')
-            executable = any(item['applicability']=='supported' for item in preferences)
+                from .rolling_preparation import validate_current_sources
+                validate_current_sources(prepared, now=now)
+                current = fingerprint_reader(root, now, freeze['market_date'])
+                fingerprint = current['source_fingerprint'] if isinstance(current, dict) else current
+                if isinstance(current, dict):
+                    result['source_coverage'] = current['source_coverage']
+                if fingerprint != prepared['source_fingerprint']:
+                    result['current_source_head'] = 'local_fingerprint_changed'
+                    raise ValueError('PREPARATION_SOURCE_CHANGED')
+                result['current_source_head'] = 'fingerprint_matched'
+            executable = (any(item['applicability']=='supported' for item in preferences)
+                          and not (rolling and result['unresolved_semantic_conditions']))
             from .prepared_policy import preview_risk
             risk = preview_risk(prepared, trade_date=freeze['market_date'], now=now) if rolling else None
             if (preferences and (executable or not rolling)) or risk is not None:
-                if rolling:
-                    from .rolling_preparation import validate_current_sources
-                    validate_current_sources(prepared, now=now)
-                if fingerprint_reader(root, now, freeze['market_date']) != prepared['source_fingerprint']:
-                    raise ValueError('PREPARATION_SOURCE_CHANGED')
+                if not rolling:
+                    current = fingerprint_reader(root, now, freeze['market_date'])
+                    fingerprint = current['source_fingerprint'] if isinstance(current, dict) else current
+                    if fingerprint != prepared['source_fingerprint']:
+                        raise ValueError('PREPARATION_SOURCE_CHANGED')
                 selection = select_candidates(rows, preferences, trade_date=freeze['market_date'],
                     freeze_sha256=freeze['snapshot_sha256'])
                 result.update(status='prepared_preview', reason='REVIEWED_PREPARATION_RECOMMENDATION_ONLY',
@@ -118,9 +135,11 @@ def preview(rows: list[dict], freeze: dict, *, root: Path, now: datetime,
                         risk_adjustment=risk, portfolio_diff=selection_diff(rows, adjusted),
                         current_applicability='explicit_prepared_conditions_satisfied')
             else:
-                result['reason'] = ('CURRENT_APPLICABILITY_REVIEW_REQUIRED' if rolling and
+                result['reason'] = ('CONDITIONAL_PLAN_NOT_EXECUTABLE' if rolling and
                     result['unresolved_semantic_conditions'] else 'PREPARATION_NO_SELECTION_PREFERENCE')
                 if rolling:
+                    if result['unresolved_semantic_conditions']:
+                        result['current_applicability'] = 'deferred_unresolved_conditions'
                     # Complete observable unchanged comparison; this is not
                     # source revalidation or a completed neutral judgment.
                     result['selection'] = select_candidates(rows, [], trade_date=freeze['market_date'],
@@ -143,6 +162,28 @@ def render(value: dict) -> str:
     if value.get('risk_adjustment'):
         synthesis += '当下条件下的新增仓位系数：' + str(value['risk_adjustment']['buy_scale']) + '。'
         synthesis += value['risk_adjustment']['rationale'] + '\n\n'
+    coverage = value.get('source_coverage', {})
+    for report in coverage.get('latest_reports', []):
+        clock = preparation.aware(report['source_published_at']).astimezone(preparation.TZ)
+        labels = {'not_book_b_short_term': '非短线方法或背景', 'status_expired': '已过期',
+                  'status_uncertain': '待确认', 'status_invalidated': '已失效',
+                  'short_term_validity_expired': '短线有效期已过',
+                  'latest_evaluation_ambiguous': '当前评价不唯一',
+                  'short_term_classification_missing': '缺短线分类',
+                  'short_term_classification_invalid': '短线分类不完整',
+                  'short_term_operability_incomplete': '缺触发或证伪条件'}
+        excluded = '、'.join(f'{labels.get(key, key)} {count} 条'
+                             for key, count in report['excluded_by_reason'].items()) or '无'
+        synthesis += (f"\n最新登记小草来源：{clock:%Y-%m-%d %H:%M}（北京时间）；"
+            f"{report['viewpoint_count']} 条观点中 {report['eligible_count']} 条进入短线输入；"
+            f"排除原因：{excluded}。本地登记证据不代表刚完成远端核验。\n")
+    unresolved = value.get('unresolved_semantic_conditions', [])
+    if unresolved:
+        synthesis += '\n当前未完成的适用条件：\n' + '\n'.join('- ' + item for item in unresolved) + '\n'
+    if value.get('current_applicability') == 'not_completed':
+        synthesis += '\n本轮保留基线，当前适用性判断未完成；本预览不会启动后续评审。\n'
+    if value.get('current_applicability') == 'deferred_unresolved_conditions':
+        synthesis += '\n盘前条件方案缺证，本轮明确降级并保留基线；早盘不补做新语义判断。\n'
     return (f"\n## KOL 候选偏好（推荐预览）\n\n"
         f"状态：{value['status']}；原因：{value['reason']}。\n\n"
         f"冻结基线：{baseline}。\n\nKOL 推荐：{selected}。\n\n"

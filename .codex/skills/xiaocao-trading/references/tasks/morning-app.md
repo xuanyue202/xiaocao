@@ -63,29 +63,20 @@ stays explicitly deferred; preserve baseline/independently valid-policy gates.
 Do not wait for the source owner. Source synthesis is prepared independently in
 its early/evening slot; only current applicability/delta is new at freeze.
 
-On current_warmup_path before09:20, read its exact tool_arguments and follow
-[current analyst preload](../kol-current-review.md): dispatch once, register the
-actual loaded receipt and keep its code wait alive. The parent reviews prepared
-conditions and source/schema prerequisites while the worker waits. This is an
-APP-owned current analyst, independent of the shared source writer.
+## Frozen event: conditional draft, policy, current account and batch
 
-## Frozen event: dispatch, policy, current account and batch
-
-On await_preloaded_current_worker, the original runner has delivered directly to
-that already-waiting worker. Keep it; prepare independent final review and source
-verification immediately, with no second spawn or schema/full-source read.
-On dispatch_path read that ONE assembled file. Follow next_action: independently
-review its unapproved prepared-policy draft when unchanged typed conditions
-allow materialization; otherwise follow exact tool_arguments for the current-only worker and record actual dispatch. See opening preparation for both branches.
-On continue_original_baseline_deferred, code continues valid-policy/baseline
-gates with an explicit deferred receipt and retained unknowns; no new dispatch
-or neutral-policy publication. This requires separate pre-window review.
-Otherwise read brief_path first. Review all delta/current freeze/account/risk,
-reuse unchanged preparation, verify exact cited sources, parent review and
-publish with original request binding before09:27. Do not spend dispatch budget
-reopening full unchanged sources/schema. Mode mappings and policy completion,
-neutral publication, valid reuse, timeout and actual adoption remain distinct.
-Why: support has one original cutoff; it cannot consume order time or backdate.
+New requests bind judgment_mode=conditional_first_v1. No current-worker preload
+or post-freeze semantic dispatch. Follow [conditional-first morning](../kol-conditional-morning.md).
+On dispatch_path read that one artifact. independently_review_prepared_draft:
+immediately review its exact unapproved decision, current facts and prepared
+context; normal current-source verification and request-bound publication remain
+mandatory. continue_original_baseline_deferred: retain named unknowns, continue
+independently valid policy/baseline, no model or neutral publication. Missing,
+changed or unrepresentable conditions degrade immediately. Finish ASAP, within
+original max120 seconds and hard09:27:30; never backdate or use late output.
+Existing legacy warmup/request artifacts retain original09:27 and exact handler,
+with no second dispatch or budget reset. Policy completion/reuse, degradation,
+actual account allocation and order/fill proof remain separate.
 
 Consume only original committed morning bundle via shared validation. On source/
 bundle events follow the exact owner/request path in automation-morning.md;
@@ -143,7 +134,7 @@ proofs through the original action guards. In09:25–09:30, state the failed
 step's affected funds/codes and next-order prerequisite: defer supporting
 audit/history, or perform minimum necessary repair/validation and continue the
 original legal entry. Complete remaining receipt readback after the batch;
-preserve original deadlines,09:27 support cutoff and uncertain-action fences.
+preserve original deadlines, version-bound support cutoff and uncertain-action fences.
 An unavailable proof stays explicit rather than becoming passed or an unchanged
 retry. Audit degradation preserves the sealed business result.
 If terminal blocked at preflight, --kind book-b --receipt <exact terminal> reuses

@@ -180,8 +180,9 @@ class PaperKolReview:
         self.started = self.now()
         if not math.isfinite(budget_seconds) or budget_seconds < 0:
             raise ValueError("PAPER_KOL_INVALID_ORIGINAL_BUDGET")
+        from .morning_support import CONDITIONAL_FIRST, opening_cutoff
         self.cutoff = min(self.started + timedelta(seconds=min(120, budget_seconds)),
-                          datetime.fromisoformat(date + "T09:27:00+08:00"))
+                          opening_cutoff(date, mode=CONDITIONAL_FIRST))
         try:
             self._start(preview)
         except (OSError, ValueError, KeyError, TypeError, RuntimeError) as exc:
@@ -235,19 +236,17 @@ class PaperKolReview:
             "freeze_sha256": self.freeze["snapshot_sha256"], "freeze": self.freeze,
             "strategy_sha": self.freeze["strategy_sha"], "candidates": rows,
             "account_facts": facts, "account_risk": risk}
+        from .morning_support import CONDITIONAL_FIRST
+        request['judgment_mode'] = CONDITIONAL_FIRST
         request = preparation.normalized_review_facts(request)
         packet = preparation.opening_packet(preparation_path, input_path, request, now=self.now(),
                                             adoption_path=adoption_path)
         packet_path = preparation.write_artifact(self.run_dir, packet, ".kol-packet.json")
         request["kol_inputs"] = {"packet_path": str(packet_path), "packet_sha256": packet["packet_sha256"],
             "warm_worker": prepared["worker_id"] if adoption_path is None else None, "input_path": str(input_path)}
-        from .current_review import warmup_path
-        current_warmup = warmup_path(self.run_dir, self.binding)
-        if current_warmup.exists():
-            request['kol_inputs']['current_warmup_path'] = str(current_warmup)
         request["dispatch_budget"] = {"observed_at": self.now().isoformat(),
             "total_remaining_seconds": max(0, (self.cutoff-self.now()).total_seconds()),
-            "cutoff": self.cutoff.isoformat(), "includes": ["model", "source_verification", "independent_review", "publication"]}
+            "cutoff": self.cutoff.isoformat(), "includes": ["source_verification", "independent_review", "publication"]}
         digest = kol_policy.decision_sha256(request)
         self.request = {**request, "request_sha256": digest}
         path = self.run_dir / (digest + ".paper-kol-request.json")
@@ -267,6 +266,7 @@ class PaperKolReview:
     def _finish(self, status: str, reason: str, policy=None):
         completed = self.now()
         value = {"schema_version": "paper-morning-kol-review.v1", "binding": self.binding,
+            "judgment_mode": "conditional_first_v1", "review_wait_until": self.cutoff.isoformat(),
             "trade_date": self.date, "freeze_sha256": self.freeze["snapshot_sha256"],
             "checkpoint_sha256": self.freeze.get("checkpoint_sha256"), "status": status, "reason": reason,
             "request_sha256": (self.request or {}).get("request_sha256"),

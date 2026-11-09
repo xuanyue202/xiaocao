@@ -1,3 +1,7 @@
+Legacy request handler only. New `conditional_first_v1` morning requests do not
+preload or dispatch this worker; use [conditional-first morning](kol-conditional-morning.md).
+Existing warmup/request/receipt bytes and original09:27 deadline remain unchanged.
+
 # Preloaded current applicability
 
 When APP emits current_warmup_path or Paper emits paper_kol_current_warmup,

@@ -2123,11 +2123,8 @@ def run_book_b_live_morning(
                         # Heavy semantic work is prepared before freeze. Leave
                         # the opening tail for native prepare/serial acceptance;
                         # this only bounds supporting wait, never expires a plan.
-                        review_until = deadline
-                        if (current.hour, current.minute) < (9, 30):
-                            review_until = min(deadline, current.replace(
-                                hour=9, minute=27, second=0, microsecond=0,
-                            ))
+                        from .morning_support import CONDITIONAL_FIRST, opening_cutoff
+                        review_until = min(deadline, opening_cutoff(config.trade_date, mode=CONDITIONAL_FIRST))
                         request = {
                             "schema_version": "book-b-live-review-request.v1",
                             "book": "B", "runtime": "live", "trade_date": config.trade_date,
@@ -2147,6 +2144,7 @@ def run_book_b_live_morning(
                             "max_wait_seconds": min(120.0, max(0.0, (review_until - current).total_seconds()))
                                 if current.date().isoformat() == config.trade_date else 0.0,
                         }
+                        request['judgment_mode'] = CONDITIONAL_FIRST
                         enter("review")
                         # KOL cannot increase a hard account-risk cap. Finish
                         # the deterministic no-buy without spending its window

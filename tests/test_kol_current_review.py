@@ -83,6 +83,42 @@ def test_frozen_request_reaches_existing_waiter_without_parent_spawn(ready):
     assert handoff['actual_dispatch']=='not_observed'  # handoff never fabricates model activity
 
 
+def test_cli_wait_reuses_previously_registered_loaded_receipt(ready, monkeypatch):
+    import sys
+    from datetime import timedelta
+    from scripts import kol_current_review as cli
+    _, _, path, dispatch, loaded, before = ready
+    loaded_path = path.with_suffix('.loaded.json')
+    warm._write(loaded_path, loaded)
+    original = loaded_path.read_bytes()
+    warm.register(path, dispatch, loaded, now=before)
+    class Clock:
+        @classmethod
+        def now(cls, tz):
+            return (before + timedelta(seconds=5)).astimezone(tz)
+    monkeypatch.setattr(cli, 'datetime', Clock)
+    entered = []
+    def wait(actual, *, worker_id):
+        entered.append((actual, worker_id))
+        return {'status': 'waiting_reached'}
+    monkeypatch.setattr(warm, 'wait', wait)
+    monkeypatch.setattr(sys, 'argv', ['kol_current_review.py', 'wait', '--warmup', str(path),
+                                     '--worker-id', loaded['worker_id']])
+    assert cli.main() == 0
+    assert entered == [(path, loaded['worker_id'])]
+    assert loaded_path.read_bytes() == original
+
+
+@pytest.mark.parametrize('damage', ['worker_id', 'warmup_sha256', 'preparation_sha256',
+                                    'early_packet_sha256', 'loaded_at'])
+def test_wait_rejects_foreign_or_late_loaded_receipt(ready, damage):
+    _, _, path, _, loaded, before = ready
+    loaded[damage] = '2026-10-23T09:20:00+08:00' if damage == 'loaded_at' else 'foreign'
+    warm._write(path.with_suffix('.loaded.json'), loaded)
+    with pytest.raises(ValueError, match='LOADED_BINDING'):
+        warm.record_loaded(path, worker_id='/root/current_paper', now=before.replace(minute=21))
+
+
 @pytest.mark.parametrize('damage',['late','foreign','wrong_source','no_actual_dispatch'])
 def test_invalid_preloaded_registration_never_delivers(ready,monkeypatch,damage):
     _,_,path,dispatch,loaded,before=ready

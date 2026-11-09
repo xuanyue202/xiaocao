@@ -1,7 +1,8 @@
 """Instantiate already reviewed conditional semantics, returning an unapproved draft.
 
 No semantic classification, review approval, policy-store write or execution.
-New evidence/unresolved prose requires the existing bounded worker branch.
+New evidence/unresolved prose defers conditional-first requests; legacy workers
+retain their original bounded branch.
 """
 from __future__ import annotations
 
@@ -112,6 +113,8 @@ def _bound_template(prepared: dict, packet: dict, request: dict, now: datetime) 
              and packet['packet_sha256']==canonical_sha256({k:v for k,v in packet.items() if k!='packet_sha256'}),
              'PREPARED_POLICY_PACKET_BINDING_INVALID')
     cutoff=aware(packet['cutoff'])
+    from xiaocao.live.morning_support import support_deadline
+    cutoff=min(cutoff,support_deadline(request))
     _require(now.utcoffset() is not None and aware(request['requested_at'])<=now<cutoff
              and now<aware(prepared['draft']['valid_until']), 'PREPARED_POLICY_ORIGINAL_DEADLINE')
     binding={k:request.get('freeze',{}).get(k) for k in kol_policy.SELECTION_BINDING_FIELDS}

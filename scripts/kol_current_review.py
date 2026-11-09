@@ -39,19 +39,16 @@ def main():
                     as_of=now, read_report_ids=[], include_report_bodies=False), repo_root=state_root)
                 inputs = prep.input_payload(summary, binding=binding, repo_root=state_root)
                 input_path = prep.write_artifact(run, inputs, '.early-kol-inputs.json')
-            path = current_review.prepare(run, binding, source[0], now=now, root=a.root,
-                current_input_path=input_path) if source else None
-            value = {'event':'paper_kol_current_warmup', 'warmup_path':str(path) if path else None,
-                     'authority':0, 'status':'ready' if path else 'unavailable'}
+            from xiaocao.live.morning_support import CONDITIONAL_FIRST
+            value = {'event':'paper_kol_conditional_preparation', 'warmup_path':None,
+                     'judgment_mode':CONDITIONAL_FIRST, 'authority':0,
+                     'input_path':str(input_path) if input_path else None,
+                     'preparation_path':str(source[0]) if source else None,
+                     'status':'ready_for_fact_checks' if source else 'unavailable'}
         elif a.command == 'register':
             value = current_review.register(a.warmup, prep.read_json(a.dispatch), prep.read_json(a.loaded), now=now)
         else:
-            warmup = current_review.read_warmup(a.warmup)
-            loaded = {'worker_id':a.worker_id, 'warmup_sha256':warmup['warmup_sha256'],
-                      'preparation_sha256':warmup['preparation_sha256'], 'loaded_at':now.isoformat()}
-            if warmup.get('early_packet_sha256'):
-                loaded['early_packet_sha256'] = warmup['early_packet_sha256']
-            current_review._write(a.warmup.with_suffix('.loaded.json'), loaded)
+            current_review.record_loaded(a.warmup, worker_id=a.worker_id, now=now)
             print(json.dumps({'event':'current_worker_preloaded', 'loaded_path':str(a.warmup.with_suffix('.loaded.json'))}), flush=True)
             value = current_review.wait(a.warmup, worker_id=a.worker_id)
         print(json.dumps(value, ensure_ascii=False))

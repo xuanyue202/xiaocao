@@ -1,0 +1,390 @@
+{
+  "date": "2026-11-04",
+  "kind": "review",
+  "author": "小草",
+  "source": "小草直播",
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_netdisk_enrichment/artifacts/kol-netdisk-2e4f426e3952c9e9/20261104 11月4日大师班复盘直播-compressed.txt",
+    "sha256": "4d22805b90c69a667258eead37498ee2f39dd344a336012253bd4b03a92f178b",
+    "size": 113644
+    }
+  ],
+  "authority": 0,
+  "summary": "本场可复用价值不在个股收益展示，而在三组可检验纪律：集合竞价只能处理当时信息，盘中变化必须用盘中证据覆盖；模式与分数不满足时不能凭主观预判放宽；回测中应把作者明确反对参数遍历过拟合的主张，与系统仍需补做的参数平原、跨股票和样本外验证严格分开。",
+  "posture": {
+    "regime": "作者判断市场正从单边退潮向短线轮动过渡，但11月4日收盘尚未完成轮动确认。",
+    "dominant_style": "科技超跌后的反弹与短周期轮动并存；作者偏向小市值科技，并只在特定盘中“小白菜”模式中口述高位样本更好，不把该观察泛化到全部短线模式，也不把反弹称为反转。",
+    "risk": "次日分歧、模式尚未上线、私有分数与模式资格不可独立核验，高波动模式可能出现10%至20%的单次亏损。",
+    "style_ranking": [
+      "只有后续确认轮动后才采用的短周期轮动规则，以及资格不足时的现金纪律",
+      "小市值科技相对大市值科技",
+      "大市值风格仅在市值环境持续时条件性上调",
+      "未上线或资格不足的模式不参与"
+    ]
+  },
+  "regime_call": {
+    "horizon": "11月5日及随后一至两个交易日",
+    "call": "11月4日科技反弹后，次日更可能先出现分歧；随后一至两个交易日关注环境是否真正转为轮动。",
+    "what_would_falsify": [
+      "科技在11月5日继续形成有广度、有承接的单边主升，而不是分歧。",
+      "未来两个交易日仍由单一方向持续压制，未出现轮动特征。",
+      "大市值科技持续主动领涨并形成趋势，证伪作者偏向小市值科技的结构判断。"
+    ]
+  },
+  "directions": [
+    {
+      "name": "科技",
+      "stance": "超跌反弹而非反转；次日先防分歧，结构上偏小市值科技。",
+      "horizon": "下一交易日及随后数日",
+      "conditions": [
+        "大市值科技停止拖累指数时，短线机会才更容易展开。",
+        "若大市值风格连续维持，再条件性提高中大市值标的权重。"
+      ],
+      "uncertainties": [
+        "缺少11月5日完整板块广度和收盘验证。",
+        "作者的私有模式与分数无法由行情价格点复原。"
+      ]
+    },
+    {
+      "name": "白酒、银行与科技",
+      "stance": "作者把11月4日理解为跷跷板和板块切换，不应只看大盘涨跌推断单一板块。",
+      "horizon": "盘中至下一交易日",
+      "conditions": [
+        "以实时板块承接和轮动为准。"
+      ],
+      "uncertainties": [
+        "只有皇台酒业与部分科技股的价格点得到核对，未做全行业强弱统计。"
+      ]
+    },
+    {
+      "name": "传媒",
+      "stance": "11月4日上午偏强、午后被科技与人工智能切换；作者据此提高次日分歧预期。",
+      "horizon": "下一交易日",
+      "conditions": [
+        "观察传媒能否重新取得主动。"
+      ],
+      "uncertainties": [
+        "未取得完整传媒板块广度。"
+      ]
+    }
+  ],
+  "stocks": [
+    {
+      "name": "中际旭创",
+      "code": "300308.XSHE",
+      "role": "科技大票反弹例证",
+      "source_claim": "作者以其前一日大跌、当日大涨说明科技超跌反弹。",
+      "system_check": "11月3日15:00为-12.69%，11月4日15:00为+11.07%；价格点支持反弹事实，不证明已经反转。"
+    },
+    {
+      "name": "新易盛",
+      "code": "300502.XSHE",
+      "role": "科技反弹例证",
+      "source_claim": "作者把它列为大幅回撤后的反弹对象。",
+      "system_check": "11月4日15:00为+13.35%；未核实更长周期跌幅。"
+    },
+    {
+      "name": "佰维存储",
+      "code": "688525.XSHG",
+      "role": "存储超跌反弹例证",
+      "source_claim": "作者用其大幅回撤说明反弹不等于回到旧高。",
+      "system_check": "11月4日15:00为+9.22%；历史高点与完整回撤幅度未核验。"
+    },
+    {
+      "name": "皇台酒业",
+      "code": "000995.XSHE",
+      "role": "白酒与科技跷跷板例证",
+      "source_claim": "作者称科技走强时白酒炸板。",
+      "system_check": "11月4日11:30与13:20均为+10.02%，15:00为-4.66%，支持当日开板回落事实。"
+    },
+    {
+      "name": "冰山冷热",
+      "code": "000530.XSHE",
+      "role": "作者所称模式命中例证",
+      "source_claim": "作者称纯模式选择没有问题。",
+      "system_check": "11月4日15:00为+10.00%；不证明私有模式、买点或可成交性。"
+    },
+    {
+      "name": "贝特利",
+      "code": "301697.XSHE",
+      "role": "作者所称模式命中例证",
+      "source_claim": "作者称纯模式选择没有问题。",
+      "system_check": "证券目录确认名称为贝特利而非贝特瑞，11月4日15:00为+20.02%；不证明私有模式、买点或可成交性。"
+    }
+  ],
+  "method_principles": [
+    {
+      "principle": "信息集同时性",
+      "rule": "集合竞价只处理9:25可见的信息；午后板块切换必须由盘中监控重新判断，不能用收盘结果倒推早盘软件失效。",
+      "limitation": "盘中预警本身也不保证方向持续，仍要用承接与资格条件确认。"
+    },
+    {
+      "principle": "资格优先于主观预判",
+      "rule": "私有分数未过门槛、模式未上来或功能未上线时，保持现金或按既定有效模式处理，不因感觉行情将来而放宽。",
+      "limitation": "门槛300分和模式状态属于作者私有体系，尚未独立验证。"
+    },
+    {
+      "principle": "作者反对参数遍历过拟合",
+      "rule": "作者声称本场展示尚未做参数遍历，并说以后仍要寻找参数平原；“参数平原、跨股票稳定性和样本外表现共同验证”是系统提出的研究要求，不是作者已经证明的结果。",
+      "limitation": "来源没有给出参数平原定义、跨股票对照、样本外区间或可成交结果。"
+    },
+    {
+      "principle": "时间尺度一致",
+      "rule": "短线点名必须在短线期限内复核和退出，不能把一次盘中或隔日观点延长成三个月持有理由。",
+      "limitation": "具体退出仍需标的、成交和账户证据。"
+    }
+  ],
+  "exit_lessons": [
+    {
+      "lesson": "轮动确认后再调整卖出时点",
+      "observation": "作者在11月4日收盘明确说当天尚未转轮动。",
+      "inference": "只有后续一至两个交易日确认轮动，才考虑比退潮期更晚卖，并允许高抛一半保留一半。",
+      "boundary": "“快速涨停”出现在作者回顾退潮期早卖的语境中，不把它错接成轮动后晚卖条款的例外；未确认轮动时也不能机械套用晚卖或减半。"
+    },
+    {
+      "lesson": "不要延长短线观点的持有期限",
+      "observation": "作者举例有人把一次短线点名持有三个月后追责。",
+      "inference": "进场理由和持有期限必须一致。",
+      "boundary": "历史故事只提供风险纪律，不证明任何具体卖点。"
+    }
+  ],
+  "hypotheses": [
+    {
+      "claim": "特定盘中“小白菜”模式的高位样本可能优于同模式低位样本，但同时承担更大的尾部波动。",
+      "implied_rule": "只在同一盘中“小白菜”定义和同一日期池内比较高低位样本；竞价小白菜数据尚未跑出，不与盘中结论混合。",
+      "falsifiable_test": "系统研究设计：冻结该模式、高低位定义、信号时点、可成交价格和完整失败样本，比较两组费用后收益、最大单笔亏损和最大回撤。",
+      "expected_effect": "系统待验预期：若来源观察成立，高位组收益分布可能更高，但左尾损失也更大；任何一项不稳定都不支持采用。",
+      "category": "risk_reward",
+      "provenance": "system_research_synthesis",
+      "source_basis": [
+        "作者只说特定盘中“小白菜”长期数据里高位更好，并承认自己尚不理解原因。",
+        "作者明确说竞价小白菜数据还没出来，相关标签和版本也未正式上线。",
+        "收益、尾损比较与可成交测试都是系统研究设计，不是作者已经验证的结果。"
+      ],
+      "related_existing_ids": [
+        "XH-139"
+      ],
+      "dedup_boundary": "XH-139研究弱轮动中高位断板候选的隔日左尾；本候选仅限特定盘中“小白菜”模式内部的高低位分层，不泛化为所有高位或所有短线私有模式。"
+    },
+    {
+      "claim": "对作者尚未参数遍历的模式，未来只有参数平原、跨股票稳健性和样本外表现共同稳定时，才可把曲线视为可复用优势。",
+      "implied_rule": "把作者“未参数遍历、以后找参数平原”的口述与系统验证分开；研究阶段才定义参数邻域、跨股票样本和样本外窗口。",
+      "falsifiable_test": "系统研究设计：对同一模式比较单点参数与预注册参数邻域，并在未参与形成规则的股票和时间区间复核衰减、方差和可成交净收益。",
+      "expected_effect": "系统待验预期：若参数平原确有意义，邻域表现不应依赖单点尖峰，跨股票和样本外衰减也应较小；否则拒绝。",
+      "category": "methodology",
+      "provenance": "system_research_synthesis",
+      "source_basis": [
+        "作者明确反对参数遍历过拟合，并称本场展示没有做参数遍历。",
+        "作者只说以后还要找参数平原，没有展示参数邻域、跨股票或样本外结果。",
+        "跨股票、样本外和预期效果均为系统研究设计。"
+      ],
+      "related_existing_ids": [
+        "XH-322",
+        "XH-324"
+      ],
+      "dedup_boundary": "XH-322研究遮蔽结果信息以降低后见偏差，XH-324研究全样本与固定卖出规则；本候选只研究参数邻域、跨股票与样本外稳定性，不重复盲化或退出规则命题。"
+    }
+  ],
+  "timing_notes": [
+    "11月4日收盘：作者认为轮动尚未确认。",
+    "11月5日：作者预期科技强反弹后出现分歧，具体低开或平开路径不确定。",
+    "随后一至两个交易日：观察是否真正转为轮动。",
+    "9:35之前：作者口述观察某种“高峰/高分状态”并结合监控高分；“高峰”含义存在转写边界，不能重写成已经确认的峰值策略，私有高分字段也未知。",
+    "周末至下周：作者称模式切换、小白菜和盘中监控争取上线，明确可能延期。"
+  ],
+  "typo_corrections": [
+    {
+      "source_form": "黄台酒业、皇泰酒业",
+      "corrected": "皇台酒业",
+      "confidence": "high",
+      "basis": "证券目录与上下文一致。"
+    },
+    {
+      "source_form": "百威存储、百位重组",
+      "corrected": "佰维存储",
+      "confidence": "high",
+      "basis": "证券目录与科技存储上下文一致。"
+    },
+    {
+      "source_form": "新医生、新一次",
+      "corrected": "新易盛",
+      "confidence": "high",
+      "basis": "证券目录与科技大票上下文一致。"
+    },
+    {
+      "source_form": "芒果草莓",
+      "corrected": "芒果超媒",
+      "confidence": "medium",
+      "basis": "与同段慈文传媒和传媒板块上下文一致，但仅作名称审计，不据此产生交易结论。"
+    },
+    {
+      "source_form": "华视科技",
+      "corrected": "未确认；“华塑科技”仅为近音诊断候选，不确认为公司或代码",
+      "confidence": "low",
+      "basis": "来源随后明确演示日期是11月2日；证券目录近音不足以唯一映射，不确认为任何公司或代码。"
+    },
+    {
+      "source_form": "文头、读取计算",
+      "corrected": "未确认",
+      "confidence": "low",
+      "basis": "无法用来源上下文和证券目录唯一映射，保留未知。"
+    }
+  ],
+  "decision_trace": [
+    {
+      "observation": "11月4日科技股在前一日大跌后大幅反弹，白酒个股午后开板回落。",
+      "inference": "作者将其解释为超跌反弹和板块跷跷板，而非趋势反转。",
+      "action": "下一交易日先防分歧，不追随前一日大涨；继续观察科技大小市值结构。"
+    },
+    {
+      "observation": "龙头股份相关的两个连板接力候选竞王分均未超过300，且模式没有上来。",
+      "inference": "作者承认以“行情要来”为由放宽条件是主观越权。",
+      "action": "资格不满足时不采用，不能用结果中第二名涨停倒推违规决策正确。"
+    },
+    {
+      "observation": "11月4日收盘作者判断轮动尚未发生，但预计一至两个交易日内可能发生。",
+      "inference": "卖出节奏只有在状态切换得到确认后才可变化。",
+      "action": "未确认轮动时不提前套用晚卖；确认后才研究收盘附近和高抛一半。“快速涨停”只保留在作者回顾退潮期早卖的原语境，不并入该规则。"
+    },
+    {
+      "observation": "盘中模式切换、监控和小白菜标签仍在清洗和压力处理阶段。",
+      "inference": "未上线功能不能被当成当前可见、可复现的交易信号。",
+      "action": "保持现金或使用已验证的现有流程，等待正式上线与读回。"
+    }
+  ],
+  "judgment_heuristics": [
+    "同一时点只用当时可见的信息评价决策，避免用收盘结果进行事后归因。",
+    "先核对模式资格、分数和功能可用性，再讨论方向收益。",
+    "把次日判断写成条件路径，不猜精确开盘方式。",
+    "反弹、横盘和反转分开定义；跌深只支持反弹可能，不自动支持回到旧高。",
+    "任何高波动收益展示都同时记录最大单笔亏损与可成交证据；样本外验证是系统研究要求，不冒充作者已经完成。",
+    "具名个股是案例，不是统计证明，也不自动成为家庭或Book的交易标的。"
+  ],
+  "strategy_hit_audit": {
+    "status": "completed_read_only_with_limits",
+    "date": "2026-11-04",
+    "teacher_named_winners": [
+      {
+        "name": "冰山冷热",
+        "code": "000530.XSHE",
+        "classification": "not_emitted",
+        "price_fact": "11月4日15:00为+10.00%",
+        "boundary": "本地同日策略未发射该股，价格上涨不证明作者私有模式命中。"
+      },
+      {
+        "name": "贝特利",
+        "code": "301697.XSHE",
+        "classification": "not_emitted",
+        "price_fact": "11月4日15:00为+20.02%",
+        "boundary": "本地同日策略未发射该股，且不能错配为贝特瑞或无关的301005。"
+      },
+      {
+        "name": "芒果超媒",
+        "code": "300413.XSHE",
+        "classification": "not_emitted",
+        "price_fact": "作者口述名称近似“芒果草莓”并称其“吃肉”，证券目录支持更正为芒果超媒；未取得当日收益与成交核验。",
+        "boundary": "本地同日策略未发射该股；名称更正为中等置信，口述盈利不能当作已核验命中。"
+      }
+    ],
+    "local_strategy_benchmark_hits": [],
+    "direction_core_observations": [
+      {
+        "name": "中际旭创",
+        "code": "300308.XSHE",
+        "classification": "direction_core_observation",
+        "evidence": "11月3日-12.69%，11月4日+11.07%，仅用于核对科技超跌反弹。"
+      },
+      {
+        "name": "新易盛",
+        "code": "300502.XSHE",
+        "classification": "direction_core_observation",
+        "evidence": "11月4日+13.35%，仅用于方向确认。"
+      },
+      {
+        "name": "佰维存储",
+        "code": "688525.XSHG",
+        "classification": "direction_core_observation",
+        "evidence": "11月4日+9.22%，仅用于方向确认。"
+      }
+    ],
+    "local_readback": "11月4日本地Book B模式状态为COLD，可执行候选为空；推荐文档中的示例不是成交，positions与paper_trades的当日筛选为空也不证明其他账户无持仓或无交易。",
+    "limitations": [
+      "未取得作者私有候选池、逐秒榜单、竞王分原始数据和真实成交。",
+      "未用概念榜的prePctChangeRate冒充11月4日行业收益。",
+      "本审计不改变本地策略参数、模式资格或账户。"
+    ],
+    "teacher_named_non_winners": [
+      {
+        "name": "慈文传媒",
+        "code": "002343.XSHE",
+        "classification": "not_emitted",
+        "source_role": "作者称当日紫薇第一名“小面”",
+        "boundary": "本地同日策略未发射该股，且未独立核验具体亏损。"
+      }
+    ],
+    "historical_date_corrections": [
+      {
+        "name": "来源音译“华视科技”（唯一证券映射未确认）",
+        "code": null,
+        "date": "2026-11-02",
+        "role": "历史演示，作者现场纠正“这是二号”，不是11月4日信号。"
+      },
+      {
+        "name": "华阳新材",
+        "code": "600281.XSHG",
+        "date": "2026-11-02",
+        "role": "历史演示，不是11月4日信号。"
+      },
+      {
+        "name": "奥雅股份",
+        "code": "300949.XSHE",
+        "date": "2026-11-02",
+        "role": "历史演示，不是11月4日信号。"
+      }
+    ]
+  },
+  "action_summary": {
+    "posture_update": "authority_0_candidate_only_no_apply",
+    "playbook_update": "candidate_lessons_only_no_apply",
+    "hypothesis_update": "two_system_research_candidates_with_provenance; XH-074_partial_refinement; XH-321_not_recurrence; XH-235_ambiguous_support; XH-134_XH-326_distinct; no_ingest",
+    "audit_evidence": "read_only_strategy_hit_audit_completed_with_bingshan_beteri_mango_named_winners_and_no_exact_local_emission_overlap",
+    "instrumentation_todo": "retain_full_second_level_rank_and_mode_state_before_testing_intraday_claims",
+    "routing": [
+      "research_only",
+      "no_strategy_parameter_change",
+      "no_account_or_book_effect",
+      "human_gate_required"
+    ]
+  },
+  "hypothesis_relationships": [
+    {
+      "existing_id": "XH-074",
+      "relationship": "partial_refinement_no_merge",
+      "judgment": "本场只说轮动后可晚一点卖、接近收盘或高抛一半；没有复现“次日首次高抛信号退出、无信号再收盘退出”的完整规则，因此不是精确 recurrence。",
+      "source_basis": "作者在11月4日收盘称当天尚未转轮动，预计随后一至两个交易日可能转轮动，并在该条件下讨论晚卖、收盘附近和高抛一半。",
+      "dedup_boundary": "保留XH-074原claim不变；本场只作为轮动状态对退出时点有影响的局部支持，不新造同义ID。"
+    },
+    {
+      "existing_id": "XH-321",
+      "relationship": "not_recurrence",
+      "judgment": "本场没有区分“弱股随大盘反弹全退”和“早盘相对强势先减半”两个分支，不能登记为XH-321复现。",
+      "source_basis": "来源只讨论轮动确认后整体晚卖和高抛一半，没有早盘相对强弱分层。",
+      "dedup_boundary": "不把一般性的减半口述并入含早盘相对强弱条件的XH-321。"
+    },
+    {
+      "existing_id": "XH-235",
+      "relationship": "ambiguous_partial_support_no_merge",
+      "judgment": "来源在转写中出现“9:35前”“高峰状态”“监控到高分”等相邻表述，但“高峰”含义有识别边界，不能据此确认“信号越早越好、9:35后价值下降”的完整命题。",
+      "source_basis": "只保留作者口述在9:35前观察某种高峰或高分状态、再结合监控高分；不把它重写成已确认的峰值策略。",
+      "dedup_boundary": "XH-235继续以10月14日至15日既有证据为准；本场不增加精确 recurrence，也不新建近义候选。"
+    },
+    {
+      "existing_id": "XH-134 / XH-326",
+      "relationship": "distinct_timing_context_no_merge",
+      "judgment": "XH-134是9:40前紫薇评分分档，XH-326是9:31前首次合格并特别观察9:30:45；本场的9:35相邻口述既未复现这些窗口，也未证明分数能弥补时点差异。",
+      "source_basis": "本场没有完整逐秒榜单、首次出现时点或分档收益。",
+      "dedup_boundary": "保持三个时点命题独立，等待同口径原始数据后再判断关系。"
+    }
+  ]
+}

@@ -18,8 +18,9 @@ from xiaocao.kol.semantic_delegation import (
 )
 
 
-def _inputs(tmp_path):
+def _inputs(tmp_path, *, author="小草"):
     request, draft, bundle, _receipt, _evidence = _fixture(tmp_path)
+    request["author"] = author
     market = tmp_path / "market.json"
     market.write_text(json.dumps(request.pop("market_evidence")), encoding="utf-8")
     request_path = tmp_path / "analysis_request.json"
@@ -29,8 +30,9 @@ def _inputs(tmp_path):
     return request, request_path, draft, market, bundle
 
 
-def test_hourly_rejects_canonical_bundle_without_semantic_dispatch(tmp_path):
-    request, request_path, draft, market, bundle = _inputs(tmp_path)
+@pytest.mark.parametrize("author", ["小草", "A也叫艾利克斯", "刘少狙击营", "吕晓彤", "另一位作者"])
+def test_hourly_rejects_canonical_bundle_without_semantic_dispatch(tmp_path, author):
+    request, request_path, draft, market, bundle = _inputs(tmp_path, author=author)
     draft_path = tmp_path / "draft.json"
     draft_path.write_text(json.dumps(draft), encoding="utf-8")
     build_validated_bundle_from_files(request_path, draft_path, market)
@@ -38,8 +40,9 @@ def test_hourly_rejects_canonical_bundle_without_semantic_dispatch(tmp_path):
         kol_daily._require_canonical_semantic_artifact(bundle, request)
 
 
-def test_hourly_accepts_only_bound_dispatch_and_unchanged_draft(tmp_path):
-    request, request_path, draft, market, bundle = _inputs(tmp_path)
+@pytest.mark.parametrize("author", ["小草", "A也叫艾利克斯", "刘少狙击营", "吕晓彤", "另一位作者"])
+def test_hourly_accepts_only_bound_dispatch_and_unchanged_draft(tmp_path, author):
+    request, request_path, draft, market, bundle = _inputs(tmp_path, author=author)
     prepared = prepare(request_path, market_evidence=market)
     packet = json.loads(Path(prepared["packet_path"]).read_text(encoding="utf-8"))
     draft_path = Path(packet["expected_outputs"]["semantic_draft.json"])
@@ -145,14 +148,20 @@ def test_hourly_accepts_bundle_from_immutable_context_revision(tmp_path, packet_
             kol_daily._require_canonical_semantic_artifact(bundle, request)
 
 
-def test_other_authors_keep_existing_canonical_route(tmp_path):
-    request, request_path, draft, market, bundle = _inputs(tmp_path)
-    request["author"] = "另一位作者"
-    request_path.write_text(json.dumps(request), encoding="utf-8")
+def test_legacy_canonical_receipt_remains_readable_without_new_publication_acceptance(tmp_path):
+    request, request_path, draft, market, bundle = _inputs(tmp_path, author="另一位作者")
     draft_path = tmp_path / "draft.json"
     draft_path.write_text(json.dumps(draft), encoding="utf-8")
     build_validated_bundle_from_files(request_path, draft_path, market)
-    assert kol_daily._require_canonical_semantic_artifact(bundle, request) == bundle
+    original = bundle.read_bytes()
+
+    receipt, legacy_bundle = kol_daily.read_validated_bundle(bundle)
+
+    assert receipt.bindings["semantic_draft_sha256"]
+    assert legacy_bundle["items"]
+    assert bundle.read_bytes() == original
+    with pytest.raises(DailyError, match="semantic delegation"):
+        kol_daily._require_canonical_semantic_artifact(bundle, request)
 
 
 @pytest.mark.parametrize('changed_reference', ['durable-knowledge.md', 'semantic-analysis.md'])

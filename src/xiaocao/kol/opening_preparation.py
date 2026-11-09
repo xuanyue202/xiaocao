@@ -18,7 +18,8 @@ from xiaocao.runner_recovery import _hash, _write
 SCHEMA = "kol-opening-preparation.v1"
 RULES = ("docs/OPERATING_CONTRACT.md",
          ".codex/skills/xiaocao-trading/references/kol-trading-judgment.md",
-         ".codex/skills/xiaocao-trading/references/kol-opening-preparation.md")
+         ".codex/skills/xiaocao-trading/references/kol-opening-preparation.md",
+         ".codex/skills/xiaocao-trading/references/kol-conditional-morning.md")
 TZ = ZoneInfo("Asia/Shanghai")
 
 
@@ -62,6 +63,17 @@ def read_projection(summary: dict) -> dict:
 
 def _inputs(path: Path) -> tuple[dict, dict]:
     value = read_json(path)
+    # The previous closure had exactly these first three instruction paths.
+    # Invalidate it as a rule upgrade so the source owner can prepare fresh
+    # evidence; never accept/rebind that historical receipt under new rules.
+    prior_rules = value.get('rules')
+    if (isinstance(prior_rules, list) and len(prior_rules) == len(RULES) - 1
+            and isinstance(value.get('binding'), dict)
+            and all(value['binding'].get(k) for k in ('owner_thread_id', 'automation_id', 'trade_date'))
+            and all(isinstance(rule, dict) and isinstance(rule.get('path'), str)
+                    and rule['path'].endswith(relative)
+                    for rule, relative in zip(prior_rules, RULES[:-1]))):
+        raise ValueError('KOL_PREPARATION_RULES_CHANGED')
     if (not isinstance(value.get("binding"), dict) or not value["binding"].get("owner_thread_id")
             or not value["binding"].get("automation_id") or not value["binding"].get("trade_date")
             or len(value.get("rules", [])) != len(RULES)
@@ -258,6 +270,7 @@ def normalized_review_facts(request: dict) -> dict:
 
 def opening_packet(preparation_path: Path, current_input_path: Path, request: dict, *, now: datetime,
                    adoption_path: Path | None = None) -> dict:
+    from xiaocao.live.morning_support import opening_cutoff
     request = normalized_review_facts(request)
     prepared = read_preparation(preparation_path, now=now)
     current, projection = _inputs(current_input_path)
@@ -272,7 +285,7 @@ def opening_packet(preparation_path: Path, current_input_path: Path, request: di
                     'xiaocao-daily-morning-execution' else 'live')))
             or request["trade_date"] != current["binding"]["trade_date"]
             or not (aware(request["requested_at"]) <= now < aware(request["review_wait_until"]))
-            or aware(request["review_wait_until"]) > aware(request["trade_date"] + "T09:27:00+08:00")):
+            or aware(request["review_wait_until"]) > opening_cutoff(request['trade_date'], mode=request.get('judgment_mode'))):
         raise ValueError("KOL_PREPARATION_CURRENT_REQUEST_INVALID")
     if (aware(projection["as_of"]) > now or aware(projection["as_of"]) < aware(prepared["accepted_at"])
             or now.astimezone(TZ).date().isoformat() != request["trade_date"]):

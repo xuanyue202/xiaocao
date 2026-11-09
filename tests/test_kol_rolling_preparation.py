@@ -16,6 +16,28 @@ from xiaocao.runner_recovery import _hash
 EARLY = datetime.fromisoformat('2026-10-22T21:10:00+08:00')
 
 
+def test_source_owner_rebuilds_after_known_instruction_closure_upgrade(source, monkeypatch, capsys):
+    from scripts import kol_trading_prepare as cli
+    from xiaocao.kol import trading_context as tc
+    prior = prep.read_json(source['path'])
+    prior['rules'].pop()
+    save(source['path'], prior)
+    monkeypatch.setattr(tc, 'build_trading_context', lambda **kw: {})
+    monkeypatch.setattr(tc, 'write_trading_projection', lambda *a, **kw: source['inputs']['projection'])
+    class Clock:
+        @classmethod
+        def now(cls, tz):
+            return EARLY.astimezone(tz)
+    monkeypatch.setattr(cli, 'datetime', Clock)
+    directory = source['root']/'rebuilt'
+    assert cli.main(['rolling-inputs', '--root', str(source['root']), '--output-dir', str(directory)]) == 0
+    capsys.readouterr()
+    fresh = prep.read_json(next(directory.glob('*.rolling-inputs.json')))
+    assert len(fresh['rules']) == len(prep.RULES)
+    assert fresh['rules'][-1]['path'].endswith('kol-conditional-morning.md')
+    assert not (source['root']/'output/live/kol_policy/decisions').exists()
+
+
 @pytest.fixture
 def source(case, monkeypatch):
     root = case['root']
@@ -165,7 +187,8 @@ def test_late_source_seal_cannot_enter_original_opening_as_prepared(source, monk
         adoption(path,current,now=NOW.replace(minute=25))
 
 
-def test_uncertain_brief_keeps_current_judgment_pending_without_expensive_fingerprint(source, monkeypatch):
+@pytest.mark.parametrize('state', ['unchanged', 'changed', 'expired'])
+def test_uncertain_brief_checks_current_sources_without_granting_judgment(source, monkeypatch, state):
     source['draft']['selection_preferences'][0]['applicability']='uncertain'
     source['draft']['policy_template'] = dict(buy_scale=1, skip_codes=[], exit_codes=[],
         rationale='Wait for actual opening acceptance.', invalidation_conditions=['Opening conditions change.'],
@@ -179,13 +202,21 @@ def test_uncertain_brief_keeps_current_judgment_pending_without_expensive_finger
     directory=source['root']/rolling.DIRECTORY
     for path in directory.glob('*.json'): path.unlink()
     rolling.register(source['path'],source['prepared_path'],value)
-    def forbidden(*args): raise AssertionError('No supported preference needs this full fingerprint.')
-    result=preview([],{'market_date':'2026-10-23','snapshot_sha256':'a'*64},root=source['root'],now=NOW,
-                   fingerprint_reader=forbidden)
-    assert result['current_applicability']=='not_completed'
-    assert result['reason']=='CURRENT_APPLICABILITY_REVIEW_REQUIRED'
+    calls = []
+    def fingerprint(*args):
+        calls.append(True)
+        return 'changed' if state == 'changed' else value['source_fingerprint']
+    result=preview([],{'market_date':'2026-10-23','snapshot_sha256':'a'*64},root=source['root'],
+                   now=NOW.replace(hour=11) if state == 'expired' else NOW,
+                   fingerprint_reader=fingerprint)
+    assert calls == ([] if state == 'expired' else [True])
+    assert result['current_applicability']==('deferred_unresolved_conditions' if state=='unchanged' else 'not_completed')
+    assert result['reason'] == {'changed': 'PREPARATION_SOURCE_CHANGED',
+        'expired': 'KOL_PREPARATION_ROLLING_SOURCE_EXPIRED',
+        'unchanged': 'CONDITIONAL_PLAN_NOT_EXECUTABLE'}[state]
     assert result['unresolved_semantic_conditions']==['Opening acceptance unknown.']
-    assert result['current_source_head']=='not_checked'
+    assert result['current_source_head'] == {'changed': 'local_fingerprint_changed',
+        'expired': 'not_checked', 'unchanged': 'fingerprint_matched'}[state]
     assert result['source_synthesis']==source['draft']['synthesis']
 
 

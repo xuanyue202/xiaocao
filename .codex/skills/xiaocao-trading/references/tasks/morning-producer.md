@@ -37,6 +37,10 @@ enrichment; final rendering places KOL choices above baseline details.
 Missing/expired/changed support reports baseline/degraded explicitly. The dated
 recommendation shows the actual baseline→KOL codes; formal APP/Paper adoption,
 allocation, orders and fills remain separate pipeline observations.
+Even a baseline preview verifies the accepted viewpoints' expiry and current local
+source fingerprint. Show the latest registered Xiaocao report's inclusion/exclusion
+counts and the exact unresolved conditions. Local registry parity is separate
+from remote source verification; an unfinished preview review is not a queued job.
 
 ## Recovery events
 
@@ -63,3 +67,10 @@ Then return prerecommendation result promptly, before any review/recording.
 Never consume the queue, run paper_record or rebuild an APP projection. Check
 natural source/freeze acceptance under docs/reviews/2026-10-19-eod-closeout.md;
 engineering/configuration success is not natural adoption.
+
+New consumers use [conditional-first opening](../kol-conditional-morning.md).
+This producer only checks the reviewed source predicates for authority0 preview;
+it never starts a current model or waits for APP/Paper review. Missing/changed/
+unresolved support preserves baseline immediately. Consumers independently finish
+ASAP within original120-second budgets and hard09:27:30; this does not extend
+producer capture/commit deadlines or historical request budgets.
