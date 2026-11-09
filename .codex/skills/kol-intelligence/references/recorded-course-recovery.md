@@ -10,7 +10,7 @@ switch back. Keep the existing schedule and sole remote post-Handoff writer.
 The normal hourly retained runner now emits `observe_authorized_recorded_course`
 after its replay-check time and unique catalogue match. Handle this in the SAME
 PTY using Browser, not by launching the standalone helper. Return the exact
-`action`, `subscription_id`, fresh observed `candidate_id`, finite
+`action`, `subscription_id`, `status=observed`, fresh observed `candidate_id`, finite
 `player_duration_seconds` and `player_left=true`. Require fresh exact merchant and
 finite-HLS responses after the observation boundary. A retained candidate can
 keep its first-seen time, while a URL refresh can create a new ticket candidate

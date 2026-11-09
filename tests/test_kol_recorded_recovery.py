@@ -273,7 +273,8 @@ def _recorded_sub(recorded,monkeypatch,now):
     root,item,driver,service,_,proof,_=recorded
     sub=XiaocaoWechatLiveSubscription(root,history_reader=lambda:{},capture_driver=driver,
         browser_exchange=lambda request:dict(action=request['action'],subscription_id=IDENTITY,
-            candidate_id='exact',player_duration_seconds=2310.761,player_left=True),
+            status='observed',candidate_id='exact',
+            player_duration_seconds=2310.761,player_left=True),
         clock=lambda:datetime.fromisoformat(now))
     monkeypatch.setattr(flow,'enable_capture_listener_pac',lambda:None)
     driver.prepare_human_playback=lambda *a:None
@@ -324,10 +325,29 @@ def test_catalog_first_flow_reports_account_login_without_waiting_for_timeout(
     assert captured.value.waiting_items==[dict(
         identity=IDENTITY,capture_job_id=CAPTURE,
         stage='recorded_course_authorization')]
-    assert requests[0]['required_response']['status']==(
-        'observed|account_login_required'
-    )
+    assert requests[0]['required_response']['one_of']==[
+        dict(status='observed',candidate_id='non-empty string',
+            player_duration_seconds='positive finite number',player_left=True),
+        dict(status='account_login_required'),
+    ]
     assert sub._load()==before
+
+
+@pytest.mark.parametrize('response',[
+    dict(status='unknown'),
+    dict(status='observed',candidate_id='',player_duration_seconds=1,player_left=True),
+    dict(status='observed',candidate_id='exact',player_duration_seconds=True,player_left=True),
+    dict(status='observed',candidate_id='exact',player_duration_seconds=1,player_left=False),
+    dict(status='account_login_required',candidate_id='must-not-be-present'),
+])
+def test_catalog_first_flow_rejects_malformed_response_variants(
+    recorded, monkeypatch, response,
+):
+    flow,sub,item=_recorded_sub(recorded,monkeypatch,'2026-11-04T15:09:59+08:00')
+    sub.browser_exchange=lambda request:dict(
+        action=request['action'],subscription_id=IDENTITY,**response)
+    with pytest.raises(EnrichmentError):
+        flow.check_recorded_playback(sub,sub._load(),item,reason='initial')
 
 
 def test_recorded_mode_requires_explicit_descriptor_and_rejects_typos(tmp_path):

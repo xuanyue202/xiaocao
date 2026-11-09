@@ -234,10 +234,16 @@ def test_unbound_exact_title_verifies_before_binding_without_human(monkeypatch, 
     assert result['source_verification']['title']==row['title']
 
 
-def test_network_owner_is_exclusive_before_snapshot_and_preserves_unchanged_proxy(tmp_path, monkeypatch):
+@pytest.mark.parametrize('config_value',[
+    {"playback_operator":"human"},
+    {"replay_catalog":{"acquisition_mode":"recorded_course"}},
+])
+def test_network_owner_is_exclusive_and_restores_on_exit(
+    tmp_path, monkeypatch, config_value,
+):
     import io
     from xiaocao.yangsheng import network
-    config = tmp_path/'bridge.json'; config.write_text('{"playback_operator":"human"}')
+    config = tmp_path/'bridge.json'; config.write_text(json.dumps(config_value))
     snapshots, restores = [], []
     class Guard:
         stdin = io.StringIO()
@@ -247,10 +253,12 @@ def test_network_owner_is_exclusive_before_snapshot_and_preserves_unchanged_prox
     monkeypatch.setattr(human.select, 'select', lambda *args: ([Guard.stdout],[],[]))
     monkeypatch.setattr(network, 'snapshot', lambda: snapshots.append(True) or {'pac':'Enabled: No\nURL: original'})
     monkeypatch.setattr(network, 'restore', lambda *args: restores.append(args) or {'restored':True})
-    with human.human_capture_network_owner(config):
-        with pytest.raises(EnrichmentError, match='owner busy'):
-            with human.human_capture_network_owner(config): pytest.fail('must not enter')
-        assert len(snapshots)==1 and restores==[]
+    with pytest.raises(RuntimeError,match='observed account login'):
+        with human.human_capture_network_owner(config):
+            with pytest.raises(EnrichmentError, match='owner busy'):
+                with human.human_capture_network_owner(config): pytest.fail('must not enter')
+            assert len(snapshots)==1 and restores==[]
+            raise RuntimeError('observed account login')
     assert len(restores)==1
 
 
