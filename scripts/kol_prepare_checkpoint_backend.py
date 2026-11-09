@@ -12,6 +12,29 @@ def sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def sync_additive_sources(
+    backend: Path,
+    resources: Path,
+    copies: dict[str, str],
+    previous: dict[str, list[str]],
+) -> None:
+    """Upgrade only a current or explicitly maintained additive source."""
+    for source,relative in copies.items():
+        target=backend/relative
+        if target.exists() and sha(target)!=sha(resources/source) and sha(target) not in previous.get(source,[]):
+            raise RuntimeError('additive backend source drift: '+relative)
+    for source,relative in copies.items():
+        target=backend/relative
+        if target.exists() and sha(target)!=sha(resources/source):
+            backup=target.with_name(target.name+'.kol-backup.'+sha(target))
+            if backup.exists() and sha(backup)!=sha(target):
+                raise RuntimeError('backend source backup changed: '+relative)
+            if not backup.exists():backup.write_bytes(target.read_bytes())
+        if not target.exists() or sha(target)!=sha(resources/source):
+            target.parent.mkdir(parents=True,exist_ok=True)
+            target.write_bytes((resources/source).read_bytes())
+
+
 def main() -> int:
     parser=argparse.ArgumentParser()
     parser.add_argument('--backend-root',type=Path,required=True)
@@ -32,6 +55,8 @@ def main() -> int:
     if any(states) and not all(states):
         raise RuntimeError('partially applied backend integration requires diagnosis')
     copies={
+        'elive_download_ticket.go':'internal/api/elive_download_ticket.go',
+        'elive_download_ticket_test.go':'internal/api/elive_download_ticket_test.go',
         'replay_cache.go':'pkg/gopeed/internal/protocol/stream/replay_cache.go',
         'replay_cache_test.go':'pkg/gopeed/internal/protocol/stream/replay_cache_test.go',
         'replay_ffmpeg_test.go':'pkg/gopeed/internal/protocol/stream/replay_ffmpeg_test.go',
@@ -43,19 +68,7 @@ def main() -> int:
         'capture_diagnostics_test.go':'internal/interceptor/capture_diagnostics_test.go',
     }
     previous=json.loads((resources/'additive_previous_sha256.json').read_text())
-    for source,relative in copies.items():
-        target=backend/relative
-        if target.exists() and sha(target)!=sha(resources/source) and sha(target) not in previous.get(source,[]):
-            raise RuntimeError('additive backend source drift: '+relative)
-    for source,relative in copies.items():
-        target=backend/relative
-        if target.exists() and sha(target)!=sha(resources/source):
-            backup=target.with_name(target.name+'.kol-backup.'+sha(target))
-            if backup.exists() and sha(backup)!=sha(target):
-                raise RuntimeError('backend source backup changed: '+relative)
-            if not backup.exists():backup.write_bytes(target.read_bytes())
-        if not target.exists() or sha(target)!=sha(resources/source):
-            target.write_bytes((resources/source).read_bytes())
+    sync_additive_sources(backend,resources,copies,previous)
     if not all(states):
         subprocess.run(['git','-C',str(backend),'apply','--check',str(resources/'integration.patch')],check=True)
         subprocess.run(['git','-C',str(backend),'apply',str(resources/'integration.patch')],check=True)

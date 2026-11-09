@@ -37,6 +37,8 @@ func replayFFmpegNetworkOptions() []string {
 type replayResource struct {
 	upstream string
 	segment  bool
+	aesKey   bool
+	keyBytes []byte
 	mu       sync.Mutex
 }
 type replayCache struct {
@@ -64,6 +66,36 @@ type replayBlobProof struct {
 var replayURI = regexp.MustCompile(`URI="([^"]+)"`)
 
 func replayDigest(data []byte) string { sum := sha256.Sum256(data); return hex.EncodeToString(sum[:]) }
+func replayAttributes(raw string) (map[string]string, error) {
+	attributes := map[string]string{}
+	for start := 0; start < len(raw); {
+		end, quoted := start, false
+		for end < len(raw) {
+			if raw[end] == '"' {
+				quoted = !quoted
+			} else if raw[end] == ',' && !quoted {
+				break
+			}
+			end++
+		}
+		if quoted {
+			return nil, fmt.Errorf("unterminated replay attribute")
+		}
+		part := strings.TrimSpace(raw[start:end])
+		key, value, ok := strings.Cut(part, "=")
+		key = strings.TrimSpace(key)
+		value = strings.TrimSpace(value)
+		if !ok || key == "" || value == "" {
+			return nil, fmt.Errorf("invalid replay attribute")
+		}
+		if _, exists := attributes[key]; exists {
+			return nil, fmt.Errorf("duplicate replay attribute")
+		}
+		attributes[key] = value
+		start = end + 1
+	}
+	return attributes, nil
+}
 func replayFileProof(name string) (replayBlobProof, error) {
 	file, err := os.Open(name)
 	if err != nil {
@@ -98,6 +130,11 @@ func newReplayCache(rawURL string, headers map[string]string, root, binding stri
 	if err != nil || (base.Scheme != "http" && base.Scheme != "https") || base.User != nil {
 		return nil, fmt.Errorf("invalid replay origin")
 	}
+	original := *base
+	recorded := recordedReplayOrigin(&original)
+	if recorded && len(headers) != 0 {
+		return nil, fmt.Errorf("recorded replay headers rejected")
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	c := &replayCache{root: root, headers: headers, resources: map[string]*replayResource{}, verified: map[string]bool{}, client: &http.Client{Timeout: replayRequestTimeout}, context: ctx, cancel: cancel}
 	initialIP := net.ParseIP(base.Hostname())
@@ -130,7 +167,7 @@ func newReplayCache(rawURL string, headers map[string]string, root, binding stri
 	}
 	c.client.Transport = transport
 	c.client.CheckRedirect = func(next *http.Request, prior []*http.Request) error {
-		if len(prior) >= 5 || next.URL.Scheme+"://"+next.URL.Host != prior[0].URL.Scheme+"://"+prior[0].URL.Host {
+		if len(prior) >= 5 || !allowedReplayRedirect(&original, next.URL, recorded) {
 			return fmt.Errorf("cross-origin media redirect rejected")
 		}
 		return nil
@@ -177,13 +214,21 @@ func newReplayCache(rawURL string, headers map[string]string, root, binding stri
 	headerIdentity, _ := json.Marshal(headers)
 	binding = binding + ":" + replayDigest(headerIdentity) + ":" + replayDigest([]byte(base.String()))
 	c.token = replayDigest([]byte(binding + "\n" + rawURL))[:32]
-	rewrite := func(reference string, segment bool) (string, error) {
+	rewrite := func(reference string, segment, aesKey bool) (string, error) {
 		parsed, e := url.Parse(reference)
 		if e != nil {
 			return "", fmt.Errorf("invalid replay resource")
 		}
 		absolute := base.ResolveReference(parsed)
-		if (absolute.Scheme != "http" && absolute.Scheme != "https") || absolute.User != nil || !allowedReplayResource(base, absolute, headers) {
+		allowed := allowedReplayResource(base, absolute, headers)
+		if aesKey {
+			keyOrigin := base
+			if recorded {
+				keyOrigin = &original
+			}
+			allowed = allowedReplayAESKey(keyOrigin, absolute, headers)
+		}
+		if (absolute.Scheme != "http" && absolute.Scheme != "https") || absolute.User != nil || !allowed {
 			return "", fmt.Errorf("invalid replay resource scheme")
 		}
 		extension := filepath.Ext(absolute.Path)
@@ -193,8 +238,9 @@ func newReplayCache(rawURL string, headers map[string]string, root, binding stri
 		key := replayDigest([]byte(absolute.String())) + extension
 		if prior, ok := c.resources[key]; ok {
 			prior.segment = prior.segment || segment
+			prior.aesKey = prior.aesKey || aesKey
 		} else {
-			c.resources[key] = &replayResource{upstream: absolute.String(), segment: segment}
+			c.resources[key] = &replayResource{upstream: absolute.String(), segment: segment, aesKey: aesKey}
 		}
 		return "/" + c.token + "/" + key, nil
 	}
@@ -202,12 +248,27 @@ func newReplayCache(rawURL string, headers map[string]string, root, binding stri
 	for _, line := range strings.Split(text, "\n") {
 		trimmed := strings.TrimSpace(line)
 		if trimmed != "" && !strings.HasPrefix(trimmed, "#") {
-			line, err = rewrite(trimmed, true)
+			line, err = rewrite(trimmed, true, false)
+		} else if strings.HasPrefix(trimmed, "#EXT-X-KEY:") {
+			var attributes map[string]string
+			attributes, err = replayAttributes(strings.TrimPrefix(trimmed, "#EXT-X-KEY:"))
+			uri := attributes["URI"]
+			if err != nil || attributes["METHOD"] != "AES-128" ||
+				len(uri) < 3 || uri[0] != '"' || uri[len(uri)-1] != '"' ||
+				len(replayURI.FindAllStringSubmatch(trimmed, -1)) != 1 {
+				err = fmt.Errorf("unsupported replay key")
+			} else {
+				var local string
+				local, err = rewrite(uri[1:len(uri)-1], false, true)
+				if err == nil {
+					line = replayURI.ReplaceAllString(line, `URI="`+local+`"`)
+				}
+			}
 		} else if strings.Contains(trimmed, "URI=\"") {
 			var replaceErr error
 			line = replayURI.ReplaceAllStringFunc(line, func(value string) string {
 				match := replayURI.FindStringSubmatch(value)
-				local, e := rewrite(match[1], false)
+				local, e := rewrite(match[1], false, false)
 				if e != nil {
 					replaceErr = e
 				}
@@ -384,6 +445,60 @@ func (c *replayCache) Close() {
 	if c.server != nil {
 		_ = c.server.Close()
 	}
+	for _, r := range c.resources {
+		r.mu.Lock()
+		for i := range r.keyBytes {
+			r.keyBytes[i] = 0
+		}
+		r.keyBytes = nil
+		r.mu.Unlock()
+	}
+}
+
+func (c *replayCache) aesKeyBytes(resource *replayResource) ([]byte, error) {
+	resource.mu.Lock()
+	defer resource.mu.Unlock()
+	var terminal struct {
+		Status int `json:"status"`
+	}
+	if body, err := os.ReadFile(filepath.Join(c.root, "terminal.json")); err == nil {
+		if json.Unmarshal(body, &terminal) != nil || (terminal.Status != 401 && terminal.Status != 403) {
+			return nil, fmt.Errorf("invalid key terminal checkpoint")
+		}
+		return nil, replayHTTPError{terminal.Status}
+	} else if !os.IsNotExist(err) {
+		return nil, fmt.Errorf("key terminal checkpoint unreadable")
+	}
+	if len(resource.keyBytes) == 16 {
+		return append([]byte(nil), resource.keyBytes...), nil
+	}
+	req, err := http.NewRequestWithContext(c.context, "GET", resource.upstream, nil)
+	if err != nil {
+		return nil, fmt.Errorf("invalid replay key request")
+	}
+	for k, v := range c.headers {
+		req.Header.Set(k, v)
+	}
+	response, err := c.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("replay key transport failed")
+	}
+	defer response.Body.Close()
+	if response.StatusCode == 401 || response.StatusCode == 403 {
+		if err := writeReplayJSON(filepath.Join(c.root, "terminal.json"), map[string]int{"status": response.StatusCode}); err != nil {
+			return nil, fmt.Errorf("replay key rejection persistence failed")
+		}
+		return nil, replayHTTPError{response.StatusCode}
+	}
+	if response.StatusCode != 200 {
+		return nil, fmt.Errorf("replay key status rejected")
+	}
+	body, err := io.ReadAll(io.LimitReader(response.Body, 17))
+	if err != nil || len(body) != 16 {
+		return nil, fmt.Errorf("replay AES key length invalid")
+	}
+	resource.keyBytes = body
+	return append([]byte(nil), body...), nil
 }
 func (c *replayCache) Complete() bool {
 	c.mu.Lock()
@@ -543,6 +658,21 @@ func (c *replayCache) serve(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	if resource.aesKey {
+		body, err := c.aesKeyBytes(resource)
+		if err != nil {
+			var status replayHTTPError
+			if errors.As(err, &status) {
+				http.Error(w, "replay authentication rejected", status.status)
+				return
+			}
+			http.Error(w, "replay key unavailable", http.StatusBadGateway)
+			return
+		}
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Write(body)
+		return
+	}
 	name, err := c.blob(key, resource)
 	if err != nil {
 		var status replayHTTPError
@@ -628,4 +758,35 @@ func allowedReplayResource(origin, resource *url.URL, headers map[string]string)
 		return true
 	}
 	return len(headers) == 0 && origin.RawQuery == "" && origin.Fragment == "" && resource.Fragment == "" && origin.Scheme == "https" && origin.Host == "live-ex-speed.xiaoeknow.com" && resource.Scheme == "https" && resource.Host == "encrypt-k-vod.xet.tech" && resource.User == nil
+}
+
+func allowedReplayRedirect(original, next *url.URL, recorded bool) bool {
+	if recorded {
+		return next.Scheme == original.Scheme && next.Host == original.Host &&
+			next.Path == original.Path
+	}
+	return next.Scheme+"://"+next.Host == original.Scheme+"://"+original.Host
+}
+
+func recordedReplayOrigin(origin *url.URL) bool {
+	return origin.Scheme == "https" &&
+		(origin.Host == "encrypt-k-vod.xet.tech" || origin.Host == "t-vod.h5.xed.plus") &&
+		strings.Contains(origin.Path, "/drm/") &&
+		regexp.MustCompile(`^v\.f[0-9]+\.m3u8$`).MatchString(filepath.Base(origin.Path))
+}
+
+func allowedReplayAESKey(origin, resource *url.URL, headers map[string]string) bool {
+	if recordedReplayOrigin(origin) {
+		return allowedRecordedAESKey(origin, resource, headers)
+	}
+	return origin.Scheme+"://"+origin.Host == resource.Scheme+"://"+resource.Host &&
+		resource.User == nil
+}
+
+// Only the ordinary AES-128 key URI actually named by this finite recording.
+// No custom headers cross origins, and no license/CDM endpoint is supported.
+func allowedRecordedAESKey(origin, resource *url.URL, headers map[string]string) bool {
+	return len(headers) == 0 && recordedReplayOrigin(origin) &&
+		resource.Scheme == "https" && resource.Host == "app.xiaoe-tech.com" && resource.User == nil &&
+		resource.Path == "/get_video_key.php" && resource.RawQuery != "" && resource.Fragment == ""
 }

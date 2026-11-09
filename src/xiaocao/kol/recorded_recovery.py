@@ -13,6 +13,12 @@ from .enrichment_types import EnrichmentError
 from .replay_catalog import ReplayCatalogConfig, match_original, verify_original
 
 
+RECORDED_MEDIA_HOSTS = {
+    "encrypt-k-vod.xet.tech",
+    "t-vod.h5.xed.plus",
+}
+
+
 def resource_hash(url):
     p = urlsplit(str(url))
     return hashlib.sha256(urlunsplit((p.scheme,p.netloc,p.path,'','')).encode()).hexdigest()
@@ -101,7 +107,8 @@ def collect_recorded_proof(subscription_dir, identity, capture_id, candidate_id,
     if (not datetime.fromisoformat(item['published_at']) < captured < since+timedelta(hours=1)
         or c.get('media_type') != 'm3u8'
         or c.get('source_url') != config.origin+'/xe.material-center.play/getPlayUrl'
-        or u.scheme != 'https' or u.hostname != 'encrypt-k-vod.xet.tech'
+        or u.scheme != 'https' or u.netloc not in RECORDED_MEDIA_HOSTS
+        or u.username is not None or u.password is not None
         or not re.fullmatch(r'v\.f[0-9]+\.m3u8',Path(u.path).name)):
         raise EnrichmentError('recorded candidate source invalid')
     file_ids=[m.group(1) for part in u.path.split('/') if (m:=re.fullmatch(r'[0-9a-f]{8}([0-9]{8,})',part))]

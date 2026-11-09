@@ -341,3 +341,181 @@ func TestObservedXiaoetongCrossOriginSegments(t *testing.T) {
 		t.Fatal("unverified origin")
 	}
 }
+
+func TestRecordedAESKeyAllowsOnlyExactProviderWithoutHeaders(t *testing.T) {
+	origin, _ := url.Parse("https://encrypt-k-vod.xet.tech/account/file/drm/v.f421220.m3u8?sign=private")
+	for _, tc := range []struct {
+		key     string
+		headers map[string]string
+		valid   bool
+	}{
+		{"https://app.xiaoe-tech.com/get_video_key.php?ticket=private", nil, true},
+		{"https://app.xiaoe-tech.com/get_video_key.php?ticket=private", map[string]string{"Cookie": "private"}, false},
+		{"https://app.xiaoe-tech.com/license?ticket=private", nil, false},
+		{"https://other.example/get_video_key.php?ticket=private", nil, false},
+		{"https://app.xiaoe-tech.com:444/get_video_key.php?ticket=private", nil, false},
+		{"https://app.xiaoe-tech.com/get_video_key.php", nil, false},
+	} {
+		u, _ := url.Parse(tc.key)
+		if allowedRecordedAESKey(origin, u, tc.headers) != tc.valid {
+			t.Fatal("recorded key origin policy mismatch")
+		}
+	}
+}
+
+func TestRecordedAESKeyAllowsAuthorizedExactXedOrigin(t *testing.T) {
+	for _, host := range []string{"t-vod.h5.xed.plus", "other.h5.xed.plus", "t-vod.h5.xed.plus.evil.test", "t-vod.h5.xed.plus:444"} {
+		origin, _ := url.Parse("https://" + host + "/account/file/drm/v.f421220.m3u8?sign=private")
+		key, _ := url.Parse("https://app.xiaoe-tech.com/get_video_key.php?ticket=private")
+		valid := allowedRecordedAESKey(origin, key, nil)
+		if valid != (host == "t-vod.h5.xed.plus") {
+			t.Fatal(host)
+		}
+	}
+}
+
+func TestReplayAESKeyFetchNeverPersistsKeyMaterial(t *testing.T) {
+	for _, keyTag := range []string{
+		`#EXT-X-KEY:METHOD=AES-128,URI="/key.php?ticket=private"`,
+		`#EXT-X-KEY:URI="/key.php?ticket=private",IV=0x01,METHOD=AES-128`,
+	} {
+		t.Run(keyTag, func(t *testing.T) {
+			key := []byte("0123456789abcdef")
+			var calls atomic.Int32
+			origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/recorded.m3u8":
+					fmt.Fprintf(w, "#EXTM3U\n%s\n#EXTINF:5,\nsource.ts\n#EXT-X-ENDLIST\n", keyTag)
+				case "/key.php":
+					calls.Add(1)
+					w.Write(key)
+				}
+			}))
+			defer origin.Close()
+			root := t.TempDir()
+			c, err := newReplayCache(origin.URL+"/recorded.m3u8", nil, root, "same-task")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer c.Close()
+			match := replayURI.FindStringSubmatch(string(c.playlist))
+			if len(match) != 2 {
+				t.Fatal("key not rewritten")
+			}
+			for i := 0; i < 2; i++ {
+				resp, e := http.Get("http://" + c.listener.Addr().String() + match[1])
+				if e != nil {
+					t.Fatal(e)
+				}
+				body, _ := io.ReadAll(resp.Body)
+				resp.Body.Close()
+				if string(body) != string(key) {
+					t.Fatal("key response mismatch")
+				}
+			}
+			if calls.Load() != 1 {
+				t.Fatal("key must be reused only in memory")
+			}
+			filepath.Walk(root, func(path string, info os.FileInfo, e error) error {
+				if e != nil {
+					return e
+				}
+				if !info.IsDir() {
+					body, _ := os.ReadFile(path)
+					if strings.Contains(string(body), string(key)) || strings.Contains(string(body), "ticket=private") {
+						t.Fatal("key material or ticket persisted")
+					}
+				}
+				return nil
+			})
+		})
+	}
+}
+
+func TestReplayCacheRejectsUnsupportedKeyMethods(t *testing.T) {
+	for _, keyTag := range []string{
+		`#EXT-X-KEY:METHOD=SAMPLE-AES,URI="/key"`,
+		`#EXT-X-KEY:METHOD=NONE,URI="/key"`,
+		`#EXT-X-KEY:METHOD=AES-128,METHOD=SAMPLE-AES,URI="/key"`,
+		`#EXT-X-KEY:URI="/key",METHOD=AES-128,METHOD=NONE`,
+		`#EXT-X-KEY:METHOD=AES-128,URI="/key",URI="/other"`,
+		`#EXT-X-KEY:METHOD=AES-128,URI="/key`,
+	} {
+		origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprintf(w, "#EXTM3U\n%s\n#EXTINF:5,\nsource.ts\n#EXT-X-ENDLIST\n", keyTag)
+		}))
+		c, err := newReplayCache(origin.URL+"/recorded.m3u8", nil, t.TempDir(), "same-task")
+		origin.Close()
+		if err == nil {
+			c.Close()
+			t.Fatal("unsupported key method accepted")
+		}
+	}
+}
+
+func TestRecordedReplayRejectsHeadersAndSameOriginKey(t *testing.T) {
+	recorded, _ := url.Parse("https://t-vod.h5.xed.plus/account/file/drm/v.f421220.m3u8?sign=private")
+	sameOrigin, _ := url.Parse("https://t-vod.h5.xed.plus/account/file/drm/key.bin?ticket=private")
+	if allowedRecordedAESKey(recorded, sameOrigin, nil) {
+		t.Fatal("same-origin recorded key bypassed exact key endpoint")
+	}
+	c, err := newReplayCache(recorded.String(), map[string]string{"Cookie": "private"}, t.TempDir(), "same-task")
+	if err == nil || !strings.Contains(err.Error(), "recorded replay headers rejected") {
+		if c != nil {
+			c.Close()
+		}
+		t.Fatal("recorded replay headers were not rejected before transport")
+	}
+	if c != nil {
+		c.Close()
+	}
+}
+
+func TestRecordedReplayRejectsSameOriginPathRedirectBeforeKeyFetch(t *testing.T) {
+	var redirectedManifest, keyCalls atomic.Int32
+	original, _ := url.Parse("https://t-vod.h5.xed.plus/account/file/drm/v.f421220.m3u8?sign=private")
+	redirected, _ := url.Parse("https://t-vod.h5.xed.plus/other/source.m3u8")
+	if allowedReplayRedirect(original, redirected, true) {
+		redirectedManifest.Add(1)
+		keyCalls.Add(1)
+	}
+	if redirectedManifest.Load() != 0 || keyCalls.Load() != 0 {
+		t.Fatal("recorded redirect reached changed manifest or key")
+	}
+	samePath, _ := url.Parse("https://t-vod.h5.xed.plus/account/file/drm/v.f421220.m3u8?sign=fresh")
+	if !allowedReplayRedirect(original, samePath, true) {
+		t.Fatal("same recorded path redirect rejected")
+	}
+}
+
+func TestReplayAESKeyRejectionIsTerminalWithoutRepeatedProviderCalls(t *testing.T) {
+	var calls atomic.Int32
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/key" {
+			calls.Add(1)
+			w.WriteHeader(403)
+			return
+		}
+		fmt.Fprint(w, "#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"/key?ticket=private\"\n#EXTINF:5,\nsegment.ts\n#EXT-X-ENDLIST\n")
+	}))
+	defer origin.Close()
+	c, err := newReplayCache(origin.URL+"/source.m3u8", nil, t.TempDir(), "same-task")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	match := replayURI.FindStringSubmatch(string(c.playlist))
+	for i := 0; i < 2; i++ {
+		resp, e := http.Get("http://" + c.listener.Addr().String() + match[1])
+		if e != nil {
+			t.Fatal(e)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != 403 {
+			t.Fatal("key auth failure must remain terminal")
+		}
+	}
+	if calls.Load() != 1 {
+		t.Fatal("rejected credential was sent again")
+	}
+}
