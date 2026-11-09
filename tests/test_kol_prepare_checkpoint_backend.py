@@ -12,20 +12,30 @@ PREVIOUS=json.loads(
         / "scripts/kol_backend_patches/additive_previous_sha256.json"
     ).read_text()
 )
+REQUIRED_INTERMEDIATE_HASHES = {
+    "replay_cache.go": {
+        "792324eff3fc222b6c1ba5d59615e1cad5d11c308af8b57fee2cb08004ac2abe",
+        "73588c2be306c5a427312198f489adcabd3035afe386d023f73b255ef0725157",
+    },
+    "replay_cache_test.go": {
+        "d928b749e0e4c4e3d4a30329c8b02fa38e883c43a66cc1f4a1e9640b5a93de10",
+        "ba8c77fe0e05d89a02c07d44d81386f9d33b199e69bde94ce08d3b8bedd96dad",
+    },
+}
 
 
 @pytest.mark.parametrize(
     ("source", "previous_sha"),
     [
-        ("replay_cache.go", PREVIOUS["replay_cache.go"][0]),
-        ("replay_cache.go", PREVIOUS["replay_cache.go"][1]),
-        ("replay_cache_test.go", PREVIOUS["replay_cache_test.go"][0]),
-        ("replay_cache_test.go", PREVIOUS["replay_cache_test.go"][1]),
+        (source, value)
+        for source, values in REQUIRED_INTERMEDIATE_HASHES.items()
+        for value in sorted(values)
     ],
 )
 def test_known_maintained_additive_source_upgrades_with_backup(
     tmp_path, monkeypatch, source, previous_sha,
 ):
+    assert REQUIRED_INTERMEDIATE_HASHES[source].issubset(PREVIOUS[source])
     backend=tmp_path/"backend";resources=tmp_path/"resources"
     target=backend/source;desired=resources/source
     target.parent.mkdir(parents=True);desired.parent.mkdir(parents=True)
