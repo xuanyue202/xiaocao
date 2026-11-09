@@ -64,6 +64,7 @@ type replayBlobProof struct {
 }
 
 var replayURI = regexp.MustCompile(`URI="([^"]+)"`)
+var replayKeyMethod = regexp.MustCompile(`(?:^|,)METHOD=([^,]+)(?:,|$)`)
 
 func replayDigest(data []byte) string { sum := sha256.Sum256(data); return hex.EncodeToString(sum[:]) }
 func replayFileProof(name string) (replayBlobProof, error) {
@@ -99,6 +100,9 @@ func newReplayCache(rawURL string, headers map[string]string, root, binding stri
 	base, err := url.Parse(rawURL)
 	if err != nil || (base.Scheme != "http" && base.Scheme != "https") || base.User != nil {
 		return nil, fmt.Errorf("invalid replay origin")
+	}
+	if recordedReplayOrigin(base) && len(headers) != 0 {
+		return nil, fmt.Errorf("recorded replay headers rejected")
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	c := &replayCache{root: root, headers: headers, resources: map[string]*replayResource{}, verified: map[string]bool{}, client: &http.Client{Timeout: replayRequestTimeout}, context: ctx, cancel: cancel}
@@ -185,7 +189,11 @@ func newReplayCache(rawURL string, headers map[string]string, root, binding stri
 			return "", fmt.Errorf("invalid replay resource")
 		}
 		absolute := base.ResolveReference(parsed)
-		if (absolute.Scheme != "http" && absolute.Scheme != "https") || absolute.User != nil || (!allowedReplayResource(base, absolute, headers) && !(aesKey && allowedRecordedAESKey(base, absolute, headers))) {
+		allowed := allowedReplayResource(base, absolute, headers)
+		if aesKey {
+			allowed = allowedReplayAESKey(base, absolute, headers)
+		}
+		if (absolute.Scheme != "http" && absolute.Scheme != "https") || absolute.User != nil || !allowed {
 			return "", fmt.Errorf("invalid replay resource scheme")
 		}
 		extension := filepath.Ext(absolute.Path)
@@ -206,11 +214,23 @@ func newReplayCache(rawURL string, headers map[string]string, root, binding stri
 		trimmed := strings.TrimSpace(line)
 		if trimmed != "" && !strings.HasPrefix(trimmed, "#") {
 			line, err = rewrite(trimmed, true, false)
+		} else if strings.HasPrefix(trimmed, "#EXT-X-KEY:") {
+			methods := replayKeyMethod.FindAllStringSubmatch(strings.TrimPrefix(trimmed, "#EXT-X-KEY:"), -1)
+			uris := replayURI.FindAllStringSubmatch(trimmed, -1)
+			if len(methods) != 1 || strings.TrimSpace(methods[0][1]) != "AES-128" || len(uris) != 1 {
+				err = fmt.Errorf("unsupported replay key")
+			} else {
+				var local string
+				local, err = rewrite(uris[0][1], false, true)
+				if err == nil {
+					line = replayURI.ReplaceAllString(line, `URI="`+local+`"`)
+				}
+			}
 		} else if strings.Contains(trimmed, "URI=\"") {
 			var replaceErr error
 			line = replayURI.ReplaceAllStringFunc(line, func(value string) string {
 				match := replayURI.FindStringSubmatch(value)
-				local, e := rewrite(match[1], false, strings.HasPrefix(trimmed, "#EXT-X-KEY:METHOD=AES-128,"))
+				local, e := rewrite(match[1], false, false)
 				if e != nil {
 					replaceErr = e
 				}
@@ -702,12 +722,25 @@ func allowedReplayResource(origin, resource *url.URL, headers map[string]string)
 	return len(headers) == 0 && origin.RawQuery == "" && origin.Fragment == "" && resource.Fragment == "" && origin.Scheme == "https" && origin.Host == "live-ex-speed.xiaoeknow.com" && resource.Scheme == "https" && resource.Host == "encrypt-k-vod.xet.tech" && resource.User == nil
 }
 
+func recordedReplayOrigin(origin *url.URL) bool {
+	return origin.Scheme == "https" &&
+		(origin.Host == "encrypt-k-vod.xet.tech" || origin.Host == "t-vod.h5.xed.plus") &&
+		strings.Contains(origin.Path, "/drm/") &&
+		regexp.MustCompile(`^v\.f[0-9]+\.m3u8$`).MatchString(filepath.Base(origin.Path))
+}
+
+func allowedReplayAESKey(origin, resource *url.URL, headers map[string]string) bool {
+	if recordedReplayOrigin(origin) {
+		return allowedRecordedAESKey(origin, resource, headers)
+	}
+	return origin.Scheme+"://"+origin.Host == resource.Scheme+"://"+resource.Host &&
+		resource.User == nil
+}
+
 // Only the ordinary AES-128 key URI actually named by this finite recording.
 // No custom headers cross origins, and no license/CDM endpoint is supported.
 func allowedRecordedAESKey(origin, resource *url.URL, headers map[string]string) bool {
-	recordedOrigin := origin.Host == "encrypt-k-vod.xet.tech" || origin.Host == "t-vod.h5.xed.plus"
-	return len(headers) == 0 && origin.Scheme == "https" && recordedOrigin &&
-		strings.Contains(origin.Path, "/drm/") && regexp.MustCompile(`^v\.f[0-9]+\.m3u8$`).MatchString(filepath.Base(origin.Path)) &&
+	return len(headers) == 0 && recordedReplayOrigin(origin) &&
 		resource.Scheme == "https" && resource.Host == "app.xiaoe-tech.com" && resource.User == nil &&
 		resource.Path == "/get_video_key.php" && resource.RawQuery != "" && resource.Fragment == ""
 }
