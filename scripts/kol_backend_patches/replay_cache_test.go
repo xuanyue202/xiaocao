@@ -433,9 +433,16 @@ func TestReplayAESKeyFetchNeverPersistsKeyMaterial(t *testing.T) {
 }
 
 func TestReplayCacheRejectsUnsupportedKeyMethods(t *testing.T) {
-	for _, method := range []string{"SAMPLE-AES", "NONE"} {
+	for _, keyTag := range []string{
+		`#EXT-X-KEY:METHOD=SAMPLE-AES,URI="/key"`,
+		`#EXT-X-KEY:METHOD=NONE,URI="/key"`,
+		`#EXT-X-KEY:METHOD=AES-128,METHOD=SAMPLE-AES,URI="/key"`,
+		`#EXT-X-KEY:URI="/key",METHOD=AES-128,METHOD=NONE`,
+		`#EXT-X-KEY:METHOD=AES-128,URI="/key",URI="/other"`,
+		`#EXT-X-KEY:METHOD=AES-128,URI="/key`,
+	} {
 		origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			fmt.Fprintf(w, "#EXTM3U\n#EXT-X-KEY:URI=\"/key\",METHOD=%s\n#EXTINF:5,\nsource.ts\n#EXT-X-ENDLIST\n", method)
+			fmt.Fprintf(w, "#EXTM3U\n%s\n#EXTINF:5,\nsource.ts\n#EXT-X-ENDLIST\n", keyTag)
 		}))
 		c, err := newReplayCache(origin.URL+"/recorded.m3u8", nil, t.TempDir(), "same-task")
 		origin.Close()

@@ -64,9 +64,38 @@ type replayBlobProof struct {
 }
 
 var replayURI = regexp.MustCompile(`URI="([^"]+)"`)
-var replayKeyMethod = regexp.MustCompile(`(?:^|,)METHOD=([^,]+)(?:,|$)`)
 
 func replayDigest(data []byte) string { sum := sha256.Sum256(data); return hex.EncodeToString(sum[:]) }
+func replayAttributes(raw string) (map[string]string, error) {
+	attributes := map[string]string{}
+	for start := 0; start < len(raw); {
+		end, quoted := start, false
+		for end < len(raw) {
+			if raw[end] == '"' {
+				quoted = !quoted
+			} else if raw[end] == ',' && !quoted {
+				break
+			}
+			end++
+		}
+		if quoted {
+			return nil, fmt.Errorf("unterminated replay attribute")
+		}
+		part := strings.TrimSpace(raw[start:end])
+		key, value, ok := strings.Cut(part, "=")
+		key = strings.TrimSpace(key)
+		value = strings.TrimSpace(value)
+		if !ok || key == "" || value == "" {
+			return nil, fmt.Errorf("invalid replay attribute")
+		}
+		if _, exists := attributes[key]; exists {
+			return nil, fmt.Errorf("duplicate replay attribute")
+		}
+		attributes[key] = value
+		start = end + 1
+	}
+	return attributes, nil
+}
 func replayFileProof(name string) (replayBlobProof, error) {
 	file, err := os.Open(name)
 	if err != nil {
@@ -215,13 +244,16 @@ func newReplayCache(rawURL string, headers map[string]string, root, binding stri
 		if trimmed != "" && !strings.HasPrefix(trimmed, "#") {
 			line, err = rewrite(trimmed, true, false)
 		} else if strings.HasPrefix(trimmed, "#EXT-X-KEY:") {
-			methods := replayKeyMethod.FindAllStringSubmatch(strings.TrimPrefix(trimmed, "#EXT-X-KEY:"), -1)
-			uris := replayURI.FindAllStringSubmatch(trimmed, -1)
-			if len(methods) != 1 || strings.TrimSpace(methods[0][1]) != "AES-128" || len(uris) != 1 {
+			var attributes map[string]string
+			attributes, err = replayAttributes(strings.TrimPrefix(trimmed, "#EXT-X-KEY:"))
+			uri := attributes["URI"]
+			if err != nil || attributes["METHOD"] != "AES-128" ||
+				len(uri) < 3 || uri[0] != '"' || uri[len(uri)-1] != '"' ||
+				len(replayURI.FindAllStringSubmatch(trimmed, -1)) != 1 {
 				err = fmt.Errorf("unsupported replay key")
 			} else {
 				var local string
-				local, err = rewrite(uris[0][1], false, true)
+				local, err = rewrite(uri[1:len(uri)-1], false, true)
 				if err == nil {
 					line = replayURI.ReplaceAllString(line, `URI="`+local+`"`)
 				}
