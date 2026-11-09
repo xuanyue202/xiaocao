@@ -1297,11 +1297,7 @@ class XiaocaoWechatLiveSubscription:
         pending = sorted(
             (item for item in manifest["items"].values()
              if item.get("status") not in _TERMINAL
-             and not (
-                 recorded
-                 and item.get("recorded_inventory_reason")
-                 and item.get("recorded_inventory_eligible") is True
-             )),
+             and not self._recorded_inventory_only(item, recorded=recorded)),
             key=lambda item: (item["published_at"], item["identity"]),
             reverse=True,
         )
@@ -1504,13 +1500,27 @@ class XiaocaoWechatLiveSubscription:
         )
 
     @staticmethod
+    def _recorded_inventory_only(
+        item: dict[str, Any],
+        *,
+        recorded: bool,
+    ) -> bool:
+        return bool(
+            recorded
+            and item.get("recorded_inventory_reason")
+            and item.get("recorded_inventory_eligible") is True
+        )
+
+    @staticmethod
     def _next_pending(manifest: dict[str, Any], *, recorded: bool = False) -> dict[str, Any] | None:
         pending = [
             dict(item)
             for item in manifest["items"].values()
             if item.get("status") not in _TERMINAL
             and item.get("human_playback_deferred") is not True
-            and not (recorded and item.get('recorded_inventory_reason') and item.get('recorded_inventory_eligible') is True)
+            and not XiaocaoWechatLiveSubscription._recorded_inventory_only(
+                item, recorded=recorded,
+            )
         ]
         if not pending:
             return None
