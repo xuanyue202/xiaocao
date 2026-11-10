@@ -30,6 +30,11 @@ _TRANSPORT_TITLE_RE = re.compile(
     r"(?:\.(?:mp4|mov|m4v|txt|md)$|(?:^|[-_])compressed(?:[-_.]|$))",
     re.IGNORECASE,
 )
+_EXTRACTION_METADATA_RE = re.compile(
+    r"(?<![A-Za-z0-9_])(?:absent|must_surface|investment_content|non_investment_content)"
+    r"(?![A-Za-z0-9_])|必呈观点|稳定段|逐段覆盖|覆盖审计",
+    re.IGNORECASE,
+)
 _SESSION_LABELS = (
     "盘前",
     "早盘",
@@ -218,6 +223,15 @@ def validate_reader_message(title: Any, body: Any) -> None:
         field="notification.body",
         reject_machine_tokens=False,
     )
+    for field, value in (("notification.title", title_text), ("notification.body", body)):
+        # Stable report URLs are opaque transport identities, not reader prose.
+        prose = re.sub(
+            r"https?://[^\s\u3400-\u9fff\u3000-\u303f\uff00-\uffef]+", "", value
+        )
+        if _EXTRACTION_METADATA_RE.search(prose):
+            raise ReaderCopyError(
+                f"{field} exposes extraction metadata; use the source insight instead"
+            )
 
 
 def validate_reader_source_identity(

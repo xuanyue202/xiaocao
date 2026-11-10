@@ -6130,8 +6130,15 @@ def test_publication_pipeline_publishes_before_book_and_one_link_reminder(
     )
 
 
+@pytest.mark.parametrize(
+    ("invalid_copy", "error"),
+    [
+        ("内部旧状态 COLD", "internal action label 'COLD'"),
+        ("必呈观点均覆盖；短线计划为absent。", "extraction metadata"),
+    ],
+)
 def test_completed_publication_resumes_without_rebuilding_changed_reader_copy(
-    tmp_path,
+    tmp_path, invalid_copy, error,
 ):
     order: list[str] = []
     ledger = PublicationLedger(tmp_path / "publication")
@@ -6182,16 +6189,14 @@ def test_completed_publication_resumes_without_rebuilding_changed_reader_copy(
     assert order == ["gray", "book", "book"]
     assert ledger.status(publication_key)["event_count"] == original_event_count
     invalid_reminder = _publication_bundle()
-    invalid_reminder["items"][0]["publication"]["remaining_summary"] = (
-        "内部旧状态 COLD"
-    )
+    invalid_reminder["items"][0]["publication"]["remaining_summary"] = invalid_copy
     blocked = DailyPublicationPipeline(
         _DelegatePipeline(order),
         ledger=ledger,
         client=client,
         context=context,
     )
-    with pytest.raises(DailyError, match="internal action label 'COLD'"):
+    with pytest.raises(DailyError, match=error):
         blocked.process(invalid_reminder)
     assert order == ["gray", "book", "book"]
 
