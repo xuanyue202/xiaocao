@@ -1,0 +1,347 @@
+{
+  "schema_version": 1,
+  "knowledge_status": "reusable_knowledge",
+  "authority": 0,
+  "author": "讲座主讲人（主持人口称“邱先生”；背景很可能指向丘成桐，但视频本身未独立确认）",
+  "source_sharer": "吕晓彤",
+  "source": "百度网盘订阅视频《院士AI专题讲座》",
+  "date": "2026-11-10",
+  "date_boundary": "2026-11-10仅用于本次材料归档与观察，不是讲座发生日；提供方修改/发布元数据、捕获时间和实际讲座日期严格分离，讲座中的“今年”“九月底十月初”不能自动换算。",
+  "kind": "专题讲座",
+  "summary": "讲座形成五组可复用候选框架：人工智能擅长汇集跨领域思想、长计算和方向搜索；数学结果仍需完整复核；人类在原创概念、重要问题选择和因果理解上仍有关键作用；当前高速增长可能在吸收有限的人类知识后放缓；中国数学人工智能追赶需要开放获取、长期投入、人才与政府企业高校协作。讲者另提出用数学优化把参数降到几千万量级并减少算力的设想，原文对起始参数规模表述含混，且没有实验或工程证据。异常数学成果、能力倍数、法律概括与薪酬数字均未核验，不得当作事实或收益依据。",
+  "posture": {
+    "regime": "not_applied_other_author",
+    "dominant_style": "AI科研工具处于高增长与高不确定性并存阶段，应用价值与验证成本必须同时评估。",
+    "risk": "讲座实际日期和主讲人身份未由视频独立确认；多项数学突破、100倍能力差距、访问法律、薪酬和奖金数字缺少独立证据，且若干口述数字彼此不一致。",
+    "style_ranking": [
+      "先验证成果与模型能力，再讨论产业映射",
+      "优先关注人机互补、证明复核和跨学科数据处理",
+      "把中国数学人工智能联盟与专用模型视为组织背景，不视为能力证明",
+      "几千万参数与算力节省只作为来源假设，起始规模不作精确确认",
+      "任何策略或参数变化仍需研究流程和人工门槛"
+    ]
+  },
+  "regime_call": {
+    "horizon": "未来数年及更长期的AI科研工具演化",
+    "claim": "AI可能继续显著提升科研搜索、计算与知识融合效率，但可靠证明需要验证，原创概念和重要问题选择仍依赖人类；讲者预计当前近似指数式增长在数年后可能放缓。",
+    "what_would_falsify": "若跨年度可重复基准显示AI持续独立提出重要新概念和高价值问题、已验证成果仍保持近似指数增长且不依赖人类筛选与复核，则关于能力放缓和人类原创优势的判断应修正。"
+  },
+  "directions": [
+    {
+      "name": "AI科研工具与形式化验证",
+      "view": "把AI用于大规模计算、跨文献融合、方向搜索和证明复核，同时用形式化验证与专家复核控制错误。",
+      "authority": 0,
+      "provenance_type": "source_derived"
+    },
+    {
+      "name": "中国数学AI基础设施",
+      "view": "讲者主张由政府、企业、大学和青年人才共同建设数学专用模型；市场证据只确认八家机构联盟成立和自主模型计划，不确认性能。",
+      "authority": 0,
+      "provenance_type": "source_plus_limited_fact_check"
+    },
+    {
+      "name": "数学优化与算力效率",
+      "view": "讲者设想用数学结构替代部分暴力扩参，把参数规模降到几千万量级并降低算力；原文起始规模口径含混，也没有可复现实验。",
+      "authority": 0,
+      "provenance_type": "source_hypothesis"
+    }
+  ],
+  "stocks": [
+    {
+      "name": "OpenAI",
+      "role": "讲座中的海外前沿AI公司、成果发布与访问争议案例",
+      "boundary": "未提供可核证券、估值、收入或交易条件；其数学成果和访问法律概括未独立核验。"
+    },
+    {
+      "name": "ChatGPT",
+      "role": "讲座中的海外AI产品与访问限制案例",
+      "boundary": "是产品而非独立证券；来源未核实具体服务条款、地区政策或法律状态。"
+    },
+    {
+      "name": "DeepSeek（深度求索）",
+      "role": "讲座中的中国AI能力比较案例",
+      "boundary": "讲者认可日常用途但认为基础研究能力差距很大；100倍说法没有基准、版本或复现实验。"
+    }
+  ],
+  "method_principles": [
+    "把人工智能给出的答案、证明和方向提示分开：答案可缩小搜索空间，证明仍要逐步复核，方向价值由后续研究检验。",
+    "用独立、可重复的基准测量模型能力，不把媒体所称的难题突破或讲者口述倍数直接当作事实。",
+    "评估科研人工智能时同时记录知识融合、计算效率、错误、验证成本、原创问题能力和人类监督需求。",
+    "评估中国人工智能追赶时拆分人才、访问、算力、长期投入、组织协作和专用模型，不用联盟成立替代能力测量。",
+    "参数压缩要按同质量、同任务和完整训练推理成本比较；起始参数规模不清楚时不得补写精确数量。"
+  ],
+  "exit_lessons": [
+    "一旦核心数学结论无法通过独立专家或形式化工具复核，就停止把它作为产业或投资证据。",
+    "一旦能力增长从可复现实验看明显放缓，停止用短期指数增长外推长期估值。"
+  ],
+  "hypotheses": [
+    {
+      "claim": "人工智能在科研中的可复制优势可能主要来自跨文献融合、长计算和方向搜索，而人类仍承担原创概念与重要问题选择。",
+      "implied_rule": "把专家选题、机器计算、证明复核和失败复盘拆开记录，不能以答案数量单独衡量科研价值。",
+      "falsifiable_test": "系统扩展的待执行研究：在预注册新问题集上比较纯人工智能、纯人类和人机协作的有效问题、完整可复核成果、耗时与错误率。",
+      "expected_effect": "待检验预期：人机协作可能提高有效成果率或降低复核成本；来源没有提供统计实验，不能把该预期归给主讲人。",
+      "category": "ai_research_productivity",
+      "provenance": "主讲人提出机器擅长融合与计算、人负责方向和重要问题；分组实验、指标与预期优势由系统为可证伪性扩展。",
+      "source_basis": [
+        "主讲人称人工智能能融合不同学者的想法并承担几百页、几千页的计算。",
+        "主讲人称重要问题的选择、原创概念和路线理解仍需要人类。",
+        "主讲人没有给出纯人工智能、纯人类与人机协作的统计比较。"
+      ],
+      "related_existing_ids": [
+        "XH-300"
+      ],
+      "dedup_boundary": "XH-300研究高价模型在3D建模、金融研究等商业任务上的完整任务成本与价格溢价；本候选只研究科研流程中问题提出、证明复核和人机分工，不讨论模型定价，不能强行合并。"
+    },
+    {
+      "claim": "对人工智能生成的数学证明增加独立复核或形式化验证，可能降低错误结论被接受的风险。",
+      "implied_rule": "高影响数学结论在产业外推前应记录完整证明状态和独立复核结果。",
+      "falsifiable_test": "系统扩展的待执行研究：对同一批人工智能生成证明，比较常规专家复核与加入形式化验证后发现错误、耗时和漏检的差异。",
+      "expected_effect": "待检验预期：形式化验证可能减少漏检，但也可能增加编码与形式化成本；来源没有证明“显著降低错误接受率”。",
+      "category": "ai_verification",
+      "provenance": "主讲人明确要求证明完整且需要大量验证，并提到正在开展形式化验证项目；对照设计、错误率指标与效果预期由系统扩展。",
+      "source_basis": [
+        "主讲人说人工智能做出的结果仍需要大量验证。",
+        "主讲人强调数学上没有所谓部分证明，一个定理必须完整证明。",
+        "主讲人提到正在做形式化验证项目，但没有报告错误率对照实验。"
+      ],
+      "related_existing_ids": [
+        "XH-300"
+      ],
+      "dedup_boundary": "XH-300关注商业任务完成率、返工与总成本；本候选只研究数学证明的验证方式和错误接受风险。两者可共享完整任务成本概念，但不是同一假设。"
+    },
+    {
+      "claim": "在部分人工智能任务上，数学结构和优化可能把参数规模降到几千万量级并降低总算力。",
+      "implied_rule": "只把结构化压缩当作研究方向；等质量、等数据、同任务和全成本对照通过后才能认可节省。",
+      "falsifiable_test": "系统扩展的待执行研究：在预注册任务上比较大模型与几千万参数结构化模型的质量、训练算力、推理算力、鲁棒性和验证成本。",
+      "expected_effect": "待检验预期：若来源设想成立，小模型可在可接受质量边界内降低全生命周期算力；来源没有给出实验，也未清楚确认起始参数规模。",
+      "category": "compute_efficiency",
+      "provenance": "主讲人只提出“几千万参数、算力大量减少”的方向性假设；等质量基准、全生命周期成本和预期效果由系统扩展。",
+      "source_basis": [
+        "主讲人说如果只用几千万参数，算力就会大量减少。",
+        "原始口述对更大模型的参数数量含混，不能校正为确定的数百亿口径。",
+        "来源没有模型、任务、精度、训练成本或推理成本数据。"
+      ],
+      "related_existing_ids": [
+        "XH-237",
+        "XH-300",
+        "XH-336",
+        "XH-356"
+      ],
+      "dedup_boundary": "XH-237研究能力与接口价格，XH-300研究高价模型完整任务成本，XH-336研究电力和用户规模对数字服务出口与利润，XH-356研究新增用户的边际推理成本；本候选只检验数学结构能否在同质量任务上减少参数与端到端算力，不讨论价格、出口份额或商业经营杠杆。"
+    },
+    {
+      "claim": "中国数学人工智能能力建设可能依赖专用模型、持续投入、开放获取、跨机构协作和青年人才的共同作用。",
+      "implied_rule": "组织成立与投入规模只是输入，能力提升必须另看独立基准、复现实验和完整验证的科研成果。",
+      "falsifiable_test": "系统扩展的待执行研究：持续记录联盟模型、公开评测、复现实验、完整验证成果和单位算力产出，并与可比系统做同口径年度对照。",
+      "expected_effect": "待检验预期：若协同建设有效，多个独立任务上的可验证能力应持续改善；来源没有统计证明协作本身带来优势。",
+      "category": "china_ai_infrastructure",
+      "provenance": "主讲人主张政府、企业、大学与人才共同建设数学人工智能；跟踪指标、对照组和能力改善预期由系统扩展。",
+      "source_basis": [
+        "主讲人称中国通用工具在日常任务可用，但基础研究能力与海外系统差距很大。",
+        "主讲人呼吁政府参与、大量投入，并由政府、企业和高校合作建设模型。",
+        "有限外部核对来自/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261110_12_01a1c3bb/market_evidence_v3.json（SHA-256 97daa4445e490ae3e172c3f166f853e75f78f2cb6bb8d08491947e5aeb25519d）：https://ymsc.tsinghua.edu.cn/qctzy/grjj.htm只支持人物语境，https://www.tsinghua.edu.cn/info/1177/128669.htm确认八家机构联盟成立及自主数学专用模型计划；两者都不确认模型能力差距、协作成效或投入回报。"
+      ],
+      "related_existing_ids": [
+        "XH-336",
+        "XH-357"
+      ],
+      "dedup_boundary": "XH-336研究电力成本与用户规模对人工智能数字服务出口份额和利润的解释力，XH-357研究模型公司并购或整合软件后的业务协同；本候选只研究数学人工智能科研联盟的能力建设输入与可验证产出，不涉及出口商业化或软件并购。",
+      "external_fact_check": {
+        "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261110_12_01a1c3bb/market_evidence_v3.json",
+        "sha256": "97daa4445e490ae3e172c3f166f853e75f78f2cb6bb8d08491947e5aeb25519d",
+        "supporting_urls": [
+          "https://ymsc.tsinghua.edu.cn/qctzy/grjj.htm",
+          "https://www.tsinghua.edu.cn/info/1177/128669.htm"
+        ],
+        "scope": "limited_confirmation_only"
+      }
+    }
+  ],
+  "timing_notes": [
+    "2026-11-10是本次材料归档与提供方元数据日期，不是实际讲座日期。",
+    "讲座提到“今年”“九月底十月初”等相对时间，因讲座日期未知而不能换算为确定年份和日期。",
+    "背景资料检查于2026-11-10T04:38:38.715172Z，只确认人物背景和2026年10月联盟成立背景。"
+  ],
+  "typo_corrections": [
+    {
+      "raw": "邱仲同／邱先生",
+      "normalized": "主持人口称“邱先生”；人物背景很可能指向丘成桐",
+      "reason": "清华官网背景与菲尔兹奖、斯坦福任教经历一致，但不能由此独立证明视频主讲身份。"
+    },
+    {
+      "raw": "费尔斯奖",
+      "normalized": "菲尔兹奖",
+      "reason": "大学官网人物背景支持该奖项名称纠错。"
+    },
+    {
+      "raw": "open AI涉GDP",
+      "normalized": "OpenAI与ChatGPT（按上下文校正）",
+      "reason": "相邻句分别提到OpenAI和ChatGPT；具体法律与服务可用性仍未核。"
+    },
+    {
+      "raw": "deep seek",
+      "normalized": "DeepSeek（深度求索）",
+      "reason": "上下文明示中国AI公司，但具体模型版本未提供。"
+    },
+    {
+      "raw": "欧柏利亚",
+      "normalized": "未解析的海外AI机构或公司",
+      "reason": "ASR无法唯一映射，禁止猜为OpenAI或其他公司。"
+    }
+  ],
+  "decision_trace": [
+    {
+      "observation": "讲者把AI近期从竞赛题走向前沿研究描述为极快增长，同时多次承认部分证明可能有错、AI证明仍需大量验证。",
+      "inference": "产业机会与验证风险同时存在，异常成果不能直接用来证明模型能力或证券价值。",
+      "action": "保留人机协作和形式化验证为研究框架，不生成交易动作。",
+      "evidence": {
+        "segment_id": "04d2bbe4f2594c100e29c5ba72ec2f39c48c8f612016bd289d7548bfcc75aa66",
+        "quote": "因为AI做的还需要。大量的验证"
+      }
+    },
+    {
+      "observation": "讲者认为AI吸收有限的人类重要思想后，当前指数式增长可能在几年后放缓；人类仍负责原创概念与重要问题。",
+      "inference": "短期能力跃升不能无条件外推为长期指数增长或全面替代。",
+      "action": "把增速放缓和人类原创优势写成可证伪假设。",
+      "evidence": {
+        "segment_id": "62c88e92000bfa65ef68b1ca2d51cf700547326b222392b892180fa824cefc8c",
+        "quote": "所以我估计AI几年后我可以讲。今天这样子不停"
+      }
+    },
+    {
+      "observation": "讲者主张中国建设数学AI专用模型，需要政府、企业、大学和青年人才协作；外部市场证据确认八家机构联盟成立及自主模型计划。",
+      "inference": "组织和投入是能力建设的输入，不是模型性能或科研成果的证明。",
+      "action": "后续只用独立基准、复现实验和已验证成果评估追赶。",
+      "evidence": {
+        "segment_id": "7877ff1fc292c37d0e42b23b50a241f27c5af3b5b7ec2c2bb2f0e6f22206ee11",
+        "quote": "因为机器做个大模型啊，一般来讲花不少钱啊，这个政府跟企业间一同合作"
+      },
+      "fact_check_evidence": {
+        "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261110_12_01a1c3bb/market_evidence_v3.json",
+        "sha256": "97daa4445e490ae3e172c3f166f853e75f78f2cb6bb8d08491947e5aeb25519d",
+        "supporting_urls": [
+          "https://ymsc.tsinghua.edu.cn/qctzy/grjj.htm",
+          "https://www.tsinghua.edu.cn/info/1177/128669.htm"
+        ],
+        "supports": "人物背景与八家机构联盟、数学专用模型计划。",
+        "boundary": "不支持讲座日期、模型性能、能力倍数、协作成效或投资回报。"
+      }
+    }
+  ],
+  "judgment_heuristics": [
+    "来源分享者与实际讲者分离归属。",
+    "讲者声称的突破、倍数、法律和薪酬一律保留为未核。",
+    "方法论和长期行业判断不自动转为短线交易。",
+    "组织成立、资金投入和人才数量不等于模型能力。",
+    "任何参数压缩结论都要比较全生命周期成本和质量。"
+  ],
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_subscription_videos/enrichment/a59ac78137b6da82bea28cbbdfbad9c937ba10c6c5b999fccd0ed9ed734fa217/artifacts/kol-netdisk-cloud-f484cc2acfc47d29/院士ai专题讲座.txt",
+      "sha256": "4a3f5ddab945e31396f0d234b00674b3363ee113854012cb7504b9a8de24f2fb",
+      "size": 68605
+    },
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261110_12_01a1c3bb/market_evidence_v3.json",
+      "sha256": "97daa4445e490ae3e172c3f166f853e75f78f2cb6bb8d08491947e5aeb25519d",
+      "size": 1992,
+      "role": "limited_external_fact_check",
+      "supporting_urls": [
+        "https://ymsc.tsinghua.edu.cn/qctzy/grjj.htm",
+        "https://www.tsinghua.edu.cn/info/1177/128669.htm"
+      ],
+      "boundary": "只支持人物语境、八家机构联盟成立及自主数学专用模型计划；不确认视频主讲身份、讲座日期、异常数学成果、能力倍数、法律概括、薪酬数字、模型性能、投入回报或算力降幅。"
+    }
+  ],
+  "action_summary": {
+    "posture_update": "not_applied：来源分享者和讲者均不是小草，本稿不修改小草全局姿态或时间线。",
+    "playbook_update": "no_deterministic_change：仅保留候选的人机协作、证明复核、能力放缓、基础设施和算力效率框架。",
+    "hypothesis_update": "ingested_once：四条authority=0候选已由父级从归档文件单次摄入为XH-364、XH-365、XH-366、XH-367；零条复现合并，不增加既有候选的证据权重，本次元数据修订不得再次摄入。",
+    "audit_evidence": "完整逐字稿SHA-256 4a3f5ddab945e31396f0d234b00674b3363ee113854012cb7504b9a8de24f2fb与160个稳定分段；有限外部核对/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261110_12_01a1c3bb/market_evidence_v3.json（SHA-256 97daa4445e490ae3e172c3f166f853e75f78f2cb6bb8d08491947e5aeb25519d）；单次摄入回执/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261110_12_01a1c3bb/knowledge_ingest_receipt.json（SHA-256 8cebcba8f29faaf2ce8e6746cd75cc27561d530ee874591dba92605f8e33001a）。",
+    "instrumentation_todo": "后续研究需补模型版本、独立基准、数学成果复核、访问政策、薪酬口径、算力与参数全成本数据。",
+    "routing": [
+      "四条authority=0候选已单次摄入为XH-364至XH-367",
+      "四条假设均区分来源主张与系统研究扩展",
+      "有限官网核对只支持人物语境、联盟成立与自研计划",
+      "不更新小草全局姿态",
+      "不修改确定性策略或参数",
+      "不生成证券交易",
+      "本次元数据修订不再次摄入"
+    ]
+  },
+  "deduplication_review": {
+    "status": "reviewed_and_ingested_once",
+    "comparisons": [
+      {
+        "id": "XH-237",
+        "result": "related_not_duplicate",
+        "boundary": "现有候选研究模型能力与接口价格；本稿分别研究科研分工或参数与算力。"
+      },
+      {
+        "id": "XH-300",
+        "result": "related_not_duplicate",
+        "boundary": "现有候选研究商业任务完整成本与价格溢价；本稿研究科研证明、复核与人机分工。"
+      },
+      {
+        "id": "XH-336",
+        "result": "related_not_duplicate",
+        "boundary": "现有候选研究电力与用户规模对数字服务出口和利润；本稿研究数学科研联盟或参数效率。"
+      },
+      {
+        "id": "XH-356",
+        "result": "related_not_duplicate",
+        "boundary": "现有候选研究新增用户推理边际成本和经营杠杆；本稿参数假设研究同任务端到端算力。"
+      },
+      {
+        "id": "XH-357",
+        "result": "not_duplicate",
+        "boundary": "现有候选研究模型公司并购软件与协同；本稿没有并购或软件整合主张。"
+      }
+    ],
+    "decision": "未发现可按同一claim与既有候选合并的条目；四条候选已从同一归档文件单次摄入并创建XH-364、XH-365、XH-366、XH-367，复现合并为0。本次仅修正元数据与外部核验反链，不再次摄入或创建编号。"
+  },
+  "date_basis": "archive_observation_date",
+  "provenance_boundary": {
+    "source_claims": "机器融合与长计算、证明需完整验证、增长可能放缓、中国需要协同投入、几千万参数可能减少算力。",
+    "system_extensions": "所有对照实验、量化指标、预期优势、错误率效果和年度跟踪设计。",
+    "statistical_evidence": "来源未提供统计实验；任何预期效果均未验证。"
+  },
+  "external_fact_check": {
+    "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261110_12_01a1c3bb/market_evidence_v3.json",
+    "sha256": "97daa4445e490ae3e172c3f166f853e75f78f2cb6bb8d08491947e5aeb25519d",
+    "checked_at": "2026-11-10T04:38:38.715172Z",
+    "supporting_urls": [
+      {
+        "url": "https://ymsc.tsinghua.edu.cn/qctzy/grjj.htm",
+        "supports": "丘成桐获1982年菲尔兹奖并曾在斯坦福任教的人物语境。",
+        "does_not_support": "不能独立证明本视频主讲身份或讲座日期。"
+      },
+      {
+        "url": "https://www.tsinghua.edu.cn/info/1177/128669.htm",
+        "supports": "2026年10月11日数学与人工智能实验室联盟成立、八家机构参与并计划自主研发数学科学专用模型。",
+        "does_not_support": "不能证明讲座所称数学难题已经有效解决、模型能力倍数、协作成效或投入回报。"
+      }
+    ]
+  },
+  "ingest_execution": {
+    "status": "completed_once",
+    "completed_at": "2026-11-10T05:06:22.489416Z",
+    "archive": "/Users/xuanyue202/Documents/project/xiaocao/reference/experience/distilled/2026-11-10_lv_xiaotong_review_4a3f5dda.json",
+    "archive_sha256_at_ingest": "9d97643c9c5f184de5837eeab6531b76ae22400a20d313ab24dc96b8da4e4758",
+    "receipt": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261110_12_01a1c3bb/knowledge_ingest_receipt.json",
+    "receipt_sha256": "8cebcba8f29faaf2ce8e6746cd75cc27561d530ee874591dba92605f8e33001a",
+    "ingest_count": 1,
+    "new_candidate_ids": [
+      "XH-364",
+      "XH-365",
+      "XH-366",
+      "XH-367"
+    ],
+    "recurrence_merges": 0,
+    "action_index_rows": 209,
+    "authority": 0,
+    "receipt_review_status": "metadata_correction_required",
+    "correction_status": "resolved_in_this_metadata_draft",
+    "no_reingest": true
+  }
+}
