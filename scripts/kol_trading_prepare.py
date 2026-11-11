@@ -19,6 +19,7 @@ def main(argv=None):
     parser.add_argument("command", choices=["inputs", "rolling-inputs", "template", "accept", "packet"])
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--fresh-through", help="rolling reuse must remain valid through this aware timestamp")
     for name in ("input", "projection-summary", "binding", "draft", "review", "dispatch", "context", "preparation", "request"):
         parser.add_argument("--" + name, type=Path)
     args = parser.parse_args(argv)
@@ -29,26 +30,39 @@ def main(argv=None):
         parser.error("Required: " + ", ".join("--" + k.replace("_", "-") for k in needed))
     now = datetime.now(timezone.utc)
     started = perf_counter()
+    reuse_audit = {}
     try:
         if args.command == 'rolling-inputs':
             from xiaocao.kol import rolling_preparation as rolling
             from xiaocao.kol.trading_context import build_trading_context, write_trading_projection
             if os.environ.get('CODEX_AUTOMATION_ID') != rolling.OWNER or not os.environ.get('CODEX_THREAD_ID'):
                 raise ValueError('KOL_PREPARATION_ROLLING_OWNER_REQUIRED')
+            through = prep.aware(args.fresh_through) if args.fresh_through else now
+            if through < now:
+                raise ValueError('KOL_PREPARATION_REUSE_HORIZON_PAST')
+            reuse_audit = {'fresh_through': through.isoformat()}
             summary = write_trading_projection(build_trading_context(repo_root=args.root,
                 read_report_ids=[], include_report_bodies=False, as_of=now), repo_root=args.root)
             try:
                 cached = rolling.registered(args.root, now=now)
+                if cached is not None:
+                    if prep.aware(cached[1]['draft']['valid_until']) <= through:
+                        reuse_audit['rebuild_reason'] = 'PREPARATION_EXPIRES_BEFORE_USE'
+                        cached = None
+                    else:
+                        rolling.validate_current_sources(cached[1], now=through)
             except ValueError as exc:
                 if str(exc) not in {'KOL_PREPARATION_ROLLING_SOURCE_EXPIRED', 'KOL_PREPARATION_RULES_CHANGED',
                                     'KOL_PREPARATION_ROLLING_INPUT_ALTERED'}:
                     raise
                 cached = None
+                reuse_audit['rebuild_reason'] = str(exc)
             if (cached is not None and cached[1]['source_fingerprint'] == prep.read_projection(summary)['source_fingerprint']
                     and prep.viewpoint_units(prep.read_projection(cached[1]['projection'])) ==
                     prep.viewpoint_units(prep.read_projection(summary))):
                 print(json.dumps({'status': 'reused', 'authority': 0, 'path': str(cached[0]),
                     'preparation_sha256': cached[1]['preparation_sha256'],
+                    **reuse_audit,
                     'elapsed_seconds': perf_counter()-started}))
                 return 0
             binding = {'automation_id': rolling.OWNER, 'owner_thread_id': os.environ['CODEX_THREAD_ID'],
@@ -77,7 +91,7 @@ def main(argv=None):
             "path": str(path), "sha256": prep.canonical_sha256(value),
             "input_sha256": _hash(value) if args.command == "inputs" else value.get("input_sha256"),
             "preparation_sha256": value.get("preparation_sha256"), "packet_sha256": value.get("packet_sha256"),
-            'elapsed_seconds': perf_counter()-started}, ensure_ascii=False))
+            **reuse_audit, 'elapsed_seconds': perf_counter()-started}, ensure_ascii=False))
         return 0
     except (OSError, ValueError, KeyError, TypeError) as exc:
         print(json.dumps({"status": "blocked", "reason": str(exc) if str(exc).startswith(("KOL_PREPARATION_", "PAPER_KOL_")) else type(exc).__name__, "authority": 0}))
