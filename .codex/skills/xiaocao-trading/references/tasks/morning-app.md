@@ -34,6 +34,10 @@ On a later trading date, read the v2 DAY-expiry/current-position bounds from
 the original pretrade account. An expired ordinary order with proved absent
 current shares has zero cash hold and exposure. Preserve its original audit
 claim and consume legacy v1 only under its exact historical calculation.
+Current v2 must bind the original submit claim's first CLAIMED native receipt
+through submit_origin_bound; later reconciliation template labels are readback
+provenance. Older v2 proofs keep exact historical readback and require fresh
+origin-bound inputs for current admission.
 
 At09:00 run one market_data_preflight.py --date today --scope authentication
 and one morning_preflight_alert.py --date today --kind transport. Save/checklist

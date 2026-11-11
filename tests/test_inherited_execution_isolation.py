@@ -35,7 +35,8 @@ def snapshot(now=NOW, *, available=30000, balance=None, rows=(), codes=('688028'
     return {**body, 'snapshot_sha256': digest(body)}
 
 
-def old_buy(root, *, code='688028.XSHG', day='2026-10-29', shares=100, price=10, state=ExecutionState.UNKNOWN):
+def old_buy(root, *, code='688028.XSHG', day='2026-10-29', shares=100, price=10,
+            state=ExecutionState.UNKNOWN, template_name=None):
     stamp = datetime.fromisoformat(day + 'T01:25:00+00:00')
     plan = replace(_plan(), code=code, plan_id=f'book-b:{day}:{code}:BUY', trade_date=day,
         created_at=stamp, recovery_deadline=stamp+timedelta(minutes=10), shares=shares,
@@ -44,7 +45,7 @@ def old_buy(root, *, code='688028.XSHG', day='2026-10-29', shares=100, price=10,
     store = ExecutionStore(root / 'events.jsonl')
     receipt = store.append(plan=plan, receipt=ExecutionReceipt(plan.plan_id, plan.plan_hash,
         state, submit_claim_id='original-claim', submit_chain_uncertain=True,
-        remaining_shares=shares, account_binding='proven',
+        remaining_shares=shares, account_binding='proven', template_name=template_name,
         locator_proof={'fund_account_binding_sha256': BINDING}))
     return plan, receipt
 
@@ -55,9 +56,10 @@ def marked(root, snap):
 
 
 def native_day_buy(root, **kwargs):
-    plan, saved = old_buy(root, **kwargs)
+    plan, saved = old_buy(root, state=ExecutionState.CLAIMED,
+                          template_name='foundersc-native-ax', **kwargs)
     saved = ExecutionStore(root / 'events.jsonl').append(plan=plan,
-        receipt=replace(saved, template_name='foundersc-native-ax', template_version='17'))
+        receipt=replace(saved, state=ExecutionState.UNKNOWN, template_version='17'))
     return plan, saved
 
 
@@ -133,6 +135,44 @@ def test_unproved_order_route_keeps_the_original_bound(tmp_path):
     assert Decimal(proof['cash_commitment_upper_bound']) == Decimal('1000.10')
     assert Decimal(proof['potential_exposure_upper_bound']) == 1000
     assert proof['plan_bounds'][0]['unfilled_order_expired'] is False
+
+
+def test_failed_native_reconciliation_cannot_prove_original_submit_route(tmp_path):
+    from types import SimpleNamespace
+    from xiaocao.live.trading_execution import (
+        TradingExecution, BookBOwnershipEvidence, BrokerReceipt, BrokerStatus)
+    plan, saved = old_buy(tmp_path)
+    store = ExecutionStore(tmp_path / 'events.jsonl')
+    execution = TradingExecution(store=store,
+        ledger=BookBOwnershipEvidence(tmp_path / 'book_b_ownership_evidence.jsonl'),
+        notifier=lambda *_: {'wecom': 'test'}, now=lambda: NOW)
+    failed = BrokerReceipt(status=BrokerStatus.UNKNOWN, requested_shares=plan.shares,
+        remaining_shares=plan.shares, account_binding='proven',
+        template_name='foundersc-native-ax', conclusive=False, retry_allowed=False,
+        reason='NATIVE_RECOVERY_DURABLE_CONTEXT_UNPROVEN')
+    observed = execution.reconcile_existing(plan, SimpleNamespace(recover=lambda *_: failed))
+    assert observed.template_name == 'foundersc-native-ax'
+    proof = marked(tmp_path, captured_snapshot()).accounting['inherited_buy_isolation']
+    assert Decimal(proof['cash_commitment_upper_bound']) == Decimal('1000.10')
+    assert Decimal(proof['potential_exposure_upper_bound']) == 1000
+    assert proof['submit_origin_bound'] is True
+    assert proof['plan_bounds'][0]['unfilled_order_expired'] is False
+
+
+def test_legacy_v2_route_proof_is_historical_readback_only(tmp_path):
+    from xiaocao.live.inherited_execution import _calculate
+    plan, saved = old_buy(tmp_path)
+    ExecutionStore(tmp_path / 'events.jsonl').append(plan=plan,
+        receipt=replace(saved, template_name='foundersc-native-ax'))
+    snap = captured_snapshot()
+    fresh = marked(tmp_path, snap).accounting['inherited_buy_isolation']
+    legacy = _calculate(tmp_path, snap, bind_submit_origin=False)
+    legacy.update(snapshot_path=fresh['snapshot_path'], snapshot_file_sha256=fresh['snapshot_file_sha256'])
+    legacy['isolation_sha256'] = digest(legacy)
+    assert Decimal(legacy['cash_commitment_upper_bound']) == 0
+    assert verify(tmp_path, legacy, current=False) == legacy
+    with pytest.raises(ValueError, match='SOURCE_CHANGED'):
+        verify(tmp_path, legacy, current=True)
 
 
 def test_legacy_isolation_keeps_exact_readback_after_day_expiry_change(tmp_path):

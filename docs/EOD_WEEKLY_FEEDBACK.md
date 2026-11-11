@@ -20,6 +20,10 @@ PYTHONPATH=src .venv/bin/python scripts/eod_closeout.py --context --date YYYY-MM
 
 根据原始回执制作 `output/live/eod_feedback_review_<date>.json`，按 `src/xiaocao/research/eod_feedback.py` 校验字段。顶层为 `schema_version=1, authority=0, date, automation_id=xiaocao-daily-eod, thread_id, reviewed_at`，保留初始 scheduler 的线程身份；reviewed_at 为带时区的真实复盘结束时间，晚于三个 post-business 终态。
 
+复盘09:24会话准备时，引用绑定同一 owner 的最早 `app_boundary/passed` 不可变观测。
+最新心跳的 `observed_at` 单独列示；首次有证据的时点还须核对其原状态，避免把后续
+保活误报成首次就绪延迟。来源缺失时明确该时点未证明。
+
 `evidence` 为角色到 `{path, sha256}` 的映射，path 相对当前仓库：
 
 - `paper_terminal` 与 `paper_manifest`：同一原始 supervisor archive。

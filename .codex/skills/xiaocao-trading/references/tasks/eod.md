@@ -49,6 +49,8 @@ Review raw first/latest failed turns, actual order/fill/holding/quote/timing/lot
 coverage and next-window effects; repair owned deterministic defects after
 business even when broker proof remains UNKNOWN. Keep stable IDs/root classes,
 5Why edges/alternatives/falsifiers, disposition and next-window owner/entry/proof.
+For09:24 readiness, use the earliest owner-bound app_boundary passed observation;
+report the latest heartbeat clock separately and retain the original status proof.
 Existing JSON validator does not certify narrative causal depth or readiness.
 
 Before final closeout, complete the DAY-order expiry double check in

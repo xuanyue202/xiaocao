@@ -49,6 +49,17 @@ def test_shadow_consumes_frozen_control_after_other_books_write(tmp_path: Path) 
     assert all(p.read_bytes() == raw for p, raw in before.items())
 
 
+def test_shadow_consumes_control_through_supervisor_shared_output(tmp_path: Path) -> None:
+    shared = tmp_path / 'shared'
+    shared.mkdir()
+    day = _control(shared)
+    runtime = tmp_path / 'runtime'
+    runtime.mkdir()
+    (runtime / 'output').symlink_to(shared / 'output', target_is_directory=True)
+    (shared / BOOK_T_CONTROL_ARTIFACT_PATHS['positions']).write_bytes(b'{"book":"B"}\n')
+    _verify_control_receipts([day], root=runtime)
+
+
 @pytest.mark.parametrize("fault", ["corrupt", "missing", "partial", "null", "outside", "symlink", "wrong_date", "archive_symlink"])
 def test_shadow_rejects_bad_snapshot_without_current_file_fallback(tmp_path: Path, fault: str) -> None:
     day = _control(tmp_path)

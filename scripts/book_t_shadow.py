@@ -211,7 +211,9 @@ def _verify_control_receipts(days: list[dict[str, Any]], *, root: Path = ROOT,
                 if not isinstance(relative_snapshot, str) or not relative_snapshot.strip():
                     raise BookTShadowError(f"v1 control snapshot path is invalid for {artifact}")
                 path = root / relative_snapshot
-                archive = root.resolve() / "output/live/book_t_v1_control_artifacts" / date_label
+                # Supervisors share the canonical output tree through a link.
+                # Keep the dated archive itself inside that resolved data root.
+                archive = (root / "output/live").resolve() / "book_t_v1_control_artifacts" / date_label
                 if (Path(relative_snapshot).is_absolute() or path.is_symlink()
                         or not path.resolve().is_relative_to(archive)):
                     raise BookTShadowError(f"v1 control snapshot path is invalid for {artifact}")

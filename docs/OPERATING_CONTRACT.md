@@ -1,6 +1,6 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：4.61
+**版本**：4.62
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
 **关联实现**：`src/xiaocao/live/{safety,capital_keychain,foundersc_native_ax,foundersc_native_broker,trading_execution,book_b_live_lifecycle,book_b_live_intraday}.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`native/foundersc_ax_executor/`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{book_b_live_morning,book_b_live_intraday,live_monitor,research_mode_switch_replay}.py`
@@ -286,6 +286,9 @@ awaiting_fill，09:30 前链条确定的排队 ACK 不反复查成交，09:30 �
 缺持仓完整性时保留原保守敞口，原生普通委托路径未证时保留原资金边界；同日未决、
 原单矛盾、账户及同代码门继续核验。原 UNKNOWN、claim、成交待核和最终会计仍保留。
 新隔离证明使用 v2，既有 v1 按原算法精确读回。委托失效证明与历史是否成交分别留证。
+普通原生路径须由原 submit claim 首次落盘的 CLAIMED 回执证明；后来对账适配器的
+template 标记只证明查询来源。当前 v2 以 `submit_origin_bound=true` 绑定该校验，
+旧版缺此绑定的 v2 保留历史精确读回，当前准入由新鲜快照重新生成绑定证明。
 
 **经济隔离的完成条件**：保留旧单及其 claim、未知成交和最终盈亏；用可验证的
 当前现金、已证持仓、旧单可能的剩余数量/金额及潜在敞口形成保守边界，证明新
@@ -954,6 +957,7 @@ no-KOL三项纸盘挑战，共同风险与B退出，仅前向独立账本。原�
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| 4.62 | 2026-11-11 | DAY 失效释放绑定原 submit claim 的首次 CLAIMED 原生回执，避免后续原生对账失败覆盖 template 而制造提交路径证明；旧 v2 保留历史读回，当前证明补充 submit_origin_bound。 |
 | 4.61 | 2026-11-11 | 普通原生 DAY 委托跨交易日释放未成交部分的未来现金占用；潜在历史持仓按完整当前持仓扣除自有股数后约束，多笔旧单共用数量上界。保留原 UNKNOWN、claim、同代码门与会计待核，v1 隔离证明精确兼容。 |
 | 4.60 | 2026-11-11 | 修复共享准备被历史提醒送达未决全局阻断；已发布来源独立核验后继续authority=0准备，旧通知claim/对账/ACK不变。早晚owner必须分别记录准备是否启动、复用/接受或精确受阻原因，原观点有效期与09:20完成要求保留。 |
 | 4.59 | 2026-11-05 | 用户确认条件优先：盘前独立审核可执行语义，早盘仅核事实并复核具体草案；新语义/来源变化/缺证立即降级，不派新current模型。新请求最多120秒且硬09:27:30，旧预算不延长；正常来源核验/发布/消费与黄金窗口独立验收。 |

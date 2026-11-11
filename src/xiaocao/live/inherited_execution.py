@@ -41,7 +41,8 @@ def query_codes(root: Path, *, trade_date: str) -> set[str]:
 
 
 def _calculate(root: Path, snapshot: dict, *, event_heads: dict | None = None,
-               ownership_head: str | None = None, day_validity: bool = True) -> dict:
+               ownership_head: str | None = None, day_validity: bool = True,
+               bind_submit_origin: bool = True) -> dict:
     from .book_b_accounting import replay_owned
     from .book_b_live_morning import _event_chain_proven, _uncertain_execution_plan_ids
     from .buy_preflight import validate_buy_preflight
@@ -138,10 +139,12 @@ def _calculate(root: Path, snapshot: dict, *, event_heads: dict | None = None,
             raise ValueError('LIVE_INHERITED_BUY_FILL_BOUND_UNPROVEN')
         price = number(plan.limit_price)
         claims = {}
+        claim_origins = {}
         claim_orders = {}
         for event in events:
             seen = ExecutionReceipt.from_dict(event['receipt'])
             if seen.submit_claim_id:
+                claim_origins.setdefault(seen.submit_claim_id, seen)
                 if any(claim != seen.submit_claim_id and prior.state not in TERMINAL_STATES
                         for claim, prior in claims.items()):
                     raise ValueError('LIVE_INHERITED_BUY_MULTIPLE_UNRESOLVED_CLAIMS')
@@ -191,7 +194,11 @@ def _calculate(root: Path, snapshot: dict, *, event_heads: dict | None = None,
             # This native port submits ordinary numeric DAY orders only.
             # Historical fill uncertainty survives expiry, but cannot create
             # a fresh cash hold or a future fill on another trading date.
-            expired = (receipt.template_name == 'foundersc-native-ax'
+            origin = claim_origins.get(receipt.submit_claim_id)
+            native_submission = (origin is not None and origin.state == ExecutionState.CLAIMED
+                and origin.template_name == 'foundersc-native-ax' and origin.account_binding == 'proven')
+            route_proven = native_submission if bind_submit_origin else receipt.template_name == 'foundersc-native-ax'
+            expired = (route_proven
                 and plan.environment == 'live' and plan.book == 'B'
                 and plan.logical_account_id == 'primary'
                 and plan.created_at.utcoffset() is not None
@@ -224,6 +231,8 @@ def _calculate(root: Path, snapshot: dict, *, event_heads: dict | None = None,
         'new_buy_cash_limit': str(max(Decimal(0), min(cash, gross - commitments))),
         'same_code_buy_fences': sorted({entry['code'] for entry in entries}),
         'accounting_finality': 'pending', 'order_replay_allowed': False}
+    if day_validity and bind_submit_origin:
+        result['submit_origin_bound'] = True
     return result
 
 
@@ -274,7 +283,8 @@ def _verify(root: Path, proof: dict, *, current: bool, now: datetime | None) -> 
     heads = {entry['plan_id']: entry['event_head'] for entry in proof['plan_bounds']}
     rebuilt = _calculate(root, json.loads(raw), event_heads=None if current else heads,
         ownership_head=proof['ownership_head_sha256'],
-        day_validity=proof['schema_version'] == 'inherited-buy-isolation.v2')
+        day_validity=proof['schema_version'] == 'inherited-buy-isolation.v2',
+        bind_submit_origin=current or proof.get('submit_origin_bound') is True)
     rebuilt.update(snapshot_path=str(path.resolve()), snapshot_file_sha256=proof['snapshot_file_sha256'])
     if rebuilt != body:
         raise ValueError('LIVE_INHERITED_BUY_PROOF_SOURCE_CHANGED')
