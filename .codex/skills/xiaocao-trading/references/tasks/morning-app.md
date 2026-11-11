@@ -30,6 +30,10 @@ view; this is the original owner's actual EOD-input consumption, with no financi
 admission authority. Follow [inherited-order admission](../../../../../docs/BOOK_B_WORKFLOW.md#遗留订单如何进入当天准入)
 when old BUY uncertainty is present; its current snapshot bound and same-code
 fence decide independent admission, rather than a historical status list.
+On a later trading date, read the v2 DAY-expiry/current-position bounds from
+the original pretrade account. An expired ordinary order with proved absent
+current shares has zero cash hold and exposure. Preserve its original audit
+claim and consume legacy v1 only under its exact historical calculation.
 
 At09:00 run one market_data_preflight.py --date today --scope authentication
 and one morning_preflight_alert.py --date today --kind transport. Save/checklist

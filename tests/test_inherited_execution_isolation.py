@@ -54,6 +54,99 @@ def marked(root, snap):
     return pretrade_account(root, snap, trade_date=snap['trade_date'], now=datetime.fromisoformat(snap['observed_at']))
 
 
+def native_day_buy(root, **kwargs):
+    plan, saved = old_buy(root, **kwargs)
+    saved = ExecutionStore(root / 'events.jsonl').append(plan=plan,
+        receipt=replace(saved, template_name='foundersc-native-ax', template_version='17'))
+    return plan, saved
+
+
+def captured_snapshot(**kwargs):
+    snap = snapshot(**kwargs)
+    snap['positions'].update(capture_proven=True, kind='positions',
+                             observed_total_row_count=snap['positions']['row_count'])
+    snap.pop('snapshot_sha256')
+    snap['snapshot_sha256'] = digest(snap)
+    return snap
+
+
+@pytest.mark.parametrize('current', [NOW, datetime(2026, 11, 11, 1, 25, tzinfo=timezone.utc)])
+def test_expired_native_day_order_releases_current_cash_and_absent_exposure(tmp_path, current):
+    plan, saved = native_day_buy(tmp_path, shares=300, price=93.46)
+    original = (tmp_path / 'events.jsonl').read_bytes()
+    snap = captured_snapshot(now=current, available=45130.53, balance=45130.53)
+    account = marked(tmp_path, snap)
+    proof = account.accounting['inherited_buy_isolation']
+    assert Decimal(proof['cash_commitment_upper_bound']) == 0
+    assert Decimal(proof['potential_exposure_upper_bound']) == 0
+    assert Decimal(proof['new_buy_cash_limit']) == Decimal('45130.53')
+    assert proof['plan_bounds'][0]['unfilled_order_expired'] is True
+    assert proof['plan_bounds'][0]['possible_current_unowned_shares'] == 0
+    assert account.cash == 30000  # Unclassified cash does not become funding.
+    basis = load_book_b_live_capital_basis(tmp_path, trade_date=snap['trade_date'], current_account=account)
+    payload = allocation_from_buy_preflight(snap, basis, now=current)
+    facts = _load_allocation(BookBLiveMorningConfig(snap['trade_date'], tmp_path/'freeze',
+        tmp_path/'allocation', tmp_path), payload, asof=current)
+    assert facts.cash_limit == 15000
+    assert facts.cash_limit > 200 * 43.91 * 1.0001
+    assert account.accounting['cumulative_pnl'] is None
+    assert verify(tmp_path, proof, now=current) == proof
+    assert proof['same_code_buy_fences'] == ['688028.XSHG']
+    assert (tmp_path / 'events.jsonl').read_bytes() == original
+    assert ExecutionStore(tmp_path/'events.jsonl').current(plan.plan_id) == saved
+
+
+def test_expired_day_order_bounds_only_current_unowned_shares(tmp_path):
+    from tests.test_book_b_live_policy import _history
+    _history(tmp_path)
+    native_day_buy(tmp_path, code='000001.XSHE', shares=300, price=12)
+    row = {'证券代码': '000001', '证券数量': '2050', '可卖数量': '2050', '当前价': '11'}
+    account = marked(tmp_path, captured_snapshot(rows=[row], codes=['000001']))
+    proof = account.accounting['inherited_buy_isolation']
+    assert account.current_open_exposure == 22000
+    assert Decimal(proof['cash_commitment_upper_bound']) == 0
+    assert Decimal(proof['potential_exposure_upper_bound']) == 550
+    assert proof['plan_bounds'][0]['possible_current_unowned_shares'] == 50
+    assert sum(lot.shares for lot in account.lots) == 2000
+
+
+def test_multiple_expired_orders_do_not_duplicate_current_position_exposure(tmp_path):
+    native_day_buy(tmp_path, day='2026-10-28', shares=300)
+    native_day_buy(tmp_path, day='2026-10-29', shares=300)
+    row = {'证券代码': '688028', '证券数量': '50', '可卖数量': '50', '当前价': '11'}
+    proof = marked(tmp_path, captured_snapshot(rows=[row])).accounting['inherited_buy_isolation']
+    assert sum(entry['possible_current_unowned_shares'] for entry in proof['plan_bounds']) == 50
+    assert Decimal(proof['potential_exposure_upper_bound']) == 550
+
+
+def test_expiry_keeps_unknown_current_positions_bounded(tmp_path):
+    native_day_buy(tmp_path)
+    proof = marked(tmp_path, snapshot()).accounting['inherited_buy_isolation']
+    assert Decimal(proof['cash_commitment_upper_bound']) == 0
+    assert Decimal(proof['potential_exposure_upper_bound']) == 1000
+    assert proof['plan_bounds'][0]['current_position_bound_proven'] is False
+
+
+def test_unproved_order_route_keeps_the_original_bound(tmp_path):
+    old_buy(tmp_path)
+    proof = marked(tmp_path, captured_snapshot()).accounting['inherited_buy_isolation']
+    assert Decimal(proof['cash_commitment_upper_bound']) == Decimal('1000.10')
+    assert Decimal(proof['potential_exposure_upper_bound']) == 1000
+    assert proof['plan_bounds'][0]['unfilled_order_expired'] is False
+
+
+def test_legacy_isolation_keeps_exact_readback_after_day_expiry_change(tmp_path):
+    from xiaocao.live.inherited_execution import _calculate
+    native_day_buy(tmp_path)
+    snap = captured_snapshot()
+    current = marked(tmp_path, snap).accounting['inherited_buy_isolation']
+    legacy = _calculate(tmp_path, snap, day_validity=False)
+    legacy.update(snapshot_path=current['snapshot_path'], snapshot_file_sha256=current['snapshot_file_sha256'])
+    legacy['isolation_sha256'] = digest(legacy)
+    assert Decimal(legacy['cash_commitment_upper_bound']) == Decimal('1000.10')
+    assert verify(tmp_path, legacy, current=False) == legacy
+
+
 def test_bounded_prior_buy_does_not_prevent_current_scoped_account(tmp_path):
     old, saved = old_buy(tmp_path)
     before = (tmp_path/'events.jsonl').read_bytes()
