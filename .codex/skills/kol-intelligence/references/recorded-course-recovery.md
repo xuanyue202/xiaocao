@@ -102,7 +102,13 @@ and every claim. Only recorded mode skips an independently verified idle/unbound
 inventory item. A configured `navigation_source_url` may identify the verified
 history catalogue link when the raw message explicitly labels it
 `历史直播回放点击链接学习` and includes exactly one same-message branded mini with
-the configured token. Generic or differently sourced URLs remain independent.
+the original branded token. The merchant may rotate that share token: the exact
+configured history URL, explicitly labelled in the same hash/time/contact-bound
+cached message with exactly one branded mini-program, anchors the catalogue.
+Preserve both the configured historical token and original current token; never
+rewrite the original or accept a changed token from its name/date alone.
+Inspection and media-proof collection revalidate the same-message anchor.
+Generic or differently sourced URLs remain independent.
 The role may have a circled or decimal list prefix, such as
 `②历史直播回放点击链接学习：...`; the prefix changes presentation only. It does not
 relax the exact URL, same-message identity or merchant/course checks. A saved

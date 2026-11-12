@@ -14,11 +14,16 @@ from zoneinfo import ZoneInfo
 
 import requests
 
+from .enrichment_types import EnrichmentDiagnosticError
 from .human_playback import _course_title_key
 
 
-class ReplayCatalogError(RuntimeError):
+class ReplayCatalogError(EnrichmentDiagnosticError):
     """A safe diagnostic; remote response bodies must not enter error messages."""
+
+    def __init__(self, code: str):
+        super().__init__(code, category="provider_contract_error",
+                         code=code, stage="recorded_catalog")
 
 
 @dataclass(frozen=True)
@@ -26,6 +31,7 @@ class ReplayCatalogConfig:
     app_id: str
     course_id: str
     mini_program_token: str
+    navigation_source_url: str | None = None
 
     @classmethod
     def from_dict(cls, value: dict) -> "ReplayCatalogConfig":
@@ -38,7 +44,13 @@ class ReplayCatalogConfig:
             )
         ):
             raise ReplayCatalogError("catalog_configuration_invalid")
-        return cls(*fields)
+        navigation = value.get("navigation_source_url")
+        if navigation is not None:
+            from .xiaocao_wechat import _normalized_live_url
+            if (not isinstance(navigation, str)
+                or _normalized_live_url(navigation) != navigation):
+                raise ReplayCatalogError("catalog_configuration_invalid")
+        return cls(*fields, navigation_source_url=navigation)
 
     @property
     def origin(self) -> str:
@@ -156,10 +168,25 @@ def match_original(rows: list[dict], published_at: str) -> dict | None:
     session = "早盘" if published.hour < 12 else "复盘"
     date = f"{published.month}月{published.day}日"
     titles = {f"大师班{session}直播{date}", f"大师班{session}直播{date}YJ",
-              f"{date}大师班{session}直播"}
+              f"{date}大师班{session}直播", f"{date}{session}大师班直播"}
+    segments = [r for r in rows if any(re.fullmatch(
+        re.escape(title) + r"片段[1-9][0-9]*", _course_title_key(r['title'])
+    ) for title in titles)]
+    if segments:
+        raise ReplayCatalogError("recorded_course_multipart_requires_assembly")
     matches = [r for r in rows if _course_title_key(r['title']) in titles]
     if len(matches) > 1:
         raise ReplayCatalogError("recorded_session_ambiguous")
+    if not matches:
+        # Same date with different session wording is evidence to investigate,
+        # not proof that the recording is unpublished or the same course.
+        if any(re.fullmatch(
+                   re.escape(date) + r".{1,8}大师班直播(?:YJ)?",
+                   _course_title_key(r['title']))
+               and not any(other in _course_title_key(r['title'])
+                           for other in ({"早盘", "复盘"} - {session}))
+               for r in rows):
+            raise ReplayCatalogError("recorded_session_title_unverified")
     return matches[0] if matches else None
 
 
@@ -174,12 +201,46 @@ def verify_original(item: dict, identity: str, originals: list[dict]) -> None:
         raise ReplayCatalogError('original_history_binding_changed')
 
 
-def inspect_original(config: ReplayCatalogConfig, item: dict, *, inspect_access=False,
-                     session=None, now: datetime | None = None) -> dict:
-    if (item.get("mini_program_token") != config.mini_program_token
-        or not re.fullmatch(r"kol-wechat-[0-9a-f]{24}", str(item.get("identity", "")))
+def catalogue_navigation_peer(config: ReplayCatalogConfig, item: dict,
+                              originals: list[dict]) -> dict | None:
+    """Join one branded share and one exact labelled URL in the same message."""
+    if (item.get("entry_kind") != "wechat_mini_program"
+        or item.get("mini_program_name") != "见势擒龙团"
+        or not re.fullmatch(r"[A-Za-z0-9]+", str(item.get("mini_program_token", "")))
+        or not config.navigation_source_url
+        or not item.get("contact") or not item.get("contact_username")):
+        return None
+    keys = ("message_sha256", "published_at", "contact", "contact_username")
+    peers = [row for row in originals
+             if all(row.get(k) == item.get(k) for k in keys)]
+    minis = [row for row in peers if row.get("entry_kind") == "wechat_mini_program"]
+    urls = [row for row in peers
+            if row.get("source_url") == config.navigation_source_url
+            and row.get("recorded_navigation_marker") is True
+            and row.get("recorded_navigation_url_sha256") == hashlib.sha256(
+                config.navigation_source_url.encode()).hexdigest()]
+    if len(minis) != 1 or len(urls) != 1 or minis[0].get("identity") != item.get("identity"):
+        return None
+    return urls[0]
+
+
+def verify_catalogue_binding(config: ReplayCatalogConfig, item: dict,
+                             originals: list[dict] | None = None) -> None:
+    if (not re.fullmatch(r"kol-wechat-[0-9a-f]{24}", str(item.get("identity", "")))
         or not re.fullmatch(r"[0-9a-f]{64}", str(item.get("message_sha256", "")))):
         raise ReplayCatalogError("original_catalog_binding_invalid")
+    if originals is not None:
+        verify_original(item, item["identity"], originals)
+    if item.get("mini_program_token") == config.mini_program_token:
+        return
+    if originals is None or catalogue_navigation_peer(config, item, originals) is None:
+        raise ReplayCatalogError("original_catalog_binding_invalid")
+
+
+def inspect_original(config: ReplayCatalogConfig, item: dict, *, inspect_access=False,
+                     originals: list[dict] | None = None,
+                     session=None, now: datetime | None = None) -> dict:
+    verify_catalogue_binding(config, item, originals)
     published = datetime.fromisoformat(item['published_at'])
     now = now or datetime.now(ZoneInfo('Asia/Shanghai'))
     if (published.tzinfo is None or now.tzinfo is None

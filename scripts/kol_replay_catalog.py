@@ -30,16 +30,23 @@ def main() -> int:
         if item.get('human_playback_deferred') or item.get('status') in {'completed', 'handoff_ready'}:
             raise ReplayCatalogError('original_not_eligible_for_catalog_recovery')
         try:
-            verify_original(item, args.identity, parse_xiaocao_live_messages(WechatCliHistoryReader()()))
+            originals = parse_xiaocao_live_messages(WechatCliHistoryReader()())
+            verify_original(item, args.identity, originals)
         except EnrichmentError:
             raise ReplayCatalogError('original_history_unavailable') from None
-        result = inspect_original(config, item, inspect_access=args.inspect_access)
+        result = inspect_original(config, item, originals=originals,
+                                  inspect_access=args.inspect_access)
         result['observed_at'] = datetime.now(ZoneInfo('Asia/Shanghai')).isoformat(timespec='seconds')
         print(json.dumps(result, ensure_ascii=False))
         return 0
     except (ReplayCatalogError, OSError, ValueError, KeyError, TypeError) as exc:
         code = str(exc) if isinstance(exc, ReplayCatalogError) else 'catalog_local_evidence_invalid'
-        print(json.dumps({'status':'degraded','code':code,'download_attempted':False}))
+        print(json.dumps({
+            'status':'action_required','code':code,'identity':args.identity,
+            'owner':'agent','stage':'recorded_catalog',
+            'next_action':'diagnose_repair_then_exact_resume',
+            'download_attempted':False,
+        }))
         return 2
 
 

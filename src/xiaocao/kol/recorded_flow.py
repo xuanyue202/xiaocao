@@ -10,7 +10,10 @@ from zoneinfo import ZoneInfo
 from .enrichment_types import EnrichmentError, EnrichmentDiagnosticError
 from .human_playback import enable_capture_listener_pac
 from .recorded_recovery import bind_recorded_recovery, collect_recorded_proof
-from .replay_catalog import ReplayCatalogConfig, inspect_original, verify_original
+from .replay_catalog import (
+    ReplayCatalogConfig, ReplayCatalogError, catalogue_navigation_peer,
+    inspect_original, verify_original,
+)
 
 
 def recorded_mode(config_path):
@@ -58,16 +61,11 @@ def annotate_inventory(originals,config_path):
     config=ReplayCatalogConfig.from_dict(value)
     navigation=value.get('navigation_source_url')
     if not navigation:return originals
-    for row in originals:
-        peers=[p for p in originals if p.get('entry_kind')=='wechat_mini_program'
-            and p.get('mini_program_name')=='见势擒龙团'
-            and p.get('message_sha256')==row.get('message_sha256')
-            and p.get('published_at')==row.get('published_at')
-            and p.get('contact_username')==row.get('contact_username')]
-        if (row.get('recorded_navigation_marker') and row.get('source_url')==navigation
-            and row.get('recorded_navigation_url_sha256')==hashlib.sha256(navigation.encode()).hexdigest()
-            and len(peers)==1 and peers[0].get('mini_program_token')==config.mini_program_token):
-            row.update(recorded_inventory_reason='catalogue_navigation',alternate_entry_of=peers[0]['identity'])
+    for item in originals:
+        peer = catalogue_navigation_peer(config, item, originals)
+        if peer is not None:
+            peer.update(recorded_inventory_reason='catalogue_navigation',
+                        alternate_entry_of=item['identity'])
     return originals
 
 
@@ -75,9 +73,19 @@ def check_recorded_playback(sub,manifest,item,*,reason):
     if item.get('activated') is True or reason=='captured_window_cleanup' or item.get('human_playback_deferred'):
         return item
     root=sub.output_dir.resolve();identity=item['identity'];capture_id=item['capture_job_id']
-    config=ReplayCatalogConfig.from_dict(json.loads((root.parent/'native_share_bridge.json').read_text())['replay_catalog'])
+    try:
+        config=ReplayCatalogConfig.from_dict(json.loads(
+            (root.parent/'native_share_bridge.json').read_text())['replay_catalog'])
+    except (ReplayCatalogError, OSError, ValueError, KeyError, TypeError) as exc:
+        safe = exc if isinstance(exc, ReplayCatalogError) else ReplayCatalogError(
+            'catalog_configuration_invalid')
+        raise _catalogue_diagnostic(safe, identity, capture_id) from exc
     from .xiaocao_wechat import parse_xiaocao_live_messages
-    verify_original(item,identity,parse_xiaocao_live_messages(sub.history_reader()))
+    originals=parse_xiaocao_live_messages(sub.history_reader())
+    try:
+        verify_original(item,identity,originals)
+    except ReplayCatalogError as exc:
+        raise _catalogue_diagnostic(exc, identity, capture_id) from exc
     now=sub.clock().astimezone(ZoneInfo('Asia/Shanghai'))
     published=datetime.fromisoformat(item['published_at']).astimezone(now.tzinfo)
     earliest=published.replace(hour=11 if published.hour<12 else 21,minute=0,second=0,microsecond=0)
@@ -100,7 +108,10 @@ def check_recorded_playback(sub,manifest,item,*,reason):
         return manifest['items'][identity]
     # A bound effect cannot be replaced by a catalogue result.
     sub.capture_driver.require_idle_human_entry(identity,capture_id)
-    result=inspect_original(config,item,now=now)
+    try:
+        result=inspect_original(config,item,originals=originals,now=now)
+    except ReplayCatalogError as exc:
+        raise _catalogue_diagnostic(exc, identity, capture_id) from exc
     recording=result.get('recording')
     if not recording:
         return wait('recording_not_published',now+timedelta(seconds=300))
@@ -155,3 +166,13 @@ def check_recorded_playback(sub,manifest,item,*,reason):
     bind_recorded_recovery(root,identity,capture_id,proof_path,driver=sub.capture_driver)
     manifest.update(sub._load())
     return manifest['items'][identity]
+
+
+def _catalogue_diagnostic(error, identity, capture_id):
+    diagnostic = EnrichmentDiagnosticError(
+        'recorded catalogue needs source verification',
+        category='provider_contract_error', code=str(error), stage='recorded_catalog',
+    )
+    diagnostic.waiting_items = [dict(identity=identity, capture_job_id=capture_id,
+                                    stage='recorded_catalog')]
+    return diagnostic

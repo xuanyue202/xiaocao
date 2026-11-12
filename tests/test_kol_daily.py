@@ -641,6 +641,7 @@ def test_source_repair_validation_accepts_pending_resume():
     convergence = SimpleNamespace(
         active_progress=lambda _adapter: None,
         pending_resume=lambda _adapter: (progress, {"event": "repair_closed"}),
+        progress_for_fingerprint=lambda _adapter, _fingerprint: None,
     )
     service = SimpleNamespace(convergence=convergence)
 
@@ -760,6 +761,7 @@ def test_source_repair_validation_recovers_missing_convergence_observation():
     convergence = SimpleNamespace(
         active_progress=lambda _adapter: None,
         pending_resume=lambda _adapter: None,
+        progress_for_fingerprint=lambda _adapter, _fingerprint: None,
         record=lambda candidate, *, slot: recorded.append((candidate, slot)),
     )
     service = SimpleNamespace(
@@ -1953,7 +1955,7 @@ def test_capture_xiaocao_item_cli_runs_only_the_bound_manifest_identity(
         observed["has_client"] = hasattr(self, "_client")
         observed["identity"] = only_identity
         observed["backfill_since"] = self.args.xiaocao_backfill_since
-        return {"status": "waiting", "waiting_items": []}
+        return {"status": "no_update", "identity": only_identity}
 
     monkeypatch.setattr(DailyRuntime, "xiaocao_wechat", capture)
     monkeypatch.setattr(
@@ -1990,6 +1992,140 @@ def test_manual_backfill_flag_cannot_widen_scheduled_capture(monkeypatch):
     with pytest.raises(SystemExit) as error:
         kol_daily_script.main()
     assert error.value.code == 2
+
+
+def test_capture_exact_catalogue_fault_returns_repair_and_nonzero(tmp_path, monkeypatch, capsys):
+    identity = "kol-wechat-" + "a"*24
+    def capture(self, **kwargs):
+        error = EnrichmentDiagnosticError(
+            "safe catalogue fault", category="provider_contract_error",
+            code="original_catalog_binding_invalid", stage="recorded_catalog",
+        )
+        error.waiting_items = [{"identity":identity, "capture_job_id":"original-capture"}]
+        raise error
+    monkeypatch.setattr(DailyRuntime, "xiaocao_wechat", capture)
+    monkeypatch.setattr(kol_daily_script, "_follow_cloud_handoff", lambda *a, **kw: None)
+    monkeypatch.setattr(sys, "argv", ["kol_daily.py", "capture-xiaocao-item",
+        "--source-identity", identity, "--output-dir", str(tmp_path/"daily")])
+    assert kol_daily_script.main() == 2
+    result = json.loads(capsys.readouterr().out)
+    assert result["status"] == "action_required"
+    assert result["writer_progress"]["item_identity"] == identity
+    assert result["writer_progress"]["status"] == "repair_required"
+    assert result["required_actions"][0]["owner"] == "agent"
+    assert result["failure"]["code"] == "original_catalog_binding_invalid"
+    service = DailyCoordinator(tmp_path/"daily")
+    fingerprint = result["writer_progress"]["failure_fingerprint"]
+    progress = kol_daily_script._source_repair_validation_progress(
+        service, "xiaocao_wechat_live", fingerprint)
+    assert progress.item_identity == identity
+    assert service._repair_originating_sweep(service.events(),
+        source="xiaocao_wechat_live", progress=progress) is not None
+
+
+def test_capture_exact_raw_catalogue_fault_is_bound_to_original(tmp_path, monkeypatch, capsys):
+    from xiaocao.kol.replay_catalog import ReplayCatalogError
+    identity = "kol-wechat-" + "a"*24
+    def capture(self, **kwargs):
+        raise ReplayCatalogError("catalog_configuration_invalid")
+    monkeypatch.setattr(DailyRuntime, "xiaocao_wechat", capture)
+    monkeypatch.setattr(kol_daily_script, "_follow_cloud_handoff", lambda *a, **kw: None)
+    monkeypatch.setattr(sys, "argv", ["kol_daily.py", "capture-xiaocao-item",
+        "--source-identity", identity, "--output-dir", str(tmp_path/"daily")])
+    assert kol_daily_script.main() == 2
+    result = json.loads(capsys.readouterr().out)
+    assert result["writer_progress"]["item_identity"] == identity
+    assert result["required_actions"][0]["stage"] == "recorded_catalog"
+
+
+def test_capture_exact_login_notifies_once_and_exits_nonzero(tmp_path, monkeypatch, capsys):
+    identity = "kol-wechat-" + "a"*24
+    notices = []
+    def capture(self, **kwargs):
+        error = EnrichmentDiagnosticError(
+            "login needed", category="authentication_error",
+            code="recorded_course_account_login_required",
+            stage="recorded_course_authorization",
+        )
+        error.waiting_items = [{"identity":identity, "capture_job_id":"original-capture"}]
+        raise error
+    monkeypatch.setattr(DailyRuntime, "xiaocao_wechat", capture)
+    monkeypatch.setattr(kol_daily_script, "_sender", lambda *args: notices.append(args))
+    monkeypatch.setattr(kol_daily_script, "_follow_cloud_handoff", lambda *a, **kw: None)
+    monkeypatch.setattr(sys, "argv", ["kol_daily.py", "capture-xiaocao-item",
+        "--source-identity", identity, "--output-dir", str(tmp_path/"daily")])
+    for _ in range(2):
+        assert kol_daily_script.main() == 2
+        result = json.loads(capsys.readouterr().out)
+        assert result["required_actions"][0]["owner"] == "user"
+        assert "Edge" in result["required_actions"][0]["action"]
+    assert len(notices) == 1
+    monkeypatch.setattr(DailyRuntime, "xiaocao_wechat",
+        lambda self, **kwargs: {"status":"no_update", "identity":identity})
+    assert kol_daily_script.main() == 0
+    capsys.readouterr()
+    monkeypatch.setattr(DailyRuntime, "xiaocao_wechat", capture)
+    assert kol_daily_script.main() == 2
+    capsys.readouterr()
+    assert len(notices) == 1
+    monkeypatch.setattr(DailyRuntime, "xiaocao_wechat",
+        lambda self, **kwargs: {"status":"no_update", "identity":identity,
+                               "already_completed":True})
+    assert kol_daily_script.main() == 0
+    capsys.readouterr()
+    monkeypatch.setattr(DailyRuntime, "xiaocao_wechat", capture)
+    assert kol_daily_script.main() == 2
+    capsys.readouterr()
+    assert len(notices) == 2
+
+
+def test_capture_exact_corrupt_claim_preserves_uncertainty_and_original(tmp_path, monkeypatch, capsys):
+    identity = "kol-wechat-" + "a"*24
+    def capture(self, **kwargs):
+        raise json.JSONDecodeError("private body", "secret", 0)
+    monkeypatch.setattr(DailyRuntime, "xiaocao_wechat", capture)
+    monkeypatch.setattr(kol_daily_script, "_follow_cloud_handoff", lambda *a, **kw: None)
+    monkeypatch.setattr(sys, "argv", ["kol_daily.py", "capture-xiaocao-item",
+        "--source-identity", identity, "--output-dir", str(tmp_path/"daily")])
+    assert kol_daily_script.main() == 2
+    output = capsys.readouterr().out
+    assert "secret" not in output and "private body" not in output
+    progress = json.loads(output)["writer_progress"]
+    assert progress["item_identity"] == identity
+    assert progress["failure"]["code"] == "unhandled_source_exception"
+    assert progress["claim_receipt_summary"]["uncertain_effect_count"] == 1
+
+
+def test_capture_exact_repairs_keep_independent_targets_and_reject_shared_fingerprint(tmp_path):
+    from xiaocao.kol.writer_progress import ProgressContractError
+    service = DailyCoordinator(tmp_path/"daily")
+    identities = ["kol-wechat-" + letter*24 for letter in ("a", "b")]
+    results = []
+    for identity in identities:
+        error = EnrichmentDiagnosticError("safe", category="provider_contract_error",
+            code="catalog_configuration_invalid", stage="recorded_catalog")
+        error.waiting_items = [{"identity":identity, "stage":"recorded_catalog"}]
+        result = kol_daily_script._classified_narrow_source(
+            "xiaocao_wechat_live", lambda _surface: (_ for _ in ()).throw(error),
+        )(f"xiaocao_wechat_live:{identity}")
+        service.record_exact_capture_progress("xiaocao_wechat_live", result)
+        results.append(result)
+    fingerprints = [r["writer_progress"]["failure_fingerprint"] for r in results]
+    assert fingerprints[0] == fingerprints[1]
+    observed = [row["progress"]["item_identity"] for row in service.convergence.events()
+                if row["event"] == "failure_observed"]
+    assert observed == identities
+    with pytest.raises(ProgressContractError, match="multiple original targets"):
+        kol_daily_script._source_repair_validation_progress(
+            service, "xiaocao_wechat_live", fingerprints[0])
+
+
+def test_local_capture_retained_repair_cannot_exit_as_quiet_success():
+    result = {"status":"completed", "silent":True, "health":"degraded"}
+    output, status = kol_daily_script._local_capture_outcome(result)
+    assert status == 2
+    assert output["silent"] is False
+    assert output["status"] == "action_required"
 
 
 def test_remote_run_drains_mailbox_before_existing_sources(
@@ -6853,7 +6989,7 @@ def test_source_classifier_surfaces_recorded_course_login_immediately():
     )
     with pytest.raises(UserActionBlocker) as captured:
         runner()
-    assert captured.value.blocker_key=="xiaocao-recorded-course-login"
+    assert captured.value.blocker_key=="xiaocao-recorded-course-login:kol-wechat-original"
     assert "小鹅通/eLink" in captured.value.action
     assert "无需把账号、密码或验证码提供给 Agent" in captured.value.action
     assert captured.value.waiting_items==error.waiting_items

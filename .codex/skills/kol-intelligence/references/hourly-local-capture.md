@@ -242,6 +242,23 @@ mailbox reconciliation owns subsequent readback. Never call it `全部完成` wi
 `acked`, and never end at a launch, download, source-code fix, or upload claim.
 Record the actual stopping condition and its evidence in Automation memory.
 
+The local CLI returns nonzero `action_required` for an unfinished repair,
+reconciliation or human action, with `required_actions` naming the exact item,
+owner, stage and next action. This is the entry to the repair loop, not the
+run's completion. Resolve Agent-owned faults in this invocation. When safe
+diagnosis establishes an irreducible login, permission, agreement or decision,
+present one Codex input request with the concrete page/action and consequence.
+Keep it pending until the human answers; release the idle runner's guardian
+through its bound response first. Use the existing operational notifier and
+exact blocker key to deduplicate provider-login notices. Do not fabricate a
+display receipt or turn an internal fault into a request that the human debug it.
+
+A changed mini-program share token is not a changed recording identity.
+Follow the recorded-course SOP's exact same-message catalogue anchor before
+effects. A true binding failure returns `recorded_catalog` repair progress;
+it is not `recording_not_published`. Repeating the failed inspection without
+testing its binding assumption does not satisfy diagnosis.
+
 An exact item recovered through `capture-xiaocao-item` can already be completed
 while the coordinator still retains its earlier repair fingerprint. Verify the
 same item's capture acceptance and mailbox readback first. Close the coordinator

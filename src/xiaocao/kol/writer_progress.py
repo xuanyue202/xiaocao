@@ -1738,6 +1738,21 @@ def _canonical_xiaocao_wechat_source_repair_profile(
             "native_playback_window_close",
         )
     ) or (
+        declared_profile == "kol_xiaocao_wechat_live_recorded_catalog"
+        and failure[0] == "provider_contract_error"
+        and failure[2] == "recorded_catalog"
+        and failure[1] in {
+            "original_catalog_binding_invalid", "original_history_binding_changed",
+            "original_identity_changed", "catalog_configuration_invalid",
+            "catalog_page_unavailable", "catalog_page_redirect_changed",
+            "catalog_page_redirect_incomplete", "catalog_api_unavailable",
+            "catalog_api_invalid_json", "catalog_api_rejected",
+            "catalog_scan_incomplete", "catalog_resource_binding_invalid",
+            "recorded_session_ambiguous", "catalog_transport_unavailable",
+            "recorded_course_multipart_requires_assembly",
+            "recorded_session_title_unverified",
+        }
+    ) or (
         declared_profile == _XIAOCAO_WECHAT_SOURCE_REPAIR_PROFILE
         and failure
         in {
@@ -2099,6 +2114,7 @@ class RepairValidationService:
                     _XIAOCAO_WECHAT_CLOUD_HANDOFF_REPAIR_PROFILE,
                     "kol_xiaocao_wechat_live_native_playback_window_close",
                     "kol_xiaocao_wechat_live_native_playback_input",
+                    "kol_xiaocao_wechat_live_recorded_catalog",
                 }
             )
             and not (
@@ -3219,6 +3235,31 @@ class ConvergenceLedger:
                 )
             return WriterProgress.from_dict(progress)
         return None
+
+    def progress_for_fingerprint(
+        self, adapter: str, fingerprint: str,
+    ) -> WriterProgress | None:
+        """Read one current item repair without replacing another item's state."""
+        rows = self.events()
+        targets = {
+            (row["progress"]["item_identity"], row["progress"]["narrow_resume_surface"])
+            for row in rows
+            if row.get("event") == "failure_observed"
+            and row.get("failure_fingerprint") == fingerprint
+        }
+        if len(targets) > 1:
+            raise ProgressContractError("repair fingerprint has multiple original targets")
+        observations, latest = self._latest_repair_lifecycle_by_target(rows)
+        binding = observations.get(fingerprint)
+        if binding is None:
+            return None
+        target, observation = binding
+        current = latest[target][1]
+        if (target[0] != adapter
+            or current.get("failure_fingerprint") != fingerprint
+            or current.get("event") not in {"failure_observed", "repair_closed"}):
+            return None
+        return WriterProgress.from_dict(observation["progress"])
 
     def pending_resume(
         self,

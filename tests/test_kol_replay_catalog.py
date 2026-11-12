@@ -89,6 +89,33 @@ def test_no_same_session_match_is_not_media_unavailable_or_completion():
     assert result['recording'] is None and result['download_attempted'] is False
 
 
+def test_exact_session_title_order_is_supported_but_intraday_is_not_guessed():
+    result = inspect_original(CONFIG, ITEM, now=NOW,
+        session=Session([page([row(1, '11月4日早盘大师班直播')])]))
+    assert result['recording']['resource_id'] == row()['chapter_id']
+    with pytest.raises(ReplayCatalogError, match='recorded_session_title_unverified'):
+        inspect_original(CONFIG, ITEM, now=NOW,
+            session=Session([page([row(1, '11月4日盘中大师班直播')])]))
+    result = inspect_original(CONFIG, ITEM, now=NOW,
+        session=Session([page([row(1, '11月4日大师班会员说明')])]))
+    assert result['recording'] is None
+
+
+def test_multipart_recording_is_an_agent_repair_not_unpublished_or_one_part_acceptance():
+    item = {**ITEM, 'published_at':'2026-11-04T17:00:00+08:00'}
+    now = NOW.replace(hour=22)
+    with pytest.raises(ReplayCatalogError, match='recorded_course_multipart_requires_assembly'):
+        inspect_original(CONFIG, item, now=now, session=Session([page([
+            row(1, '11月4日复盘大师班直播片段1'),
+            row(2, '11月4日复盘大师班直播片段2'),
+        ])]))
+    with pytest.raises(ReplayCatalogError, match='recorded_course_multipart_requires_assembly'):
+        inspect_original(CONFIG, item, now=now, session=Session([page([
+            row(1, '11月4日复盘大师班直播'),
+            row(2, '11月4日复盘大师班直播片段2'),
+        ])]))
+
+
 def test_complete_pagination_and_total_changes():
     first = [row(i, '11月3日大师班早盘直播') for i in range(1,51)]
     reader = ReplayCatalogReader(CONFIG, session=Session([page(first,51),page([row(51)],51)]))
@@ -165,3 +192,39 @@ def test_cli_rejects_manifest_key_identity_mismatch_before_history_or_http(tmp_p
     monkeypatch.setattr(cli,'inspect_original',lambda *a,**k:pytest.fail('must stop before HTTP'))
     assert cli.main() == 2
     assert json.loads(capsys.readouterr().out)['code'] == 'original_identity_changed'
+
+
+def test_changed_share_token_requires_exact_same_message_catalogue_anchor():
+    config = ReplayCatalogConfig(
+        CONFIG.app_id, CONFIG.course_id, CONFIG.mini_program_token,
+        navigation_source_url='https://yv9lc.xetslk.com/s/4uRHyc',
+    )
+    item = {**ITEM, 'mini_program_name': '见势擒龙团',
+            'entry_kind': 'wechat_mini_program', 'mini_program_token': 'Changed123',
+            'contact': 'registered', 'contact_username': 'exact'}
+    navigation = {**item, 'identity': 'kol-wechat-'+'c'*24,
+                  'entry_kind': None, 'mini_program_token': None,
+                  'source_url': config.navigation_source_url,
+                  'recorded_navigation_marker': True,
+                  'recorded_navigation_url_sha256': __import__('hashlib').sha256(
+                      config.navigation_source_url.encode()).hexdigest()}
+    session = Session([page([row()])])
+    result = inspect_original(config, item, originals=[item, navigation],
+                              session=session, now=NOW)
+    assert result['recording']['resource_id'] == row()['chapter_id']
+    assert item['mini_program_token'] == 'Changed123'
+    for field, value in (
+        ('message_sha256', 'd'*64), ('published_at', '2026-11-03T09:04:00+08:00'),
+        ('contact_username', 'another'), ('source_url', 'https://other.example/'),
+        ('recorded_navigation_marker', False),
+        ('recorded_navigation_url_sha256', 'd'*64),
+    ):
+        rejected = Session([])
+        with pytest.raises(ReplayCatalogError):
+            inspect_original(config, item,
+                originals=[item, {**navigation, field: value}],
+                session=rejected, now=NOW)
+        assert rejected.calls == []
+    with pytest.raises(ReplayCatalogError):
+        inspect_original(config, item, originals=[item, navigation,
+            {**item, 'identity':'kol-wechat-'+'d'*24}], session=Session([]), now=NOW)

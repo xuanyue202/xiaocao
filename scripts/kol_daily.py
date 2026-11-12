@@ -1722,10 +1722,14 @@ def _classified_source(name: str, runner):
             diagnostic_code = str(
                 getattr(exc, "diagnostic_code", "")
             )
+            if (isinstance(exc, EnrichmentDiagnosticError)
+                and exc.diagnostic_stage == "recorded_catalog"):
+                return _native_playback_failure_result(exc)
             if (
                 isinstance(exc, EnrichmentDiagnosticError)
                 and exc.diagnostic_stage in {
                     "native_playback_input", "native_playback_window_close",
+                    "recorded_catalog",
                 }
                 and getattr(exc, "waiting_items", None)
             ):
@@ -1745,8 +1749,11 @@ def _classified_source(name: str, runner):
                     "系统会复核同一任务并继续。",
                 ) from exc
             if diagnostic_code == "recorded_course_account_login_required":
+                waiting = getattr(exc, "waiting_items", None) or []
+                identity = waiting[0].get("identity") if len(waiting) == 1 else None
                 raise UserActionBlocker(
-                    "xiaocao-recorded-course-login",
+                    f"xiaocao-recorded-course-login:{identity}" if identity
+                    else "xiaocao-recorded-course-login",
                     "当前 Edge 中的小鹅通/eLink 历史录播需要重新登录或加入学习。"
                     "请在现有 xiaocao-recorded-course 页面完成正常账号操作；"
                     "无需把账号、密码或验证码提供给 Agent。完成后系统会续办"
@@ -1898,6 +1905,35 @@ def _classified_narrow_source(name: str, runner):
                 "failure": failure,
                 "waiting_items": [waiting_item],
             }
+        except SourceExecutionBusy:
+            raise
+        except Exception:
+            # No provider outcome can be inferred from an unexpected exception.
+            # Preserve the exact original and require effect readback before retry.
+            identity = _exact_progress_surface(name, surface)
+            identity = f"{name}:source" if identity == "source" else identity
+            failure = {"category": "code_error",
+                       "code": "unhandled_source_exception",
+                       "stage": "source_run", "retryable": True}
+            progress = _source_failure_repair_progress(
+                adapter=name, item={"identity": identity},
+                affected_items=[{"identity": identity}],
+                failure=failure, failure_audit={"claim_status": "unknown"},
+                provider_contract_version="xiaocao_writer_v1",
+                targeted_test_profile=f"kol_{name}_source_run",
+            )
+            outcome = {
+                "status": "waiting",
+                "failure": failure,
+                "writer_progress": progress.to_dict(),
+                "resume_policy": progress.next_action,
+            }
+        if outcome.get("failure") and not outcome.get("waiting_items"):
+            identity = _exact_progress_surface(name, surface)
+            outcome = {**outcome, "waiting_items": [{
+                "identity": f"{name}:source" if identity == "source" else identity,
+                "stage": outcome["failure"]["stage"],
+            }]}
         if isinstance(outcome.get("writer_progress"), dict):
             return outcome
         progress = normalize_source_result(
@@ -1937,6 +1973,31 @@ def _source_cli_narrow_runner(runtime: "DailyRuntime", adapter: str):
             )
         return runtime.wechat_official_narrow_resume
     raise DailyError("source repair adapter has no CLI narrow resume")
+
+
+def _local_capture_outcome(result: dict[str, Any]) -> tuple[dict[str, Any], int]:
+    """Make an unfinished repair or human action visible to the scheduler."""
+    states = result.get("source_results") or [result]
+    actions = []
+    for state in states:
+        progress = state.get("writer_progress") or {}
+        status = progress.get("status")
+        if status in {"repair_required", "user_action_required", "reconcile_required"}:
+            actions.append({
+                "identity": progress["item_identity"],
+                "owner": progress["ownership"],
+                "stage": progress["stage"],
+                "status": status,
+                "next_action": progress["next_action"],
+                **({"action": progress["action"]} if status == "user_action_required" else {}),
+                **({"failure": state["failure"]} if state.get("failure") else {}),
+            })
+    if actions:
+        return {**result, "status": "action_required", "silent": False,
+                "required_actions": actions}, 2
+    if result.get("health") in {"degraded", "blocked"} or result.get("failure"):
+        return {**result, "status": "action_required", "silent": False}, 2
+    return result, 0
 
 
 def _subscription_video_structured_progress(
@@ -5108,6 +5169,11 @@ def _source_repair_validation_progress(
     adapter: str,
     failure_fingerprint: str,
 ) -> WriterProgress:
+    # Reject a fingerprint shared by different originals before any active
+    # projection can silently select one of those originals.
+    exact_progress = service.convergence.progress_for_fingerprint(
+        adapter, failure_fingerprint,
+    )
     progress = service.convergence.active_progress(adapter)
     if progress is None:
         pending = service.convergence.pending_resume(adapter)
@@ -5143,6 +5209,9 @@ def _source_repair_validation_progress(
                     slot=str(last_sweep.get("slot") or ""),
                 )
                 progress = candidate
+    if progress is None or progress.failure_fingerprint != failure_fingerprint:
+        if exact_progress is not None:
+            progress = exact_progress
     if (
         progress is None
         or progress.failure_fingerprint != failure_fingerprint
@@ -5736,6 +5805,7 @@ def main() -> int:
                     os.environ["XIAOCAO_AUTOMATION_ACQUIRED_AT"]
                 ) if os.environ.get("XIAOCAO_AUTOMATION_ACQUIRED_AT") else None),
             )
+            result, exit_code = _local_capture_outcome(result)
             if not result.get("silent"):
                 _print(result)
             follow_result = _follow_cloud_handoff(runtime, result, coordinator=service)
@@ -5750,7 +5820,7 @@ def main() -> int:
                 cleanup = _finish_liuguan_local_companion(result)
                 if cleanup.get("status") != "disabled":
                     _print({"shared_capture_cleanup": cleanup})
-            return 0
+            return exit_code
     if args.command == "capture-xiaocao-item":
         from xiaocao.kol.human_playback import human_capture_network_owner
         with human_capture_network_owner(args.xiaocao_wechat_output_dir.parent / "native_share_bridge.json"):
@@ -5761,15 +5831,26 @@ def main() -> int:
             runtime = DailyRuntime.__new__(DailyRuntime)
             runtime.args = args
             with service._source_locked("xiaocao_wechat_live"):
-                result = runtime.xiaocao_wechat(
-                    only_identity=args.source_identity,
-                )
+                result = _classified_narrow_source(
+                    "xiaocao_wechat_live",
+                    runtime.xiaocao_wechat_narrow_resume,
+                )(f"xiaocao_wechat_live:{args.source_identity}")
+                progress = WriterProgress.from_dict(result["writer_progress"])
+                service.record_exact_capture_progress("xiaocao_wechat_live", result)
+                if progress.status == "user_action_required":
+                    result["notification_sent"] = service.notify_user_action(
+                        source="xiaocao_wechat_live",
+                        blocker_key=str(progress.details["blocker_identity"]),
+                        action=str(progress.details["action"]),
+                        blocker_sender=_sender,
+                    )
+                result, exit_code = _local_capture_outcome(result)
                 if result.get("status") != "no_update":
                     _print(result)
                 follow_result = _follow_cloud_handoff(runtime, result)
                 if follow_result is not None:
                     _print(follow_result)
-            return 0
+            return exit_code
     if args.command == "capture-wechat-official":
         runtime = DailyRuntime.__new__(DailyRuntime)
         runtime.args = args

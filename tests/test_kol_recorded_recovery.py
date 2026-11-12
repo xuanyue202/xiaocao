@@ -151,6 +151,35 @@ def test_binding_keeps_capture_and_transport_id_and_corrects_only_recorded_prese
     assert service.capture_store.latest(CAPTURE)['candidate_key']=='id:exact'
 
 
+def test_recorded_media_proof_rechecks_changed_share_same_message_anchor(recorded, monkeypatch):
+    root, item, driver, _, _, _, folder = recorded
+    from xiaocao.kol import xiaocao_wechat
+    import hashlib
+    item['mini_program_token'] = 'Changed123'
+    manifest = json.loads((root/'manifest.json').read_text())
+    manifest['items'][IDENTITY] = item
+    (root/'manifest.json').write_text(json.dumps(manifest))
+    config_path = root.parent/'native_share_bridge.json'
+    config = json.loads(config_path.read_text())
+    url = 'https://yv9lc.xetslk.com/s/4uRHyc'
+    config['replay_catalog']['navigation_source_url'] = url
+    config_path.write_text(json.dumps(config))
+    navigation = {**item, 'identity':'kol-wechat-'+'c'*24,
+        'entry_kind':None, 'source_url':url, 'recorded_navigation_marker':True,
+        'recorded_navigation_url_sha256':hashlib.sha256(url.encode()).hexdigest()}
+    monkeypatch.setattr(xiaocao_wechat, 'parse_xiaocao_live_messages',
+                        lambda _: [item, navigation])
+    proof = collect_recorded_proof(root, IDENTITY, CAPTURE, 'exact',
+        player_duration=2310.761, player_left=True, driver=driver,
+        observation_path=folder/'observation.json')
+    assert proof['identity'] == IDENTITY and proof['capture_job_id'] == CAPTURE
+    navigation['message_sha256'] = 'd'*64
+    with pytest.raises(Exception, match='original_catalog_binding_invalid'):
+        collect_recorded_proof(root, IDENTITY, CAPTURE, 'exact',
+            player_duration=2310.761, player_left=True, driver=driver,
+            observation_path=folder/'observation.json')
+
+
 def test_changed_raw_merchant_evidence_blocks_binding(recorded):
     root,_,driver,_,_,proof,folder=recorded
     Path(proof['catalog_evidence']['path']).write_text(json.dumps(dict(code=0,data=dict(subscribe=0,available=1,list=[]))))
@@ -475,20 +504,20 @@ def test_inventory_execution_filter_is_mode_scoped_and_preserves_bound_work():
 
 
 @pytest.mark.parametrize('prefix',['','②','2. ','2、'])
-@pytest.mark.parametrize('change',[None,'different_url','no_role','wrong_token','query','fragment','slash'])
+@pytest.mark.parametrize('change',[None,'different_url','no_role','changed_token','query','fragment','slash'])
 def test_catalogue_navigation_needs_exact_descriptor_role_and_same_original(tmp_path,change,prefix):
     from xiaocao.kol.xiaocao_wechat import parse_xiaocao_live_messages
     from xiaocao.kol.recorded_flow import annotate_inventory
     cfg=tmp_path/'bridge.json';cfg.write_text(json.dumps(dict(replay_catalog=dict(app_id=APP,course_id=COURSE,
         mini_program_token='Token123',acquisition_mode='recorded_course',navigation_source_url='https://yv9lc.xetslk.com/s/4uRHyc'))))
-    token='Other123' if change=='wrong_token' else 'Token123'
+    token='Other123' if change=='changed_token' else 'Token123'
     url='https://yv9lc.xetslk.com/s/other' if change=='different_url' else 'https://yv9lc.xetslk.com/s/4uRHyc'
     url+={'query':'?course=other','fragment':'#other','slash':'/'}.get(change,'')
     role='独立另一课程：' if change=='no_role' else '历史直播回放点击链接学习：'
     rows=parse_xiaocao_live_messages(dict(chat='registered',username='exact',messages=[
         f'[2026-11-04 09:04] 小草: #小程序://见势擒龙团/{token}\n{prefix}{role}{url}']))
     rows=annotate_inventory(rows,cfg);share=next(r for r in rows if r.get('source_url'))
-    assert ('recorded_inventory_reason' in share)==(change is None)
+    assert ('recorded_inventory_reason' in share)==(change in (None,'changed_token'))
 
 
 def test_numbered_catalogue_notice_discovery_and_exact_resume_have_no_capture_effect(tmp_path):

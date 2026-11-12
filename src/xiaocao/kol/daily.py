@@ -2946,6 +2946,51 @@ class DailyCoordinator:
                 blocker_sender=blocker_sender,
             )
 
+    def record_exact_capture_progress(
+        self, source: str, outcome: dict[str, Any],
+    ) -> None:
+        """Persist a manual continuation while preserving other item repairs."""
+        progress = WriterProgress.from_dict(outcome["writer_progress"])
+        slot = self._beijing_now().replace(
+            minute=0, second=0, microsecond=0,
+        ).isoformat()
+        with self._locked():
+            rows = self.events()
+            if progress.status == "repair_required":
+                self.convergence.record(progress, slot=slot)
+            self._append("source_progressed", slot=slot, source=source,
+                         progress=progress.to_dict(), continuation_only=True)
+            self._append("source_completed", slot=slot, source=source,
+                         result=outcome, continuation_only=True,
+                         coordinator_source_video_bytes=0)
+            prior = self._last_sweep_state(rows) or {}
+            states = list(prior.get("source_states") or [])
+            current = self._source_states([{"name": source, **outcome}])[0]
+            # Retain other exact failures in the convergence ledger; the latest
+            # sweep is an operational projection, not their lifecycle authority.
+            states = [state for state in states if state.get("name") != source]
+            states.append(current)
+            self._append("sweep_completed", slot=slot, status="completed",
+                         health=self._sweep_health(states), source_count=len(states),
+                         source_states=states, continuation_only=True,
+                         coordinator_source_video_bytes=0)
+            if (progress.status == "terminal"
+                and outcome.get("already_completed") is True
+                and not outcome.get("inventory_only")
+                and not outcome.get("expired")) or (
+                progress.status == "wait_until"
+                and progress.stage in {"compressed_capture", "cloud_handoff"}
+            ):
+                blocker = next((row for row in reversed(rows)
+                    if row.get("source") == source
+                    and row.get("event") in {"blocker_notified", "blocker_cleared"}), None)
+                if (blocker and blocker["event"] == "blocker_notified"
+                    and blocker["blocker_key"] == (
+                        f"xiaocao-recorded-course-login:{outcome.get('identity') or progress.item_identity}"
+                    )):
+                    self._append("blocker_cleared", slot=slot, source=source,
+                                 blocker_key=blocker["blocker_key"])
+
     @staticmethod
     def _legacy_busy_result() -> dict[str, Any]:
         return {

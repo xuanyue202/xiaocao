@@ -62,9 +62,12 @@ def collect_recorded_proof(subscription_dir, identity, capture_id, candidate_id,
     root = Path(subscription_dir).resolve()
     item = json.loads((root/'manifest.json').read_text())['items'][identity]
     from .xiaocao_wechat import WechatCliHistoryReader, parse_xiaocao_live_messages
-    verify_original(item,identity,parse_xiaocao_live_messages(WechatCliHistoryReader()()))
+    originals=parse_xiaocao_live_messages(WechatCliHistoryReader()())
+    verify_original(item,identity,originals)
     config = ReplayCatalogConfig.from_dict(json.loads((root.parent/'native_share_bridge.json').read_text())['replay_catalog'])
-    if item['capture_job_id'] != capture_id or item['mini_program_token'] != config.mini_program_token:
+    from .replay_catalog import verify_catalogue_binding
+    verify_catalogue_binding(config,item,originals)
+    if item['capture_job_id'] != capture_id:
         raise EnrichmentError('recorded original capture changed')
     observation_path=Path(observation_path).resolve()
     if not observation_path.is_relative_to(root/'items'/identity):
