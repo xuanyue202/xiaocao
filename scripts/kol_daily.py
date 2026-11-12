@@ -1989,6 +1989,8 @@ def _local_capture_outcome(result: dict[str, Any]) -> tuple[dict[str, Any], int]
                 "stage": progress["stage"],
                 "status": status,
                 "next_action": progress["next_action"],
+                **({"repair_instruction": "在本次任务中核对原始来源与已有副作用，修复并验证后续办原课程。"}
+                   if status == "repair_required" else {}),
                 **({"action": progress["action"]} if status == "user_action_required" else {}),
                 **({"failure": state["failure"]} if state.get("failure") else {}),
             })

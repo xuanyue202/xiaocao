@@ -2013,6 +2013,7 @@ def test_capture_exact_catalogue_fault_returns_repair_and_nonzero(tmp_path, monk
     assert result["writer_progress"]["item_identity"] == identity
     assert result["writer_progress"]["status"] == "repair_required"
     assert result["required_actions"][0]["owner"] == "agent"
+    assert result["required_actions"][0]["repair_instruction"]
     assert result["failure"]["code"] == "original_catalog_binding_invalid"
     service = DailyCoordinator(tmp_path/"daily")
     fingerprint = result["writer_progress"]["failure_fingerprint"]
