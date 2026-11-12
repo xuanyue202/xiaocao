@@ -131,9 +131,10 @@ def check_recorded_playback(sub,manifest,item,*,reason):
     request=dict(event='daily_browser_input_required',adapter='xiaocao_wechat_live',
         action='observe_authorized_recorded_course',subscription_id=identity,capture_job_id=capture_id,
         recording=recording,observation_receipt_path=str(claim_path),
-        course_url=f'{config.origin}/p/course/ecourse/{config.course_id}',
+        course_url=config.learning_url,
+        recording_entry='catalogue_row',
         recording_url=f"{config.origin}/p/course/video/{recording['resource_id']}?"+urlencode(dict(product_id=config.course_id,course_id=config.course_id)),
-        instructions='仅用已登录Browser正常打开精确历史录制；核对日期标题和有限时长，捕获实际HTTP后离开播放器。不要操作微信或打开直播间，不导出票据。',
+        instructions='先用已登录Browser打开course_url课程列表，从列表点击recording.title对应录像；核对精确v_资源、日期标题和有限时长，捕获实际HTTP后离开播放器。recording_url只用于校验目标，不作为首次入口。不要操作微信或打开直播间，不导出票据。',
         required_response=dict(action='observe_authorized_recorded_course',subscription_id=identity,
             one_of=[
                 dict(status='observed',candidate_id='non-empty string',

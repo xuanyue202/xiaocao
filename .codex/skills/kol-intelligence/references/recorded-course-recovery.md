@@ -45,8 +45,14 @@ npx --yes @jackwener/opencli@1.8.6 browser xiaocao-recorded-course state --windo
 After reconciling old ownership, keep the exact `capture-xiaocao-item` or original
 hourly runner alive in its PTY. The runner must arm listening under its network
 guardian before Browser media requests. In OpenCLI, open the emitted `course_url`
-to obtain fresh parent-catalogue evidence, then open the emitted exact
-`recording_url` (or its visible same-course row). Reading only public catalogue
+(the entitled learning list with `app_id` and `sub_course_list_mode=0`) to obtain
+fresh parent-catalogue evidence, then click the visible exact dated course row.
+Use `recording_url` to verify the resulting `v_...` target. The human's Nov12
+readback established that direct video entry can lead to an access warning
+while the learning-list route reaches the playable recording. After login or
+that warning, return to this exact list and select the same course; the warning
+alone does not prove account entitlement was revoked. Actual login, agreements
+and authorization gates remain human-owned. Reading only public catalogue
 metadata or CLI connectivity cannot satisfy the entitled source/media contract.
 
 Use `browser ... eval` only for safe DOM facts: `document.title`,

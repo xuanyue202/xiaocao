@@ -362,7 +362,14 @@ def test_catalog_first_not_published_wait_does_not_open_reused_room(recorded,mon
 
 def test_catalog_first_flow_binds_same_capture_using_normal_recorded_browser(recorded,monkeypatch):
     flow,sub,item=_recorded_sub(recorded,monkeypatch,'2026-11-04T15:09:59+08:00')
+    requests=[]
+    exchange=sub.browser_exchange
+    sub.browser_exchange=lambda request:(requests.append(request) or exchange(request))
     result=flow.check_recorded_playback(sub,sub._load(),item,reason='initial')
+    assert requests[0]['course_url']==(
+        f'{ORIGIN}/p/course/ecourse/{COURSE}'
+        f'?app_id={APP}&sub_course_list_mode=0')
+    assert requests[0]['recording_entry']=='catalogue_row'
     assert result['status']=='playback_activated' and result['capture_job_id']==CAPTURE
     assert result['playback_surface']=='authorized_recorded_course_web'
     assert result.get('human_confirmed_source_identity') is None

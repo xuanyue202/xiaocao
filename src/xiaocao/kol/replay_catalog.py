@@ -60,6 +60,13 @@ class ReplayCatalogConfig:
     def page_url(self) -> str:
         return f"{self.origin}/p/course/ecourse/preview/{self.course_id}"
 
+    @property
+    def learning_url(self) -> str:
+        return (
+            f"{self.origin}/p/course/ecourse/{self.course_id}"
+            f"?app_id={self.app_id}&sub_course_list_mode=0"
+        )
+
 
 class ReplayCatalogReader:
     def __init__(self, config: ReplayCatalogConfig, *, session=None):
