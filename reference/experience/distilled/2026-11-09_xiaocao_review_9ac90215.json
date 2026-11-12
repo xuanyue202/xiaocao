@@ -1,0 +1,364 @@
+{
+  "schema_version": 1,
+  "author": "小草",
+  "source": "小草直播",
+  "evidence": [
+    {
+      "path": "reference/experience/transcripts/2026-11/2026-11-09_xiaocao_masterclass_9ac90215.txt",
+      "sha256": "9ac9021530c3a056d49c0dd212af3dde5f68c908cf6f41bf6f4e9e2eba0f2b9f",
+      "size": 142039
+    }
+  ],
+  "date": "2026-11-09",
+  "kind": "大师班盘后复盘",
+  "summary": "本场可复用知识集中在短线模型的稳健性与生命周期管理：优先参数平原和粗粒度规则，拒绝尖峰参数与条件堆叠；用全量样本和样本外时期复核；模型只在相近情绪、高位风格和大小票结构中启用，并叠加评分门槛与未知风险。11月10日的模式只是列举，只有连板接力获相对偏好；具体交易安排已经过期，个股成绩、收益数字和可成交性不能仅凭口述认定。",
+  "posture": {
+    "regime": "2026年11月9日复盘所述的小票连板环境；处理时该交易窗口已经结束",
+    "dominant_style": "作者当时只对连板接力表达相对偏好；断板、人气股低吸和不开得过高时的红盘起爆是并列列举的次日模式，没有严格名次",
+    "risk": "全市场高开过多时容易高开低走；作者提议把9%以上设置为可调界面过滤，09:31秒板只是当天不可买例子；模式相似也可能受未知因素影响",
+    "style_ranking": [
+      "相对偏好：连板接力",
+      "并列列举且无严格名次：断板、人气股低吸、条件性红盘起爆"
+    ]
+  },
+  "regime_call": {
+    "horizon": "来源事件日及其下一交易日，现已过期",
+    "call": "短线模式应按情绪、高位结构以及大票或小票环境切换，不能要求一个模型横跨全部市场周期。",
+    "what_would_falsify": "预注册环境标签后，环境条件化启停在多段独立样本外不优于无条件运行，或优势完全来自事后分组。",
+    "boundary": "相似环境只是必要条件而非充分条件；仍需评分合格、样本外验证、成交约束与风险门槛。"
+  },
+  "directions": [
+    {
+      "name": "参数平原而非尖峰参数",
+      "direction": "保留在相邻参数区间仍稳定的粗粒度规则，拒绝依赖精准点位、精准线或大量附加条件的脆弱优化。",
+      "status": "research_candidate"
+    },
+    {
+      "name": "样本内外双检验",
+      "direction": "先在样本内形成规则，再用未参与拟合的年份或时期复跑，并把全市场失败样本纳入。",
+      "status": "research_candidate"
+    },
+    {
+      "name": "模式生命周期与环境匹配",
+      "direction": "记录模式适用的情绪、高位、大小票和连板环境，环境离开时停止，环境重现时也要重新评分。",
+      "status": "research_candidate"
+    }
+  ],
+  "stocks": [
+    {
+      "surface_form": "东方海洋",
+      "official_identity": "002086.XSHE",
+      "role": "过期的持仓退出案例",
+      "status": "market_points_qualified_but_execution_unverified",
+      "lesson": "11月9日末段分钟点位回升，11月10日末点高于11月9日；封单、委托、成交与账户结果仍不可由分钟样本证明。"
+    },
+    {
+      "surface_form": "龙江交通、新亚制程",
+      "official_identity": "601188.XSHG、002388.XSHE",
+      "role": "11月9日连板接力候选",
+      "status": "expired_source_day_examples",
+      "lesson": "龙江交通当日末点接近涨停，新亚制程冲高回落；两者都不构成11月11日的新信号。"
+    },
+    {
+      "surface_form": "皇台酒业、桂林三金、龙头股份、闽发铝业、南矿集团、顺灏股份、钧达股份及若干无法还原名称",
+      "role": "历史成绩或教学例子",
+      "status": "mixed_market_qualification_and_unresolved_asr",
+      "lesson": "已绑定分钟点位只能核对窄行情事实，不能把口述收益、涨停、可买性或策略命中当作已审计结论。"
+    }
+  ],
+  "method_principles": [
+    "先建立全量样本和实体清单，不只研究成功案例。",
+    "把参数稳定区间作为优先条件，避免精准点位和过多条件造成过拟合。",
+    "样本内形成规则后，必须使用未参与拟合的年份或时期做样本外复核。",
+    "按市场情绪、高位结构、大小票风格和连板环境记录模型生命周期，不追求跨全部周期的万能模型。",
+    "即使历史环境相似，也要重新检查模型评分，并为未知因素保留拒绝交易的权利。",
+    "买入与退出规则应分别比较，口述曲线优劣不能替代完整数据、费用和可成交性。"
+  ],
+  "exit_lessons": [
+    "来源把次日第一次高抛描述为口述对比中偏强的退出方式，并把黄柱消失卖、收盘卖等作为对照；未提供完整独立样本，暂只作为研究候选。",
+    "作者提议在界面提供9%以上的可调过滤；09:31秒板是当天不可买例子，二者都不能改写成已生效规则或普遍阈值。",
+    "盘中不必在首次出现时立即买入，可研究等待回落、首个低点，或连续多根预备柱后柱体消失；一两根预备柱未必构成信号，且直播没有补齐直接买对照及上午下午拆分。",
+    "过期个股退出指令不得在新交易日重放。"
+  ],
+  "hypotheses": [
+    {
+      "existing_hypothesis_id": "XH-339",
+      "claim": "对作者尚未参数遍历的模式，未来只有参数平原、跨股票稳健性和样本外表现共同稳定时，才可把曲线视为可复用优势。",
+      "implied_rule": "把作者反对尖峰参数和条件堆叠的口述与系统验证分开；研究阶段预注册参数邻域、跨股票样本和样本外窗口。",
+      "expected_effect": "若优势真实，参数邻域表现不依赖单点尖峰，跨股票和样本外衰减较小。",
+      "falsifiable_test": "对同一模式比较单点参数与预注册参数邻域，并在未参与形成规则的股票和时间区间复核净收益、衰减和方差；任一关键维度不稳定即拒绝。",
+      "routing": "reuse_existing_claim"
+    },
+    {
+      "claim": "短线模式只有在预先定义的情绪、高位结构和大小票风格相匹配时才应启用，环境复现后仍需评分合格。",
+      "implied_rule": "为每个模式保存预注册环境标签和评分门槛；环境不匹配或评分不足时停用，不因历史相似而强行交易。",
+      "expected_effect": "条件化启停应降低跨环境回撤与错误启动，同时保留匹配环境中的主要收益。",
+      "falsifiable_test": "在滚动样本外比较环境条件化启停与无条件运行的费用后收益、最大回撤、启动次数和错过收益；若风险调整表现不改善则拒绝。",
+      "dedup_boundary": "区别于XH-339的参数邻域稳健性，本命题只研究环境标签和启动门槛。"
+    },
+    {
+      "claim": "对开盘涨幅较高或开盘早段已封板的样本设置预注册、可调且经过验证的可买性过滤，可能使策略成绩更接近可实现收益。",
+      "implied_rule": "研究时分别记录作者提出的9%以上界面过滤和09:31秒板当天例子；阈值、首个可成交时点、排队状态、滑点与漏单必须预注册，不能把提议当成已生效规则。",
+      "expected_effect": "若过滤有效，纸面收益可能下降，但与可成交回放的偏差应缩小。",
+      "falsifiable_test": "在多组预注册阈值和独立样本上用逐笔或盘口回放核对可成交性；若过滤只在事后阈值有效、原样本普遍可成交，或实现偏差不缩小，则拒绝。",
+      "dedup_boundary": "研究可调可买性过滤，不研究参数平原或环境启停。"
+    },
+    {
+      "claim": "对监控池信号等待回落、首个低点，或连续多根预备柱后柱体消失再买，可能降低回撤而不显著破坏收益。",
+      "implied_rule": "冻结同一候选池，只使用各时点当时可得的价格与信息，比较立即入场、首回落或首个低点入场、排名后价格反转入场、连续多根低位预备柱消失入场四个分组；四组采用完全相同的费用、成交约束、漏单处理和退出设计，一两根预备柱不自动算信号。",
+      "expected_effect": "等待规则可能降低不利波动和高开回落损失，但会牺牲部分直接封板样本。",
+      "falsifiable_test": "在独立样本外按同一冻结候选池和当时可得价格，对四个入场分组比较费用后收益、最大回撤、成交率及错过机会；计入成交与漏单后，若连续低位预备柱消失这一增量组不能同时改善XH-068的首回落或首低基准与XH-207的排名后价格反转基准，则拒绝该增量命题。",
+      "dedup_boundary": "XH-068的首回落入场和XH-207的延迟进场是既有基准；本命题的真正增量，是在同一候选池、统一退出与费用口径下，检验连续低位预备柱消失后的可成交入场能否超过这两项基准。",
+      "related_existing_ids": [
+        "XH-068",
+        "XH-207"
+      ]
+    }
+  ],
+  "timing_notes": [
+    "直播事件日为2026-11-09；所有‘明天’均指2026-11-10，处理时已经过期。",
+    "次日模式列举包括连板接力、断板、人气股低吸和不过度追高的红盘起爆；只有连板接力在近期获得相对偏好，其他模式没有严格名次。",
+    "9%以上是作者提议加入界面的可调过滤；09:31秒板是当天不可买例子，不代表已生效规则或普遍阈值。",
+    "东方海洋的原始转写同时包含当日炸板先退出、隔夜委托、封单变化与撤单说法；持有且约19%至20%利润垫是前提，具体委托和撤单语句存在歧义，不能外推。"
+  ],
+  "typo_corrections": [
+    {
+      "surface": "新雅制程、新雅致诚、新亚洲城",
+      "resolution": "新亚制程 002388.XSHE",
+      "status": "market_and_issuer_identity_supported"
+    },
+    {
+      "surface": "黄台酒业",
+      "resolution": "皇台酒业 000995.XSHE",
+      "status": "market_directory_supported"
+    },
+    {
+      "surface": "敏发铝业",
+      "resolution": "闽发铝业 002578.XSHE",
+      "status": "market_directory_supported"
+    },
+    {
+      "surface": "房多数算、房多珠算",
+      "status": "unresolved",
+      "note": "没有足够身份信息，继续保持未知。"
+    },
+    {
+      "surface": "红盘举报、红板举报",
+      "resolution": "红盘起爆",
+      "status": "contextual_reading_only"
+    }
+  ],
+  "decision_trace": [
+    "完整读取329个稳定片段并区分投资内容、非投资闲聊和商业广告。",
+    "把11月10日操作指令判为过期，不形成11月11日可执行信号；次日模式是列举，只有连板接力有相对偏好。",
+    "用绑定的分钟行情只核对点位与身份，不把封单、可成交性或收益升级为已证事实。",
+    "11月9日三条本地信号与作者点名无精确重合，且同日没有纸面成交或仓位；11月10日的新亚制程成交按不同日期隔离。",
+    "把9%以上保留为可调界面过滤提议，把09:31秒板保留为当天例子；只将参数平原、样本外验证、环境适配和可成交性审计提炼为权限为零的候选知识。"
+  ],
+  "judgment_heuristics": [
+    "粗规则优先于精准线；稳定区间优先于单点最优。",
+    "全量失败样本与不可成交样本必须进入审计。",
+    "环境相似不等于必做，评分与未知风险仍可否决。",
+    "过期的短线指令只用于复盘，不用于新交易日。"
+  ],
+  "strategy_hit_audit": {
+    "status": "completed_no_exact_source_day_overlap",
+    "reason": "11月9日冻结推荐和同日信号只列出鹏辉能源、海洋王、宏力达，和来源中可确认身份的具名股票没有精确重合；同日纸面成交及仓位为空。该审计没有检索原始候选池，也不把11月10日新亚制程成交倒推为11月9日命中。",
+    "teacher_named_winners": [
+      {
+        "surface_form": "东方海洋",
+        "official_identity": "002086.XSHE",
+        "source_role": "作者明确称其继续涨停，并在持有者情境中口述约19%至20%利润垫。",
+        "verification_boundary": "身份和11月9日末点、末段回升得到绑定行情支持；实际持仓、成交和利润未核验。"
+      },
+      {
+        "surface_form": "敏发铝业",
+        "official_identity": "闽发铝业 002578.XSHE",
+        "source_role": "作者明确称其强势并口述累计约40多个点。",
+        "verification_boundary": "身份和11月9日当日分钟点位得到支持；累计收益、买入与退出未核验。"
+      }
+    ],
+    "teacher_named_candidates": [
+      {
+        "surface_form": "龙江交通",
+        "official_identity": "601188.XSHG",
+        "source_role": "私有界面约300分的连板接力候选，作者因盈亏比容忍较高开盘并把后续交给运气。",
+        "outcome_boundary": "11月9日末点涨跌幅约+9.97%，但候选生成、可成交性、持仓和收益未核验。"
+      },
+      {
+        "surface_form": "新雅制程、新雅致诚、新亚洲城",
+        "official_identity": "新亚制程 002388.XSHE",
+        "source_role": "私有界面约300分的连板接力候选，作者接受较高开盘。",
+        "outcome_boundary": "11月9日冲高后回落；11月10日本地成交属于不同日期，不能算11月9日命中。"
+      }
+    ],
+    "teacher_named_losses_or_nonwins": [
+      {
+        "surface_form": "龙头股份",
+        "official_identity": "600630.XSHG",
+        "source_role": "作者称该连板接力例子回撤约4个多点。",
+        "verification_boundary": "分钟点位只支持11月9日窄行情方向，不证明策略成交或口述损益。"
+      },
+      {
+        "surface_form": "桂林三金",
+        "official_identity": "002275.XSHE",
+        "source_role": "作者把它列作红盘起爆亏损例子并口述亏约3个多点。",
+        "verification_boundary": "11月9日分钟点位显示弱势，但不证明策略成交、成本或精确亏损。"
+      }
+    ],
+    "teacher_named_ordinary_examples": [
+      {
+        "surface_form": "黄台酒业",
+        "official_identity": "皇台酒业 000995.XSHE",
+        "source_role": "断板或人气股低吸教学例子，没有被严格点名为已确认赢家。"
+      },
+      {
+        "surface_form": "君达",
+        "official_identity": "钧达股份 002865.XSHE",
+        "source_role": "开盘早段可能买不到的教学例子，没有被点名为赢家。"
+      },
+      {
+        "surface_form": "顺号",
+        "official_identity": "顺灏股份 002565.XSHE",
+        "source_role": "当时已接近10%的高涨幅、无需继续看的可买性例子。"
+      },
+      {
+        "surface_form": "南矿集团、南矿股份",
+        "official_identity": "南矿集团 001360.XSHE",
+        "source_role": "作者称其后来回落、结果接近平手的普通例子。"
+      },
+      {
+        "surface_form": "百花医药",
+        "official_identity": "600721.XSHG",
+        "source_role": "用于解释连板盈亏比和高开容忍的八月历史类比，不是本场源日赢家。"
+      }
+    ],
+    "unidentified_cases": [
+      {
+        "surface_form": "房多数算、房多珠算",
+        "source_role": "作者称早盘约14%至15%、后来约19%且未封板，可减半也可继续持有。",
+        "identity_status": "unresolved",
+        "evidence_boundary": "无法唯一映射证券，不能归入已确认赢家，也不能与本地源日证券记录精确比对。"
+      }
+    ],
+    "local_source_day_status": [
+      {
+        "surface_form": "东方海洋",
+        "official_identity": "002086.XSHE",
+        "source_role": "明确赢家及持有者退出情境",
+        "local_source_day_status": "not_emitted",
+        "reason": "11月9日冻结推荐与同日信号只列出300438.XSHE、002724.XSHE、688330.XSHG，exact_named_overlap为空，东方海洋（002086.XSHE）未出现在这些已冻结输出；同日纸面成交与仓位也为空。未检索原始候选池，因此不推断其是否曾进入原始池。"
+      },
+      {
+        "surface_form": "敏发铝业",
+        "official_identity": "闽发铝业 002578.XSHE",
+        "source_role": "明确赢家",
+        "local_source_day_status": "not_emitted",
+        "reason": "11月9日冻结推荐与同日信号只列出300438.XSHE、002724.XSHE、688330.XSHG，exact_named_overlap为空，闽发铝业（002578.XSHE）未出现在这些已冻结输出；同日纸面成交与仓位也为空。未检索原始候选池，因此不推断其是否曾进入原始池。"
+      },
+      {
+        "surface_form": "龙江交通",
+        "official_identity": "601188.XSHG",
+        "source_role": "源日连板候选",
+        "local_source_day_status": "not_emitted",
+        "reason": "11月9日冻结推荐与同日信号只列出300438.XSHE、002724.XSHE、688330.XSHG，exact_named_overlap为空，龙江交通（601188.XSHG）未出现在这些已冻结输出；同日纸面成交与仓位也为空。未检索原始候选池，因此不推断其是否曾进入原始池。"
+      },
+      {
+        "surface_form": "新雅制程、新雅致诚、新亚洲城",
+        "official_identity": "新亚制程 002388.XSHE",
+        "source_role": "源日连板候选且冲高回落",
+        "local_source_day_status": "not_emitted",
+        "reason": "11月9日冻结推荐与同日信号只列出300438.XSHE、002724.XSHE、688330.XSHG，exact_named_overlap为空，新亚制程（002388.XSHE）未出现在这些已冻结输出；同日纸面成交与仓位也为空。未检索原始候选池，因此不推断其是否曾进入原始池。11月10日成交不属于源日审计。"
+      },
+      {
+        "surface_form": "龙头股份",
+        "official_identity": "600630.XSHG",
+        "source_role": "亏损或未命中例子",
+        "local_source_day_status": "not_emitted",
+        "reason": "11月9日冻结推荐与同日信号只列出300438.XSHE、002724.XSHE、688330.XSHG，exact_named_overlap为空，龙头股份（600630.XSHG）未出现在这些已冻结输出；同日纸面成交与仓位也为空。未检索原始候选池，因此不推断其是否曾进入原始池。"
+      },
+      {
+        "surface_form": "黄台酒业",
+        "official_identity": "皇台酒业 000995.XSHE",
+        "source_role": "断板或人气股低吸普通例子",
+        "local_source_day_status": "not_emitted",
+        "reason": "11月9日冻结推荐与同日信号只列出300438.XSHE、002724.XSHE、688330.XSHG，exact_named_overlap为空，皇台酒业（000995.XSHE）未出现在这些已冻结输出；同日纸面成交与仓位也为空。未检索原始候选池，因此不推断其是否曾进入原始池。"
+      },
+      {
+        "surface_form": "桂林三金",
+        "official_identity": "002275.XSHE",
+        "source_role": "亏损例子",
+        "local_source_day_status": "not_emitted",
+        "reason": "11月9日冻结推荐与同日信号只列出300438.XSHE、002724.XSHE、688330.XSHG，exact_named_overlap为空，桂林三金（002275.XSHE）未出现在这些已冻结输出；同日纸面成交与仓位也为空。未检索原始候选池，因此不推断其是否曾进入原始池。"
+      },
+      {
+        "surface_form": "君达",
+        "official_identity": "钧达股份 002865.XSHE",
+        "source_role": "早段不可买普通例子",
+        "local_source_day_status": "not_emitted",
+        "reason": "11月9日冻结推荐与同日信号只列出300438.XSHE、002724.XSHE、688330.XSHG，exact_named_overlap为空，钧达股份（002865.XSHE）未出现在这些已冻结输出；同日纸面成交与仓位也为空。未检索原始候选池，因此不推断其是否曾进入原始池。"
+      },
+      {
+        "surface_form": "顺号",
+        "official_identity": "顺灏股份 002565.XSHE",
+        "source_role": "高涨幅可买性普通例子",
+        "local_source_day_status": "not_emitted",
+        "reason": "11月9日冻结推荐与同日信号只列出300438.XSHE、002724.XSHE、688330.XSHG，exact_named_overlap为空，顺灏股份（002565.XSHE）未出现在这些已冻结输出；同日纸面成交与仓位也为空。未检索原始候选池，因此不推断其是否曾进入原始池。"
+      },
+      {
+        "surface_form": "南矿集团、南矿股份",
+        "official_identity": "南矿集团 001360.XSHE",
+        "source_role": "接近平手普通例子",
+        "local_source_day_status": "not_emitted",
+        "reason": "11月9日冻结推荐与同日信号只列出300438.XSHE、002724.XSHE、688330.XSHG，exact_named_overlap为空，南矿集团（001360.XSHE）未出现在这些已冻结输出；同日纸面成交与仓位也为空。未检索原始候选池，因此不推断其是否曾进入原始池。"
+      },
+      {
+        "surface_form": "百花医药",
+        "official_identity": "600721.XSHG",
+        "source_role": "八月历史类比",
+        "local_source_day_status": "not_emitted",
+        "reason": "11月9日冻结推荐与同日信号只列出300438.XSHE、002724.XSHE、688330.XSHG，exact_named_overlap为空，百花医药（600721.XSHG）未出现在这些已冻结输出；同日纸面成交与仓位也为空。未检索原始候选池，因此不推断其是否曾进入原始池。"
+      },
+      {
+        "surface_form": "房多数算、房多珠算",
+        "official_identity": null,
+        "source_role": "未识别的高浮盈与部分止盈情境",
+        "local_source_day_status": "no_evidence",
+        "reason": "证券身份无法唯一确认，不能与11月9日冻结推荐、信号、成交或仓位做精确身份比对；也没有检索原始候选池。"
+      }
+    ],
+    "local_strategy_benchmark_hits": [],
+    "direction_core_observations": [
+      "只有连板接力获得近期相对偏好；断板、人气股低吸和条件性红盘起爆只是并列列举。",
+      "连板高开容忍来自作者约300分私有评分、八月百花医药类比和较大波动换盈亏比的论证，私有评分与类比收益未独立验证。",
+      "入场研究区分直接买、首个低点和连续预备柱消失；一两根预备柱未必成信号，上午下午未拆分。",
+      "退出对比中次日第一次高抛口述偏强，黄柱消失和收盘卖为对照；完整样本、费用与成交仍缺。"
+    ],
+    "source_day_signal_symbols": [
+      "300438.XSHE",
+      "002724.XSHE",
+      "688330.XSHG"
+    ],
+    "recommendation_book_b_eligible": "NONE",
+    "audit_evidence": {
+      "path": "output/live/kol_xiaocao_live/semantic_requests/kol-dd2034fe779d/source_day_short_line_audit.json",
+      "sha256": "1f6661379f09ddda1280705958665958a5e17f7c431c63015bab7f2674dd0789"
+    },
+    "boundary": "not_emitted只表示确切证券未出现在11月9日已冻结推荐和同日信号输出，且同日成交及仓位为空；没有检索原始候选池，不能据此断言证券未进入原始池。未识别证券统一保留no_evidence。"
+  },
+  "action_summary": {
+    "posture_update": "no_current_update：来源姿态只覆盖2026-11-09至11-10；只有连板接力获相对偏好，处理时已过期。",
+    "playbook_update": "proposal_only：9%以上保留为可调界面过滤提议，09:31秒板保留为当天例子；参数平原、样本外检验、环境适配与入场对照进入研究候选，不自动上线。",
+    "hypothesis_update": "XH-339复现一次；另外形成环境启停、不可买样本过滤与等待回落入场三条差异化authority=0候选。",
+    "audit_evidence": "完整绑定329个片段、源日分钟行情和源日短线记录；分别保留候选、亏损或未命中、未确认证券与方向核心，广告、健康闲聊和八卦没有进入投资结论。",
+    "instrumentation_todo": "若研究继续，需冻结环境标签、参数邻域、成交规则、费用、退出与不可买过滤，再做多段样本外检验。",
+    "routing": [
+      "reuse_XH-339",
+      "research_candidate_only",
+      "no_auto_tune",
+      "no_current_trade_signal",
+      "human_gate_required"
+    ]
+  },
+  "authority": 0
+}

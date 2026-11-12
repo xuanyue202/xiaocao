@@ -12,6 +12,7 @@ from xiaocao.kol.publication import (
 )
 from xiaocao.kol.reader_copy import (
     ReaderCopyError,
+    validate_reader_message,
     validate_reader_source_identity,
 )
 from xiaocao.kol.reader_copy_correction import (
@@ -24,6 +25,26 @@ from xiaocao.kol.reader_copy_correction import (
     LV_JULY_20_REPORT_COPY,
     build_lv_reader_copy_correction,
 )
+
+
+@pytest.mark.parametrize(
+    "copy",
+    [
+        "短线计划为absent。",
+        "必呈观点和稳定段均已覆盖。",
+        "相关事实尚未澄清。https://example.com/reports/123，必呈观点均覆盖；短线计划为absent。",
+    ],
+)
+def test_reminder_rejects_extraction_metadata(copy):
+    with pytest.raises(ReaderCopyError, match="extraction metadata"):
+        validate_reader_message("投资情报：先观察风险", copy)
+
+
+def test_reminder_allows_source_copy_and_opaque_report_link():
+    validate_reader_message(
+        "投资情报：NVIDIA先观望",
+        "相关事实尚未澄清，先观察风险。https://example.com/reports/absent",
+    )
 
 
 def _source_binding(report_id_value: str):

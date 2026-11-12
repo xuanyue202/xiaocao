@@ -175,7 +175,7 @@ def _load_event_frozen_days(events: list[dict[str, Any]], *, through: str,
 
 def _verify_control_receipts(days: list[dict[str, Any]], *, root: Path = ROOT,
                              check_current_artifacts: bool = True) -> None:
-    """Prove the frozen control receipt still matches the v1 T artifacts."""
+    """Verify exact control bytes; shared ledgers may evolve after the T writer."""
 
     for day in days:
         control = day.get("control")
@@ -198,8 +198,25 @@ def _verify_control_receipts(days: list[dict[str, Any]], *, root: Path = ROOT,
             # Historical account files legitimately evolve; the full frozen
             # input and exact dated receipt, not today's account, bind that day.
             continue
+        snapshots = receipt.get("artifact_snapshots")
+        if "artifact_snapshots" in receipt and (
+                not isinstance(snapshots, dict)
+                or not BOOK_T_CONTROL_ARTIFACT_PATHS.keys() <= snapshots.keys()):
+            raise BookTShadowError("v1 control artifact snapshots are incomplete")
         for artifact, relative_path in BOOK_T_CONTROL_ARTIFACT_PATHS.items():
-            path = root / relative_path
+            if snapshots is None:
+                path = root / relative_path  # Legacy receipts retain their strict current-file guard.
+            else:
+                relative_snapshot = snapshots[artifact]
+                if not isinstance(relative_snapshot, str) or not relative_snapshot.strip():
+                    raise BookTShadowError(f"v1 control snapshot path is invalid for {artifact}")
+                path = root / relative_snapshot
+                # Supervisors share the canonical output tree through a link.
+                # Keep the dated archive itself inside that resolved data root.
+                archive = (root / "output/live").resolve() / "book_t_v1_control_artifacts" / date_label
+                if (Path(relative_snapshot).is_absolute() or path.is_symlink()
+                        or not path.resolve().is_relative_to(archive)):
+                    raise BookTShadowError(f"v1 control snapshot path is invalid for {artifact}")
             try:
                 actual = hashlib.sha256(path.read_bytes()).hexdigest()
             except OSError as exc:

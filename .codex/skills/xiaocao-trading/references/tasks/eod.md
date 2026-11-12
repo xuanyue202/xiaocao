@@ -49,7 +49,23 @@ Review raw first/latest failed turns, actual order/fill/holding/quote/timing/lot
 coverage and next-window effects; repair owned deterministic defects after
 business even when broker proof remains UNKNOWN. Keep stable IDs/root classes,
 5Why edges/alternatives/falsifiers, disposition and next-window owner/entry/proof.
+For09:24 readiness, use the earliest owner-bound app_boundary passed observation;
+report the latest heartbeat clock separately and retain the original status proof.
 Existing JSON validator does not certify narrative causal depth or readiness.
+
+Before final closeout, complete the DAY-order expiry double check in
+[EOD_WEEKLY_FEEDBACK.md](../../../../../docs/EOD_WEEKLY_FEEDBACK.md#收尾前普通-day-委托到期复核).
+Use the original post-close APP snapshot and exact intents/claims to distinguish
+expired unfilled commitments from current unowned inventory. Record the amount
+released for the next trading date and any residual/unproved exposure in the
+existing daily review and stable handoff item. An expired order with no current
+shares must contribute zero future cash commitment and zero inventory exposure.
+For an order placed today, record this as the next-date economic assessment
+beside the original same-date snapshot. The next natural morning generates its
+dated v2 proof and adoption receipt; preserve every original snapshot date/hash.
+For the November11 expiry repair, consume same-version regression receipts or
+run its deferred focused tests once after the test-window gate opens. A failed
+check starts owned diagnosis/repair before the final handoff is marked ready.
 
 Then eod_closeout.py --context --date <date>; follow prior Weekly responses and
 write dated reviewed handoff under existing schema/roles/hashes. reviewed_at is

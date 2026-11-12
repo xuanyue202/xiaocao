@@ -58,9 +58,12 @@ pinned semantic packet: those bytes participate in executable evidence hashes.
 
 ## Early/evening shared trading reasoning
 
-After a safely completed hour-acquired07:30/21:30 slot, including a healthy empty
-queue, follow [shared rolling preparation](../../xiaocao-trading/references/kol-rolling-preparation.md).
-Keep output quiet. This additional authority0 phase uses already-published
-semantics to synthesize Xiaocao's recent judgments before market data; it performs
-no new source extraction/publication or financial effects. hour_busy or any
-unfinished/uncertain original branch still stops this additional phase.
+After the original hour-acquired07:30/21:30 capture/publication runner exits,
+including a healthy empty queue, follow [shared rolling preparation](../../xiaocao-trading/references/kol-rolling-preparation.md)
+and save its separate result before ending. Contract §1d separates a historical
+reminder-only uncertainty from independently verified published-source readiness;
+retain that reminder's claim/reconciliation/ACK fence and continue preparation.
+All other unfinished/uncertain effects retain the original blocked branch.
+hour_busy, active source work, unproved source publication or degraded projection
+remain blocked with their exact reason. Keep output quiet. This authority0 phase
+uses published semantics, with no new extraction/publication or financial effect.

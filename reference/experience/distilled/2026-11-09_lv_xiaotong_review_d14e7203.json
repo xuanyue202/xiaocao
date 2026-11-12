@@ -1,0 +1,260 @@
+{
+  "schema_version": 1,
+  "knowledge_status": "reusable_knowledge",
+  "authority": 0,
+  "date": "2026-11-09",
+  "kind": "review",
+  "summary": "本期可复用的知识不是新的正式策略，而是对两条既有 authority=0 候选的独立复现：大模型新增用户持续消耗推理资源，收入增长不必然形成传统互联网式经营杠杆；大模型公司可能通过收购或深度整合软件公司取得客户关系和工作流入口。来源还提醒科技叙事会在数月内快速反转，因此任何估值与护城河结论都要绑定单位经济、应用整合和可证伪证据。本草稿不更新小草全局姿态、时间线、参数或交易规则。",
+  "author": "吕晓彤",
+  "source": "百度网盘订阅视频《11月9日 (2)》",
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_subscription_videos/enrichment/d14e7203245f400f3c0df77c9fe8ada7a845e7e538f83f580661db708ef6ad91/artifacts/kol-netdisk-cloud-ab98b3acb0f49674/11月9日 (2).txt",
+      "sha256": "0d0ca53cb844c5070c378a49617ecb72a59a82678d148e65d4e0c11e27c81b64",
+      "size_bytes": 45269,
+      "size": 45269
+    }
+  ],
+  "independent_verification": {
+    "market_evidence_path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261110_07_01a1c2a1/revision3/market_evidence.json",
+    "market_evidence_sha256": "d385752f5a5a11696d5a26397c5cc75f0411d9bf70df7801144a134316338ad1",
+    "as_of": "2026-11-10T07:30:50.032049+08:00",
+    "supported": [
+      "Anthropic 于2026年5月28日公布650亿美元融资、投后估值9650亿美元；该历史融资事实不能直接等同于当前合理价值。",
+      "NVIDIA 的官方证券代码为 NVDA；该身份事实不验证来源中的私人传闻。",
+      "Kioxia Holdings 在东京证券交易所Prime市场挂牌，代码285A；TAIYO YUDEN的东京证券交易所代码为6976。"
+    ],
+    "boundary": "没有独立证据确认关于NVIDIA管理层的私人传闻、调查、辞职、婚姻或股权变化；没有实时价格、模型单位经济、作者持仓或日本调研结论。逐字稿中的Anthropic估值数量级存在明显转写疑点，不能静默改写为万亿级。"
+  },
+  "posture": {
+    "regime": "not_applied_other_author",
+    "dominant_style": "把大模型收入增速、边际推理成本、护城河和软件工作流入口分开验证；把科技叙事当作会快速反转的待证判断。",
+    "risk": "用传统互联网的零边际成本框架直接外推大模型估值，或只凭潜在并购叙事押注软件公司，可能高估经营杠杆与兑现速度。",
+    "style_ranking": [
+      "先验证单位推理成本、价格、留存、毛利和现金消耗",
+      "再验证模型公司是否真实获得客户关系和工作流入口",
+      "软件受益必须绑定公告、产品嵌入和协同收入",
+      "把估值数字和私人传闻保留为未核疑点，不当作事实",
+      "叙事快速变化时用触发条件和证伪条件替代静态信仰"
+    ],
+    "provenance": "system_posture_synthesis_not_author_posture",
+    "source_basis": "来源明确比较传统互联网与大模型的边际成本，提出大模型公司可能收购软件公司，并称科技叙事变化很快；验证指标和治理边界由系统整理。"
+  },
+  "regime_call": {
+    "horizon": "未来数季至数年",
+    "claim": "大模型能否获得平台式估值，取决于规模扩大后单位经济是否改善，以及应用与工作流入口是否真实形成，而不是只看用户或收入增长。",
+    "what_would_falsify": "若规模扩大后单位推理成本持续下降、价格与留存稳定、毛利和现金流同步改善，且无需收购或深度整合软件也能形成稳定工作流入口，则当前谨慎先验应被收窄。",
+    "provenance": "system_research_synthesis_from_attributed_source",
+    "source_basis": "来源提供token边际成本、收入与估值不匹配、软件收购路径和叙事变化快的观察；数季检验和指标组合为系统扩展。"
+  },
+  "directions": [
+    {
+      "name": "大模型单位经济",
+      "view": "新增用户持续带来推理资源成本时，收入增长不等于传统互联网式经营杠杆；估值应与单位价格、留存、毛利和现金消耗共同验证。",
+      "authority": 0,
+      "provenance": "existing_exact_claim_recurrence",
+      "source_basis": "来源称每增加一个用户都要消耗token，并判断收入匹配不了估值。"
+    },
+    {
+      "name": "模型与软件工作流整合",
+      "view": "大模型公司可能通过收购或深度整合软件公司取得应用场景、客户关系和工作流入口，但潜在路径不能替代真实交易与协同证据。",
+      "authority": 0,
+      "provenance": "existing_exact_claim_recurrence",
+      "source_basis": "来源明确预测大模型公司会收购软件公司并注入应用场景；真实性门槛为系统边界。"
+    },
+    {
+      "name": "科技叙事快速反转",
+      "view": "科技共识可能在数月内从无所不能转为毫无门槛，判断必须随单位经济、产品能力和商业化证据更新。",
+      "authority": 0,
+      "provenance": "source_method_plus_system_boundary",
+      "source_basis": "来源称科技叙事变化极快，并以大模型几个月内的认知反转为例。"
+    }
+  ],
+  "stocks": [
+    {
+      "name": "Anthropic",
+      "role": "大模型估值争议例子",
+      "boundary": "逐字稿的估值口述数量级存在疑点；官方9650亿美元仅是2026年5月融资后的历史投后估值，不是即时合理价值。当前核验只覆盖该融资公告，不据此判断其现时上市状态或证券代码。"
+    },
+    {
+      "name": "Kimi、DeepSeek、智谱",
+      "role": "中国大模型护城河与估值争议例子",
+      "boundary": "来源没有逐家公司单位经济、现价、估值口径或具体买卖条件；持仓信息不能反向限制或增强来源观点的抽取与判断。"
+    },
+    {
+      "name": "软件公司",
+      "role": "潜在并购与应用场景入口",
+      "boundary": "来源没有给出唯一可交易标的、交易公告、估值或兑现时间，不能据此下单。"
+    },
+    {
+      "name": "NVIDIA（NVDA）",
+      "role": "当前事件风险与先观望案例",
+      "boundary": "本条是当前风险约束，不作为可复用长期知识；私人传闻未核验，不进入已确证事实。"
+    },
+    {
+      "name": "Kioxia Holdings（285A）、TAIYO YUDEN（6976）与SoftBank",
+      "role": "日本调研对象",
+      "boundary": "来源只说调研后更清晰坚定，具体方向在其他视频，本草稿不补写；凯霞、诱电和SoftBank的实体映射均保留边界。"
+    }
+  ],
+  "method_principles": [
+    "评估大模型商业化时同时记录单位推理成本、调用价格、留存、毛利率和现金消耗，不把收入增速直接外推为护城河。",
+    "软件受益判断必须绑定真实并购、合作、产品嵌入和协同收入证据，不能只凭潜在收购叙事。",
+    "对快速变化的科技叙事保留触发条件、证伪条件和有效期；新证据出现后及时重估，不把共识强度当作事实。",
+    "把来源的原始估值数字、私人传闻与独立事实分层保存；数量级冲突不静默修正，未核私人信息不扩散。",
+    "其他作者的复现只能作为authority=0研究证据，不能更新小草全局姿态或自动改变参数。"
+  ],
+  "hypotheses": [
+    {
+      "existing_id": "XH-356",
+      "claim": "若大模型服务的新增用户持续带来显著推理资源成本，而单位价格、留存与毛利不能同步改善，则高收入增速不一定形成传统互联网式经营杠杆。",
+      "dedup_action": "exact_claim_recurrence_no_new_candidate",
+      "provenance": "existing_claim_reproduced_by_new_evidence",
+      "source_basis": "本来源再次明确提出新增用户消耗token，并把收入与估值不匹配作为争议核心。",
+      "boundary": "复现不等于验证成立；仍须按XH-356既有operationalization研究。",
+      "implied_rule": "评估大模型商业化时同时记录单位推理成本、调用价格、留存、毛利率和现金消耗，不把收入增速直接外推为护城河。",
+      "falsifiable_test": "在可获得披露的模型业务中按季度比较收入增速、单位推理成本、调用价格、毛利率、留存与现金流；若规模扩大后单位成本持续显著下降且毛利、留存同步改善，则否定护城河偏弱的候选。",
+      "expected_effect": "若成立，可减少在高收入增速但单位经济未改善时给出平台式估值溢价。",
+      "category": "model_marginal_cost_economics"
+    },
+    {
+      "existing_id": "XH-357",
+      "claim": "大模型公司若为获得客户关系和工作流入口而收购或深度整合软件公司，真实完成整合的目标软件公司可能比仅有人工智能概念暴露的软件公司获得更强的收入与留存改善。",
+      "dedup_action": "exact_claim_recurrence_no_new_candidate",
+      "provenance": "existing_claim_reproduced_by_new_evidence",
+      "source_basis": "本来源再次预测大模型公司会收购软件公司并注入应用场景。",
+      "boundary": "来源没有具体交易或协同结果；复现不构成兑现证据。",
+      "implied_rule": "软件受益判断必须绑定真实并购、合作、产品嵌入和协同收入证据，不能只凭潜在收购叙事。",
+      "falsifiable_test": "建立大模型公司并购与深度合作事件集，比较目标软件公司的公告前后相对收益、收入协同、客户留存和利润率，并与未发生整合的同类公司对照；若真实整合组无持续业务改善，则否定。",
+      "expected_effect": "若成立，可区分真实工作流整合受益与泛AI软件概念。",
+      "category": "ai_software_mna"
+    }
+  ],
+  "non_ingest_appendix": {
+    "status": "support_only_not_hypotheses",
+    "items": [
+      {
+        "topic": "technology_narrative_reversal",
+        "source_observation": "作者称科技叙事变化极快，大模型认知在几个月内从无所不能转为毫无门槛。",
+        "related_existing_ids": [
+          "XH-122",
+          "XH-215"
+        ],
+        "dedup_boundary": "这是更新证据与防止叙事锁定的方法提醒，不另建同义候选。"
+      },
+      {
+        "topic": "japan_research",
+        "source_observation": "作者称日本调研后更清晰、更坚定，但把具体看法放在其他视频。",
+        "related_existing_ids": [],
+        "dedup_boundary": "当前证据没有方向、条件或结论，不能蒸馏为知识或交易规则。"
+      }
+    ]
+  },
+  "timing_notes": [
+    "来源发表于2026年11月9日；大模型估值与NVIDIA事件风险属于当时语境，不能无期限沿用。",
+    "官方Anthropic融资资料发布日期为2026年5月28日，只提供历史估值锚点，不提供2026年11月即时合理价值。",
+    "日本调研的具体结论不在当前来源，任何补全都会越过证据边界。",
+    "吕晓彤为其他作者；本草稿不更新小草 posture_current、REGIME_TIMELINE 或正式策略。"
+  ],
+  "typo_corrections": [
+    {
+      "raw": "ethroo pic／athroo pic",
+      "normalized": "Anthropic",
+      "reason": "与大模型估值、Meta、Kimi、DeepSeek并列的上下文支持实体校正；原始数值不随实体校正。"
+    },
+    {
+      "raw": "凯霞",
+      "normalized": "Kioxia Holdings（候选映射）",
+      "reason": "日本调研与深套语境、官方发行人身份支持高置信候选，但不把映射当作作者持仓事实。"
+    },
+    {
+      "raw": "诱电／幼店",
+      "normalized": "TAIYO YUDEN（太陽誘電，候选映射）",
+      "reason": "官方代码6976只确认发行人身份，音译本身不具有唯一性。"
+    },
+    {
+      "raw": "一点二一点三亿美金",
+      "normalized": null,
+      "reason": "保留逐字稿原始数量级疑点；与官方历史投后估值9650亿美元冲突，不能静默改成万亿级或其他数字。"
+    },
+    {
+      "raw": "阿珍电梯／阿珍／阿涛／阿查",
+      "normalized": null,
+      "reason": "只是条件比较和未解析人物，禁止猜测为上市公司或确定自然人。"
+    }
+  ],
+  "decision_trace": {
+    "source_claims": [
+      "新增用户会持续消耗token，模型业务不具备传统互联网相同的边际成本结构。",
+      "大模型公司可能收购软件公司并注入应用场景。",
+      "科技叙事变化极快，当前共识可能在几个月内反转。"
+    ],
+    "system_extensions": [
+      "用单位价格、留存、毛利和现金消耗验证经营杠杆。",
+      "用真实并购、产品嵌入和协同收入验证软件受益。",
+      "给叙事判断设置有效期、触发与证伪条件。"
+    ],
+    "excluded_from_knowledge": [
+      "NVIDIA私人传闻及衍生调查、辞职、婚姻与股权变化情景。",
+      "逐字稿中存在数量级疑点的Anthropic估值口述。",
+      "未在当前视频披露的日本调研具体方向。",
+      "仅用于条件比较的京东、阿珍、阿涛等个案。"
+    ]
+  },
+  "prior_feedback_response": {
+    "calibration": "no_calibration_flagged",
+    "current_posture": "not_used_expired",
+    "recurrence_handling": "XH-356与XH-357复用exact claim；没有生成近似新命题。",
+    "author_boundary": "other_author_authority_zero_no_global_posture_or_timeline_update"
+  },
+  "deduplication_review": {
+    "reference": "reference/experience/xiaocao_hypotheses.jsonl",
+    "scope": "完整源阅读后检索当前尾部及相关既有原句",
+    "matches": [
+      {
+        "id": "XH-356",
+        "result": "exact_recurrence"
+      },
+      {
+        "id": "XH-357",
+        "result": "exact_recurrence"
+      },
+      {
+        "id": "XH-122",
+        "result": "nearby_method_only"
+      },
+      {
+        "id": "XH-215",
+        "result": "nearby_method_only"
+      }
+    ],
+    "new_candidates": 0
+  },
+  "action_summary": {
+    "posture_update": "not_applied：其他作者且现行小草姿态已过期，不修改或续期全局姿态与时间线。",
+    "playbook_update": "no_deterministic_change：只登记authority=0复现与方法边界，不改变正式策略、仓位、参数或退出规则。",
+    "hypothesis_update": "reuse_existing_only：XH-356与XH-357为exact claim复现，不追加同义候选。",
+    "audit_evidence": "bound_to_revision_packet_6927c3d127d17cdbbfb12d005a06f4084e71db3e8c7fa102a102dbb92c0e44c7_and_transcript_sha256_0d0ca53cb844c5070c378a49617ecb72a59a82678d148e65d4e0c11e27c81b64",
+    "routing": [
+      "authority=0复现证据",
+      "不进入全局姿态与时间线",
+      "待既有research_run与人工门验证"
+    ],
+    "instrumentation_todo": "复用XH-356的单位推理成本、调用价格、留存、毛利和现金流季度面板；复用XH-357的模型公司并购与深度合作事件集，并记录公告、产品嵌入、协同收入与对照组。"
+  },
+  "exit_lessons": [
+    "模型业务的用户与收入增长不能替代单位经济；若单位推理成本、毛利、留存和现金流没有同步改善，不把增长自动解释为平台式经营杠杆。",
+    "潜在软件收购或整合只是研究路径；在真实交易、产品嵌入和协同收入出现前，不把泛AI软件概念当作已兑现受益。",
+    "逐字稿中的估值数量级冲突必须保留为疑点；不能用历史融资估值静默替换，也不能把任一口径直接转成当前合理价值。",
+    "私人传闻及其派生的调查、辞职、婚姻与股权变化情景不进入耐久知识；当前观望动作只留在决策审计。",
+    "调研后更坚定不等于方向已披露；没有同一来源完整观点时，不从信心强度反推出买入、补仓、持有或卖出。"
+  ],
+  "judgment_heuristics": [
+    "遇到私人信息驱动的证券风险，先分开可核事实、来源传闻和条件情景；只让明确动作进入当前决策，不让未核细节进入事实层或耐久知识。",
+    "遇到估值数字与公开资料数量级冲突，保留原始口述、口径和时间，不静默修正；历史融资值只作历史锚点，不冒充即时合理价值。",
+    "评估大模型护城河时，从新增用户的推理资源成本出发，再检查价格、留存、毛利和现金流，避免直接套用传统互联网的零边际成本叙事。",
+    "评估软件受益时，按潜在路径、已公告交易、产品嵌入和协同兑现四层递进；没有后一层证据时不把前一层当作投资结论。",
+    "来源称调研后更清晰或更坚定时，仍必须在当前材料中找到方向、条件、期限和例外；缺一项就保留披露缺口，不从信心强度补写。",
+    "对完整长来源先建立实体与观点清单，再按稳定段独立分类投资、非投资和广告内容；第二遍只核覆盖、反链、误合并和角色错误，不用持仓或关键词缩减源观点。"
+  ]
+}

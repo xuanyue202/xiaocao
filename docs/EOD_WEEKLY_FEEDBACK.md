@@ -20,6 +20,10 @@ PYTHONPATH=src .venv/bin/python scripts/eod_closeout.py --context --date YYYY-MM
 
 根据原始回执制作 `output/live/eod_feedback_review_<date>.json`，按 `src/xiaocao/research/eod_feedback.py` 校验字段。顶层为 `schema_version=1, authority=0, date, automation_id=xiaocao-daily-eod, thread_id, reviewed_at`，保留初始 scheduler 的线程身份；reviewed_at 为带时区的真实复盘结束时间，晚于三个 post-business 终态。
 
+复盘09:24会话准备时，引用绑定同一 owner 的最早 `app_boundary/passed` 不可变观测。
+最新心跳的 `observed_at` 单独列示；首次有证据的时点还须核对其原状态，避免把后续
+保活误报成首次就绪延迟。来源缺失时明确该时点未证明。
+
 `evidence` 为角色到 `{path, sha256}` 的映射，path 相对当前仓库：
 
 - `paper_terminal` 与 `paper_manifest`：同一原始 supervisor archive。
@@ -49,6 +53,32 @@ research 原命令 exit=0 的 `not_started`（尚无 funded morning、报告已�
 若原业务失败、无合法同日证据或收尾无法通过，保留本地失败证据、当前缺口和下一负责人；不得回放业务来补报告。记录成功不等于发送成功，检查 delivery。不确定送达只走 exact-claim reconciliation；安全重试仍用 trading_change_notice，不重跑 closeout/status 造新消息。`--review` 不带 --push-wecom 用于明确不发送的本地验收。
 
 旧运行缺少新增 post-business 终态回执时，只能按原工具输出做标明 legacy_read_only_handoff 的本地交接；不能补造终态、回放子命令或以此发送新版收尾。首次完整验收等待下一个合法原始运行。
+
+### 收尾前普通 DAY 委托到期复核
+
+原 Paper、APP 与三个 post-business 步骤结束后，最终 closeout 前，原 EOD owner
+复用本日 APP archive 的盘后账户绑定快照、委托/成交与原意图/claim，在既有
+`daily_execution_review_<date>.md` 和稳定问题项中记录下列复核结果及原件 hash/时点。
+
+- 核对普通原生 DAY 路径、原交易日和收盘后的账户证据，列出当日及更早委托中
+  已到期未成交部分、原最大预留金额和次日未来现金占用。已到期部分的未来现金占用为零。
+- 当前完整持仓覆盖原代码后，核对已证明自有股数和剩余未归属数量。无该股持仓时
+  潜在当前敞口为零；有剩余时按当前数量/价格界定，多笔旧单共用数量上界。
+- 对照 Contract §1e 的 v2 当前经济约束，检查次日准入是否仍带入过期现金/敞口预留。
+  旧 UNKNOWN、claim、成交待核与最终会计各自保留。普通路径、持仓完整性、账户或
+  数量证据缺失时，明确未证明范围及负责人，保留对应保守约束。
+- 记录通过、缺证或发现的代码故障及实际修复/部署状态。发现持续幽灵预留时由
+  原 owner 完成可独立处理的修复，并核对次日入口采用，原始业务结果和快照精确保留。
+
+当日委托在本阶段记录面向次日的到期经济评估，绑定原盘后快照的真实日期和 hash。
+跨日 v2 证明及实际采用由下一交易日原晨间自然生成；同日快照保留原日期和原始字节。
+区分已跨日旧单的 v2 约束与当日单的次日评估，同日未决门本身按原作用域解释。
+
+2026-11-11 的普通委托有效期修复为 `feda8d19b462c9e06bbfb35703711e9a5fff9c80`。
+收尾时消费同版本已完成的专项回归回执；仍延期时，先运行
+`PYTHONPATH=src .venv/bin/python scripts/app_test_window_status.py`，允许后串行执行一次
+`PYTHONPATH=src .venv/bin/python -m pytest -q tests/test_inherited_execution_isolation.py tests/test_buy_preflight.py tests/test_book_b_available_capital.py`，保存真实 stdout/exit、代码版本和时点。
+测试结果与盘后原件核验分别留证，次日自然采用仍由原晨间回执证明。
 
 ## 周度必回应与回流
 

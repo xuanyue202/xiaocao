@@ -16,6 +16,36 @@ from xiaocao.runner_recovery import _hash
 EARLY = datetime.fromisoformat('2026-10-22T21:10:00+08:00')
 
 
+@pytest.mark.parametrize('through, expected', [
+    ('2026-10-23T09:27:30+08:00', 'reused'),
+    ('2026-10-23T10:45:00+08:00', 'written'),
+    ('2026-10-23T11:30:00+08:00', 'written'),
+])
+def test_rolling_reuse_covers_intended_use_without_renewing_sources(source, monkeypatch, capsys, through, expected):
+    import json
+    from scripts import kol_trading_prepare as cli
+    from xiaocao.kol import trading_context as tc
+    monkeypatch.setattr(tc, 'build_trading_context', lambda **kw: {})
+    monkeypatch.setattr(tc, 'write_trading_projection', lambda *a, **kw: source['inputs']['projection'])
+    class Clock:
+        @classmethod
+        def now(cls, tz):
+            return EARLY.astimezone(tz)
+    monkeypatch.setattr(cli, 'datetime', Clock)
+    original = source['prepared_path'].read_bytes()
+    directory = source['root']/'horizon-check'
+    assert cli.main(['rolling-inputs', '--root', str(source['root']), '--output-dir', str(directory),
+                     '--fresh-through', through]) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result['status'] == expected
+    assert result['fresh_through'] == through
+    assert source['prepared_path'].read_bytes() == original
+    if expected == 'written':
+        assert Path(result['path']).is_file()
+        assert result['rebuild_reason'] in {'PREPARATION_EXPIRES_BEFORE_USE', 'KOL_PREPARATION_ROLLING_SOURCE_EXPIRED'}
+    assert not (source['root']/'output/live/kol_policy/decisions').exists()
+
+
 def test_source_owner_rebuilds_after_known_instruction_closure_upgrade(source, monkeypatch, capsys):
     from scripts import kol_trading_prepare as cli
     from xiaocao.kol import trading_context as tc

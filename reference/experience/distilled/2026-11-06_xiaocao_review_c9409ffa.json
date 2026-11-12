@@ -1,0 +1,903 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-06",
+  "kind": "大师班复盘直播",
+  "author": "小草",
+  "source": "小草直播",
+  "authority": 0,
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_netdisk_enrichment/artifacts/kol-netdisk-19994c7d213be7b8/20261106 11月6日大师班复盘直播-compressed.txt",
+      "sha256": "c9409ffa6be61bd947d046ff5206b933cd6b767e95405abf5b4278588a382662",
+      "size": 119799
+    }
+  ],
+  "summary": "来源把11月6日描述为全市场很弱、红盘候选密度很低，但作者体系的高位与最高短线环境仍有赚钱效应；可复用方法包括候选密度驱动的模式切换、比较分与形态的条件平衡、按状态而非固定天数持有、9点31分后等待作者所称低点，以及盘中与早盘模块的临时取舍。全部内容仅作authority=0研究先验。 本轮将万向德农的八月连板例子与11月6日9点31分盘中案例分开，并拆分东方海洋11月5日/11月6日及11月4日三只断板展示。",
+  "posture": {
+    "regime": "来源日大盘广度很弱，作者内部短线环境仍称高位与最高并有赚钱效应；两者不是同一指标。",
+    "dominant_style": "红盘候选极少时，作者转看人气股低吸、连板和断板；他另把连板与断板称为接下来重要方向，但没有给四类模式确定先后。",
+    "risk": "私有分数、榜单、历史收益和个股战果未经独立重建；高分不等于稳赚，追涨或断板反包可能出现十多个点的单笔亏损。",
+    "style_ranking": [
+      "红盘候选极少时不强行从稀薄样本选股，转而查看人气股低吸、连板和断板",
+      "作者明确说接下来连板和断板较重要，但没有给四类模式确定先后",
+      "科技硬件即使反弹或横盘，也可能落后于作者所说的短线机会"
+    ]
+  },
+  "regime_call": {
+    "source_date": "2026-11-06",
+    "horizon": "来源指向11月6日当日与随后若干交易日；处理发生在11月9日晚，来源日点时窗口不能顺延。",
+    "call": "指数大概率在当前位置震荡磨底；作者内部高位与最高短线环境仍有赚钱效应，并认为连板接力可能刚开始。",
+    "what_would_falsify": [
+      "系统复核条件：指数持续破位且弱势进一步扩散。",
+      "系统复核条件：作者所称高位与最高环境转弱，连板高度、承接和断板修复候选同步走弱。"
+    ],
+    "boundary": "市场包只支持11月6日环境指数偏弱及11月9日接近平盘，不能复刻作者内部环境标签、榜单或模式收益。"
+  },
+  "directions": [
+    {
+      "subject": "科技硬件",
+      "stance": "作者认为反弹力度即使为正，也可能显著落后于短线模式，核心是机会成本而不是断言科技立即继续下跌。",
+      "horizon": "随后若干交易日",
+      "falsifier": "系统复核条件：科技硬件形成持续强于短线候选的扩散与收益"
+    },
+    {
+      "subject": "连板与断板",
+      "stance": "作者认为接下来这两个方向重要，连板接力可能才刚开始。",
+      "horizon": "随后若干交易日",
+      "falsifier": "系统复核条件：连板与断板候选密度、承接和可成交结果持续转弱"
+    },
+    {
+      "subject": "一线城市住宅",
+      "stance": "作者称当前房子是所有人的机会，并把范围限定到一线城市，但未给城市、价格、现金流或期限。",
+      "horizon": "原文未提供",
+      "falsifier": "系统复核条件：具体城市的租售比、融资成本与家庭现金流证据不支持新增配置"
+    }
+  ],
+  "stocks": [
+    {
+      "name": "贝特利",
+      "code": "301697.XSHE",
+      "role": "同场直播的销售推广段口述11月4日前两名、随后连续三个20%涨停及约68%收益；68%及母亲持有的说法来自可辨认为女性的同场说话人，不能一律归为小草本人陈述，也未证明成交或下一交易日延续。"
+    },
+    {
+      "name": "奥雅股份",
+      "code": "300949.XSHE",
+      "role": "小白菜形态与可变持有期的历史案例；作者口述10月26日后次日约20至30个百分点、持有至当时约89%至90%，未独立核验。"
+    },
+    {
+      "name": "凡拓数创",
+      "code": "301313.XSHE",
+      "role": "11月6日人气股低吸案例；同日原始池有记录，但作者模式排名、首次出现和成交不明。"
+    },
+    {
+      "name": "东方海洋",
+      "code": "002086.XSHE",
+      "role": "11月5日盘中出现与11月6日连板接力分别陈述；11月6日接力池和日期索引可见，仍不证明11月5日私有输出、作者排名或成交。"
+    },
+    {
+      "name": "华正新材",
+      "code": "603186.XSHG",
+      "role": "11月6日断板案例；同日低吸池和指数行可见，仍不证明作者排名或成交。"
+    },
+    {
+      "name": "皇台酒业",
+      "code": "000995.XSHE",
+      "role": "作者称早盘形态不对，向下后出现反抽时应尽快退出；反抽后当日涨跌仍为负一个多点，真实反抽幅度未知，该窗口已过期。"
+    },
+    {
+      "name": "三星",
+      "code": null,
+      "role": "音似名称未唯一解析；作者口述一度涨停后回落并称后续或仍有机会。"
+    },
+    {
+      "name": "万向德农",
+      "code": "600371.XSHG",
+      "role": "八月连板历史例子与11月6日“断板+盘中起爆”9点31分当日案例分开记录；“两个点”与“七个多点、涨停”的字段、观察时点及成交未核验。"
+    }
+  ],
+  "method_principles": [
+    "先看固定时点的候选密度；红盘样本过少时，排名本身缺乏足够比较对象。",
+    "比较分与形态都重要，但作者认为比较维度高于形态；过度过滤会漏掉有效候选。",
+    "作者把300分作为偏严格的过滤口径、200分作为连板可接受口径；模式本身评分高时可以不看300分，高开则要更高分，且300分也不是稳赚保证。313只是口头玩笑，所有阈值都未获样本外证明。",
+    "问答中作者口述30天涨幅100%没关系、200%才有问题，并提到10天100%和30天200%；上下文、字段和单位边界不清，只保留为待复核口径，不作为现行硬门槛。",
+    "小白菜是超短线的趋势形态，不等于趋势策略；持有多久应由环境、形态和指标状态决定。",
+    "9点31分是作者采用的固定观察时点，不是最佳时点；他明确说不是第一个拐头买，而是继续等到他所称的低点。系统研究必须事前定义可实时识别规则，不能使用事后最低价。",
+    "来源当时要求暂用盘中起爆与盘中低吸，暂不使用早盘低吸与早盘起爆，待早盘模式切换时再启用；这是临时模块选择，不是永久排序。",
+    "新手约两只、能处理多标的的熟练者可四至五只，是操作容量建议，不是资本仓位比例。",
+    "作者用一年维度口述红盘模式约900、600、800、700，称绿盘低吸达到500的不多；这些数字的单位和收益口径不清。可保留的方向只有红盘追涨被描述为总收益更高且波动、左尾更大，绿盘低吸更舒服。"
+  ],
+  "exit_lessons": [
+    "皇台酒业案例强调形态转弱后借反抽退出；作者接着说反抽后当日涨跌仍为负一个多点，真实反抽幅度未知，不能误写成反抽约一个百分点。",
+    "小白菜不设固定持股天数；环境不支持或红黄指标转绿时撤回持有前提。",
+    "断板反包的单笔亏损可能超过十个百分点，收益叙事必须同时保留左尾。",
+    "同场直播对贝特利周一能否继续明确回答不知道，不能把销售推广段的三连板战果外推为下一次买入。"
+  ],
+  "hypotheses": [
+    {
+      "claim": "系统研究候选：极弱市场广度会降低红盘排名模式的候选密度；低吸、连板或断板是否因此具有更好的可成交结果，需要独立检验。",
+      "implied_rule": "在固定开盘时点按上涨家数和涨跌分布分层，分别记录各模式候选数、可成交数和后续收益，不把无候选日删除。",
+      "falsifiable_test": "比较不同广度分位下红盘起爆、人气股低吸、连板和断板的候选密度、成交率、次日收益及最大不利变动；若极弱广度下模式差异不稳定则否决。",
+      "expected_effect": "仅作为XH-351的同文复现证据；不新建候选，不把来源口述升级为相对收益结论。",
+      "authority": 0,
+      "provenance": "exact_claim_recurrence",
+      "existing_id": "XH-351"
+    }
+  ],
+  "timing_notes": [
+    "来源事件时间为2026-11-06T16:54:00+08:00；语义处理发生在11月9日晚，必须分开。",
+    "11月6日开盘与盘中买点、皇台退出、贝特利次日猜测均已过期。",
+    "作者关于横盘、科技机会成本和连板阶段的多日判断只保留到新的市场状态复核，不自动产生交易动作。",
+    "来源当时暂用盘中起爆与盘中低吸，暂不用早盘低吸与早盘起爆；再启用条件是早盘模式切换，私有切换状态未独立核验。",
+    "周一是否高开被作者留待周日新闻发酵后再说，来源没有完成该后续判断。"
+  ],
+  "typo_corrections": [
+    {
+      "surface": "防多速算、房多速算、防盗树上",
+      "resolution": "凡拓数创301313.XSHE",
+      "confidence": "high_by_repeated_context_and_directory"
+    },
+    {
+      "surface": "华智数煤、华智数媒",
+      "resolution": "华智数媒300426.XSHE",
+      "confidence": "exact_directory_name",
+      "boundary": "不得改写为华数传媒000156.XSHE"
+    },
+    {
+      "surface": "云达股份",
+      "resolution": null,
+      "confidence": "unresolved",
+      "boundary": "目录同时存在运达股份300772.XSHE与韵达股份002120.XSHE"
+    },
+    {
+      "surface": "静义装备、精益装备",
+      "resolution": null,
+      "confidence": "unresolved",
+      "boundary": "音似不足以确认精艺股份"
+    },
+    {
+      "surface": "三星、冬季续创、中山精密、托伦斯爱人去、BEV/D、奥宏电子、还要往贷",
+      "resolution": null,
+      "confidence": "unresolved",
+      "boundary": "缺少代码或业务特征，不按近音强配"
+    }
+  ],
+  "decision_trace": [
+    "观察：11月6日红盘样本极少且低开范围很大。",
+    "推断：红盘起爆排名的候选密度不足，作者改看人气股低吸、连板和断板；这不是对四类模式给出固定排序。",
+    "观察：指数与作者内部短线环境背离，科技硬件反弹可能弱于短线模式。",
+    "推断：用机会成本比较方向，接下来重点观察连板、断板和高分候选，同时承认高分不稳赚及十多个点的左尾。",
+    "模块边界：来源当时暂用盘中起爆与盘中低吸，待早盘模式切换后才恢复早盘低吸与早盘起爆。",
+    "动作边界：来源日窗口结束后不追旧榜单；方法只进入研究复现，等待全新环境与可成交证据。"
+  ],
+  "judgment_heuristics": [
+    "候选密度不足时允许无交易，不用相对排名覆盖绝对门槛。",
+    "分数、形态、开幅和出现时点必须联合记录；保留模式高分可不看300、高开需更高分和非稳赚例外，不能用单个赢家反推最优阈值。",
+    "持有期由环境和失效条件决定，不用固定天数替代状态判断。",
+    "历史战果与本地池成员、影子候选、正式信号和Paper成交分层记录。",
+    "临时启用哪个模块与模式长期优劣是两个问题，不能把来源当时的模块选择固化为永久规则。"
+  ],
+  "feedback_response": {
+    "feedback_path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261109_18_01a1bfde/knowledge_feedback.txt",
+    "backlog_rows_compared": 355,
+    "calibration_flags": [],
+    "exact_recurrence": {
+      "existing_id": "XH-351",
+      "claim_match": "exact",
+      "support": "full",
+      "action": "authority=0候选入库可直接复用XH-351的完全相同claim并追加本次来源证明；不新建ID。研究晋级和正式规则仍需研究流程及人工门。"
+    },
+    "partial_support_no_recurrence": [
+      {
+        "existing_ids": [
+          "XH-223",
+          "XH-132",
+          "XH-134"
+        ],
+        "topic": "高分、300与200分档及形态过滤",
+        "reason": "本场补充模式本身评分高可不看300、高开需更高分、300并非稳赚，以及10天100%/30天200%的歧义口述，但仍不完整重复任一现有claim。"
+      },
+      {
+        "existing_ids": [
+          "XH-222"
+        ],
+        "topic": "红盘追涨与绿盘低吸",
+        "reason": "本场口述红盘年度数字约900/600/800/700、绿盘达到500的不多，但单位与收益口径不清，只能部分支持原始收益、波动与舒适度差异，不能证明既有风险调整后结论。"
+      },
+      {
+        "existing_ids": [
+          "XH-204",
+          "XH-025"
+        ],
+        "topic": "状态依赖持有期",
+        "reason": "本场反对固定持股天数并给指标失效边界，但不完整重复预设多日复核或主升轮动工具命题。"
+      },
+      {
+        "existing_ids": [
+          "XH-041",
+          "XH-266",
+          "XH-326"
+        ],
+        "topic": "盘中信号后的回落执行",
+        "reason": "本场明确不是第一个拐头买、而是等到作者所称低点；缺少无未来函数的实时定义，不作同文复现或新建命题。"
+      }
+    ],
+    "new_hypotheses": [],
+    "reason": "仅XH-351达到同文且完整支持；其他主题均为部分支持或近邻，不增加backlog条目。"
+  },
+  "strategy_hit_audit": {
+    "status": "completed_no_formal_local_hit",
+    "source_date": "2026-11-06",
+    "teacher_claim_boundary": "来源具名战果、同日原始盘前池成员、本地正式信号、持仓和Paper成交分层核对；八月、11月4日、11月5日和11月6日的同名证券出现分别记录，不用11月6日盘前池代证历史或私有盘中输出。",
+    "classification_vocabulary": [
+      "emitted_strategy_hit",
+      "emitted_qibao_hit",
+      "raw_pool_only",
+      "cohort_benchmark",
+      "cohort_watchlist",
+      "not_emitted",
+      "no_evidence"
+    ],
+    "evidence_catalog": {
+      "pool_qibao_20261106": {
+        "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261109_18_01a1bfde/pool_qibao_20261106.json",
+        "sha256": "5dc3f90a2a5f8a5dc7ed69848574f911b7385f35ef74ca4fc69e4a346088860e"
+      },
+      "pool_jieli_20261106": {
+        "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261109_18_01a1bfde/pool_jieli_20261106.json",
+        "sha256": "2c70903e66cdc73352fdf7ad7c47a22c21a717e785a9c8e3604f9824e3fc469e"
+      },
+      "pool_dixi_20261106": {
+        "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261109_18_01a1bfde/pool_dixi_20261106.json",
+        "sha256": "40a154eae8796cafe6903a82a37a98903dccc7944d7ea8b11cb201ad7e003e06"
+      },
+      "pool_provenance_20261106": {
+        "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261109_18_01a1bfde/pool_provenance_20261106.json",
+        "sha256": "6c74f7d18328cce4169c94a15b4b6f8bd3bf73c523cc3948d44ea0e4551ccb61"
+      },
+      "raw_pool_index_20261106": {
+        "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261109_18_01a1bfde/raw_pool_index_20261106.json",
+        "sha256": "14c3e21a9c781254d0f04bcfc3b5c92352aa14fb0d940420087d64c5aa339ced"
+      },
+      "raw_pool_index_provenance_20261106": {
+        "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261109_18_01a1bfde/raw_pool_index_provenance_20261106.json",
+        "sha256": "e3b5f490c3e05d028caea90b8528bc9ecd818785817130192521cecbaaab6f49"
+      },
+      "recommend_20261106": {
+        "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/recommend_2026-11-06.md",
+        "sha256": "b42057e72e118f0c92ac77f695813c309aa4347213ce44e1827239bc98c38373"
+      },
+      "signal_snapshots_20261106": {
+        "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261109_18_01a1bfde/signal_snapshots_20261106.json",
+        "sha256": "428f65faeb632c8b4dca771bfa4024ed6447e4631815762a36d0624c27ccba18"
+      },
+      "positions_20261106": {
+        "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261109_18_01a1bfde/positions_20261106.json",
+        "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      "paper_trades_20261106": {
+        "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261109_18_01a1bfde/paper_trades_20261106.json",
+        "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      "decision_journal_20261106": {
+        "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261109_18_01a1bfde/decision_journal_20261106.json",
+        "sha256": "5c39a5550228f8ea7d984dd5b6e3b0bdb5c24fc886d4f055212610d3e7010c3d"
+      }
+    },
+    "teacher_named_winners": [
+      {
+        "name": "贝特利",
+        "code": "301697.XSHE",
+        "source_date": "2026-11-04",
+        "role": "同场销售推广段所称红盘起爆历史战果；68%和母亲持有的说法不能唯一归为小草本人",
+        "classification": "no_evidence",
+        "missing_reason": "本次只绑定11月6日本地证据，未取得11月4日首次出现、排名、可成交性、成交或收益证明"
+      },
+      {
+        "name": "奥雅股份",
+        "code": "300949.XSHE",
+        "source_date": "2026-10-26及其后",
+        "role": "小白菜形态和状态持有的历史战果案例",
+        "classification": "no_evidence",
+        "missing_reason": "未绑定10月26日及后续逐日模式输出、成交和持有路径；11月6日池不能代证"
+      },
+      {
+        "name": "凡拓数创",
+        "code": "301313.XSHE",
+        "source_date": "2026-11-06",
+        "role": "人气股低吸当日案例",
+        "classification": "raw_pool_only",
+        "evidence_refs": [
+          "pool_dixi_20261106",
+          "raw_pool_index_20261106",
+          "pool_provenance_20261106"
+        ],
+        "boundary": "只证明11月6日低吸池成员和日期行，不证明作者私有排名、首次出现、成交或约九个多点收益"
+      },
+      {
+        "name": "东方海洋",
+        "code": "002086.XSHE",
+        "source_date": "2026-11-05",
+        "role": "来源在11月6日回看“昨天就上了”的盘中出现；与11月6日接力再次出现分开",
+        "classification": "no_evidence",
+        "missing_reason": "本次未绑定11月5日私有盘中首次出现、模式输出、可成交性、成交或收益证据；11月6日接力池不能代证前一日"
+      },
+      {
+        "name": "东方海洋",
+        "code": "002086.XSHE",
+        "source_date": "2026-11-06",
+        "role": "11月6日连板接力当日案例；与11月5日盘中出现分开",
+        "classification": "raw_pool_only",
+        "evidence_refs": [
+          "pool_jieli_20261106",
+          "raw_pool_index_20261106",
+          "pool_provenance_20261106"
+        ],
+        "boundary": "只证明11月6日接力池成员和日期行，不证明130多分、与第二名断档、成交或收益"
+      },
+      {
+        "name": "万向德农",
+        "code": "600371.XSHG",
+        "source_date": "2026-11-06",
+        "role": "“断板+盘中起爆”9点31分当日正面案例；与八月连板历史例子分开",
+        "classification": "no_evidence",
+        "missing_reason": "600371.XSHG不在11月6日三类盘前池，但盘前池不能反证私有盘中输出；“两个点”与“七个多点、涨停”的字段、观察时点、首次出现和成交均未核验"
+      },
+      {
+        "name": "华正新材",
+        "code": "603186.XSHG",
+        "source_date": "2026-11-06",
+        "role": "断板当日案例",
+        "classification": "raw_pool_only",
+        "evidence_refs": [
+          "pool_dixi_20261106",
+          "raw_pool_index_20261106",
+          "pool_provenance_20261106"
+        ],
+        "boundary": "只证明11月6日低吸池成员和日期行；来源也未给完整入场、仓位或退出条件"
+      },
+      {
+        "name": "三星",
+        "code": null,
+        "source_date": "2026-11-06",
+        "role": "红盘起爆中一度涨停后回落的音似案例",
+        "classification": "no_evidence",
+        "missing_reason": "名称无法唯一解析，不能在267只池中按近音强配"
+      }
+    ],
+    "local_strategy_benchmark_hits": [],
+    "local_strategy_benchmark_boundary": "11月6日本地推荐、信号快照、持仓、Paper成交和决策日志均未证明老师点名股票是正式发出、推荐、买入或成交的本地策略命中；另有不同股票的影子候选，不属于本桶。",
+    "direction_core_observations": [
+      {
+        "name": "皇台酒业",
+        "code": "000995.XSHE",
+        "source_date": "2026-11-06",
+        "role": "早盘转弱后借反抽退出的负面案例",
+        "classification": "not_emitted",
+        "evidence_refs": [
+          "recommend_20261106",
+          "signal_snapshots_20261106",
+          "pool_provenance_20261106"
+        ],
+        "boundary": "本地没有正式发出、持仓或成交；真实反抽幅度未知"
+      },
+      {
+        "name": "阳光照明",
+        "code": "600261.XSHG",
+        "source_date": "2026-11-06",
+        "role": "科技机会成本对比中的当日例子",
+        "classification": "not_emitted",
+        "evidence_refs": [
+          "recommend_20261106",
+          "signal_snapshots_20261106",
+          "pool_provenance_20261106"
+        ],
+        "boundary": "不是来源给出的独立新买入条件"
+      },
+      {
+        "name": "佰维存储",
+        "code": "688525.XSHG",
+        "source_date": "2026-11-06",
+        "role": "科技硬件下跌幅度观察",
+        "classification": "not_emitted",
+        "evidence_refs": [
+          "recommend_20261106",
+          "signal_snapshots_20261106",
+          "pool_provenance_20261106"
+        ],
+        "boundary": "方向观察，不是入场信号"
+      },
+      {
+        "name": "掌阅科技",
+        "code": "603533.XSHG",
+        "source_date": "历史日期未明确",
+        "role": "私有分数历史例子",
+        "classification": "no_evidence",
+        "missing_reason": "虽偶合11月6日低吸池，但来源所述历史日期、模式排名和收益未核验"
+      },
+      {
+        "name": "闽发铝业",
+        "code": "002578.XSHE",
+        "source_date": "历史日期未明确",
+        "role": "私有分数历史例子",
+        "classification": "no_evidence",
+        "missing_reason": "没有对应历史日期的输出、成交或收益证据"
+      },
+      {
+        "name": "文投控股",
+        "code": "600715.XSHG",
+        "source_date": "历史日期未明确",
+        "role": "约500分历史例子",
+        "classification": "no_evidence",
+        "missing_reason": "虽偶合11月6日低吸池，但该池不能验证来源所述历史分数和结果"
+      },
+      {
+        "name": "澳洋健康",
+        "code": "002172.XSHE",
+        "source_date": "历史日期未明确",
+        "role": "私有分数历史例子",
+        "classification": "no_evidence",
+        "missing_reason": "虽偶合11月6日低吸池，但历史模式、成交和收益未核验"
+      },
+      {
+        "name": "青岛食品",
+        "code": "001219.XSHE",
+        "source_date": "历史日期未明确",
+        "role": "私有分数历史例子",
+        "classification": "no_evidence",
+        "missing_reason": "虽偶合11月6日低吸池，但历史模式、成交和收益未核验"
+      },
+      {
+        "name": "百花医药",
+        "code": "600721.XSHG",
+        "source_date": "历史八月，具体日期未明确",
+        "role": "连板历史例子",
+        "classification": "no_evidence",
+        "missing_reason": "虽偶合11月6日低吸池，但缺对应八月输出、成交和收益证据"
+      },
+      {
+        "name": "万向德农",
+        "code": "600371.XSHG",
+        "source_date": "历史八月，具体日期未明确",
+        "role": "八月连板历史例子；与11月6日9点31分盘中案例分开",
+        "classification": "no_evidence",
+        "missing_reason": "缺对应八月私有模式输出、成交和收益证据；百花医药与万向德农“两只加法100点”不能拆成单只收益"
+      },
+      {
+        "name": "冰山冷热",
+        "code": "000530.XSHE",
+        "source_date": "2026-11-04",
+        "role": "11月4日9点31分断板展示案例；口述当时500多分并称涨停、大肉",
+        "classification": "no_evidence",
+        "missing_reason": "本次只绑定11月6日本地池与信号，未取得11月4日私有模式首次出现、分数、可成交性、成交或收益证据；11月6日池交集不能代证"
+      },
+      {
+        "name": "桂林三金",
+        "code": "002275.XSHE",
+        "source_date": "2026-11-06",
+        "role": "同日盘中展示中的辅助案例；原话没有唯一给出其盘内具体秒点",
+        "classification": "raw_pool_only",
+        "evidence_refs": [
+          "pool_qibao_20261106",
+          "raw_pool_index_20261106",
+          "pool_provenance_20261106"
+        ],
+        "boundary": "只证明11月6日盘前起爆池成员和日期行，不证明私有盘中首次出现、具体时点、模式成交或收益"
+      },
+      {
+        "name": "华智数媒",
+        "code": "300426.XSHE",
+        "source_date": "2026-11-04",
+        "role": "11月4日9点31分断板展示案例；口述当时400多分并称涨停、大肉；不是华数传媒",
+        "classification": "no_evidence",
+        "missing_reason": "本次只绑定11月6日本地池与信号，未取得11月4日私有模式首次出现、分数、可成交性、成交或收益证据；11月6日池交集不能代证"
+      },
+      {
+        "name": "引力传媒",
+        "code": "603598.XSHG",
+        "source_date": "2026-11-04",
+        "role": "11月4日9点31分断板展示案例；口述当时300多分并称涨停、大肉",
+        "classification": "no_evidence",
+        "missing_reason": "本次只绑定11月6日本地池与信号，未取得11月4日私有模式首次出现、分数、可成交性、成交或收益证据；11月6日池交集不能代证"
+      },
+      {
+        "name": "锦江航运",
+        "code": "601083.XSHG",
+        "source_date": "历史日期未明确",
+        "role": "低分历史例子",
+        "classification": "no_evidence",
+        "missing_reason": "缺对应历史日期的分数、模式输出和成交证据"
+      },
+      {
+        "name": "上海九百",
+        "code": "600838.XSHG",
+        "source_date": "历史日期未明确",
+        "role": "9点31分亏损历史例子",
+        "classification": "no_evidence",
+        "missing_reason": "虽偶合11月6日低吸池，但历史亏损路径未核验"
+      },
+      {
+        "name": "福莱新材",
+        "code": "605488.XSHG",
+        "source_date": "历史日期未明确",
+        "role": "9点31分涨停历史例子",
+        "classification": "no_evidence",
+        "missing_reason": "虽偶合11月6日接力池，但来源历史涨停日期、成交和收益未核验"
+      },
+      {
+        "name": "海洋王",
+        "code": "002724.XSHE",
+        "source_date": "历史日期未明确",
+        "role": "9点31分历史例子",
+        "classification": "no_evidence",
+        "missing_reason": "虽偶合11月6日低吸池，但历史模式输出和成交未核验"
+      },
+      {
+        "name": "曙光股份",
+        "code": "600303.XSHG",
+        "source_date": "历史日期未明确",
+        "role": "9点31分历史例子",
+        "classification": "no_evidence",
+        "missing_reason": "缺对应历史日期的模式输出和成交证据"
+      },
+      {
+        "name": "百洋股份",
+        "code": "002696.XSHE",
+        "source_date": "历史日期未明确",
+        "role": "低涨幅历史例子",
+        "classification": "no_evidence",
+        "missing_reason": "缺对应历史日期的模式输出和成交证据"
+      },
+      {
+        "name": "莱美药业",
+        "code": "300006.XSHE",
+        "source_date": "历史日期未明确",
+        "role": "9点31分历史例子",
+        "classification": "no_evidence",
+        "missing_reason": "虽偶合11月6日低吸池，但历史模式输出和成交未核验"
+      },
+      {
+        "name": "冬季续创、中山精密",
+        "code": null,
+        "source_date": "2026-11-06",
+        "role": "科技下跌语境中的音似名称",
+        "classification": "no_evidence",
+        "missing_reason": "名称无法唯一解析"
+      },
+      {
+        "name": "托伦斯爱人去",
+        "code": null,
+        "source_date": "历史日期未明确",
+        "role": "私有分数历史例子",
+        "classification": "no_evidence",
+        "missing_reason": "语音严重不清，无法唯一解析"
+      },
+      {
+        "name": "大圣文化",
+        "code": null,
+        "source_date": "假设示例，日期不适用",
+        "role": "单笔失败假设中的音似名称",
+        "classification": "no_evidence",
+        "missing_reason": "缺少代码与业务特征，且不是可核验的实际命中陈述"
+      },
+      {
+        "name": "云达股份",
+        "code": null,
+        "source_date": "历史日期未明确",
+        "role": "私有分数历史例子",
+        "classification": "no_evidence",
+        "missing_reason": "可能为运达股份或韵达股份，来源不能唯一解析"
+      },
+      {
+        "name": "静义装备、精益装备",
+        "code": null,
+        "source_date": "2026-11-06",
+        "role": "同日盘中展示中的音似辅助案例；口述五点九/六个点，具体秒点与字段不清",
+        "classification": "no_evidence",
+        "missing_reason": "名称无法唯一解析，也未取得11月6日私有盘中首次出现、具体时点、成交或收益证据"
+      },
+      {
+        "name": "BEV、D",
+        "code": null,
+        "source_date": "历史日期未明确",
+        "role": "20%涨停历史例子",
+        "classification": "no_evidence",
+        "missing_reason": "英文或字母听写不完整，无法确认证券"
+      },
+      {
+        "name": "奥宏电子",
+        "code": null,
+        "source_date": "历史日期未明确",
+        "role": "9点31分历史例子",
+        "classification": "no_evidence",
+        "missing_reason": "目录和上下文不足以唯一解析"
+      },
+      {
+        "name": "还要往贷",
+        "code": null,
+        "source_date": "历史日期未明确",
+        "role": "9点31分历史例子",
+        "classification": "no_evidence",
+        "missing_reason": "语音严重不清，无法确认证券"
+      }
+    ],
+    "named_stock_classifications": [
+      {
+        "name": "贝特利",
+        "classification": "no_evidence"
+      },
+      {
+        "name": "奥雅股份",
+        "classification": "no_evidence"
+      },
+      {
+        "name": "凡拓数创",
+        "classification": "raw_pool_only"
+      },
+      {
+        "name": "东方海洋",
+        "classification": "raw_pool_only"
+      },
+      {
+        "name": "华正新材",
+        "classification": "raw_pool_only"
+      },
+      {
+        "name": "阳光照明",
+        "classification": "not_emitted"
+      },
+      {
+        "name": "佰维存储",
+        "classification": "not_emitted"
+      },
+      {
+        "name": "掌阅科技",
+        "classification": "no_evidence"
+      },
+      {
+        "name": "闽发铝业",
+        "classification": "no_evidence"
+      },
+      {
+        "name": "文投控股",
+        "classification": "no_evidence"
+      },
+      {
+        "name": "皇台酒业",
+        "classification": "not_emitted"
+      },
+      {
+        "name": "澳洋健康",
+        "classification": "no_evidence"
+      },
+      {
+        "name": "青岛食品",
+        "classification": "no_evidence"
+      },
+      {
+        "name": "百花医药",
+        "classification": "no_evidence"
+      },
+      {
+        "name": "万向德农",
+        "classification": "no_evidence"
+      },
+      {
+        "name": "冰山冷热",
+        "classification": "no_evidence"
+      },
+      {
+        "name": "桂林三金",
+        "classification": "raw_pool_only"
+      },
+      {
+        "name": "华智数媒",
+        "classification": "no_evidence"
+      },
+      {
+        "name": "引力传媒",
+        "classification": "no_evidence"
+      },
+      {
+        "name": "锦江航运",
+        "classification": "no_evidence"
+      },
+      {
+        "name": "上海九百",
+        "classification": "no_evidence"
+      },
+      {
+        "name": "福莱新材",
+        "classification": "no_evidence"
+      },
+      {
+        "name": "海洋王",
+        "classification": "no_evidence"
+      },
+      {
+        "name": "曙光股份",
+        "classification": "no_evidence"
+      },
+      {
+        "name": "百洋股份",
+        "classification": "no_evidence"
+      },
+      {
+        "name": "莱美药业",
+        "classification": "no_evidence"
+      },
+      {
+        "name": "三星",
+        "classification": "no_evidence"
+      },
+      {
+        "name": "冬季续创、中山精密",
+        "classification": "no_evidence"
+      },
+      {
+        "name": "托伦斯爱人去",
+        "classification": "no_evidence"
+      },
+      {
+        "name": "大圣文化",
+        "classification": "no_evidence"
+      },
+      {
+        "name": "云达股份",
+        "classification": "no_evidence"
+      },
+      {
+        "name": "静义装备、精益装备",
+        "classification": "no_evidence"
+      },
+      {
+        "name": "BEV、D",
+        "classification": "no_evidence"
+      },
+      {
+        "name": "奥宏电子",
+        "classification": "no_evidence"
+      },
+      {
+        "name": "还要往贷",
+        "classification": "no_evidence"
+      }
+    ],
+    "non_stock_entity_boundary": [
+      "中国A股整体",
+      "美国股票市场",
+      "一线城市住宅"
+    ],
+    "local_pool_counts": {
+      "qibao": 8,
+      "jieli": 22,
+      "dixi": 237,
+      "deduplicated_codes": 267
+    },
+    "source_named_pool_overlaps": {
+      "qibao": [
+        "桂林三金002275.XSHE"
+      ],
+      "jieli": [
+        "东方海洋002086.XSHE",
+        "福莱新材605488.XSHG"
+      ],
+      "dixi": [
+        "青岛食品001219.XSHE",
+        "澳洋健康002172.XSHE",
+        "海洋王002724.XSHE",
+        "莱美药业300006.XSHE",
+        "华智数媒300426.XSHE",
+        "凡拓数创301313.XSHE",
+        "文投控股600715.XSHG",
+        "百花医药600721.XSHG",
+        "上海九百600838.XSHG",
+        "华正新材603186.XSHG",
+        "掌阅科技603533.XSHG"
+      ]
+    },
+    "source_named_pool_overlap_boundary": "这些交集只是11月6日盘前观察辅助：盘前池成员不证明私有盘中首次出现、作者排名、成交或收益；盘前池未包含某股也不能反证其后私有盘中输出。对八月、11月4日和11月5日案例仍按no_evidence处理。",
+    "formal_local_evidence": {
+      "signal": "只发现与老师点名股票不同的影子候选，且不是正式可执行信号。",
+      "positions": "私有审计文件未提供可确认的本地正式命中证据。",
+      "paper_trades": "私有审计文件未提供可确认的Paper成交证据。"
+    },
+    "result": "三桶保持分开，35个股票或未解析股票表述逐项分类，并对10条易混相对日期出现单独审核；没有emitted_strategy_hit、emitted_qibao_hit、cohort_benchmark或cohort_watchlist，也没有可确认的本地正式策略命中。",
+    "dated_appearance_audit": [
+      {
+        "name": "百花医药",
+        "code": "600721.XSHG",
+        "source_date": "历史八月，具体日期未明确",
+        "role": "连板历史例子；与万向德农合计口述100点",
+        "classification": "no_evidence",
+        "boundary": "合计数字不是单股收益，缺八月模式输出、成交和收益证据"
+      },
+      {
+        "name": "万向德农",
+        "code": "600371.XSHG",
+        "source_date": "历史八月，具体日期未明确",
+        "role": "连板历史例子；与百花医药合计口述100点",
+        "classification": "no_evidence",
+        "boundary": "与11月6日盘中案例分开；合计数字不是单股收益，缺八月证据"
+      },
+      {
+        "name": "万向德农",
+        "code": "600371.XSHG",
+        "source_date": "2026-11-06",
+        "role": "“断板+盘中起爆”9点31分当日正面案例",
+        "classification": "no_evidence",
+        "boundary": "口述“当时两个点”及“七个多点、涨停”；两组数字的字段、观察时点和成交未知，盘前池不含该股也不能反证私有盘中输出"
+      },
+      {
+        "name": "东方海洋",
+        "code": "002086.XSHE",
+        "source_date": "2026-11-05",
+        "role": "来源次日回看的前一日盘中出现",
+        "classification": "no_evidence",
+        "boundary": "缺11月5日私有首次出现、模式输出、成交与收益证据"
+      },
+      {
+        "name": "东方海洋",
+        "code": "002086.XSHE",
+        "source_date": "2026-11-06",
+        "role": "连板接力当日再次出现",
+        "classification": "raw_pool_only",
+        "boundary": "11月6日接力池只证明池成员，不证明私有排名、首次出现或成交"
+      },
+      {
+        "name": "静义装备、精益装备",
+        "code": null,
+        "source_date": "2026-11-06",
+        "role": "同日盘中展示中的音似辅助案例",
+        "classification": "no_evidence",
+        "boundary": "具体盘内时点未知；名称未解析，五点九/六个点的字段与成交不清"
+      },
+      {
+        "name": "桂林三金",
+        "code": "002275.XSHE",
+        "source_date": "2026-11-06",
+        "role": "同日盘中展示中的辅助案例",
+        "classification": "raw_pool_only",
+        "boundary": "盘前起爆池成员不证明私有盘中首次出现、具体时点、成交或收益"
+      },
+      {
+        "name": "冰山冷热",
+        "code": "000530.XSHE",
+        "source_date": "2026-11-04",
+        "role": "9点31分断板展示；口述500多分、涨停和大肉",
+        "classification": "no_evidence",
+        "boundary": "缺11月4日私有首次出现、分数、成交与收益证据"
+      },
+      {
+        "name": "华智数媒",
+        "code": "300426.XSHE",
+        "source_date": "2026-11-04",
+        "role": "9点31分断板展示；口述400多分、涨停和大肉",
+        "classification": "no_evidence",
+        "boundary": "不是华数传媒；11月6日低吸池交集不能代证11月4日战果"
+      },
+      {
+        "name": "引力传媒",
+        "code": "603598.XSHG",
+        "source_date": "2026-11-04",
+        "role": "9点31分断板展示；口述300多分、涨停和大肉",
+        "classification": "no_evidence",
+        "boundary": "缺11月4日私有首次出现、分数、成交与收益证据"
+      }
+    ]
+  },
+  "action_summary": {
+    "posture_update": "proposal_only：保留来源日弱广度与短线高位并存的观察，不更新现行姿态。",
+    "playbook_update": "proposal_only：候选密度、评分与形态平衡、状态持有期、模块切换和回落执行仅作研究素材。",
+    "hypothesis_update": "授权的authority=0入库应复用XH-351完全相同claim并追加本次来源；其余主题只记录部分支持，不新建候选。",
+    "audit_evidence": "已核对完整逐字稿、11月6日三类池、267条日期索引、本地推荐、信号、Paper持仓交易和决策日志；teacher_named_winners、local_strategy_benchmark_hits、direction_core_observations三桶分离，并对35个股票或未解析股票表述逐项分类。公开蒸馏物不复制账户余额、家庭金额或持仓清单。",
+    "instrumentation_todo": "若研究，需保存固定时点广度、首次出现、全候选、可成交价格、费用和失败样本；9点31分回落必须事前定义，禁止事后低点。",
+    "routing": [
+      "authority=0",
+      "authorized_ingestion_candidate",
+      "reuse_existing_XH-351",
+      "research_promotion_human_gate",
+      "no_auto_tune",
+      "no_book_action"
+    ]
+  }
+}

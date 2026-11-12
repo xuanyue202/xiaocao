@@ -11,6 +11,7 @@ import json
 from datetime import datetime
 from decimal import Decimal, ROUND_CEILING, InvalidOperation
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from .book_b_capital import digest, number, policy
 from .book_b_live_lifecycle import load_execution_intents, read_execution_plan, open_execution_plan_ids
@@ -39,7 +40,9 @@ def query_codes(root: Path, *, trade_date: str) -> set[str]:
     return {str(intents[p]['code']) for p in prior_day_buy_ids(root, trade_date=trade_date)}
 
 
-def _calculate(root: Path, snapshot: dict, *, event_heads: dict | None = None, ownership_head: str | None = None) -> dict:
+def _calculate(root: Path, snapshot: dict, *, event_heads: dict | None = None,
+               ownership_head: str | None = None, day_validity: bool = True,
+               bind_submit_origin: bool = True) -> dict:
     from .book_b_accounting import replay_owned
     from .book_b_live_morning import _event_chain_proven, _uncertain_execution_plan_ids
     from .buy_preflight import validate_buy_preflight
@@ -77,6 +80,20 @@ def _calculate(root: Path, snapshot: dict, *, event_heads: dict | None = None, o
         if code in rows:
             raise ValueError('LIVE_INHERITED_BUY_POSITION_DUPLICATE')
         rows[code] = row
+    complete_positions = (
+        positions.get('capture_proven') is True
+        and positions.get('kind') == 'positions'
+        and type(positions.get('row_count')) is int
+        and positions.get('row_count') == len(positions['rows'])
+        and type(positions.get('observed_total_row_count')) is int
+        and positions['observed_total_row_count'] >= len(positions['rows'])
+    )
+    owned_shares = {}
+    for event in rows_prefix:
+        code = _normalize_code(event['code'])
+        owned_shares[code] = owned_shares.get(code, 0) + (
+            int(event['shares']) if event['side'] == 'BUY' else -int(event['shares']))
+    unassigned_shares = {}
     cash = number(snapshot['available_cash'])
     # The same capture's gross cash includes freezes. Use it only as a lower
     # bound on the cash pool; min(available, gross - commitments) avoids charging
@@ -122,10 +139,12 @@ def _calculate(root: Path, snapshot: dict, *, event_heads: dict | None = None, o
             raise ValueError('LIVE_INHERITED_BUY_FILL_BOUND_UNPROVEN')
         price = number(plan.limit_price)
         claims = {}
+        claim_origins = {}
         claim_orders = {}
         for event in events:
             seen = ExecutionReceipt.from_dict(event['receipt'])
             if seen.submit_claim_id:
+                claim_origins.setdefault(seen.submit_claim_id, seen)
                 if any(claim != seen.submit_claim_id and prior.state not in TERMINAL_STATES
                         for claim, prior in claims.items()):
                     raise ValueError('LIVE_INHERITED_BUY_MULTIPLE_UNRESOLVED_CLAIMS')
@@ -159,22 +178,50 @@ def _calculate(root: Path, snapshot: dict, *, event_heads: dict | None = None, o
                 raise ValueError('LIVE_INHERITED_BUY_EFFECT_BOUND_CONTRADICTED')
         row = rows.get(plan.code.split('.')[0])
         mark = price
+        position_shares = 0
         if row is not None:
-            shares = _broker_integer(row.get('证券数量'), reason='LIVE_INHERITED_BUY_POSITION_UNPROVEN')
-            if shares > 0:
+            position_shares = _broker_integer(row.get('证券数量'), reason='LIVE_INHERITED_BUY_POSITION_UNPROVEN')
+            if position_shares < 0:
+                raise ValueError('LIVE_INHERITED_BUY_POSITION_UNPROVEN')
+            if position_shares > 0:
                 mark = _broker_decimal(row.get('当前价'), reason='LIVE_INHERITED_BUY_MARK_UNPROVEN')
                 if mark <= 0:
                     raise ValueError('LIVE_INHERITED_BUY_MARK_UNPROVEN')
         cost = (Decimal(remaining) * price * Decimal('1.0001')).quantize(_CENT, rounding=ROUND_CEILING)
         risk_exposure = (Decimal(remaining) * max(price, mark)).quantize(_CENT, rounding=ROUND_CEILING)
+        expiry = {}
+        if day_validity:
+            # This native port submits ordinary numeric DAY orders only.
+            # Historical fill uncertainty survives expiry, but cannot create
+            # a fresh cash hold or a future fill on another trading date.
+            origin = claim_origins.get(receipt.submit_claim_id)
+            native_submission = (origin is not None and origin.state == ExecutionState.CLAIMED
+                and origin.template_name == 'foundersc-native-ax' and origin.account_binding == 'proven')
+            route_proven = native_submission if bind_submit_origin else receipt.template_name == 'foundersc-native-ax'
+            expired = (route_proven
+                and plan.environment == 'live' and plan.book == 'B'
+                and plan.logical_account_id == 'primary'
+                and plan.created_at.utcoffset() is not None
+                and plan.created_at.astimezone(ZoneInfo('Asia/Shanghai')).date().isoformat() == plan.trade_date)
+            expiry = {'unfilled_order_expired': expired,
+                      'current_position_bound_proven': expired and complete_positions}
+            if expired:
+                cost = Decimal(0)
+                if complete_positions:
+                    code = plan.code.split('.')[0]
+                    unassigned_shares.setdefault(code, max(0, position_shares - owned_shares.get(code, 0)))
+                    current_shares = min(remaining, unassigned_shares[code])
+                    unassigned_shares[code] -= current_shares
+                    risk_exposure = (Decimal(current_shares) * mark).quantize(_CENT, rounding=ROUND_CEILING)
+                    expiry['possible_current_unowned_shares'] = current_shares
         commitments += cost
         exposure += risk_exposure
         entries.append({'plan_id': plan_id, 'plan_hash': plan.plan_hash, 'code': plan.code,
             'event_head': {'sequence': events[-1]['sequence'], 'event_hash': events[-1]['event_hash']},
             'service_state': receipt.state.value, 'submit_claim_id': receipt.submit_claim_id,
             'proved_filled_shares': proved, 'possible_remaining_shares': remaining,
-            'cash_commitment_upper_bound': str(cost), 'exposure_upper_bound': str(risk_exposure)})
-    result = {'schema_version': 'inherited-buy-isolation.v1', 'scope': 'independent_new_buy',
+            'cash_commitment_upper_bound': str(cost), 'exposure_upper_bound': str(risk_exposure), **expiry})
+    result = {'schema_version': 'inherited-buy-isolation.v2' if day_validity else 'inherited-buy-isolation.v1', 'scope': 'independent_new_buy',
         'trade_date': snapshot['trade_date'], 'observed_at': snapshot['observed_at'],
         'fund_account_binding_sha256': snapshot['fund_account_binding_sha256'],
         'capital_policy_sha256': cfg['policy_sha256'], 'broker_snapshot_sha256': snapshot['snapshot_sha256'],
@@ -184,6 +231,8 @@ def _calculate(root: Path, snapshot: dict, *, event_heads: dict | None = None, o
         'new_buy_cash_limit': str(max(Decimal(0), min(cash, gross - commitments))),
         'same_code_buy_fences': sorted({entry['code'] for entry in entries}),
         'accounting_finality': 'pending', 'order_replay_allowed': False}
+    if day_validity and bind_submit_origin:
+        result['submit_origin_bound'] = True
     return result
 
 
@@ -219,6 +268,8 @@ def _verify(root: Path, proof: dict, *, current: bool, now: datetime | None) -> 
     body = {k: v for k, v in proof.items() if k != 'isolation_sha256'}
     if digest(body) != proof.get('isolation_sha256'):
         raise ValueError('LIVE_INHERITED_BUY_PROOF_HASH_MISMATCH')
+    if proof.get('schema_version') not in {'inherited-buy-isolation.v1', 'inherited-buy-isolation.v2'}:
+        raise ValueError('LIVE_INHERITED_BUY_PROOF_VERSION_UNSUPPORTED')
     path = Path(proof['snapshot_path'])
     expected = (root / 'inherited_buy_evidence' / (proof['broker_snapshot_sha256'] + '.json')).resolve()
     if path.is_symlink() or path.resolve() != expected:
@@ -230,7 +281,10 @@ def _verify(root: Path, proof: dict, *, current: bool, now: datetime | None) -> 
         from .buy_preflight import validate_buy_preflight
         validate_buy_preflight(json.loads(raw), proof['trade_date'], now)
     heads = {entry['plan_id']: entry['event_head'] for entry in proof['plan_bounds']}
-    rebuilt = _calculate(root, json.loads(raw), event_heads=None if current else heads, ownership_head=proof['ownership_head_sha256'])
+    rebuilt = _calculate(root, json.loads(raw), event_heads=None if current else heads,
+        ownership_head=proof['ownership_head_sha256'],
+        day_validity=proof['schema_version'] == 'inherited-buy-isolation.v2',
+        bind_submit_origin=current or proof.get('submit_origin_bound') is True)
     rebuilt.update(snapshot_path=str(path.resolve()), snapshot_file_sha256=proof['snapshot_file_sha256'])
     if rebuilt != body:
         raise ValueError('LIVE_INHERITED_BUY_PROOF_SOURCE_CHANGED')

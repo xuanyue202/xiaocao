@@ -1,0 +1,397 @@
+{
+  "schema_version": 1,
+  "authority": 0,
+  "date": "2026-11-08",
+  "kind": "大师班复盘直播",
+  "author": "小草",
+  "source": "小草直播",
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_netdisk_enrichment/artifacts/kol-netdisk-35666d0254284a1b/20261108 11月8日大师班复盘直播-compressed.txt",
+      "sha256": "5ab9e2b413e195fc2f894e53e1664624eefcbc87f0d2895fae2ed997410deb13",
+      "size": 141733
+    },
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261109_21_01a1c083/video8_history_audit_inputs.json",
+      "sha256": "41a60d02f8e3645ba7df4b64f9d98727e478545725170af7bf859a9b001826d4",
+      "role": "strategy_hit_audit_read_only",
+      "size": 15047
+    },
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261109_21_01a1c083/video_hypothesis_dedup_priors.json",
+      "sha256": "fc75245b873053a2a4e7e73ddbb6cd190fb2a6fc6876e08e0af6022b84e04860",
+      "role": "dedup_priors_read_only",
+      "size": 21642
+    },
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261109_21_01a1c083/video_knowledge_feedback.txt",
+      "sha256": "a35bd277e747e52f23404de896194e7f097047d2b987d4e068bfebb2f96c42fe",
+      "role": "calibration_feedback_read_only",
+      "size": 3001
+    }
+  ],
+  "summary": "本场可复用价值不在未核实的榜单或收益，而在四组可证伪方法：用完整环境序列约束短线周期、把私有评分的质量收益与机会损失同时计量、在轮动市研究跳水持续时间而非只看跌幅、以及把盘中候选的首次出现和可成交回落写成无未来函数规则。来源当时的具体模式选择、个股案例和次日计划均保留日期边界；全部内容仅作authority=0研究候选。 营销多人对话中一位未标名发言者给出的尾盘14时57分前买、次日集合竞价固定退出例子作为XH-324的来源支持，不新增同义候选。",
+  "posture": {
+    "regime": "作者把来源时点附近的市场类比为八月式短线轮动，估计短周期尚未结束，但明确否认这是大牛市或主升浪。",
+    "dominant_style": "若次日早盘未退潮，作者当时优先观察连板接力、断板起爆和首断起爆；盘中系统与竞价系统承担不同时间段的候选发现。",
+    "risk": "周期长度只是环境复现推测；私有模式、评分、榜单、样例收益、首次出现和成交均未独立重建，且作者反复提醒高波动、大面与退潮风险。",
+    "style_ranking": [
+      "正常短线轮动，不等同于指数主升或全面牛市",
+      "来源次日若早盘不退潮，连板、断板与首断是当时观察重点",
+      "不能因美股科技走弱就机械切换到A股科技，仍要比较本地机会成本与真实承接"
+    ]
+  },
+  "regime_call": {
+    "source_date": "2026-11-08",
+    "horizon": "作者口述约七个工作日、下周二三附近或一至两周；以来源时钟计算，不按11月9日到达时间平移。",
+    "call": "短线轮动大概率还能延续一段时间，随后要警惕短线退潮；退潮不一定表现为指数下跌。",
+    "what_would_falsify": [
+      "系统复核条件：短线高度、承接、候选密度与赚钱效应提前同步退潮。",
+      "系统复核条件：权重与趋势主线持续扩散，使八月式轮动类比失效。"
+    ],
+    "boundary": "有明确日期的11月9日收盘指数只能说明当日指数表现；另行取得的广度记录不带日期时间，不能归入11月9日或与指数拼成同一收盘截面。两者都不能证明11月6日历史盘面、私有模式状态或作者估计的持续天数。"
+  },
+  "directions": [
+    {
+      "subject": "短线轮动",
+      "stance": "作者认为来源时点附近短线尚未结束，但把退潮警戒放在约七个工作日、下周二三或一至两周的模糊窗口内。",
+      "horizon": "来源后的约七个工作日至一两周",
+      "falsifier": "系统复核条件：短线高度、承接和候选密度提前显著转弱"
+    },
+    {
+      "subject": "A股科技",
+      "stance": "美股科技走弱不自动构成切换到A股科技的理由，必须看A股自身承接与相对机会成本。",
+      "horizon": "当前短线轮动阶段",
+      "falsifier": "系统复核条件：A股科技形成独立、持续且显著强于其他短线方向的扩散"
+    },
+    {
+      "subject": "盘中与竞价候选发现",
+      "stance": "盘中适合捕捉开盘后才出现的轮动与卡位，竞价只能描述开盘时点；两者不能互相替代。",
+      "horizon": "同类轮动行情",
+      "falsifier": "系统复核条件：盘中信号在完整样本中不改善可成交候选发现或风险调整后结果"
+    }
+  ],
+  "stocks": [
+    {
+      "name": "凡拓数创",
+      "code": "301313.XSHE",
+      "role": "轮动环境下高抛一半的来源日持仓问答案例；只确认公司身份，未核实买入、九个点收益或成交。"
+    },
+    {
+      "name": "奥雅股份",
+      "code": "300949.XSHE",
+      "role": "真趋势可减仓后继续持有的历史案例；只确认公司身份，未核实来源所述持有路径。"
+    },
+    {
+      "name": "万向德农",
+      "code": "600371.XSHG",
+      "role": "断板与首断起爆展示的历史案例；只确认公司身份，未核实榜单、涨停、样例收益或成交。"
+    },
+    {
+      "name": "东方海洋",
+      "code": "002086.XSHE",
+      "role": "盘中断板及连板接力的历史展示案例；只确认公司身份，未核实榜单、收益或成交。"
+    },
+    {
+      "name": "冰山冷热",
+      "code": "000530.XSHE",
+      "role": "约9点31分出现后回落、作者用来说明较早回落可买的历史案例；只确认公司身份，未核实首次出现、9点45分边界或成交。"
+    },
+    {
+      "name": "锦江航运",
+      "code": "601083.XSHG",
+      "role": "盘中回落与可成交性的历史展示案例；只确认公司身份，未核实榜单、收益或成交。"
+    },
+    {
+      "name": "百洋、丰源股份、奥宏电子、BEV、L小三零",
+      "code": null,
+      "role": "语音或简称无法在本次身份核对中唯一绑定，只作为历史展示审计项，不生成证券结论。"
+    }
+  ],
+  "method_principles": [
+    "环境类比必须给出起点、自然期限和退潮条件；‘约七个工作日’、‘下周二三’与‘一两周’是带歧义的估计，不得事后平移或挑中一个最有利口径。",
+    "作者私有君王分大于300可用于所有模式，但严格筛选会漏掉周转机会；研究必须同时报告质量、覆盖率、换手、可成交率和左尾，不能只比较胜率。",
+    "轮动行情中的跳水研究应把持续时间与跌幅分开；作者认为持续多久比跌多少更重要，但该模式仍处研究阶段。",
+    "凡拓数创与奥雅股份代表两种不同处理：非趋势轮动股以修复时高抛为主，真趋势股可减仓后按趋势持有；不能把两者合并成统一买卖指令。",
+    "盘中排名必须保存固定时点、首次出现、完整候选、当时可成交价格和随后路径；‘9点45分前’及‘越早越好’只能作为待检验规则，不能用事后最低价。",
+    "产品展示中的模式排名曾被明确改口为演示图，且上线仍需测试；任何实时使用前都要独立确认版本、时点和当前启用状态。",
+    "高开约16%的历史样例不建议追，与‘次日大高开仍可参与但降低预期’是不同语境；研究与执行必须分别建模。",
+    "交易计划优先于方向预测：作者拒绝给单票确定涨跌，转而给出修复、减仓、趋势失效和波动承受边界。",
+    {
+      "rule": "尾盘模型研究必须先固定退出：可用次日集合竞价作基准；“冲高卖”若不事前定义幅度、时间和未触发处理，会引入未来函数。",
+      "applicability": "尾盘买入、次日退出的模式研究",
+      "exception": "只有预注册并可复现的冲高触发规则才可作为对照；多人对话中的口述不等于策略已验证。",
+      "attribution": "营销多人对话中的未标名发言者（逐句身份不确定）",
+      "authority": 0
+    }
+  ],
+  "exit_lessons": [
+    "轮动股若来源次日低开后修复，可在高抛时先减一半；该例只对应来源日计划，不能平移到处理日。",
+    "真趋势也不建议满仓死拿，应保留减仓后的趋势持有与失效退出。",
+    "断板与盘中起爆可能出现十多个点的收益，也可能出现十多个点的大面；不能以展示赢家替代左尾统计。",
+    "若模式需要依赖作者临盘猜低点或无法事前定义的时间点，系统研究应判定为不可复现而不是补猜。"
+  ],
+  "hypotheses": [
+    {
+      "claim": "系统研究候选：在相似短线环境中，作者所称约十至十一个交易日的上升周期具有可重复的退潮时间聚集。",
+      "implied_rule": "按事前定义的环境相似度选取样本，从每次周期启动日计数至高度、承接和赚钱效应同步退潮。",
+      "falsifiable_test": "检验退潮日分布是否在第十至第十一个交易日附近显著聚集，并与无条件基准和滚动窗口外样本比较；若无稳定集中则否决。",
+      "expected_effect": "只检验周期计时是否有增量，不直接生成持仓或参数。",
+      "category": "market_cycle",
+      "authority": 0,
+      "provenance": {
+        "source": "小草直播",
+        "source_date": "2026-11-08",
+        "speaker": "小草本人",
+        "authority": 0
+      },
+      "source_basis": [
+        "还有七七个工作日",
+        "下一周，这两周应该都是比较好的行情",
+        "特别就看退潮期"
+      ],
+      "related_existing_ids": [
+        "XH-085",
+        "XH-281"
+      ],
+      "dedup_boundary": "XH-085要求换手核心、高标衔接和跌停收敛等实时结构确认；XH-281要求连续高标快速衔接和赚钱效应扩散。本候选只检验本场所称约第10至11个交易日、约七个工作日或一两周的退潮时间聚集，并保留期限口径差异，不把固定天数升级为仓位规则。",
+      "dedup_disposition": "refinement_candidate"
+    },
+    {
+      "claim": "系统研究候选：轮动行情中，跳水持续时间对后续短时反弹与板块排名的解释力高于单纯跌幅。",
+      "implied_rule": "同时记录跳水起点、持续分钟数、跌幅、广度、环境类型与反弹路径，在预设时点形成信号。",
+      "falsifiable_test": "在轮动与单边下跌样本中比较持续时间、跌幅及二者组合对未来5至30分钟收益和最大不利变动的样本外解释力；若持续时间无增量则否决。",
+      "expected_effect": "若成立，改善盘中预警时点；不使用事后最低点。",
+      "category": "intraday_timing",
+      "authority": 0,
+      "provenance": {
+        "source": "小草直播",
+        "source_date": "2026-11-08",
+        "speaker": "小草本人",
+        "authority": 0
+      },
+      "source_basis": [
+        "跳水不是跳多少？而是跳多久？",
+        "如果是那种轮动行情呢，这种就比较好拆",
+        "我也正在研究啊，时序因子"
+      ],
+      "related_existing_ids": [],
+      "dedup_boundary": "现有绑定先验没有直接比较跳水持续时间与跌幅的同义候选；本候选只研究两者对未来5至30分钟反弹和最大不利变动的相对增量，不猜测与未提供候选的共现关系。",
+      "dedup_disposition": "new_candidate"
+    },
+    {
+      "claim": "系统研究候选：作者私有君王分大于300会提高长期候选质量，但降低候选覆盖率和周转机会。",
+      "implied_rule": "以同一完整候选全集比较300以上、300以下和连续分位组，报告收益、左尾、成交率、覆盖率与机会成本。",
+      "falsifiable_test": "做滚动样本外分层与费用后检验；若质量改善不足以补偿覆盖和周转损失，或跨期不稳定，则否决固定300阈值。",
+      "expected_effect": "把阈值讨论从口述赢家转成收益与机会损失的联合评估。",
+      "category": "score_threshold",
+      "authority": 0,
+      "provenance": {
+        "source": "小草直播",
+        "source_date": "2026-11-08",
+        "speaker": "小草本人",
+        "authority": 0
+      },
+      "source_basis": [
+        "小草君王分大于300分适用，其实适用于所有的模式",
+        "会有可能会错过一些周转率的机会",
+        "如果大于300分，从长期来说。会比小于300分的要好"
+      ],
+      "related_existing_ids": [
+        "XH-223",
+        "XH-134"
+      ],
+      "dedup_boundary": "XH-223研究大于零资格、高分、出现时点和递进阈值的样本外增量；XH-134研究9时40分前紫薇100/600等分档。本候选只检验私有君王分300跨所有模式的质量改善与候选覆盖率、周转机会损失，不映射生产字段。",
+      "dedup_disposition": "refinement_candidate"
+    },
+    {
+      "claim": "系统研究候选：盘中候选在较早回落时成交，相比固定9点31分追入，可能改善风险收益。",
+      "implied_rule": "事前定义首次出现、允许回落幅度、最晚时间和取消条件，禁止使用当日最低价。",
+      "falsifiable_test": "比较固定时点成交、预定义回落成交和未成交三组的成交率、收益、最大不利变动与滑点；若改善来自未成交选择偏差则否决。",
+      "expected_effect": "验证‘越早回落越好’和约9点45分边界是否真实存在。",
+      "category": "execution",
+      "authority": 0,
+      "provenance": {
+        "source": "小草直播",
+        "source_date": "2026-11-08",
+        "speaker": "小草本人",
+        "authority": 0
+      },
+      "source_basis": [
+        "只要是比较早的时间跌下去可以买",
+        "这个是九点四十四十三是不是45之前啊",
+        "目前我的测试数据是这样子的"
+      ],
+      "related_existing_ids": [
+        "XH-068",
+        "XH-283"
+      ],
+      "dedup_boundary": "XH-068研究首次健康回落补第二笔的两段执行；XH-283比较开盘五分钟内早跌与9时38分后晚跌。本候选比较固定9时31分入场与事前定义的较早回落入场，并单独检验约9时45分最晚边界；不复用补仓结构，也不把口误当确定参数。",
+      "dedup_disposition": "refinement_candidate"
+    }
+  ],
+  "timing_notes": [
+    "来源发布于2026-11-08 16:30+08:00，内容以11月6日收盘后的周末复盘为主；‘明天’指11月9日，不指处理后的下一交易日。",
+    "‘约七个工作日’、‘下周二三’与‘一两周’并存，显示作者给的是环境类比区间而不是精确承诺。",
+    "11月9日早盘条件、具体盘中模式和高开处理在语义处理时已经过期；只有跨越数日的市场姿态仍可作为待复核先验。",
+    "模式切换截图曾被明确说成演示，系统上线仍需测试；不能把展示排名当作当前可用事实。"
+  ],
+  "decision_trace": [
+    "观察：美股周末上涨后回落，作者把当前短线环境类比为八月的一段上升周期。",
+    "推断：来源时点附近短线可能再延续约七个工作日或一两周，但下周二三附近要警惕退潮，且退潮不一定体现为指数下跌。",
+    "观察：若11月9日早盘不退潮，作者当时仍愿意做连板、断板与首断；大高开则降低预期。",
+    "执行：非趋势轮动股以修复高抛为主，真趋势股减仓后按趋势持有；私有评分与盘中回落规则都必须先复现。",
+    "边界：所有来源日具体买点已过期，历史案例、产品演示和营销收益不转成当前动作。"
+  ],
+  "judgment_heuristics": [
+    "相似环境只提供概率先验，必须同时给出自然期限、触发器和退潮失效条件。",
+    "严格阈值的价值必须与漏票、周转和可成交性一起评估。",
+    "轮动与单边下跌要分层；同一跳水规则不能跨环境直接复用。",
+    "历史案例、演示榜单、产品上线状态和真实成交是四种不同证据。",
+    "多人直播里的销售口述、嘉宾数据和作者观点分别归属，不能合并成小草的证券推荐。"
+  ],
+  "strategy_hit_audit": {
+    "status": "reviewed_no_emitted_strategy_hit",
+    "source_date": "2026-11-08",
+    "audit_observed_at": "2026-11-09T22:50:49.183595+08:00",
+    "teacher_claim_boundary": "来源点名的是老师私有盘中模式回看、持有问答或趋势案例；本地固定推荐/信号、Paper账本与老师私有模式并非同一口径。",
+    "teacher_named_winners": [
+      {
+        "name": "万向德农",
+        "code": "600371.XSHG",
+        "classification": "not_emitted",
+        "boundary": "11月6日不在本地固定推荐、信号或买入记录中；只证明本地口径未发射，不证明老师私有盘中模式无信号。"
+      },
+      {
+        "name": "东方海洋",
+        "code": "002086.XSHE",
+        "classification": "raw_pool_only",
+        "boundary": "11月6日缓存group0中出现，但不是本地固定发射；老师所说日期在11月5日或6日间存在上下文歧义，不能据此验证涨停、排名或成交。"
+      },
+      {
+        "name": "冰山冷热",
+        "code": "000530.XSHE",
+        "classification": "not_emitted",
+        "boundary": "11月2日不在本地固定推荐、信号或买入记录中；不等于否定老师私有盘中候选。"
+      },
+      {
+        "name": "锦江航运",
+        "code": "601083.XSHG",
+        "classification": "no_evidence",
+        "boundary": "来源样例日期不唯一，无法做同日同股核对。"
+      },
+      {
+        "name": "百洋",
+        "code": null,
+        "classification": "no_evidence",
+        "boundary": "来源简称不能唯一解析；11月2日本地百洋股份是N字低吸COLD且不可交易，也不能据此认定同股命中。"
+      },
+      {
+        "name": "丰源股份、奥宏电子、BEV、L小三零",
+        "code": null,
+        "classification": "no_evidence",
+        "boundary": "名称未唯一解析，不补猜代码或本地映射。"
+      }
+    ],
+    "direction_core_observations": [
+      {
+        "name": "凡拓数创",
+        "code": "301313.XSHE",
+        "classification": "raw_pool_only",
+        "boundary": "11月6日缓存group3中出现，且缓存取得晚于9:25；它在来源里是轮动高抛半仓问答案例，不是新买信号。"
+      },
+      {
+        "name": "奥雅股份",
+        "code": "300949.XSHE",
+        "classification": "no_evidence",
+        "boundary": "来源里是真趋势减仓持有案例；本地没有同日正式命中证据。"
+      }
+    ],
+    "local_strategy_benchmark_hits": [],
+    "api_gap": "历史指定证券index三次小批量读取均返回990502 MARKET_LOGIN_CAPTCHA_REQUIRED；已停止，未取得字段保持unknown，绝不按0处理。",
+    "result": "没有证据支持emitted_strategy_hit、emitted_qibao_hit、cohort_benchmark或cohort_watchlist；本地独立标的不能替代老师同股案例。",
+    "authority": 0
+  },
+  "feedback_response": {
+    "status": "compared_with_bound_priors",
+    "reason": "revision5 已绑定30条相关先验与当前反馈；草稿完成逐项去重比较，但不猜测新的入库ID，也不执行知识写入。",
+    "new_hypotheses": [
+      "环境复现的十至十一个交易日退潮聚集",
+      "轮动市跳水持续时间相对跌幅的增量",
+      "君王分300阈值的质量与机会损失权衡",
+      "盘中较早回落成交相对固定时点追入"
+    ],
+    "revision3_history_audit": "已按只读历史命中审计区分not_emitted、raw_pool_only与no_evidence；未把缓存候选、身份同名或接口缺失升级为策略命中。",
+    "current_calibration_flags": [],
+    "calibration_conclusion": "当前没有flagged现实校准项；不声称本场被现实确认或证伪。",
+    "expired_posture": {
+      "as_of": "2026-07-01",
+      "valid_until": "2026-07-03",
+      "status": "expired_not_evaluated",
+      "response": "旧trend_tail_rotation姿态已经过期，本场证据不验证、不续期，也不自动更新现行姿态。"
+    },
+    "dedup_review": "周期、评分和盘中回落分别与指定既有候选比较；跳水持续时间保留为新候选且不猜共现；退出方法与XH-324实质同义，复用完全相同claim并只追加来源依据。"
+  },
+  "typo_corrections": [
+    {
+      "surface": "凡拓",
+      "resolution": "凡拓数创301313.XSHE",
+      "confidence": "company_identity_confirmed_context_mapping_likely",
+      "boundary": "身份确认不证明来源案例收益或成交。"
+    },
+    {
+      "surface": "奥雅",
+      "resolution": "奥雅股份300949.XSHE",
+      "confidence": "company_identity_confirmed_context_mapping_likely",
+      "boundary": "身份确认不证明历史持有路径。"
+    },
+    {
+      "surface": "万向德农、东方海洋、冰山冷热、锦江航运",
+      "resolution": "公司身份与代码已确认",
+      "confidence": "identity_only",
+      "boundary": "榜单、模式、行情、收益和成交均未确认。"
+    },
+    {
+      "surface": "百洋、丰源股份、奥宏电子、BEV、L小三零",
+      "resolution": null,
+      "confidence": "unresolved",
+      "boundary": "简称或语音不足，不按近音强配。"
+    }
+  ],
+  "action_summary": {
+    "posture_update": "no_update：2026年7月姿态已过期，本场不验证、不续期，也不自动写入新姿态。",
+    "playbook_update": "proposal_only：评分阈值、跳水持续时间、盘中回落执行、趋势与轮动分治及固定退出边界只作研究素材。",
+    "hypothesis_update": "保留四条authority=0实质新/细化候选；退出方法复用XH-324完全相同claim，只增加14时57分前买至次日竞价卖的多人对话来源依据，不新建同义候选ID。",
+    "audit_evidence": "完整读取329个稳定段、revision5市场事实、家庭上下文、历史命中审计、30条相关先验与当前反馈；身份、历史表现、正式发射、原始候选池和缺失字段严格分离。",
+    "instrumentation_todo": "研究需保存相似环境起点、每日高度、带时钟广度、完整候选、私有分数、首次出现、逐分钟可成交价、固定退出、费用、未成交和失败样本。",
+    "routing": [
+      "authority=0",
+      "proposal_only",
+      "dedup_reviewed",
+      "research_promotion_human_gate",
+      "no_auto_tune",
+      "no_book_action",
+      "no_ingestion_performed"
+    ]
+  },
+  "existing_hypothesis_support": [
+    {
+      "id": "XH-324",
+      "claim": "用全样本和固定卖出规则评估模式，会显著压低由挑选最高卖点造成的虚高收益。",
+      "relationship": "source_support",
+      "provenance": {
+        "source": "小草直播",
+        "source_date": "2026-11-08",
+        "speaker": "营销多人对话中的未标名发言者（逐句身份不确定）",
+        "authority": 0
+      },
+      "source_basis": [
+        "两点五十七分之前买啊，第二天早上起来集合竞价卖啊",
+        "给你冲高的机会。最难的就是这个冲高的机会",
+        "我他妈知道明天冲高到哪里"
+      ],
+      "interpretation": "本场营销多人对话以尾盘14时57分前买、次日集合竞价固定卖，与未定义冲高卖的差别，提供XH-324的具体例子；不新增同义候选，不把未标名发言者的行业判断转成小草亲证。",
+      "authority": 0
+    }
+  ]
+}

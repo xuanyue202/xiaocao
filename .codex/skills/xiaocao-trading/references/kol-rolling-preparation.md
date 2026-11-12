@@ -1,16 +1,28 @@
 # Shared rolling Xiaocao judgment
 
 Use in the existing remote KOL owner's07:30/21:30 slot, after its original
-hour-acquired runner has safely completed. Keep that owner/Thread; hour_busy,
-pending/uncertain effects and incomplete source publication stay on their
-original branch. A healthy empty queue stays quiet but permits this source-only
-preparation phase. No new capture, publication, reminder, Book action or sweep.
+hour-acquired capture/publication runner has exited. Keep that owner/Thread.
+Apply Contract §1d per dependency: a historical reminder-only uncertainty retains
+its claim/reconciliation/ACK fence while this independent source-only phase
+continues from verified published semantics. All other unfinished/uncertain effects
+retain the original blocked branch. hour_busy, active capture/publication,
+unproved source publication or degraded projection still block preparation.
+A healthy empty queue stays quiet and still checks this phase. No new capture,
+publication, reminder, Book action or sweep is created by preparation.
 
 ## Prepare before market data
 
 Run `scripts/kol_trading_prepare.py rolling-inputs --output-dir
 output/live/kol_rolling_work`. This cache-only command builds an immutable typed
 projection and source-bound input. `reused` ends preparation without a model.
+For an intended morning use, pass `--fresh-through <trade-date>T09:27:30+08:00`
+using the independently proved target trading date. This checks both the brief
+and original viewpoints, and returns new inputs if reuse would expire first;
+it does not renew or filter a viewpoint. New inputs still require the full
+independent review and acceptance, with unresolved future validity explicit.
+Without a proved target date, use the current check and retain that coverage limit. Start this
+check immediately after the early source work, rather than spending its remaining
+pre09:20 time waiting for an unrelated historical delivery receipt.
 Missing/degraded publication proof remains a source issue; never repair it by
 rewriting published semantics here. No APP/account/market quote is needed.
 
@@ -54,6 +66,13 @@ remain LiangHui SSOT; no formal policy is published. Save actual input-building,
 model/reading, review and sealing clocks, and their complete elapsed interval.
 Do not backdate late work. Finish this phase before09:20 for morning use; retain
 missing evidence as deferred rather than extending a consumer's original budget.
+Before ending either slot, save a separate preparation result with status
+not_started/reused/accepted/blocked, exact dependency reason, source fingerprint,
+viewpoint expiry, actual start/end clocks and acceptance path/hash when present.
+An overall degraded writer result does not supply this preparation result.
+If blocked, diagnose and repair the actual source dependency in this owner;
+keep the historical reminder unresolved separately. A missing or stale brief
+is pending source work, not a successful neutral judgment or a consumer task.
 
 ## Consumer boundary
 

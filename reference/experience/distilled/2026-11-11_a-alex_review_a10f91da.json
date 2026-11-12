@@ -1,0 +1,294 @@
+{
+  "date": "2026-11-11",
+  "kind": "微信公众号观察",
+  "author": "A也叫艾利克斯",
+  "source": "微信公众号文章《光亮了》",
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_wechat_official/evidence/2ebabc66e535a1ee54eb77b24766a41bafb175ac8e53b3ac955a42d649586fac.md",
+      "sha256": "a10f91dabce3a851d4f26e93ed8cbcd57e23737951495096517f02d72dcccf24",
+      "size": 13055
+    },
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261111_21_01a1cace/market_review6.json",
+      "sha256": "c6e73544a57a8e62cc9d3bdac0e6fd577dbb835d4a5e435bc9abfc9fa4068b33",
+      "size": 12088
+    }
+  ],
+  "summary": "本文可复用的是分析框架而非新的独立假设：把名义芯片需求与可通电容量分开，把数据中心延期拆成总量与时序，把存储盈利同时放进产能、降规格、现货价和HBM溢价框架，把光互联物理量与企业价值量分开，并把高订单与经营利润、利息、债务和预付款依赖共同检查。与现有候选逐条去重后，本篇只对XH-150、XH-228、XH-329、XH-348、XH-087及存储候选形成不同程度的局部支持或相邻观察，不构成任何现存完整claim的精确复现，也没有足够增量机制值得新增候选，因此hypotheses保持为空。",
+  "posture": {
+    "regime": "其他作者对人工智能基础设施、存储与光互联的观察，不应用为小草当前全局市场姿态。",
+    "dominant_style": "来源短线认为人工智能硬件的负面情绪可能边际缓和，但中长期仍有高利率、数据中心通电、存储利润和高杠杆云基础设施风险；光互联相对存储更强只是来源内部的行业比较。",
+    "risk": "大摩、伯恩斯坦和Shawn Kim研报原文未取得；FCC与微软游说、CME精确概率、官员原话、德银和中金路径、Anthropic十月年化收入、CoreWeave债券收益率及CDS传闻均未独立确认。CoreWeave官方财报与文章正文的一项推断冲突。",
+    "style_ranking": [
+      "先核对当日市场宽度与具体催化，再判断短线情绪是否真正修复",
+      "再以通电、审批和投产时点约束名义算力与资本开支",
+      "存储同时看新产能、规格变化、现货价格和HBM利润率",
+      "光互联区分带宽、光纤数量、组件价值和公司利润",
+      "高订单公司必须同时核对经营利润、利息、债务与预付款依赖"
+    ]
+  },
+  "regime_call": {
+    "horizon": "短线情绪按交易日刷新；长期产业判断分别覆盖下一次美联储决议、2027至2029年数据中心与供应链兑现，以及未来三个月CoreWeave资金窗口。",
+    "short_term_emotion_view": {
+      "claim": "人工智能硬件的负面情绪在2026年11月11日可能边际缓和，但是否形成持续修复仍待广度和催化确认。",
+      "horizon": "2026年11月11日及随后数个交易日",
+      "what_would_confirm": [
+        "人工智能硬件和光通信形成广泛、持续且有成交支持的修复",
+        "被列举的财报、政策或收入催化获得权威确认"
+      ],
+      "what_would_falsify": [
+        "当日修复迅速消失并转为广泛持续下跌",
+        "完整行业广度显示转强只是少数样本",
+        "被列举的催化被权威材料否认且风险偏好重新恶化"
+      ]
+    },
+    "long_term_industry_views": [
+      {
+        "claim": "数据中心审批、供电和可通电容量可能使名义芯片需求与实际部署时点脱节。",
+        "horizon": "2026年至2029年",
+        "what_would_falsify": [
+          "延期项目按原计划审批和通电",
+          "新增电网与替代电源足以覆盖需求",
+          "项目延期没有导致采购或收入时点后移"
+        ]
+      },
+      {
+        "claim": "存储新产能、降规格、现货下跌和HBM溢价收窄可能压低2028年前后的利润率。",
+        "horizon": "当前至2028年",
+        "what_would_falsify": [
+          "买家恢复高密度配置",
+          "NAND现货价格与HBM利润率持续上行",
+          "新增产能没有形成价格或利润压力"
+        ]
+      },
+      {
+        "claim": "Rubin Ultra可能扩大光互联需求，但物理量增长未必按同倍数转化为企业价值。",
+        "horizon": "2026年至2028年",
+        "what_would_falsify": [
+          "Rubin Ultra部署与光学配置显著低于模型",
+          "光通信订单、收入和毛利未随物理量增长",
+          "单位价值折扣被实际业绩证明不存在"
+        ]
+      },
+      {
+        "claim": "CoreWeave高订单与高债务、利息和预付款依赖并存，信用风险仍需优先观察。",
+        "horizon": "2026年第三季度至未来三个月",
+        "what_would_falsify": [
+          "经营利润和经营现金流持续覆盖利息与资本开支",
+          "杠杆与融资成本显著下降",
+          "公司不再依赖高额客户预付款维持资金弹性"
+        ]
+      }
+    ],
+    "integration_boundary": "短线广泛持续修复确认情绪缓和，不是该短线观点的反证；它也不能自动否定多年期的供电、存储、价值捕获和信用风险。每个期限必须用自己的反向证据检验。"
+  },
+  "directions": [
+    {
+      "theme": "算力基础设施兑现",
+      "view": "用已审批、已通电和按期交付的有效容量约束名义芯片需求与资本开支。",
+      "boundary": "44吉瓦是作者转述模型的2026至2028年累计缺口，原始研报未取得，不能写成已发生事实。"
+    },
+    {
+      "theme": "存储盈利周期",
+      "view": "把新产能、数据中心时点、客户降规格、NAND现货价格和HBM溢价放在同一框架内。",
+      "boundary": "利润率和目标价来自转述分析，未获一手核验；本文也没有讨论国产新进入者或HBM对普通DRAM的影子供给。"
+    },
+    {
+      "theme": "光互联需求与价值捕获",
+      "view": "带宽、光纤数量、组件价值、公司收入和利润不是同一层变量，产品组合、规模效应与单价下降会改变传导。",
+      "boundary": "Rubin Ultra拆解属于伯恩斯坦模型，分项536万美元与总值535万美元有舍入差异。"
+    },
+    {
+      "theme": "高增长公司的资本结构",
+      "view": "订单和收入增长必须与经营利润、利息、债务、客户预付款和长期采购承诺共同评估。",
+      "boundary": "经营利润不等于经营现金流；债券收益率和CDS说法未独立确认。"
+    }
+  ],
+  "stocks": [
+    {
+      "name": "CoreWeave",
+      "ticker": "CRWV.US",
+      "role": "高订单、高债务与预付款融资并存的案例",
+      "boundary": "案例不构成证券推荐；前三季营业利润0.14亿美元来自系统读取的官方财报，不是图片4原图新增内容。"
+    },
+    {
+      "name": "Corning",
+      "ticker": "GLW.US",
+      "role": "物理量增长与单GPU价值增长不成比例的案例",
+      "boundary": "约50%的价值增幅来自作者转述模型。"
+    },
+    {
+      "name": "SK海力士与三星电子",
+      "ticker": null,
+      "role": "HBM溢价和长期利润率均值回归的案例",
+      "boundary": "目标价和利润率预测不得自动用于交易。"
+    },
+    {
+      "name": "Anthropic",
+      "ticker": "ANT（拟申请）",
+      "role": "收入高增、算力费用、采购承诺与估值重定价的案例",
+      "boundary": "招股书仍标注待完成，拟议代码不等于已上市可交易。"
+    }
+  ],
+  "method_principles": [
+    "先核对物理可兑现性，再核对财务可持续性，最后讨论估值。",
+    "项目顺延分别回答总量是否消失、确认时点是否后移、资本开支是否出现增速悬崖。",
+    "行业物理量增长不能直接按同比例外推企业价值量，需要产品组合、单价、良率和规模效应桥接。",
+    "高订单不等于低融资风险；营业利润、经营现金流、利息、债务和预付款必须分栏核对。",
+    "传闻只保留为待验证触发器，不把政策游说、债券收益率或CDS说法写成事实。"
+  ],
+  "exit_lessons": [
+    "可通电容量、审批或替代电源继续后移时，不能只凭芯片出货维持原兑现时点。",
+    "存储买家持续降规格、现货价继续下行且HBM利润率下修时，应降低对高利润延续的置信度。",
+    "光纤数量增长未传到单位价值、收入或毛利时，不能把物理量倍增等同股东回报倍增。",
+    "经营利润覆盖不了利息、客户预付款不及预期或融资成本再升时，流动性风险优先于高订单叙事。"
+  ],
+  "hypotheses": [],
+  "timing_notes": [
+    "短线情绪和政策传闻按交易日刷新，不能与2028至2029年产业观点共用一个有效期。",
+    "数据中心、电力、存储产能和磷化铟供给按季度或项目里程碑验证。",
+    "Anthropic拟议发行和CoreWeave财务按正式文件更新；拟议条款不是完成状态。"
+  ],
+  "typo_corrections": [
+    "图片4本身列出Q3营业利润2.07亿美元、利息8.46亿美元和净亏7.09亿美元，并旁注前三季净亏20.75亿美元约等于利息20.22亿美元；前三季营业利润0.14亿美元来自系统独立读取的CoreWeave官方财报，不归入原图。",
+    "系统一手核验显示前三季营业利润0.14亿美元显著小于利息20.22亿美元，因此正文‘经营赚来的钱刚好够付利息’不成立；营业利润、净亏和利息也都不能直接转换成经营现金流结论。",
+    "图片3分项104加332加100等于536万美元，与图示总值535万美元有舍入差异，保留原图。"
+  ],
+  "decision_trace": {
+    "observations": [
+      "来源把短线情绪修复与长期通电、存储和融资风险并列。",
+      "系统一手材料仅确认CPI、Anthropic招股书和CoreWeave财报的部分数字。",
+      "现有候选已覆盖电力与许可交付、信用敏感性、资本开支兑现和存储竞争的主要机制。"
+    ],
+    "inference": "本篇适合保存方法框架和局部支持关系，不适合把相邻观察包装成新候选或精确复现。",
+    "action": "归档为authority=0的耐久知识；hypotheses为空，不触发候选新增或复现合并。"
+  },
+  "judgment_heuristics": [
+    "总量、时序、价格和现金流四个问题分开判断。",
+    "只有来源完整复现现存claim时才登记recurrence；局部支持留在去重审查。",
+    "系统独立核验只修正事实，不冒充作者原话或作者推理。"
+  ],
+  "provenance": "attributed_kol_source_with_separate_independent_fact_check",
+  "source_basis": {
+    "kol_observations": [
+      "作者转述数据中心顺延、电力累计缺口、存储降规格与现货下跌、光互联模型和CoreWeave预付款依赖。",
+      "作者把光互联相对存储更强、短线负面情绪边际缓和作为当前判断。"
+    ],
+    "independent_fact_check": [
+      "BLS确认2026年10月CPI环比0.4%、核心0.3%及部分同比因基期数据缺失而不公布。",
+      "SEC确认Anthropic拟议发行、季度财务和采购租赁承诺的主要数字。",
+      "CoreWeave官方财报确认Q3及前三季营业利润、利息与净亏，否定正文的付息推断。"
+    ],
+    "boundary": "系统核验不证明研报模型、政策传闻、CME精确概率、官员与机构利率路径、Anthropic十月年化收入或债券和CDS传闻。"
+  },
+  "independent_fact_check": {
+    "checked_at": "2026-11-11T21:38:07.861080+08:00",
+    "market_evidence_path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261111_21_01a1cace/market_review6.json",
+    "market_evidence_sha256": "c6e73544a57a8e62cc9d3bdac0e6fd577dbb835d4a5e435bc9abfc9fa4068b33",
+    "official_urls": [
+      "https://www.bls.gov/news.release/archives/cpi_11102026.htm",
+      "https://www.sec.gov/Archives/edgar/data/2130357/000162828026072484/anthropicpbc-sx1ax2.htm",
+      "https://investors.coreweave.com/news/news-details/2026/CoreWeave-Reports-Strong-Third-Quarter-2026-Results/default.aspx"
+    ]
+  },
+  "deduplication_review": [
+    {
+      "existing_id": "XH-150",
+      "relation": "partial_support_not_recurrence",
+      "source_basis": "本文明确讨论电网容量、审批延误和通电缺口，但没有完整复现变压器约束，也没有证明光模块等下游采购收入确认后移。",
+      "related_existing_ids": [
+        "XH-329",
+        "XH-348"
+      ],
+      "dedup_boundary": "保留对物理交付阶段门的局部支持，不复用XH-150完整claim，不新增近义候选。"
+    },
+    {
+      "existing_id": "XH-329",
+      "relation": "partial_support_not_recurrence",
+      "source_basis": "本文只笼统写政治阻力作用于新开工审批，没有项目级地方公投、社区反对或审批暂停结果。",
+      "related_existing_ids": [
+        "XH-150"
+      ],
+      "dedup_boundary": "没有完整复现地方政治与程序性闸门，不登记recurrence。"
+    },
+    {
+      "existing_id": "XH-348",
+      "relation": "adjacent_not_recurrence",
+      "source_basis": "本文说明供电与审批受限，但没有主张已通电、已获批容量或低摩擦地区已出现相对稀缺溢价。",
+      "related_existing_ids": [
+        "XH-150",
+        "XH-329"
+      ],
+      "dedup_boundary": "不把交付约束自动外推成租赁价格、利用率或证券收益溢价。"
+    },
+    {
+      "existing_id": "XH-228",
+      "relation": "partial_support_not_recurrence",
+      "source_basis": "CoreWeave段落提供债务、利息和预付款依赖，但没有完整比较云厂商资本开支与经营现金流，也没有验证订单对信用条件变化的敏感性。",
+      "related_existing_ids": [
+        "XH-087"
+      ],
+      "dedup_boundary": "保留融资风险案例，不复用XH-228完整claim。"
+    },
+    {
+      "existing_id": "XH-087",
+      "relation": "partial_support_not_recurrence",
+      "source_basis": "本文把订单、收入、资本开支和融资风险并列，但没有每股稀释、自由现金流改善和产能爬坡三项共同验证。",
+      "related_existing_ids": [
+        "XH-228"
+      ],
+      "dedup_boundary": "不把CoreWeave或Anthropic单季案例登记为XH-087整句复现。"
+    },
+    {
+      "existing_id": "XH-056",
+      "relation": "not_supported",
+      "source_basis": "本文未讨论中美技术分区、国产存储扩产或区域利润壁垒。",
+      "related_existing_ids": [
+        "XH-160",
+        "XH-209"
+      ],
+      "dedup_boundary": "存储价格和利润率下修不能替代XH-056的区域供给机制。"
+    },
+    {
+      "existing_id": "XH-160",
+      "relation": "adjacent_not_recurrence",
+      "source_basis": "本文提到2027年底新产能，但没有识别新进入者、产品重叠、客户认证或份额冲击。",
+      "related_existing_ids": [
+        "XH-056",
+        "XH-209"
+      ],
+      "dedup_boundary": "只保存通用产能压力，不复用XH-160完整claim。"
+    },
+    {
+      "existing_id": "XH-209",
+      "relation": "not_supported",
+      "source_basis": "本文讨论HBM溢价收窄，没有讨论HBM晶圆投入对普通DRAM造成影子供给收缩。",
+      "related_existing_ids": [
+        "XH-056",
+        "XH-160"
+      ],
+      "dedup_boundary": "盈利溢价变化与晶圆容量换算是不同机制。"
+    }
+  ],
+  "action_summary": {
+    "posture_update": "不应用：其他作者单篇观察，仅形成authority=0研究草稿，不修改posture_current或REGIME_TIMELINE。",
+    "playbook_update": "no_change：本文方法框架尚未经过research_run和人工门禁。",
+    "hypothesis_update": "no_new_candidate_no_exact_recurrence：对XH-150、XH-228、XH-329、XH-348、XH-087、XH-056、XH-160和XH-209完成逐条去重；只有局部支持、相邻或不支持关系，hypotheses为空。",
+    "audit_evidence": "原始微信公众号证据与market_review6分别按实际路径、SHA-256和字节数绑定；独立核验时间为2026-11-11T21:38:07.861080+08:00，官方网址单列；短线与长期证伪条件已按期限分开。",
+    "instrumentation_todo": "research_candidate_only：若未来获授权，可补齐项目级通电与审批、存储配置与现货、光学单位价值、经营现金流与融资成本面板；本次不执行研究或知识摄取。",
+    "routing": [
+      "authority_0_durable_knowledge",
+      "method_framework_archive",
+      "partial_support_only",
+      "no_new_hypothesis",
+      "no_exact_recurrence",
+      "no_posture_update"
+    ]
+  },
+  "independent_spec_resolution": {
+    "status": "resolved",
+    "finding": "旧版把广泛持续修复放进总括证伪条件，方向与短线情绪缓和观点相反。",
+    "resolution": "短线情绪观点单列确认条件与反向证伪；长期数据中心、存储、光互联和信用观点分别保留各自期限与证伪条件。"
+  }
+}
