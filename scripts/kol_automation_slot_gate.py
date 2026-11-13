@@ -39,7 +39,7 @@ def _hour_key(hour_start: datetime) -> str:
 def preparation_obligation(automation_id: str, now: datetime) -> dict | None:
     """Expose the source-only duty before a long original acquisition starts."""
     hour = automation_hour_start(now)
-    if automation_id != 'xiaocao-kol-hourly-low-bandwidth-operation' or hour.hour not in {7, 21}:
+    if automation_id != 'xiaocao-kol-hourly-low-bandwidth-operation' or hour.hour not in {6, 7, 21}:
         return None
     return {'event': 'kol_shared_preparation_due', 'authority': 0,
         'automation_id': automation_id, 'owner_thread_id': os.environ.get('CODEX_THREAD_ID'),
@@ -80,6 +80,7 @@ def _parser() -> argparse.ArgumentParser:
         type=Path,
         default=Path("output/live/kol_automation_hour_locks"),
     )
+    parser.add_argument("--prepare-opening", action="store_true", help="Start the owned preopen program on fresh06/21 source runs")
     parser.add_argument("--now", help=argparse.SUPPRESS)
     parser.add_argument("--automation-id", default=os.environ.get("CODEX_AUTOMATION_ID", "manual-slot-gate"))
     parser.add_argument("command", nargs=argparse.REMAINDER)
@@ -144,6 +145,12 @@ def main(argv: list[str] | None = None) -> int:
         os.set_inheritable(lock_fd, True)
         environment = os.environ.copy()
         environment["CODEX_AUTOMATION_ID"] = args.automation_id
+        environment.pop('XIAOCAO_KOL_PREOPEN_ENABLED',None)
+        environment.pop('XIAOCAO_KOL_PREOPEN_PLAN',None)
+        if (args.prepare_opening and args.automation_id == 'xiaocao-kol-hourly-low-bandwidth-operation'
+                and hour_start.hour in {6,21} and len(command)>=3
+                and Path(command[1]).name=='kol_daily.py' and command[2]=='run'):
+            environment['XIAOCAO_KOL_PREOPEN_ENABLED']='v1'
         environment["XIAOCAO_AUTOMATION_HOUR_START_AT"] = (
             hour_start.isoformat(timespec="seconds")
         )

@@ -5880,6 +5880,8 @@ def main() -> int:
         if result.get("status") != "no_update":
             _print(result)
         return 0
+    from xiaocao.kol.preopen_program import startup as start_preopen_program
+    preopen_program = start_preopen_program(Path(__file__).resolve().parents[1])
     remote_slot_args = _automation_slot_binding(service._beijing_now())
     runtime = DailyRuntime(args)
     mailbox_result = runtime.mailbox()
@@ -6066,6 +6068,10 @@ def main() -> int:
     )
     if not result.get("silent"):
         _print(result)
+    if preopen_program is not None:
+        preparation = preopen_program.finish()
+        if preparation['status'] not in {'accepted','reused'}:
+            return 2  # Source effects remain exact; missing preparation is separate failure.
     return 0
 
 

@@ -3025,6 +3025,9 @@ class DailyCoordinator:
         admitted = ((slot_start.hour in DAYTIME_HOURS or
                      (admitted_at.hour == 23 and slot_start.hour == 0))
                     if allow_early_start else admitted_at.hour in DAYTIME_HOURS)
+        if not admitted and slot_start.hour == 6:
+            from .preopen_program import source_release_admitted
+            admitted = source_release_admitted(slot_start,automation_acquired_at,now)
         if not admitted:
             return self._run(sources, blocker_sender=blocker_sender, slot_start=slot_start, admitted=False)
         # A shared migration guard does not serialize new sources. It prevents

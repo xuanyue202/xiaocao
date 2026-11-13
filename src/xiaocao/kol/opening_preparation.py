@@ -236,6 +236,9 @@ def accept_preparation(input_path: Path, draft: dict, review: dict, dispatch: di
         "binding": inputs["binding"], "rules": inputs["rules"],
         "projection": inputs["projection"], "draft": draft, "review": review,
         "dispatch": dispatch, "context": context}
+    if inputs['binding'].get('preopen_program_path'):
+        from .preopen_program import validate_acceptance
+        value['preopen_program'] = validate_acceptance(inputs,draft,review,dispatch,context,now=now)
     return {**value, "preparation_sha256": canonical_sha256(value)}
 
 

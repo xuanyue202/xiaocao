@@ -109,6 +109,9 @@ def main(argv=None):
         if args.command == 'accept' and value.get('schema_version') == 'kol-opening-preparation.v2':
             from xiaocao.kol.rolling_preparation import register
             register(args.input, path, value)
+            if value['binding'].get('preopen_program_path'):
+                from xiaocao.kol.preopen_program import complete
+                complete(path)
         if args.command == "accept" and value["binding"].get("automation_id") == "xiaocao-daily-morning-execution":
             from xiaocao.live.paper_morning_kol import register_preparation
             register_preparation(args.root, path, value)
