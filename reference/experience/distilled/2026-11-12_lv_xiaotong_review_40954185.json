@@ -1,0 +1,378 @@
+{
+  "schema_version": 1,
+  "status": "reusable_knowledge",
+  "authority": 0,
+  "author": "吕晓彤",
+  "source": "baidu_subscription_share_browser",
+  "date": "2026-11-12",
+  "kind": "review",
+  "summary": "本期可复用内容分为两层：吕晓彤本人提出的公司治理分型、政治单押与关键人物风险叙事，以及SYSTEM据此设计的证据分层、接班连续性、限时风险保护和跨市场相对/绝对收益检验。三条候选均为authority=0的系统研究设计，现已登记为待检验候选，不是作者已经证明的普遍规律，也不产生姿态、参数或交易权限。",
+  "posture": {
+    "regime": "不更新小草全局姿态；仅记录吕晓彤的事件叙事与SYSTEM候选研究框架。",
+    "dominant_style": "关键人物、控制权、政治暴露与接班连续性",
+    "risk": "作者的党争、私德、阵营票数和持股数字多未获当前原始文件支持；SYSTEM外推不得冒充作者事实。",
+    "style_ranking": [
+      "先逐字保存作者对职位、董事会、股东会、政治暴露和关键人物的原始判断",
+      "再用正式公告、监管文件和行情时钟独立核对",
+      "最后由SYSTEM提出可证伪研究设计，不自动写入策略或姿态"
+    ]
+  },
+  "regime_call": {
+    "horizon": "作者对当前事件未给统一失效日；SYSTEM只在新的正式接班、经营连续性和市场证据出现时复核。",
+    "call": "作者认为黄仁勋离任会提高英伟达风险，并把政治阵营暴露、控制权和接班视为因果变量；SYSTEM仅将其转成待检验候选。",
+    "what_would_falsify": [
+      "正式材料否定作者引用的治理与政治前提",
+      "跨样本研究显示接班、控制权和外部政治变量没有稳定增量解释力",
+      "风险保护的SYSTEM限时设计在费用后不能降低尾部损失"
+    ]
+  },
+  "directions": [
+    {
+      "name": "关键人物治理事件",
+      "view": "吕晓彤把离任、控制权、政治阵营和接班作为风险来源；SYSTEM不把这一单案升级为普遍规律。",
+      "horizon": "作者未给统一期限"
+    },
+    {
+      "name": "证据更新后的保护动作",
+      "view": "来源记录作者由小额入场转为空单保护、可能在大跌时撤空并于次晨再看；工具、规模、最大损失和精确时钟均未给出。",
+      "horizon": "来源相对时间为当晚至次晨"
+    },
+    {
+      "name": "相对受益与绝对走势",
+      "view": "作者只说“利好我们”并同时说这边看美股；具体映射到国内人工智能板块是SYSTEM推断，不是作者点名推荐。",
+      "horizon": "作者未给明确期限"
+    }
+  ],
+  "stocks": [
+    {
+      "name": "英伟达",
+      "code": "NVDA",
+      "market": "NASDAQ",
+      "role": "关键人物突然离任与接班连续性的工作案例",
+      "boundary": "正式公告只证实黄仁勋辞去总裁、CEO和董事职务及临时接班安排，不证实政治阴谋、被迫原因或配偶出售计划。"
+    },
+    {
+      "name": "特斯拉",
+      "code": "TSLA",
+      "market": "NASDAQ",
+      "role": "创始人控制权与政治暴露的对照案例",
+      "boundary": "来源中的精确控制比例和未来股价判断未被当前证据充分证实。"
+    },
+    {
+      "name": "SpaceX",
+      "code": "SPCX",
+      "market": "NASDAQ",
+      "role": "创始人表决权与公司治理的对照案例",
+      "boundary": "历史表决权数据不能替代当前披露，来源中的精确比例不可直接沿用。"
+    },
+    {
+      "name": "苹果",
+      "code": "AAPL",
+      "market": "NASDAQ",
+      "role": "乔布斯离任后的历史类比",
+      "boundary": "类比用于提示接班不确定性，不证明英伟达会复制苹果路径。"
+    },
+    {
+      "name": "京东",
+      "code": "JD/9618",
+      "market": "NASDAQ/HKEX",
+      "role": "创始人董事会控制的历史例子",
+      "boundary": "来源未给出可核验的当前治理文件。"
+    },
+    {
+      "name": "寒武纪",
+      "code": "688256.XSHG",
+      "market": "XSHG",
+      "role": "作者明确否定的黄仁勋潜在去向，非受益标的、非推荐",
+      "boundary": "来源说加入寒武纪“不太现实”，不得改写为作者看好或购买偏好。"
+    },
+    {
+      "name": "华为",
+      "code": "unlisted",
+      "market": "private",
+      "role": "作者明确否定的黄仁勋潜在去向，非受益标的、非推荐",
+      "boundary": "来源说加入华为“不太现实”，不得改写为作者点名的国内人工智能受益方。"
+    },
+    {
+      "name": "凯霞（可能指Kioxia，来源身份未确认）",
+      "code": "unresolved",
+      "market": "Japan（具体发行人未确认）",
+      "role": "作者日本调研中会面主体的背景提及，可能是公司音译，非资产建议",
+      "boundary": "公开资料只确认Kioxia Holdings的发行人名称与代码285A；不能据此证明来源中的“凯霞”就是Kioxia，也不能确认具体会面主体或证券代码。"
+    },
+    {
+      "name": "SoftBank（具体法人未确认）",
+      "code": "unresolved",
+      "market": "Japan",
+      "role": "作者日本调研中会面公司的背景实体，非资产建议",
+      "boundary": "原文只说SoftBank高管，不能强制解析为SoftBank Group或SoftBank Corp，也不能指定证券代码。"
+    },
+    {
+      "name": "中海基金",
+      "code": "unlisted",
+      "market": "private/unlisted",
+      "role": "作者叙述黄女士配偶历史任职的背景机构，非资产建议",
+      "boundary": "只用于来源人物关系说明，不构成公司或产品判断。"
+    }
+  ],
+  "method_principles": [
+    {
+      "principle": "事实层与动机层分离",
+      "rule": "把公司正式公告、监管文件和行情快照列为事实；把党争、私德、逼宫、派系票数和配偶计划列为待证假设。",
+      "failure_mode": "用已经证实的辞职事实替未经证实的辞职原因背书。",
+      "provenance": "SYSTEM synthesis from attributed source; not a verbatim KOL rule"
+    },
+    {
+      "principle": "先测关键人物依赖，再谈估值方向",
+      "rule": "检查人物是否仍任董事长或技术顾问、董事会和表决控制、接班人、客户与研发连续性。",
+      "failure_mode": "只凭名人热度或个人好恶直接推导公司长期价值。",
+      "provenance": "SYSTEM synthesis from attributed source; not a verbatim KOL rule"
+    },
+    {
+      "principle": "历史持股必须带日期",
+      "rule": "任何创始人、配偶或机构持股及表决权数字都绑定申报口径和日期，不能跨期沿用。",
+      "failure_mode": "把旧代理声明或媒体数字当作当前精确持股。",
+      "provenance": "SYSTEM synthesis from attributed source; not a verbatim KOL rule"
+    },
+    {
+      "principle": "行情快照不是可执行价格或收益证明",
+      "rule": "快照只能说明特定时刻的方向，不能证明委托可成交、空单盈亏或年化业绩。",
+      "failure_mode": "用一次价格变化证明因果、策略收益或未来路径。",
+      "provenance": "SYSTEM synthesis from attributed source; not a verbatim KOL rule"
+    },
+    {
+      "principle": "新证据可改变仓位，但必须时限化",
+      "rule": "记录观察、推断、动作、工具、规模、撤销条件和截止时间；时限到后重新验证，不能自动续期。",
+      "failure_mode": "把一句隔夜口语长期当作仍有效的交易授权。",
+      "provenance": "SYSTEM synthesis from attributed source; not a verbatim KOL rule"
+    },
+    {
+      "principle": "相对受益不等于绝对上涨",
+      "rule": "把产业竞争格局与跨市场风险偏好拆开；国内AI相对获益时，A股仍可能跟随美股下跌。",
+      "failure_mode": "把相对优势误写成无条件买入。",
+      "provenance": "SYSTEM synthesis from attributed source; not a verbatim KOL rule"
+    }
+  ],
+  "exit_lessons": [
+    "SYSTEM边界：若正式披露显示黄仁勋继续以实质性角色主导技术且永久CEO交接平稳，应下调关键人物真空假设。",
+    "SYSTEM边界：若董事会、持股或配偶转让数据无法由当前文件确认，不得把对应数字转成仓位边界。",
+    "SYSTEM边界：若来源给出的隔夜复核点已过去，对冲计划自动退出当前建议，只保留方法审计。",
+    "SYSTEM边界：若国内AI相对表现没有独立于美股风险偏好得到验证，不得将相对受益升级为绝对多头结论。"
+  ],
+  "decision_trace": [
+    {
+      "observation": "作者先把下跌视为入场机会，随后获得一组更严重但部分未经证实的治理和政治叙事。",
+      "inference": "若领导层突然离任且接班不清，关键人物溢价和风险偏好可能重新定价。",
+      "action": "作者称其由小额入场转为做空保护，并计划在大跌时可能撤空，最终决定当晚不撤、次晨再看。",
+      "boundary": "工具、规模、入场价、期限、成交和盈亏均未提供；次晨时限已经过去，不能续作当前指令。",
+      "provenance": "SYSTEM reconstruction from source action sequence"
+    },
+    {
+      "observation": "国内AI可能因海外竞争者受损而相对受益，但A股又受美股情绪牵引。",
+      "inference": "相对产业利好可能与绝对市场压力同时存在。",
+      "action": "只保留观察和风险约束，不据此设定买入仓位。",
+      "boundary": "没有国内资产的触发价、止损、时间或预算。",
+      "provenance": "SYSTEM reconstruction from source action sequence"
+    }
+  ],
+  "judgment_heuristics": [
+    {
+      "heuristic": "关键人物风险四问",
+      "questions": [
+        "离任是经营原因、政治事件还是私人丑闻，哪些有正式证据？",
+        "人物是否仍保留董事长、技术顾问、表决权或客户关系影响力？",
+        "永久接班人、董事会授权和研发经营连续性如何？",
+        "创始人或配偶的持股变化是否有最新文件和可量化供给影响？"
+      ],
+      "provenance": "SYSTEM evaluation layered over the attributed KOL statement"
+    },
+    {
+      "heuristic": "热门人物峰值提醒",
+      "rule": "“月满则亏、大热必死”只能作为提高核查强度的先验，不能单独成为买卖或做空信号。",
+      "reason": "受欢迎度与股价回报之间没有在本来源中完成统计验证。",
+      "provenance": "SYSTEM evaluation layered over the attributed KOL statement"
+    },
+    {
+      "heuristic": "信息优势审查",
+      "rule": "“公开信息不能赚钱”只是作者的方法偏好；任何非公开叙事仍要核验来源、合法性、可重复性和时效。",
+      "reason": "稀缺不等于真实，也不等于可交易。",
+      "provenance": "SYSTEM evaluation layered over the attributed KOL statement"
+    }
+  ],
+  "hypotheses": [
+    {
+      "id": "XH-376",
+      "status": "candidate_registered_authority_0_not_research_validated",
+      "claim": "SYSTEM候选：高关键人物依赖公司的核心负责人突然离任后，接班清晰度、实质角色保留与经营连续性可能对短期波动和估值折价具有增量解释力。",
+      "implied_rule": "研究前同时记录正式职位变化、永久接班、关键人物后续角色、客户研发连续性与风险溢价；任何单案都不进入确定性策略。",
+      "falsifiable_test": "收集过去十年公开披露充分的关键人物离任样本，比较离任后1日、5日、20日的超额收益与实现波动，并按接班清晰度、实质角色和控制权分组。",
+      "expected_effect": "SYSTEM待验预期：完全退出且接班不清组的短期波动更高、超额收益更弱；无稳定差异即拒绝。",
+      "category": "governance_event_risk",
+      "provenance": "SYSTEM_research_synthesis：吕晓彤只提供英伟达单案、苹果类比和主观时间疑问；跨样本结论、指标与预期效果均由SYSTEM设计。",
+      "source_basis": [
+        "作者称黄仁勋是真正掌舵人，完全淡出后公司可能经历类似苹果的阶段。",
+        "作者问这一阶段到底是一年、两年、十年还是八年，明确没有给出确定期限。",
+        "官方公告只确认离任、临时继任和永久人选搜寻，不证明长期折价。"
+      ],
+      "related_existing_ids": [
+        "XH-049",
+        "XH-095",
+        "XH-129",
+        "XH-375"
+      ],
+      "dedup_boundary": "XH-375研究战略芯片企业治理冲突中董事会之外的政治、资本与产业变量；本候选只检验离任后的接班清晰度、实质角色和经营连续性，不把本来源登记为XH-375复现。",
+      "draft_candidate_id": "candidate_key_person_succession_continuity_not_ingested"
+    },
+    {
+      "id": "XH-377",
+      "status": "candidate_registered_authority_0_not_research_validated",
+      "claim": "SYSTEM候选：当重大事件的新证据推翻原假设时，有上限、可撤销并由系统复核时钟约束的风险保护，可能比继续沿用旧叙事更能降低尾部回撤。",
+      "implied_rule": "研究中预注册保护工具、规模、最大损失、触发、撤销和复核时钟；来源没有提供这些参数，不能反写成作者规则。",
+      "falsifiable_test": "在历史隔夜事件样本中比较固定持有、即时全平与预注册限时保护的最大回撤、费用后收益、滑点和错误反转成本。",
+      "expected_effect": "SYSTEM待验预期：限时有限保护降低尾部回撤，且快速反转成本低于无条件持续做空；不成立则拒绝。",
+      "category": "event_risk_management",
+      "provenance": "SYSTEM_research_synthesis：来源只记录小额入场、转为空单保护、大跌可能撤空和次晨再看；工具、规模、最大损失与精确截止时钟均为未知。",
+      "source_basis": [
+        "作者先小额入场，随后因新叙事做空保护。",
+        "作者说若跌得特别大可能撤掉空单。",
+        "作者最终只说当晚不撤、明早再看，没有给出具体时刻。"
+      ],
+      "related_existing_ids": [
+        "XH-070",
+        "XH-169"
+      ],
+      "dedup_boundary": "既有候选涉及一般事件风险与仓位纪律；本候选仅检验证据更新后、参数预注册且带SYSTEM复核时钟的保护方案，不把作者空单自述当作已验证规则。",
+      "draft_candidate_id": "candidate_event_evidence_update_timeboxed_hedge_not_ingested"
+    },
+    {
+      "id": "XH-378",
+      "status": "candidate_registered_authority_0_not_research_validated",
+      "claim": "SYSTEM候选：海外龙头治理冲击可能使中国相关产业出现相对表现，但美股风险偏好下降可能削弱或覆盖绝对收益。",
+      "implied_rule": "研究时把作者未点名的“利好我们”与SYSTEM行业映射分开，同时记录国内相对强度、绝对收益与美股方向。",
+      "falsifiable_test": "统计海外人工智能龙头重大负面事件后1日和5日，中国相关行业相对沪深300及绝对收益，并按纳指同期方向分组。",
+      "expected_effect": "SYSTEM待验预期：美股稳定组更可能出现绝对正收益，美股下跌组可能仅保留相对超额；无稳定差异即拒绝。",
+      "category": "cross_market_spillover",
+      "provenance": "SYSTEM_research_synthesis：作者只说“利好我们”且“我们这边都看那边走势”，没有点名寒武纪、华为或任何买入标的；行业映射、样本与效果均由SYSTEM提出。",
+      "source_basis": [
+        "作者说该事件“其实是利好我们的”。",
+        "作者同时说“我们这边都看那边的走势”，因此绝对表现可能受美股拖累。",
+        "作者另处明确否定黄仁勋加入寒武纪或华为的可能，不能把两者列为他点名的受益资产。"
+      ],
+      "related_existing_ids": [
+        "XH-214"
+      ],
+      "dedup_boundary": "XH-214研究同一科技行业跨市场同步性因回购、发行、资本成本与治理差异而减弱，并使用20日/60日公司匹配面板；本候选只检验海外治理冲击后1日/5日中国相关行业的相对收益与绝对收益分离，两者邻近但样本事件、期限和因变量不同，不声明本来源为XH-214复现。它也不重复XH-371至XH-375的人工智能商业验证、验收、采购、认知时差或治理外部利益变量。",
+      "draft_candidate_id": "candidate_relative_benefit_absolute_drag_not_ingested"
+    }
+  ],
+  "timing_notes": [
+    "来源“当晚不撤、明早再看”没有精确时钟；SYSTEM在父级独立复核时才确认该相对时限不再可采用。",
+    "来源只问低谷究竟是一年、两年、十年还是八年，不构成一至十年的预测区间。",
+    "所有具体公司结论在使用前必须重查最新治理文件、行情时钟和可执行性。"
+  ],
+  "typo_corrections": [
+    {
+      "source_text": "花花",
+      "normalized": "划/划给（把股份转给配偶）",
+      "reason": "该处是ASR对动词“划/划给”的误转，不是人物姓名或配偶别称。"
+    },
+    {
+      "source_text": "珍珍",
+      "normalized": "未确认人物或案例",
+      "reason": "上下文不足，禁止强行解析为具体公司或个人。"
+    },
+    {
+      "source_text": "女人酒精和杠杆",
+      "normalized": "女人、酒精和杠杆",
+      "reason": "按上下文修复并列标点，不改变作者引用含义。"
+    }
+  ],
+  "action_summary": {
+    "posture_update": "no_change：吕晓彤不是小草，本材料不得改写小草全局A股posture_current或REGIME_TIMELINE。",
+    "playbook_update": "not_applied：仅归档authority=0的系统研究候选；候选登记不代表研究验证或姿态、参数和策略晋级。",
+    "hypothesis_update": "已通过单文件ingest登记XH-376, XH-377, XH-378三条authority=0候选；0复现合并，未通过研究或人工晋级。",
+    "audit_evidence": "完整来源SHA-256 40954185844bcec23156c37dee3d3c57b00b1c61bd29625504c647d121bfe78c；当前事实核对绑定market_evidence_parent_v2.json SHA-256 83e8394e759f7e5f807f8033475ecf2911e3dc4093f9614809f374d349cd12cd。",
+    "instrumentation_todo": "研究前补充历史治理事件样本、接班连续性标签、最新持股与表决权文件、跨市场相对/绝对收益及可执行价格和费用。",
+    "routing": [
+      "authority_0_knowledge_archive",
+      "candidate_hypotheses_ingested",
+      "no_posture_update",
+      "no_strategy_tuning"
+    ]
+  },
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_subscription_videos/enrichment/bfa9f87aa2d402755829da0e64288c3eee6cf8f0a4a24062f26b2218dbccd4aa/artifacts/kol-netdisk-cloud-a556b6a44431cf8d/11月12日.txt",
+      "sha256": "40954185844bcec23156c37dee3d3c57b00b1c61bd29625504c647d121bfe78c",
+      "size": 73143
+    }
+  ],
+  "source_basis": {
+    "market_evidence_path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_subscription_videos/artifacts/bfa9f87aa2d402755829da0e64288c3eee6cf8f0a4a24062f26b2218dbccd4aa/market_evidence_parent_v2.json",
+    "market_evidence_sha256": "83e8394e759f7e5f807f8033475ecf2911e3dc4093f9614809f374d349cd12cd",
+    "household_context_path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_subscription_videos/artifacts/bfa9f87aa2d402755829da0e64288c3eee6cf8f0a4a24062f26b2218dbccd4aa/household_context_parent.json",
+    "household_context_sha256": "21af122b4b111d65ae3a32aec1396f0f84909d23b782157577075d4075a2e1f7"
+  },
+  "batch_candidate_comparison": {
+    "checked_ids": [
+      "XH-214",
+      "XH-371",
+      "XH-372",
+      "XH-373",
+      "XH-374",
+      "XH-375"
+    ],
+    "result": "XH-214与跨市场表现主题邻近，但研究20日/60日同业公司同步性；本候选研究治理冲击后1日/5日相对与绝对收益，二者不构成复现。XH-371至XH-374与本来源主题不重合；XH-375邻近政治资本治理，但不覆盖接班连续性。三条候选现已单独登记为XH-376、XH-377、XH-378；0复现合并，尚未通过研究验证或策略晋级。",
+    "authority": 0
+  },
+  "revision": {
+    "basis": "final_reader_review",
+    "reviewed_at": "2026-11-13T02:27:52.789421Z",
+    "decision": "reader_cleanup_addressed",
+    "previous_draft_sha256": "05c3671b97044994a2fcc701d863cd6158e9ef2d22fd0c9eb88b19b36268704f",
+    "substantive_review": "F1_to_F11_preserved"
+  },
+  "archive_provenance": {
+    "source_event_identity": "4af3c80abcd98809e71923c569f6745d555f979464ac5927aad1ce5648a994bf",
+    "source_version_key": "bfa9f87aa2d402755829da0e64288c3eee6cf8f0a4a24062f26b2218dbccd4aa",
+    "accepted_semantic_knowledge_draft_path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_subscription_videos/artifacts/bfa9f87aa2d402755829da0e64288c3eee6cf8f0a4a24062f26b2218dbccd4aa/.semantic_delegation/b8f341e551fdfff8b9dafe4ee4d7c44b42601da3f2b8e50c175d399fbed8d8a5/context-64f44a8257dafe910649d19e0dccd797491a6dc617d184d84953b2afa603ff78/knowledge_draft.json",
+    "accepted_semantic_knowledge_draft_sha256": "6319560393e0357648e352618b5671795eac9e8c0f706a61d8f387656381e7a1",
+    "normalized_evidence_archive": {
+      "path": "reference/experience/transcripts/2026-11/2026-11-12_lv_xiaotong_review_40954185.txt",
+      "sha256": "40954185844bcec23156c37dee3d3c57b00b1c61bd29625504c647d121bfe78c"
+    },
+    "archived_at": "2026-11-13T02:40:08.220371+00:00",
+    "parent_changes": "Archive and actual ingestion lifecycle metadata only; KOL claims, SYSTEM research design and evaluation semantics remain unchanged.",
+    "parent_source_review": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261113_07_01a1d219/new6_parent_review.json",
+    "original_draft_lifecycle_boundary": "The immutable source analyst draft describes candidates before ingest; this archive updates registration-state wording only after the actual harness receipt.",
+    "parent_lifecycle_updated_fields": [
+      "ingestion_status",
+      "ingest_execution",
+      "summary registration-state phrase",
+      "action_summary.playbook_update registration-state phrase",
+      "action_summary.hypothesis_update",
+      "action_summary.routing",
+      "hypotheses[*].id",
+      "hypotheses[*].status",
+      "hypotheses[*].draft_candidate_id",
+      "batch_candidate_comparison.result registration-state phrase"
+    ],
+    "candidate_lifecycle_boundary": "Original local candidate identifiers are retained as draft_candidate_id; archive id/status now match actual XH registration. No re-ingestion or hypothesis-semantic change."
+  },
+  "ingestion_status": "candidate_hypotheses_ingested_authority0",
+  "ingest_execution": {
+    "status": "completed",
+    "authority": 0,
+    "started_at": "2026-11-13T02:40:08.254367+00:00",
+    "ended_at": "2026-11-13T02:40:08.301942+00:00",
+    "returncode": 0,
+    "result": "ingest: +3 new candidate(s), ~0 recurrence-merge(s) -> xiaocao_hypotheses.jsonl (normalized-claim dedup; new ids XH-376..XH-378). Candidates enter authority=0; review the git diff, then they must clear the guards + §10.",
+    "candidate_ids": [
+      "XH-376",
+      "XH-377",
+      "XH-378"
+    ],
+    "workflow_owner_thread": "01a1d219-84a6-7792-957e-6df25b6eb13c",
+    "review_boundary": "Registration only; no research validation, posture, parameters, formal policy or trading authority."
+  }
+}
