@@ -42,6 +42,7 @@ SKILL_REFERENCE_FILES = [
     "kol-source-preparation.md",
     "kol-opening-preparation.md",
     "kol-rolling-preparation.md",
+    "kol-preopen-program.md",
     "kol-current-review.md",
     "kol-conditional-morning.md",
     "book-b-live-repair.md",

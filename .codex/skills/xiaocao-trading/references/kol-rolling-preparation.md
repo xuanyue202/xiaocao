@@ -1,8 +1,10 @@
 # Shared rolling Xiaocao judgment
 
-Use on `kol_shared_preparation_due` in the existing remote KOL owner's07:30/21:30
-slot, immediately after original hour acquisition. Keep that owner/Thread and
-original capture process/stdin. Prepare a coherent complete published snapshot
+New06:30/21:30 runs use the [owned preopen program](kol-preopen-program.md)
+on its emitted program/stage events, with actual dispatch and independent review
+proof. Source capture retains07:30. Legacy kol_shared_preparation_due retains
+its original readback; follow the exact original branch. Keep that owner/Thread
+and original process/stdin. Prepare a coherent complete published snapshot
 while long acquisition/analysis continues; record pending sources in coverage
 limits. Completed publication and projection quality are prerequisites for each
 input. Partial or uncertain publication remains excluded/blocked under its exact
@@ -16,8 +18,9 @@ capture to start its opening-critical work.
 
 ## Prepare before market data
 
-Run `scripts/kol_trading_prepare.py rolling-inputs --output-dir
-output/live/kol_rolling_work`. This cache-only command builds an immutable typed
+For legacy/manual source-only preparation run `scripts/kol_trading_prepare.py rolling-inputs --output-dir
+output/live/kol_rolling_work`. New program runs already build this input; use
+the emitted bound input, not a second ordinary preparation. This cache-only command builds an immutable typed
 projection and source-bound input. `reused` ends preparation without a model.
 For an intended morning use, pass `--fresh-through <trade-date>T09:27:30+08:00`
 using the independently proved target trading date. A target more than24 hours

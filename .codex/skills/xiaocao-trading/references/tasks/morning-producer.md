@@ -76,3 +76,15 @@ it never starts a current model or waits for APP/Paper review. Missing/changed/
 unresolved support preserves baseline immediately. Consumers independently finish
 ASAP within original120-second budgets and hard09:27:30; this does not extend
 producer capture/commit deadlines or historical request budgets.
+
+
+## Source preopen evidence
+
+The existing source owner wakes06:30, performs actual budgeted preparation/review,
+and retains the07:30 source-capture floor. Read its already accepted shared brief
+and optional preopen_program proof locally; actual dispatch/context-review/accept
+clocks and target date distinguish completed work from an early wake. A missing,
+failed or source-only program remains explicit; no task/peer wait, source worker
+or new synthesis is created by this consumer. The original freeze refresh and
+independent current policy review/publication remain required. Source preparation
+budgets do not extend this consumer's original120-second/09:27:30 bounds.

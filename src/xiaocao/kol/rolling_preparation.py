@@ -14,7 +14,8 @@ SCHEMA = 'kol-opening-preparation.v2'
 OWNER = 'xiaocao-kol-hourly-low-bandwidth-operation'
 DIRECTORY = 'output/live/kol_rolling_preparations'
 CATALOG = ('src/xiaocao/strategy/rules.py', 'src/xiaocao/strategy/params.py')
-INSTRUCTIONS = ('.codex/skills/xiaocao-trading/references/kol-rolling-preparation.md',)
+INSTRUCTIONS = ('.codex/skills/xiaocao-trading/references/kol-rolling-preparation.md',
+                '.codex/skills/xiaocao-trading/references/kol-preopen-program.md')
 
 
 def input_payload(summary: dict, *, binding: dict, repo_root: Path,

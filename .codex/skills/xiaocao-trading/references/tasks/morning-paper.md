@@ -109,3 +109,15 @@ Historical report mirror capsules remain relation-target evidence only.
 Refresh morning_pipeline_status.py after dependency/terminal; report actual
 B buys/skips/cash, T/control/shadow and supporting fallback separately. Perform
 only original next-natural acceptance; no daily replay to manufacture proof.
+
+
+## Source preopen evidence
+
+The existing source owner wakes06:30, performs actual budgeted preparation/review,
+and retains the07:30 source-capture floor. Read its already accepted shared brief
+and optional preopen_program proof locally; actual dispatch/context-review/accept
+clocks and target date distinguish completed work from an early wake. A missing,
+failed or source-only program remains explicit; no task/peer wait, source worker
+or new synthesis is created by this consumer. The original freeze refresh and
+independent current policy review/publication remain required. Source preparation
+budgets do not extend this consumer's original120-second/09:27:30 bounds.

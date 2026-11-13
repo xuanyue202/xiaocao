@@ -142,3 +142,13 @@ def test_kol_writers_stay_on_separate_hosts_and_schedules() -> None:
     assert parts['FREQ'] == 'DAILY'
     assert all(0 <= int(hour) < 24 for hour in parts['BYHOUR'].split(','))
     assert all(0 <= int(minute) < 60 for minute in parts['BYMINUTE'].split(','))
+
+
+def test_source_prewake_preserves_other_slots_and_activates_actual_preparation():
+    source=_automation('xiaocao-kol-hourly-remote-writer')
+    parts=dict(part.split('=',1) for part in source['rrule'].removeprefix('RRULE:').split(';'))
+    assert parts['BYHOUR']=='6,10,12,14,17,18,21' and parts['BYMINUTE']=='30'
+    command=next(shlex.split(value) for value in re.findall(r'`([^`]+)`',source['prompt'])
+                 if 'scripts/kol_automation_slot_gate.py' in value)
+    assert '--prepare-opening' in command[:command.index('--')]
+    assert 'DTSTART' not in source['rrule'] and 'TZID' not in source['rrule']

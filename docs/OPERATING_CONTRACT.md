@@ -1,6 +1,6 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：4.63
+**版本**：4.64
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
 **关联实现**：`src/xiaocao/live/{safety,capital_keychain,foundersc_native_ax,foundersc_native_broker,trading_execution,book_b_live_lifecycle,book_b_live_intraday}.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`native/foundersc_ax_executor/`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{book_b_live_morning,book_b_live_intraday,live_monitor,research_mode_switch_replay}.py`
@@ -207,8 +207,9 @@ KOL 提前准备（2026-10-23 用户批准）在09:20前由§2a指定路由worke
 这些条件与变化，不对每笔订单重读完整旧投影。完整覆盖和来源证据仍保存在原准备回执。
 盘前备好引用正文和输出结构；正式发布仍须当前来源核验、独立主审与原请求绑定。
 2026-11-03 用户进一步批准：小草前一晚及近几天判断由独立来源 owner 提前综合，
-APP、推荐及 Paper 共用，早盘仅判断当前是否适用。沿用远端 KOL writer 的21:30及07:30
-既有 slot，取得原小时所有权后立即检查已完整发布快照，准备 authority=0 的
+APP、推荐及 Paper 共用，早盘仅判断当前是否适用。沿用远端 KOL writer 的既有 Automation，
+早间唤醒提前至06:30，来源采集/写入保留07:30门；21:30及其他时段不变。取得原小时
+所有权后立即检查已完整发布快照，准备 authority=0 的
 `kol-opening-preparation.v2`；空队列仍静默，但这两个时段必须检查共享准备。
 2026-11-11 用户要求修复准备连续过期：逐依赖判断，历史提醒送达未决只约束该提醒的
 原 claim、对账与 ACK，不阻断对完整已发布来源的独立准备；保留其未决事实，禁止重发或
@@ -231,11 +232,26 @@ manifest、投影及引用核验独立证明。准备只消费已发布合格观
 
 每轮早晚来源 owner 在退出前分别记录原业务状态与准备状态：not_started、reused、
 accepted 或 blocked，以及精确原因、输入/指纹、原观点到期、实际耗时与独立接受回执。
-07:30 取得原小时后立即准备已发布快照，09:20前完成；21:30同时检查下个已证明交易日的准备，次晨仍验证来源与
+06:30 取得原小时后立即准备已发布快照，09:20前完成；21:30同时检查下个已证明交易日的准备，次晨仍验证来源与
 原观点有效期。模型派发前以 --fresh-through <已证明交易日>T09:27:30+08:00 检查每条
 原观点到期和最终草案期限；不能覆盖则立即保存 blocked 与具体 IDs，不花完整模型成本
 再把它报为次晨就绪。可明确生成 source-only 准备，但它没有 morning-ready 证明。缺失、即将到期、规则或来源改变时由
 来源 owner 当轮重新准备或修复具体依赖，不让早盘消费者补做、延时或延长旧有效期。
+
+2026-11-13 用户进一步要求把盘前时间用于实际工作：新鲜06:30/21:30 source run 通过
+--prepare-opening 在原 PID/Thread/stdin 内启动有界准备程序，先于 mailbox/采集。
+已就绪输入5分钟内必须有实际指定模型派发证明，每个真实新输入最多30分钟综合、
+15分钟独立主审、合计45分钟；原早间程序的最终准备截止09:20，晚间程序原预算60分钟。
+初次来源/日历缺口明确受阻，不计准备完成；可修复输入故障不终止独立来源业务。
+06时段的原 owner 只凭同 PID/Thread、原06 slot及07:30 release 回执进入原来源链路，
+不开放一般06时段写权限。提前唤醒不提前采集，避免漏掉原07:30时点可见的新来源。
+父级实际开启引用context的独立阅读，草案、独立审核与接受均绑定原阶段截止，完成后
+才能封存带 preopen_program 的准备；唤醒、输入已加载或模型返回均不替代完成证明。
+程序观察完整已发布来源变化及08:30/09:00/09:10检查点，即使来源业务先结束仍保留原
+准备 owner 至09:20。未知 worker 保留原所有权；实际工具证明完成但未接受的旧输入
+可释放真正变更的新阶段，未变输入、过期阶段不能续预算。源业务晚结束不延长准备截止。
+准备通过、来源业务通过和正式政策采用分别报告；黄金窗口不补开综合/审核。
+操作见[盘前准备程序](../.codex/skills/xiaocao-trading/references/kol-preopen-program.md)。
 
 APP 和 Paper 以各自原 Automation/Thread/run 或 PID 生成不可变采用回执，绑定来源
 owner、准备 hash、当前完整投影/规则/指纹和全部观点单元；不改写来源身份、不复用
@@ -969,6 +985,7 @@ no-KOL三项纸盘挑战，共同风险与B退出，仅前向独立账本。原�
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| 4.64 | 2026-11-13 | 早间KOL提前06:30执行已发布来源准备，来源采集保留07:30；实际5分钟派发、30分钟综合与15分钟独立审核受原09:20约束。新增原进程阶段证据、源变更检查点、故障隔离及精确worker终态，保留晚间/旧请求/交易门与单写者。 |
 | 4.63 | 2026-11-13 | 修复早晚来源准备被长采集串行拖迟；派发前验证次晨有效期，新条件优先v2在不延长原截止下接受有效迟到准备，完整语义相同的审计漂移不重复综合。Paper shadow移出业务依赖，零候选免价格等待；业务、支持、研究与会计证明分开。 |
 | 4.62 | 2026-11-11 | DAY 失效释放绑定原 submit claim 的首次 CLAIMED 原生回执，避免后续原生对账失败覆盖 template 而制造提交路径证明；旧 v2 保留历史读回，当前证明补充 submit_origin_bound。 |
 | 4.61 | 2026-11-11 | 普通原生 DAY 委托跨交易日释放未成交部分的未来现金占用；潜在历史持仓按完整当前持仓扣除自有股数后约束，多笔旧单共用数量上界。保留原 UNKNOWN、claim、同代码门与会计待核，v1 隔离证明精确兼容。 |

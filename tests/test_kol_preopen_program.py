@@ -301,3 +301,15 @@ def test_late_morning_uses_actual_owner_and_only_remaining_preopen_time(tmp_path
     assert value['target_trade_date']==DAY and value['fresh_through']==DAY+'T09:27:30+08:00'
     assert prep.aware(value['complete_by'])==EARLY.replace(hour=9,minute=20)
     assert prep.aware(value['source_release_at'])==max(acquired,EARLY.replace(hour=7,minute=30))
+
+
+def test_new_program_modules_and_operational_guide_are_in_frozen_runtime(tmp_path):
+    from xiaocao.live.runtime_evidence import source_manifest
+    from xiaocao.live.runtime_snapshot import freeze_runtime
+    root=Path(__file__).resolve().parents[1]
+    manifest=source_manifest(root)
+    required=['scripts/kol_preopen.py','src/xiaocao/kol/preopen_program.py',
+              '.codex/skills/xiaocao-trading/references/kol-preopen-program.md']
+    assert all(relative in manifest for relative in required)
+    frozen=freeze_runtime(root,tmp_path/'frozen',{relative:manifest[relative] for relative in required})
+    assert all((frozen/relative).read_bytes()==(root/relative).read_bytes() for relative in required)

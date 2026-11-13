@@ -152,3 +152,15 @@ Run morning_trade_notice.py --retry-pending once after business, retain emitted
 book_b_wecom_delivery proof.09:30 pending timer is not zero-fill proof. Apply
 original next-natural acceptance in docs/reviews/2026-10-19-eod-closeout.md;
 never replay a terminal date to demonstrate a repair.
+
+
+## Source preopen evidence
+
+The existing source owner wakes06:30, performs actual budgeted preparation/review,
+and retains the07:30 source-capture floor. Read its already accepted shared brief
+and optional preopen_program proof locally; actual dispatch/context-review/accept
+clocks and target date distinguish completed work from an early wake. A missing,
+failed or source-only program remains explicit; no task/peer wait, source worker
+or new synthesis is created by this consumer. The original freeze refresh and
+independent current policy review/publication remain required. Source preparation
+budgets do not extend this consumer's original120-second/09:27:30 bounds.

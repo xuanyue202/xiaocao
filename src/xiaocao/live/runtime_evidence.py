@@ -76,6 +76,7 @@ def source_manifest(root: Path) -> dict[str, str]:
              root / '.codex/skills/xiaocao-trading/references/kol-trading-judgment.md',
              root / '.codex/skills/xiaocao-trading/references/kol-opening-preparation.md'}
     paths.add(root / '.codex/skills/xiaocao-trading/references/kol-rolling-preparation.md')
+    paths.add(root / '.codex/skills/xiaocao-trading/references/kol-preopen-program.md')
     paths.add(root / '.codex/skills/xiaocao-trading/references/kol-current-review.md')
     paths.add(root / '.codex/skills/xiaocao-trading/references/kol-conditional-morning.md')
     for name in ('scripts', 'src/xiaocao', 'kronos_screen/scripts', 'native', 'Kronos'):
