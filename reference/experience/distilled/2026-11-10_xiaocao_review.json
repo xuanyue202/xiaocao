@@ -1,0 +1,729 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-10",
+  "processing_date": "2026-11-13",
+  "kind": "review",
+  "title": "高位赚钱效应、环境滤网与组合化模式的候选知识",
+  "author": "小草",
+  "source": "小草直播",
+  "authority": 0,
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_netdisk_enrichment/artifacts/kol-netdisk-ac1249f81b9e3df8/20261110 11月10日复盘大师班直播-compressed.txt",
+      "sha256": "ab20c15b79a37dfb4d4656d739b7ad9378b029085e18543ca9397bac6131a8f5",
+      "size": 200656
+    }
+  ],
+  "source_refs": [
+    {
+      "kind": "market_evidence",
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261113_12_01a1d32f/video_market_evidence.json",
+      "sha256": "60b164304633bf90aadb6340a78e7a744920bba24ea45d43ca93996ce0b669b9"
+    },
+    {
+      "kind": "local_recommendation",
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/recommend_2026-11-10.md",
+      "sha256": "d4ea4df8e431d2b1e7c8cff0959125f8000b8c74571dc9a3f0ea1b0abb8a53b4"
+    },
+    {
+      "kind": "local_strategy_readback",
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261113_12_01a1d32f/video_local_strategy_readback.json",
+      "sha256": "ab4d4e57c4bcede0b4c90367ca95b25e66afaa761135505485e0c1f36fd1392b"
+    }
+  ],
+  "summary": "这场复盘对既有候选知识提供了新的来源复现：用赚钱效应而非指数或名义顶底判断环境；板块内高低切时在反弹中减仓；固定总风险组合多个短线模式；环境不匹配或评分不足时停用、无合格模式则空仓；来源当时还给出默认第一名、评分大于零、排除首板打板及约300分等软件点选口径，但标签、严格比较符和前瞻有效性均未确定；9:30:45等精确时点仍需全样本前瞻验证。它们分别复现XH-075、XH-038、XH-276、XH-368/XH-178和XH-326，不新增近义命题。全部authority=0；11月10日和11日姿态已过期，也不刷新6月30日至7月1日的历史姿态。",
+  "posture": {
+    "regime": "来源在2026-11-10盘后把当时短线环境判断为高位、主升和赚钱效应集中，但该盘后判断及次日计划已经过期。",
+    "dominant_style": "当时优先最高位、连板接力、人气股低吸和断板起爆；低位或下跌低吸只在对应环境中成立。",
+    "risk": "退潮第一天可能无法完全规避；未部署的模式切换、监控池和精确时点不能当成已可执行能力；讲师战果与课程宣传未独立核验。",
+    "style_ranking": [
+      "当时环境中的最高位与有板块效应的高位核心",
+      "符合当时环境的人气股低吸、连板接力和断板起爆",
+      "仅在环境滤网允许时使用的低位、下跌低吸或倒接力",
+      "无合格模式时空仓"
+    ]
+  },
+  "regime_call": {
+    "horizon": "来源当日及下一交易日，已于处理时失效；方法部分可跨期研究",
+    "call": "短线赚钱效应若继续集中在高位，最高位和有板块效应的核心可能延续；一旦高位核心先于板块转弱或资金跨板块切向低位，应减仓或退出。",
+    "what_would_falsify": [
+      "高位环境并未带来可重复的相对收益，或首个退潮日损失显著吞噬此前收益",
+      "板块内高位核心转弱不能领先后续风格切换",
+      "环境滤网后的模式组合在样本外不优于单一模式或空仓基准"
+    ]
+  },
+  "directions": [
+    {
+      "name": "高位与最高位",
+      "stance": "来源当时优先，但只属于2026-11-10的短线环境判断",
+      "conditions": [
+        "总体与短期环境均偏高位",
+        "赚钱效应继续位于高位",
+        "模式资格和退出条件仍成立"
+      ],
+      "boundary": "不是所有高位都可追，也不能跨过11月11日沿用。"
+    },
+    {
+      "name": "传媒与机器人",
+      "stance": "来源认为是当时较有辨识度、可能形成主线的两个方向",
+      "conditions": [
+        "短线行情延续",
+        "板块轮动频率和核心强度继续"
+      ],
+      "boundary": "医药也被提及；主线判断未由当前行情独立验证。"
+    },
+    {
+      "name": "低位、下跌低吸与倒接力",
+      "stance": "只在匹配环境中作为替代模式",
+      "conditions": [
+        "环境滤网允许",
+        "对应模式有合格候选"
+      ],
+      "boundary": "在来源所称高位主升阶段优先级较低；没有对应模式时应空仓。"
+    }
+  ],
+  "method_principles": [
+    "先看赚钱效应所在的环境，再选择模式；指数涨跌、K线压力位或主观拐点不能替代环境判断。",
+    "环境是稀缺资源：顺着已出现的赚钱效应做，但承认风会结束，首个退潮日有时只能与市场一起承受；这不是取消止损或永不退出。",
+    "两个或三个差异化模式可以组成组合，以降低单一信号波动；不能因为机会多就同时买满所有候选。",
+    "全样本、样本外和固定规则优先于赢家案例；讲师点名的涨停、八九个点、四十三个点或六十多个点不能直接当成可复制收益。",
+    "模式必须经过环境滤网；坏环境下若没有下跌低吸或倒接力等适配模式，空仓本身就是有效选择。",
+    "来源当时的软件点选口径包括默认取第一名、模式评分大于零并排除“手板大板”（按上下文推定为首板打板）；连板接力另出现“300分”和“大于300分”两种说法，评分标签与严格比较符均未确定，只能保留为待验证的来源条件，不能转成生产阈值。",
+    "9:30:45、9:31等精确时点只可前瞻研究，不能由当天赢家倒推成长期最优参数。",
+    "当下执行、事后复盘并承认过去错误是一条学习方法；它不取消仓位上限、退出条件或风险纪律。",
+    "情绪高涨时不借钱、不加杠杆，把单日顺风与长期能力分开。"
+  ],
+  "exit_lessons": [
+    "板块上涨而德明利、兆易创新、佰维存储等高位核心先跌，是板块内高低切线索；来源历史案例先卖一半，次日资金切向医药和白酒后再退出剩余仓位。",
+    "闽发铝业的来源意见是“不连板就走”，说明短线接力不应被事后改写成长期持有。",
+    "退潮若在早盘暴露可能较易避开，若在午后发生可能无法完全躲过；验证重点应是首个退潮日后的快速降风险，而不是承诺提前猜中顶部。"
+  ],
+  "strategy_hit_audit": {
+    "scope": "2026-11-10同日来源点名与本地固定事实审计；Paper记录不证明APP成交。",
+    "teacher_named_winners": [
+      {
+        "name": "上海电影",
+        "source_quote": "上海电影是排第二的",
+        "source_role": "断板起爆盘中排名与上涨案例",
+        "classification": "not_emitted",
+        "resolution_status": "resolved",
+        "local_evidence": "本地11月10日★E与纸面买入均无该股。",
+        "boundary": "排名和盘中出现不等于来源实际成交。"
+      },
+      {
+        "name": "思美传媒",
+        "source_quote": "是四美传媒，我们今天庞东同学看的这个是高分的",
+        "source_role": "高分与盘中回落案例",
+        "classification": "not_emitted",
+        "resolution_status": "resolved",
+        "local_evidence": "本地11月10日★E与纸面买入均无该股。",
+        "boundary": "未给统一买卖价。"
+      },
+      {
+        "name": "阳光照明",
+        "source_quote": "阳光照明。这个是那天的断板",
+        "source_role": "历史断板案例",
+        "classification": "not_emitted",
+        "resolution_status": "resolved",
+        "local_evidence": "本地11月10日★E与纸面买入均无该股。",
+        "boundary": "历史模式案例不是同日命中。"
+      },
+      {
+        "name": "凡拓数创",
+        "source_quote": "防拓数创。啊，这个不用多说了",
+        "source_role": "人气股低吸、红盘起爆与高位案例",
+        "classification": "cohort_watchlist",
+        "resolution_status": "contextual_candidate",
+        "local_evidence": "同日信号为PROVISIONAL、mode_exec_star为假、目标权重0；未买入。",
+        "boundary": "观察候选重合不等于讲师点名的本地策略命中。"
+      },
+      {
+        "name": "东方海洋",
+        "source_quote": "东方海洋是东方海洋，是前天的，前天的，今天还在涨，也不错，也不错",
+        "source_role": "近期延续上涨案例",
+        "classification": "not_emitted",
+        "resolution_status": "resolved",
+        "local_evidence": "本地11月10日★E与纸面买入均无该股。",
+        "boundary": "来源回放未给统一成交口径。"
+      },
+      {
+        "name": "莱美药业",
+        "source_quote": "昨天涨了14个点",
+        "source_role": "人气股低吸收益案例",
+        "classification": "not_emitted",
+        "resolution_status": "resolved",
+        "local_evidence": "本地11月10日★E与纸面买入均无该股。",
+        "boundary": "十四个点为来源陈述，未核成交。"
+      },
+      {
+        "name": "芒果超媒",
+        "source_quote": "龙江交通，芒果超莓，黄台酒业，这今这今天今天的青今天的青岛食品有有也也是肉也还可以啊",
+        "source_role": "与龙江交通、皇台酒业、青岛食品并列的“有肉”语境",
+        "classification": "not_emitted",
+        "resolution_status": "resolved",
+        "local_evidence": "本地11月10日★E与纸面买入均无该股。",
+        "boundary": "多讲者语境且没有统一买卖点、收益口径或成交核验，只能保留为未核收益提及。"
+      },
+      {
+        "name": "奥雅股份",
+        "source_quote": "奥雅冲高走了，我做的比较菜，60多个点",
+        "source_role": "学员持仓收益转述",
+        "classification": "not_emitted",
+        "resolution_status": "resolved",
+        "local_evidence": "本地11月10日★E与纸面买入均无该股。",
+        "boundary": "学员转述、加仓与收益基准不明。"
+      },
+      {
+        "name": "龙江交通",
+        "source_quote": "昨天龙江交通啊",
+        "source_role": "连板接力与卖出收益回放",
+        "classification": "not_emitted",
+        "resolution_status": "resolved",
+        "local_evidence": "本地11月10日★E与纸面买入均无该股。",
+        "boundary": "不是同日本地发射。"
+      },
+      {
+        "name": "皇台酒业",
+        "source_quote": "也是八九个点吧",
+        "source_role": "人气股低吸收益回放",
+        "classification": "not_emitted",
+        "resolution_status": "resolved",
+        "local_evidence": "本地11月10日★E与纸面买入均无该股。",
+        "boundary": "八九个点为来源口径，未核成交。"
+      },
+      {
+        "name": "青岛食品",
+        "source_quote": "今天的青岛食品有有也也是肉",
+        "source_role": "人气股低吸收益回放",
+        "classification": "not_emitted",
+        "resolution_status": "resolved",
+        "local_evidence": "本地11月10日★E与纸面买入均无该股。",
+        "boundary": "“有肉”没有买卖点与收益口径。"
+      },
+      {
+        "name": "盘龙药业",
+        "source_quote": "第二名盘龙药业啊。本来也暂停了",
+        "source_role": "连板接力排名与涨停回放",
+        "classification": "not_emitted",
+        "resolution_status": "resolved",
+        "local_evidence": "本地11月10日★E与纸面买入均无该股。",
+        "boundary": "来源涨停回放不证明可成交收益。"
+      },
+      {
+        "name": "大千生态",
+        "source_quote": "是大千生态，当时是一点九个点涨停",
+        "source_role": "9:31盘中涨停案例",
+        "classification": "not_emitted",
+        "resolution_status": "resolved",
+        "local_evidence": "本地11月10日★E与纸面买入均无该股。",
+        "boundary": "回放时点与可成交性未核。"
+      },
+      {
+        "name": "慈文传媒",
+        "source_quote": "9点30分45秒是持文传媒当时零点七一个点涨停",
+        "source_role": "9:30:45盘中涨停案例",
+        "classification": "not_emitted",
+        "resolution_status": "resolved",
+        "local_evidence": "本地11月10日★E与纸面买入均无该股。",
+        "boundary": "回放时点与可成交性未核。"
+      },
+      {
+        "name": "城市传媒",
+        "source_quote": "第一名是城市传媒，八点九个点",
+        "source_role": "N字或低位模式收益回放",
+        "classification": "not_emitted",
+        "resolution_status": "resolved",
+        "local_evidence": "本地11月10日★E与纸面买入均无该股。",
+        "boundary": "模式、基准和卖点口径未统一。"
+      },
+      {
+        "name": "大圣文化",
+        "source_quote": "9点30分45秒。大圣文化",
+        "source_role": "点弱盘中起爆回放",
+        "classification": "no_evidence",
+        "resolution_status": "unresolved",
+        "local_evidence": "本地缓存有音近大晟文化600892.XSHG，但不足以确认原意。",
+        "boundary": "身份未决，不能计命中。"
+      },
+      {
+        "name": "闽发铝业",
+        "source_quote": "领发锂业，结果第二名涨停了",
+        "source_role": "另一个历史日期中低于300分的第二名涨停案例",
+        "classification": "not_emitted",
+        "resolution_status": "contextual_candidate",
+        "local_evidence": "本地11月10日★E与纸面买入均无该股。",
+        "boundary": "这是历史赢家回放；必须与11月10日“不连板就走”的具名退出意见分开，不证明当日买入或成交。"
+      }
+    ],
+    "local_strategy_benchmark_hits": [
+      {
+        "name": "新亚制程",
+        "code": "002388.XSHE",
+        "classification": "emitted_strategy_hit",
+        "paper_book": "A/B",
+        "paper_buy": "3200股@7.10",
+        "teacher_exact_overlap": false,
+        "boundary": "本地★E与Paper模拟对象；来源未点名，Paper不证明APP成交。"
+      },
+      {
+        "name": "满坤科技",
+        "code": "301132.XSHE",
+        "classification": "emitted_strategy_hit",
+        "paper_book": "A/B",
+        "paper_buy": "800股@58.77",
+        "teacher_exact_overlap": false,
+        "boundary": "本地★E与Paper模拟对象；来源未点名，Paper不证明APP成交。"
+      }
+    ],
+    "direction_core_observations": [
+      {
+        "name": "光洋股份",
+        "source_quote": "他是机器人的老大，机器人的呃核心股",
+        "source_role": "机器人核心兼连板接力当日案例",
+        "classification": "not_emitted",
+        "local_evidence": "无同日★E或Paper买入。",
+        "boundary": "方向核心不等于本地命中。"
+      },
+      {
+        "name": "襄阳轴承",
+        "source_quote": "向阳轴承也是向阳轴承也是呃。那个那个也是那个叫什么也是这一波机器人比较强的啊，但是你你看一下相应轴承，你觉得它像龙头吗？",
+        "source_role": "机器人强股但非首选龙头；后文另作N字案例",
+        "classification": "cohort_watchlist",
+        "local_evidence": "同日COLD、不可交易、目标权重0。",
+        "boundary": "方向观察与后文模式回放都不构成默认买入。"
+      },
+      {
+        "name": "闽发铝业",
+        "source_quote": "不连吧就走呗",
+        "source_role": "具名退出意见",
+        "classification": "not_emitted",
+        "local_evidence": "无同日★E或Paper买入。",
+        "boundary": "这是11月10日的具名退出对象；与另一个历史日期的第二名涨停回放是同股不同日期、不同角色。"
+      },
+      {
+        "name": "龙头股份",
+        "source_quote": "龙头股份。单天是面一点，第二天现在也第二天是这个面个三四个点吧",
+        "source_role": "另一个历史日期中低于300分的亏损候选",
+        "classification": "not_emitted",
+        "local_evidence": "本地11月10日★E与纸面买入均无该股。",
+        "boundary": "它是门槛反例审计中的失败样本，不是赢家或推荐。"
+      },
+      {
+        "name": "福莱新材",
+        "source_quote": "福来新材好像没注意啊",
+        "source_role": "最高位名单中的未确认提及",
+        "classification": "no_evidence",
+        "local_evidence": "没有同日发射、推荐或买入证据。",
+        "boundary": "来源自己说“好像没注意”，不属于讲师点名赢家。"
+      },
+      {
+        "name": "百花医药",
+        "source_quote": "官员要成为下一个下一个那个谁？百花医药",
+        "source_role": "延续性比较参照",
+        "classification": "no_evidence",
+        "local_evidence": "没有同日发射、推荐或买入证据。",
+        "boundary": "类比不是当前信号。"
+      }
+    ],
+    "audit_conclusion": "讲师点名赢家与本地实际发射无精确重合；凡拓数创、襄阳轴承仅为观察层重合。福莱新材只是未确认提及；芒果超媒属于多讲者未核“有肉”语境；闽发铝业的历史涨停与11月10日退出意见按日期和角色分开。本地两只实际★E应保留为benchmark但teacher_exact_overlap=false。"
+  },
+  "stocks": [
+    {
+      "name": "光洋股份",
+      "code": "002708.XSHE",
+      "role": "来源称机器人核心及连板接力案例",
+      "boundary": "当时条件性方向，当前已过期且来源收益未核。"
+    },
+    {
+      "name": "凡拓数创",
+      "code": "301313.XSHE",
+      "role": "来源称人气股低吸/红盘起爆案例；本地仅有非执行观察重合",
+      "boundary": "不得把观察候选当成讲师命中、默认买入或成交。"
+    },
+    {
+      "name": "襄阳轴承",
+      "code": "000678.XSHE",
+      "role": "来源称机器人强势股但质疑其龙头形态；本地仅有影子观察重合",
+      "boundary": "不得把COLD候选当成交。"
+    },
+    {
+      "name": "闽发铝业",
+      "code": "002578.XSHE",
+      "role": "另一个历史日期的低于300分第二名涨停案例；11月10日则是不连板即走的退出对象",
+      "boundary": "同一股票的历史赢家回放与当日退出意见必须按日期分开，均不证明本地买入或成交。"
+    },
+    {
+      "name": "龙头股份",
+      "code": "600630.XSHG",
+      "role": "另一个历史日期的低于300分亏损候选，次日约亏三至四点",
+      "boundary": "失败样本，不是赢家、当前推荐或生产门槛依据。"
+    },
+    {
+      "name": "德明利",
+      "code": "001309.XSHE",
+      "role": "历史高低切案例",
+      "boundary": "历史例证，不是当前推荐。"
+    },
+    {
+      "name": "兆易创新",
+      "code": "603986.XSHG",
+      "role": "历史高低切案例",
+      "boundary": "历史例证，不是当前推荐。"
+    },
+    {
+      "name": "佰维存储",
+      "code": "688525.XSHG",
+      "role": "历史高低切案例",
+      "boundary": "逐字稿写作百维存储，候选映射需保留ASR边界。"
+    }
+  ],
+  "hypotheses": [
+    {
+      "authority": 0,
+      "category": "existing_candidate_recurrence",
+      "existing_id": "XH-075",
+      "claim": "市场风格切换是渐进过程，按当下环境和模式资格逐级调整仓位，可能比预测单一拐点更稳健。",
+      "implied_rule": "把环境评分、模式资格和亏钱效应作为分档输入；不以某一天或历史日历作为满仓开关。",
+      "falsifiable_test": "比较分档调整、一次性满仓押拐点和固定仓位三种策略在多轮风格切换中的收益、最大回撤、换手和恢复时间。",
+      "disposition": "direct_recurrence_no_new_id",
+      "dedup_boundary": "本场反复说跟随环境而非抓拐点；没有新增独立命题。"
+    },
+    {
+      "authority": 0,
+      "category": "existing_candidate_recurrence",
+      "existing_id": "XH-038",
+      "claim": "趋势主线内发生高低切时，主线未必立刻结束，但持仓应在反弹中减仓而不是继续加仓。",
+      "implied_rule": "板块内高低切=扩散减仓信号，弱于板块外切换但强于普通轮动。",
+      "falsifiable_test": "识别主线高位核心弱于低位补涨分支的日期，比较趋势核心继续持有、反弹减仓、加仓三种策略的后续收益回撤。",
+      "disposition": "direct_recurrence_with_historical_two_stage_example_no_new_id",
+      "dedup_boundary": "6月30日板块内高低切先减半、7月1日板块外切换后清仓是原历史姿态的重述，不刷新7月姿态，也不另建两阶段近义ID。"
+    },
+    {
+      "authority": 0,
+      "category": "existing_candidate_recurrence",
+      "existing_id": "XH-276",
+      "claim": "在固定总风险下组合多个短线模式，可能降低单一模式波动并提高执行一致性。",
+      "implied_rule": "冻结模式间风险权重，记录相关性、收益、回撤和交易成本；不把单一模式内部的前两名平铺重复计为新命题。",
+      "falsifiable_test": "与单一模式和随机跨模式组合比较风险调整收益；若组合未降低回撤或稀释收益过多则否决。",
+      "disposition": "direct_recurrence_no_new_id",
+      "dedup_boundary": "本场两到三个模式组合与既有claim一致，不新增轻微改写。"
+    },
+    {
+      "authority": 0,
+      "category": "existing_candidate_recurrence",
+      "existing_id": "XH-368",
+      "claim": "短线模式只有在预先定义的情绪、高位结构和大小票风格相匹配时才应启用，环境复现后仍需评分合格。",
+      "implied_rule": "为每个模式保存预注册环境标签和评分门槛；环境不匹配或评分不足时停用，不因历史相似而强行交易。",
+      "falsifiable_test": "在滚动样本外比较环境条件化启停与无条件运行的费用后收益、最大回撤、启动次数和错过收益；若风险调整表现不改善则拒绝。",
+      "disposition": "direct_recurrence_no_new_id",
+      "dedup_boundary": "本场环境滤网与模式评分大于零直接复现；空仓分支另由XH-178覆盖。"
+    },
+    {
+      "authority": 0,
+      "category": "existing_candidate_recurrence",
+      "existing_id": "XH-178",
+      "claim": "当交易者判断环境不利且没有通过其模式门槛的机会时，允许空仓可能比为了参与感强行交易更能控制回撤与纪律违约。",
+      "implied_rule": "所有候选都未通过预注册门槛时，把空仓设为合法基准动作。",
+      "falsifiable_test": "比较不利环境中空仓、强制选择候选和实时门控组合的净收益、回撤、换手与纪律违约。",
+      "disposition": "direct_recurrence_no_new_id",
+      "dedup_boundary": "本场坏环境无下跌低吸或倒接力就空仓与既有claim一致；XH-061和XH-153是更窄门槛/高位转负条件，不新建。"
+    },
+    {
+      "authority": 0,
+      "category": "existing_candidate_recurrence",
+      "existing_id": "XH-326",
+      "claim": "在紫薇等盘中模式中，9:31前首次出现的合格候选可能比更晚首次出现的候选有更好的可成交后风险调整收益；9:30:45是作者特别提及的观察点，晚时高分能否弥补时点劣势仍未知。",
+      "implied_rule": "把9:31前作为来源提出的待检验范围，把9:30:45作为其中一个单点，同时记录更早信号、首次出现时间和分数，不提前固化买点。",
+      "falsifiable_test": "对完整逐秒候选按首次出现时间、初始开幅和分数联合分层，纳入9:30:45之前的更早信号、未入选、涨停不可成交、费用和滑点，比较9:31前后及多个预注册单点的收益、尾损与成交率；若时间增量不稳定或被分数解释则否决。",
+      "disposition": "direct_recurrence_no_new_id",
+      "dedup_boundary": "本场9:30:45与9:31回放直接复现；XH-181提供更广的时点不稳定边界，不另建时点ID。"
+    }
+  ],
+  "timing_notes": [
+    "来源发表于2026-11-10 18:16（北京时间）；“明天”指2026-11-11。",
+    "11月10日当日与11月11日次日的高位、模式、板块和个股条件在2026-11-13处理时均已过期。",
+    "来源明确说监控池仍需压力测试、其他用户的新版本迁移安排在次日下午15:00，讲师只要求自己的实例提前；不能写成全体已经部署。",
+    "方法原则可跨期研究，但任何参数、模式启用、仓位或知识升级仍需研究工具与人工门禁。"
+  ],
+  "typo_corrections": [
+    {
+      "surface": "光阳/官员",
+      "candidate": "光洋股份",
+      "status": "contextual_candidate",
+      "reason": "同段机器人核心与连板接力语境高度一致，但来源未报代码。"
+    },
+    {
+      "surface": "森美/四美/智美传媒",
+      "candidate": "思美传媒",
+      "status": "contextual_candidate",
+      "reason": "多处近音且与传媒案例连贯，仍保留ASR边界。"
+    },
+    {
+      "surface": "防拓数创/繁收疏散",
+      "candidate": "凡拓数创",
+      "status": "contextual_candidate",
+      "reason": "本地同日候选与直播语境提供候选映射，但不能替代来源身份确认。"
+    },
+    {
+      "surface": "得命令/德宾利",
+      "candidate": "德明利",
+      "status": "contextual_candidate",
+      "reason": "与6月30日存储芯片历史案例一致。"
+    },
+    {
+      "surface": "百威存储",
+      "candidate": "佰维存储",
+      "status": "contextual_candidate",
+      "reason": "音近且与存储芯片语境一致。"
+    },
+    {
+      "surface": "泽文影业/云大股份/小脑静丸/大圣文化/成元星/今日加强/天山/城市装备",
+      "candidate": null,
+      "status": "unresolved",
+      "reason": "逐字稿未给代码或足够唯一上下文，不猜证券身份。"
+    }
+  ],
+  "limitations": [
+    "逐字稿没有说话人标签，metadata.author=小草不能证明每句话均由小草说出；课程主持、学员转述和其他讲者的句子按语境单独归属。",
+    "课程收益、软件性能、硬件和AI能力、健康长寿及私人指控均未独立核实，不进入投资事实或策略权威。",
+    "本地11月10日行情与策略文件只能核对时间和候选重合，不能证明来源点名收益、APP成交或当前可交易性。",
+    "所有候选知识authority=0，仅用于研究、判断先验和审计；不得自动调参或生成订单。",
+    "来源的评分标签转写未确定，“300分”与“大于300分”并存，无法确认严格大于还是大于等于；默认第一名、评分大于零、排除首板打板及300分口径均不得转成生产阈值。",
+    "小资金/大资金适配、十万元到一亿元和三千万元容量说法保留为未核来源陈述；不得转成收益承诺、账户分层或资本阈值。"
+  ],
+  "action_summary": {
+    "posture_update": "no_change：11月10日当日与11日次日姿态已过期；6月30日至7月1日只作为历史方法复现，不刷新当前或旧姿态。",
+    "playbook_update": "no_change：方法均已由现有候选XH-038、XH-075、XH-178、XH-276、XH-326、XH-368覆盖；本场只增加复现证据。",
+    "hypothesis_update": "no_new_id：六项均复用现有exact claim；XH-027/061/153/181仅作边界比较，不新建近义命题。",
+    "audit_evidence": "完整读取200656字节、454个稳定segment的原始来源到EOF；来源SHA-256为ab20c15b79a37dfb4d4656d739b7ad9378b029085e18543ca9397bac6131a8f5。市场核验绑定video_market_evidence.json SHA-256 60b164304633bf90aadb6340a78e7a744920bba24ea45d43ca93996ce0b669b9；本地命中审计绑定recommend_2026-11-10.md与video_local_strategy_readback.json。讲师点名无本地★E精确重合。来源的软件点选口径保留默认第一名、评分大于零、排除首板打板和约300分边界；龙头股份历史亏约三至四点、闽发铝业另日第二名涨停，两个低分候选结果分化。福莱新材移出赢家桶，芒果超媒仅按多讲者未核“有肉”语境保留。另保留小资金竞价、大资金盘中及三千万元容量说法为宣传性未核边界，不生成参数或新候选ID。",
+    "instrumentation_todo": "沿用既有研究设计：点时冻结环境标签、固定总风险模式权重、全量秒级候选、首次出现时间、不可成交、费用、滑点和首日退潮损失；不新增重复研究议题。",
+    "routing": [
+      "authority=0",
+      "existing_claim_recurrence_only",
+      "no_ingest_new_id",
+      "no_posture_refresh",
+      "no_parameter_promotion",
+      "no_order_or_book_effect"
+    ]
+  },
+  "speaker_attribution_caveat": "逐字稿含小草、课程主持、学员和其他讲者；没有说话人标签的收益、产品、杠杆、房地产和健康陈述按语境单独标注，metadata作者不替代逐句归属。",
+  "method_provenance": [
+    {
+      "principle": "环境与赚钱效应优先于指数或主观拐点。",
+      "source_basis": "来源明确说跟随环境、不必抓拐点，并称短线环境常与大盘方向无关。",
+      "system_synthesized_benefit": "候选研究可比较分档环境跟随、一次性押拐点和固定仓位；“减少左尾”是系统待检验预期，不是来源已证明收益。",
+      "related_existing_ids": [
+        "XH-075"
+      ]
+    },
+    {
+      "principle": "板块内高位核心先弱时先减半，跨板块高低切后退出剩余。",
+      "source_basis": "来源回顾6月30日至7月1日存储芯片案例，给出先卖一半、次日冲高全走。",
+      "system_synthesized_benefit": "降低风格切换回撤只是候选研究目标，不是单案例已验证结论。",
+      "related_existing_ids": [
+        "XH-038",
+        "XH-027"
+      ]
+    },
+    {
+      "principle": "固定总风险下组合两到三个差异化短线模式。",
+      "source_basis": "来源明确说盘前与盘中或多个模式可做组合、曲线更稳定，同时不应买满十个机会。",
+      "system_synthesized_benefit": "组合降低波动和提高一致性是XH-276的待检验预期，不是本场战果证明。",
+      "related_existing_ids": [
+        "XH-276"
+      ]
+    },
+    {
+      "principle": "环境与评分共同决定模式启停，无合格机会时空仓。",
+      "source_basis": "来源描述一重、二重滤网、连板接力在部分环境不合适，并说没有下跌低吸或倒接力时应空仓；当时软件点选还出现默认第一名、模式评分大于零、排除首板打板和约300分口径。",
+      "system_synthesized_benefit": "降低跨环境回撤与纪律违约是系统研究目标，需与强制选择和实时组合比较。",
+      "related_existing_ids": [
+        "XH-368",
+        "XH-178",
+        "XH-061",
+        "XH-153"
+      ]
+    },
+    {
+      "principle": "来源软件的名次与评分条件只能作为待验证输入，不能直接固化为生产阈值。",
+      "source_basis": "来源说“默认的话就跑第一个就点就行了”“模式评分大于零”“除了手板大板不点以外”，并在连板接力语境同时出现“300分”和“大于300分”；历史回放中低于300分的龙头股份亏约三至四点、闽发铝业另日第二名涨停。",
+      "system_synthesized_benefit": "把标签、比较符、全量候选和失败样本一并冻结后再研究，属于系统审计边界；来源没有证明任何阈值可投产。",
+      "related_existing_ids": [
+        "XH-368"
+      ]
+    },
+    {
+      "principle": "9:30:45只是预注册观察点之一。",
+      "source_basis": "来源把9:30:45与9:31的慈文传媒、大千生态及“大圣文化”回放作比较。",
+      "system_synthesized_benefit": "减少回看偏差与窗口末端追高是XH-326/XH-181的研究预期，不是来源已证明效果。",
+      "related_existing_ids": [
+        "XH-326",
+        "XH-181"
+      ]
+    }
+  ],
+  "prior_hypothesis_comparison": [
+    {
+      "existing_id": "XH-038",
+      "disposition": "confirm_historical_recurrence_no_posture_refresh",
+      "reason": "来源再次完整讲述6月30日至7月1日案例；只增加来源复现，不延长7月姿态。"
+    },
+    {
+      "existing_id": "XH-027",
+      "disposition": "partial_context_only_no_merge",
+      "reason": "7月1日医药、白酒领强支持主动性与资金去向的重要性，但本场重点是板块内到板块外高低切，不把它合并成被动反弹命题。"
+    },
+    {
+      "existing_id": "XH-075",
+      "disposition": "direct_recurrence",
+      "reason": "来源明确反对抓单一拐点，主张按环境跟随。"
+    },
+    {
+      "existing_id": "XH-276",
+      "disposition": "direct_recurrence",
+      "reason": "来源明确提出固定少数模式组合以稳定曲线。"
+    },
+    {
+      "existing_id": "XH-368",
+      "disposition": "direct_recurrence",
+      "reason": "来源明确使用环境滤网并要求模式评分合格。"
+    },
+    {
+      "existing_id": "XH-178",
+      "disposition": "direct_recurrence",
+      "reason": "来源明确说坏环境无适配模式时空仓。"
+    },
+    {
+      "existing_id": "XH-061",
+      "disposition": "covered_by_broader_XH-178_no_new_id",
+      "reason": "本场没有逐字重复“所有模式评分为负”，而是无适配模式；不重复建空仓近义命题。"
+    },
+    {
+      "existing_id": "XH-153",
+      "disposition": "not_addressed_directly",
+      "reason": "本场总体与短期环境都偏高位，没有总体高位而短期转负的条件。"
+    },
+    {
+      "existing_id": "XH-326",
+      "disposition": "direct_recurrence",
+      "reason": "来源再次特别提及9:30:45并与9:31案例比较，仍未解决前瞻可成交优势。"
+    },
+    {
+      "existing_id": "XH-181",
+      "disposition": "supporting_boundary",
+      "reason": "同场不同股票和模式的时点赢家不一致，继续支持精确有效时点尚未确定。"
+    }
+  ],
+  "decision_trace": [
+    {
+      "observation": "11月10日来源把总体和短期环境都判断为高位，并说近期优先最高位。",
+      "inference": "当时短线赚钱效应可能集中在高位。",
+      "action": "只记录为11月10日至11日历史姿态；11月13日不续期。",
+      "why": "采集与处理时间不能延长原始交易窗口。",
+      "falsifiers": [
+        "新的同口径环境数据否定高位集中",
+        "高位核心转为普遍亏钱"
+      ]
+    },
+    {
+      "observation": "6月30日存储芯片板块大涨但高位核心走弱，7月1日资金进一步转向医药、白酒。",
+      "inference": "板块内高低切可能先于跨板块切换。",
+      "action": "把本场作为XH-038历史复现，不新建命题、不刷新7月姿态。",
+      "why": "同一历史案例不能作为新当前证据。",
+      "falsifiers": [
+        "完整行情不支持相对转弱",
+        "跨样本误报过高"
+      ]
+    },
+    {
+      "observation": "来源同时允许多个模式，建议只组合两到三个。",
+      "inference": "有限多模式组合可能降低单一模式波动。",
+      "action": "复现XH-276，不改变风险权重。",
+      "why": "来源没有相关性、权重和成本数据。",
+      "falsifiers": [
+        "固定总风险组合不降回撤",
+        "收益被成本稀释"
+      ]
+    },
+    {
+      "observation": "来源说连板接力在部分环境不适合，无下跌低吸或倒接力时应空仓。",
+      "inference": "环境与模式资格应共同门控。",
+      "action": "复现XH-368与XH-178，不改生产门槛。",
+      "why": "滤网定义未公开，仍需滚动样本外研究。",
+      "falsifiers": [
+        "无条件模式长期更优",
+        "空仓牺牲的右尾超过左尾改善"
+      ]
+    },
+    {
+      "observation": "来源当时说默认取第一名、模式评分大于零并排除“手板大板”；连板接力又出现“300分”和“大于300分”两种说法。历史回放的两个低于300分候选结果分化：龙头股份随后亏约三至四点，闽发铝业在另一个日期第二名涨停。",
+      "inference": "名次与评分可能是来源软件的候选筛选输入，但单个低分赢家不能取消门槛，单个低分输家也不能证明门槛有效。",
+      "action": "只把这些条件作为XH-368的来源复现和研究边界；不新增候选ID，不写入生产阈值。",
+      "why": "评分标签无法可靠还原，严格大于或大于等于未统一，也没有全量前瞻样本。",
+      "falsifiers": [
+        "可靠规则文档还原出不同标签或比较符",
+        "全量样本显示名次和评分在控制环境后没有增量"
+      ]
+    },
+    {
+      "observation": "来源用9:30:45慈文传媒、大千生态及“大圣文化”等回放比较精确时点。",
+      "inference": "时点叙事仍受赢家和回看偏差影响。",
+      "action": "复现XH-326，并以XH-181作为不稳定性边界。",
+      "why": "没有全量候选、不可成交、费用和滑点。",
+      "falsifiers": [
+        "预注册前瞻样本稳定支持9:30:45",
+        "时点增量不能被分数解释"
+      ]
+    }
+  ],
+  "judgment_heuristics": [
+    {
+      "heuristic": "先判断赚钱效应环境，再选模式；不把指数方向或名义顶底当替代物。",
+      "limit": "环境必须预先定义并样本外验证。"
+    },
+    {
+      "heuristic": "板块仍涨而高位核心先弱时先降风险，跨板块切换后进一步退出。",
+      "limit": "仅为历史案例复现，不能单案参数化。"
+    },
+    {
+      "heuristic": "机会多时只组合少数差异化模式，并保持固定总风险。",
+      "limit": "不能把相关模式或同一模式多个名次伪装成分散。"
+    },
+    {
+      "heuristic": "无适配模式时空仓是合法结果。",
+      "limit": "“无适配”必须由门槛定义，不能凭主观恐惧。"
+    },
+    {
+      "heuristic": "来源软件可先按第一名、正评分和排除首板打板审计候选，连板接力另记录约300分条件。",
+      "limit": "评分标签及严格大于或大于等于均未知，两个低分候选一亏一赢；只能做研究字段，不能成为生产规则。"
+    },
+    {
+      "heuristic": "精确秒级时点必须用全量前瞻可成交数据验证。",
+      "limit": "当天涨停赢家不能证明时点最优。"
+    }
+  ],
+  "promotional_financial_claims": [
+    {
+      "claim": "小资金在竞价中更容易进出，大资金因容量限制更适合机会与时间窗口更多的盘中系统。",
+      "speaker_attribution": "直播中多位讲者对话，无法逐句全部确认为小草。",
+      "evidence_quotes": [
+        "小资金做竞价，进进出出也容易啊",
+        "大资金有时候有时候买不了这么多啊",
+        "盘中就是好，就是你机会多好买啊"
+      ],
+      "status": "source_claim_unverified",
+      "boundary": "没有冲击成本、容量、成交率或账户规模研究，不转成本地资金分流阈值。"
+    },
+    {
+      "claim": "十万元到一亿元约为一千倍、可表述为十次翻倍；达到约三千万元后容量可能使增速变慢。",
+      "speaker_attribution": "直播中讲者，语境混合教学与课程推广。",
+      "evidence_quotes": [
+        "十万块钱到一个亿是1000倍",
+        "其实是十次翻倍",
+        "比如到3000万是更更大的时候，它的容量的问题啊，或者你会变慢啊"
+      ],
+      "status": "promotional_return_and_capacity_claim_unverified",
+      "boundary": "十次翻倍是1024倍，与一千倍只是近似；这不是收益承诺，也不是家庭或本地Book的资金阈值。"
+    }
+  ]
+}
