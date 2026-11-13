@@ -313,3 +313,63 @@ def test_new_program_modules_and_operational_guide_are_in_frozen_runtime(tmp_pat
     assert all(relative in manifest for relative in required)
     frozen=freeze_runtime(root,tmp_path/'frozen',{relative:manifest[relative] for relative in required})
     assert all((frozen/relative).read_bytes()==(root/relative).read_bytes() for relative in required)
+
+
+@pytest.mark.parametrize('hour', [6, 7, 8, 9])
+@pytest.mark.parametrize('status', ['accepted', 'reused', 'source_blocked'])
+@pytest.mark.parametrize('calendar_recovered', [False, True])
+def test_source_only_morning_keeps_original_deadline(
+        tmp_path, monkeypatch, hour, status, calendar_recovered):
+    monkeypatch.setenv('CODEX_AUTOMATION_ID', pp.OWNER)
+    monkeypatch.setenv('CODEX_THREAD_ID', 'source-owner')
+    acquired = EARLY.replace(hour=hour, minute=5)
+    calendar = {} if calendar_recovered else {'latest': '2026-10-22'}
+    path, value = pp.create_plan(
+        tmp_path, acquired_at=acquired, slot=acquired.replace(minute=0),
+        calendar=calendar, runner_pid=os.getpid(), thread_id='source-owner')
+    current = [acquired + timedelta(minutes=1)]
+    observed = []
+
+    def sleep(seconds):
+        assert not program.stop.is_set()
+        current[0] += timedelta(seconds=seconds)
+
+    program = pp.Program(tmp_path, path, now=lambda: current[0], sleep=sleep,
+                         emit=lambda row: None)
+    if calendar_recovered:
+        program.calendar = {'latest': '2026-10-22'}
+
+    def preparation_status():
+        observed.append(current[0])
+        return {'status': status, 'morning_ready': False}
+
+    monkeypatch.setattr(program, 'status', preparation_status)
+    result = program.finish()
+    deadline = prep.aware(value['complete_by'])
+    assert current[0] == deadline
+    assert program.stop.is_set()
+    assert result['morning_ready'] is False
+    assert value['target_trade_date'] is None and value['fresh_through'] is None
+    for hour, minute in [(8, 30), (9, 0), (9, 10)]:
+        checkpoint = EARLY.replace(hour=hour, minute=minute)
+        if acquired < checkpoint:
+            assert checkpoint in observed
+    program.finish()
+    assert current[0] == deadline
+
+
+@pytest.mark.parametrize('status', ['accepted', 'reused', 'source_blocked'])
+def test_evening_terminal_preparation_keeps_early_completion(tmp_path, monkeypatch, status):
+    monkeypatch.setenv('CODEX_AUTOMATION_ID', pp.OWNER)
+    monkeypatch.setenv('CODEX_THREAD_ID', 'source-owner')
+    acquired = EARLY.replace(hour=21)
+    path, _ = pp.create_plan(
+        tmp_path, acquired_at=acquired, slot=acquired.replace(minute=0),
+        calendar={'latest': DAY}, runner_pid=os.getpid(), thread_id='source-owner')
+    sleeps = []
+    program = pp.Program(tmp_path, path, now=lambda: acquired,
+                         sleep=sleeps.append, emit=lambda row: None)
+    monkeypatch.setattr(program, 'status', lambda: {'status': status})
+    assert program.finish()['status'] == status
+    assert sleeps == []
+    assert program.stop.is_set()

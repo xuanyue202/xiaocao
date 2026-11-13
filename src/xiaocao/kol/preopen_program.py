@@ -389,9 +389,11 @@ class Program:
 
     def finish(self) -> dict:
         if getattr(self,'finished',False):return self.status()
+        morning_slot=prep.aware(self.plan['slot_start']).astimezone(TZ).hour in {6,7,8,9}
         while self.now()<prep.aware(self.plan['complete_by']):
             status=self.status()
-            if (self.plan['scope']!='morning' or self.calendar.get('latest') and not self.target_trade_date) and status['status'] in {'accepted','reused','source_blocked'}:break
+            # Calendar scope limits readiness, not the original morning watch.
+            if not morning_slot and status['status'] in {'accepted','reused','source_blocked'}:break
             self.sleep(1)
         self.stop.set()
         if getattr(self,'monitor_thread',None):self.monitor_thread.join(timeout=46)
