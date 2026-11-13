@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import atexit
-import hashlib
 import json
 import os
 import subprocess
@@ -37,6 +36,7 @@ def read(path: Path) -> dict:
     if path.is_symlink():
         raise ValueError('KOL_PREOPEN_SYMLINK')
     value = json.loads(path.read_bytes())
+    if not isinstance(value,dict):raise ValueError('KOL_PREOPEN_ARTIFACT_INVALID')
     if value.get('sha256') != canonical_sha256({k:v for k,v in value.items() if k!='sha256'}):
         raise ValueError('KOL_PREOPEN_ARTIFACT_ALTERED')
     return value
@@ -92,7 +92,8 @@ def record_review(input_path: Path, context_path: Path, *, now: datetime) -> dic
     dispatched = read(stage_path.with_name('dispatch.json'))
     context = json.loads(context_path.read_bytes())
     context_sha = canonical_sha256({k:v for k,v in context.items() if k!='context_sha256'})
-    if (context.get('context_sha256') != context_sha or context.get('authority') != 0
+    if (dispatched['stage_sha256'] != stage['sha256'] or dispatched['input_sha256'] != stage['input_sha256']
+            or context.get('context_sha256') != context_sha or context.get('authority') != 0
             or prep.aware(context['as_of']) > now
             or not (prep.aware(dispatched['recorded_at']) <= now <= prep.aware(stage['review_open_by']))):
         raise ValueError('KOL_PREOPEN_REVIEW_NOT_STARTED_IN_TIME')
@@ -106,7 +107,9 @@ def validate_acceptance(inputs: dict, draft: dict, review: dict, dispatch: dict,
     stage_path, stage, plan = stage_for_input(inputs)
     dispatched = read(stage_path.with_name('dispatch.json'))
     opened = read(stage_path.with_name('review-open.json'))
-    if (dispatched['dispatch_sha256'] != canonical_sha256(dispatch)
+    if (dispatched['stage_sha256'] != stage['sha256'] or opened['stage_sha256'] != stage['sha256']
+            or dispatched['input_sha256'] != stage['input_sha256'] or opened['input_sha256'] != stage['input_sha256']
+            or dispatched['dispatch_sha256'] != canonical_sha256(dispatch)
             or dispatched['worker_id'] != draft['worker_id']
             or opened['reviewer_id'] != review['reviewer_id']
             or opened['context_sha256'] != context['context_sha256']
@@ -171,6 +174,7 @@ def source_release_admitted(slot: datetime, acquired_at: datetime | None, now: d
         and plan['acquired_at']==acquired_at.isoformat()
         and release['plan_sha256']==plan['sha256']
         and plan['source_release_at']==slot.replace(hour=7,minute=30).isoformat()
+        and prep.aware(release['released_at']).astimezone(TZ).date()==slot.astimezone(TZ).date()
         and prep.aware(plan['source_release_at']) <= prep.aware(release['released_at']) <= now)
 
 
@@ -243,7 +247,7 @@ class Program:
         if result['status']=='reused':
             self.current={'status':'reused','preparation_path':result['path'],
                           'preparation_sha256':result['preparation_sha256'],'sources_current':True,'observed_at':now.isoformat()}
-            if previous and previous.get('stage_path') and Path(previous['stage_path']).with_name('dispatch.json').exists() and not Path(previous['stage_path']).with_name('completed.json').exists() and not Path(previous['stage_path']).with_name('worker-terminal.json').exists():
+            if previous and previous.get('stage_path') and Path(previous['stage_path']).with_name('dispatch.json').exists() and not worker_finished(Path(previous['stage_path'])):
                 self.current={**previous,'status':'reused_waiting_owned_worker','sources_current':True}
         elif result['status']!='written':
             self.current={'status':'source_blocked','reason':result.get('reason','KOL_PREOPEN_SOURCE_UNPROVEN'),
@@ -262,7 +266,7 @@ class Program:
             previous=self.current
             if previous and previous.get('stage_path') and previous.get('key')!=key:
                 old=Path(previous['stage_path'])
-                if (old.with_name('dispatch.json').exists() and not old.with_name('completed.json').exists() and not old.with_name('worker-terminal.json').exists()):
+                if (old.with_name('dispatch.json').exists() and not worker_finished(old)):
                     self.current={**previous,'status':'source_changed_worker_still_owned','pending_key':key,'sources_current':False}
                     self.event('kol_preopen_source_changed',stage_path=str(old))
                     return self.status()
@@ -290,7 +294,17 @@ class Program:
 
     def status(self) -> dict:
         with self._mutex:
-            return self._status()
+            try:
+                return self._status()
+            except (ValueError,OSError,KeyError,TypeError) as exc:
+                result={**(self.current or {}),'status':'preparation_proof_unproven',
+                    'sources_current':False,'reason':type(exc).__name__,'morning_ready':False,
+                    'program_sha256':self.plan['sha256'],'observed_at':self.now().isoformat(),
+                    'complete_by':self.plan['complete_by'],'target_trade_date':self.target_trade_date,
+                    'policy_adoption':'not_performed'}
+                self.current=result
+                atomic_write(self.path.with_name('status.json'),json.dumps(result,sort_keys=True).encode())
+                return result
 
     def _status(self) -> dict:
         result=dict(self.current or {'status':'not_started'})
@@ -299,7 +313,7 @@ class Program:
             path=Path(result['stage_path']);stage=read(path)
             done=path.with_name('completed.json')
             if done.exists() and result.get('sources_current') is True:
-                proof=read(done)
+                proof=read_completed(path)
                 result.update(status='accepted',preparation_path=proof['preparation_path'],
                               preparation_sha256=proof['preparation_sha256'])
             elif now>=prep.aware(stage['complete_by']):result['status']='missed_preparation_deadline'
@@ -324,6 +338,8 @@ class Program:
         self.refresh()
         while self.now()<prep.aware(self.plan['source_release_at']):
             self.status();self.sleep(min(2,max(0,(prep.aware(self.plan['source_release_at'])-self.now()).total_seconds())))
+        if self.now().astimezone(TZ).date().isoformat()!=self.plan['source_day']:
+            raise ValueError('KOL_PREOPEN_SOURCE_RELEASE_DATE_EXPIRED')
         seal(self.path.with_name('source-release.json'),{'plan_sha256':self.plan['sha256'],
                                                        'released_at':self.now().isoformat()})
 
@@ -381,6 +397,7 @@ def probe_calendar(root: Path, day: str) -> dict:
     try:
         result=subprocess.run(command,cwd=root,text=True,capture_output=True,timeout=15)
         calendar=json.loads(result.stdout) if result.returncode==0 else {'status':'unproved'}
+        if not isinstance(calendar,dict):calendar={'status':'unproved'}
     except (OSError,ValueError,subprocess.TimeoutExpired):calendar={'status':'unproved'}
     return {**calendar,'queried_date':day,'observed_at':clock().isoformat()}
 
@@ -410,7 +427,7 @@ def startup(root: Path) -> Program | None:
 
 def record_worker_terminal(input_path: Path, receipt_path: Path, *, now: datetime) -> dict:
     """Release a finished model, never infer completion from a timeout/rejection."""
-    inputs,_=prep._inputs(input_path)
+    inputs=prep.read_json(input_path)
     stage_path,stage,plan=stage_for_input(inputs);owner(plan)
     dispatched=read(stage_path.with_name('dispatch.json'))
     receipt=json.loads(receipt_path.read_bytes())
@@ -425,3 +442,40 @@ def record_worker_terminal(input_path: Path, receipt_path: Path, *, now: datetim
     return seal(stage_path.with_name('worker-terminal.json'),{'stage_sha256':stage['sha256'],
         'worker_id':dispatched['worker_id'],'receipt_path':str(receipt_path.resolve()),
         'receipt_sha256':canonical_sha256(receipt),'observed_at':receipt['observed_at']})
+
+
+def read_completed(stage_path: Path) -> dict:
+    stage=read(stage_path)
+    proof=read(stage_path.with_name('completed.json'))
+    prepared=prep.read_json(Path(proof['preparation_path']))
+    dispatched=read(stage_path.with_name('dispatch.json'))
+    if (proof['stage_sha256']!=stage['sha256']
+            or proof['preparation_sha256']!=prepared.get('preparation_sha256')
+            or prepared.get('preparation_sha256')!=canonical_sha256({k:v for k,v in prepared.items() if k!='preparation_sha256'})
+            or prepared.get('input_sha256')!=stage['input_sha256']
+            or prepared.get('worker_id')!=dispatched['worker_id']
+            or prepared.get('preopen_program')!=proof.get('preopen_program')
+            or (prepared.get('preopen_program') or {}).get('stage_sha256')!=stage['sha256']):
+        raise ValueError('KOL_PREOPEN_WORKER_COMPLETION_UNPROVEN')
+    return proof
+
+
+def worker_finished(stage_path: Path) -> bool:
+    if stage_path.with_name('completed.json').exists():
+        read_completed(stage_path)
+        return True
+    terminal=stage_path.with_name('worker-terminal.json')
+    if not terminal.exists():return False
+    stage=read(stage_path);proof=read(terminal)
+    dispatched=read(stage_path.with_name('dispatch.json'))
+    receipt=prep.read_json(Path(proof['receipt_path']))
+    matches=[row for row in (receipt.get('tool_result') or {}).get('agents',[])
+             if row.get('agent_name')==dispatched['worker_id']]
+    state=matches[0].get('agent_status') if len(matches)==1 else None
+    if (proof['stage_sha256']!=stage['sha256'] or proof['worker_id']!=dispatched['worker_id']
+            or proof['receipt_sha256']!=canonical_sha256(receipt)
+            or receipt.get('tool_name')!='collaboration.list_agents' or receipt.get('tool_arguments')!={}
+            or not isinstance(state,dict) or set(state)!={'completed'}
+            or not isinstance(state['completed'],str)):
+        raise ValueError('KOL_PREOPEN_WORKER_TERMINAL_UNPROVEN')
+    return True

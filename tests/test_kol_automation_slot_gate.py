@@ -247,3 +247,22 @@ def test_early_owner_obligation_precedes_child_and_busy_has_no_support_work(tmp_
                          [sys.executable, '-c', 'raise SystemExit(9)'], owner)
     assert busy.returncode == 0
     assert json.loads(busy.stdout)['status'] == 'hour_busy'
+
+
+@pytest.mark.parametrize('tail, enabled', [('run',True),('resume-source-input',False)])
+def test_opted_preopen_preserves_exec_pid_and_is_never_started_for_resume(tmp_path,monkeypatch,tail,enabled):
+    monkeypatch.delenv('CODEX_AUTOMATION_ID',raising=False)
+    script=tmp_path/'scripts/kol_daily.py'
+    script.parent.mkdir()
+    script.write_text("import json,os;print(json.dumps({'pid':os.getpid(),'program':os.environ.get('XIAOCAO_KOL_PREOPEN_ENABLED')}))")
+    owner='xiaocao-kol-hourly-low-bandwidth-operation'
+    result=subprocess.run([sys.executable,str(SCRIPT),'--automation-id',owner,'--lock-dir',str(tmp_path/'locks'),
+        '--now','2026-11-16T06:30:00+08:00','--prepare-opening','--',sys.executable,str(script),tail],
+        capture_output=True,text=True,timeout=5)
+    assert result.returncode==0
+    lines=result.stdout.splitlines()
+    child=json.loads(lines[-1])
+    metadata=json.loads((tmp_path/'locks'/owner/'20261116T0600+0800.lock').read_text())
+    assert metadata['pid']==child['pid']
+    assert (child['program']=='v1') is enabled
+    assert any('kol_shared_preparation_due' in row for row in lines) is enabled

@@ -139,8 +139,9 @@ def main(argv: list[str] | None = None) -> int:
         os.fsync(lock_fd)
 
         _emit("hour_acquired", hour_start=hour_start, now=now, automation_id=args.automation_id)
+        fresh_source_run=(len(command)>=3 and Path(command[1]).name=='kol_daily.py' and command[2]=='run')
         obligation = preparation_obligation(args.automation_id, now)
-        if obligation is not None:
+        if obligation is not None and (not args.prepare_opening or fresh_source_run):
             print(json.dumps(obligation, ensure_ascii=False, separators=(',', ':')), flush=True)
         os.set_inheritable(lock_fd, True)
         environment = os.environ.copy()
@@ -148,8 +149,7 @@ def main(argv: list[str] | None = None) -> int:
         environment.pop('XIAOCAO_KOL_PREOPEN_ENABLED',None)
         environment.pop('XIAOCAO_KOL_PREOPEN_PLAN',None)
         if (args.prepare_opening and args.automation_id == 'xiaocao-kol-hourly-low-bandwidth-operation'
-                and hour_start.hour in {6,21} and len(command)>=3
-                and Path(command[1]).name=='kol_daily.py' and command[2]=='run'):
+                and hour_start.hour in {6,21} and fresh_source_run):
             environment['XIAOCAO_KOL_PREOPEN_ENABLED']='v1'
         environment["XIAOCAO_AUTOMATION_HOUR_START_AT"] = (
             hour_start.isoformat(timespec="seconds")

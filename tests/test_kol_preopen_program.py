@@ -258,3 +258,33 @@ def test_coordinator_preopen_admission_requires_release_and_legacy_six_stays_clo
     assert service.run([],automation_slot_start=slot,automation_acquired_at=EARLY)['admitted'] is True
     now[0]-=timedelta(seconds=1)
     assert service.run([],automation_slot_start=slot,automation_acquired_at=EARLY)['admitted'] is False
+
+
+@pytest.mark.parametrize('terminal',['corrupt','wrong-stage'])
+def test_invalid_terminal_never_releases_unknown_worker(source,monkeypatch,terminal):
+    program,current,stage_path,stage,inputs,dispatch,dispatch_path=staged(source,monkeypatch)
+    pp.record_dispatch(Path(stage['input_path']),dispatch_path,now=current[0])
+    if terminal=='corrupt':stage_path.with_name('worker-terminal.json').write_text('{}')
+    else:pp.seal(stage_path.with_name('worker-terminal.json'),{'stage_sha256':'wrong','worker_id':'other',
+        'receipt_path':str(source['root']/'missing-status.json'),'receipt_sha256':'0'*64})
+    changed=prep.read_json(source['path']);projection=prep.read_projection(changed['projection'])
+    projection['active_viewpoints'][0]['content_sha256']='b'*64
+    projection['projection_sha256']=prep.canonical_sha256({k:v for k,v in projection.items() if k!='projection_sha256'})
+    changed['projection']={'projection_path':str(save(source['root']/'invalid-terminal-projection.json',projection)),
+        'projection_sha256':projection['projection_sha256']}
+    other=save(source['root']/'invalid-terminal-input.json',changed)
+    program.input_builder=lambda:{'status':'written','path':str(other)}
+    result=program.refresh()
+    assert result['status']=='source_verification_failed'
+    assert program.current['stage_path']==str(stage_path)
+    assert len(list((program.path.parent/'stages').glob('*/stage.json')))==1
+
+
+def test_running_tool_status_cannot_release_worker(source,monkeypatch):
+    program,current,stage_path,stage,inputs,dispatch,dispatch_path=staged(source,monkeypatch)
+    pp.record_dispatch(Path(stage['input_path']),dispatch_path,now=current[0])
+    receipt=save(source['root']/'still-running.json',{'tool_name':'collaboration.list_agents','tool_arguments':{},
+        'observed_at':current[0].isoformat(),'tool_result':{'agents':[{'agent_name':dispatch['worker_id'],'agent_status':'running'}]}})
+    with pytest.raises(ValueError,match='TERMINAL_UNPROVEN'):
+        pp.record_worker_terminal(Path(stage['input_path']),receipt,now=current[0])
+    assert not stage_path.with_name('worker-terminal.json').exists()
