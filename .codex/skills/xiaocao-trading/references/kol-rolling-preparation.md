@@ -20,7 +20,11 @@ Run `scripts/kol_trading_prepare.py rolling-inputs --output-dir
 output/live/kol_rolling_work`. This cache-only command builds an immutable typed
 projection and source-bound input. `reused` ends preparation without a model.
 For an intended morning use, pass `--fresh-through <trade-date>T09:27:30+08:00`
-using the independently proved target trading date. This checks both the brief
+using the independently proved target trading date. A target more than24 hours
+from this check is outside current preparation scope: retain the blocked receipt,
+use explicit source-only scope if useful, and let the next eligible existing slot
+prepare that morning. Never wait days or extend a brief across a weekend.
+This checks both the brief
 and original viewpoints, before model dispatch. Expiring original viewpoints return an immutable blocked
 readiness receipt with their exact IDs and no model dispatch. Brief expiry alone
 requires new inputs and acceptance; neither path renews or filters a viewpoint.

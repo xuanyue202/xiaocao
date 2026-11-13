@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from time import perf_counter
 
@@ -41,6 +41,14 @@ def main(argv=None):
             if through < now:
                 raise ValueError('KOL_PREPARATION_REUSE_HORIZON_PAST')
             reuse_audit = {'fresh_through': through.isoformat()}
+            if through > now + timedelta(hours=24):
+                diagnostic = {'status':'blocked', 'authority':0, **reuse_audit,
+                    'reason':'KOL_PREPARATION_TARGET_OUTSIDE_CURRENT_HORIZON',
+                    'model_dispatch':'not_required_preparation_horizon',
+                    'next_action':'explicit_source_only_or_next_eligible_existing_owner_slot'}
+                path = prep.write_artifact(args.output_dir,diagnostic,'.readiness.json')
+                print(json.dumps({**diagnostic,'path':str(path)}))
+                return 2
             context = build_trading_context(repo_root=args.root,
                 read_report_ids=[], include_report_bodies=False, as_of=now)
             summary = write_trading_projection(context, repo_root=args.root)

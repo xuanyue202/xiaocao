@@ -118,3 +118,22 @@ def test_semantic_delta_cannot_use_audit_only_reuse(case):
     packet['packet_sha256'] = prep.canonical_sha256({k:v for k,v in packet.items() if k!='packet_sha256'})
     with pytest.raises(ValueError):
         materialize(prepared, packet, request, now=NOW.replace(minute=26))
+
+
+
+def test_distant_morning_horizon_stops_before_projection_and_model(source, monkeypatch, capsys):
+    from scripts import kol_trading_prepare as cli
+    from xiaocao.kol import trading_context as tc
+    monkeypatch.setattr(tc,'build_trading_context',lambda **kw:pytest.fail('Unreachable horizon needs no source work'))
+    class Clock:
+        @classmethod
+        def now(cls,tz):return EARLY.astimezone(tz)
+    monkeypatch.setattr(cli,'datetime',Clock)
+    original=source['prepared_path'].read_bytes()
+    result=cli.main(['rolling-inputs','--root',str(source['root']),
+                    '--output-dir',str(source['root']/'weekend-horizon'),
+                    '--fresh-through','2026-10-26T09:27:30+08:00'])
+    receipt=json.loads(capsys.readouterr().out)
+    assert result==2 and receipt['reason']=='KOL_PREPARATION_TARGET_OUTSIDE_CURRENT_HORIZON'
+    assert receipt['model_dispatch']=='not_required_preparation_horizon'
+    assert source['prepared_path'].read_bytes()==original
