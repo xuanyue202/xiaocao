@@ -68,7 +68,7 @@ run_book_b_morning() {
 }
 run_book_t_shadow_if_frozen() {
   local input="output/live/book_t_v2_shadow_input_${TODAY}.json"
-  local producer_args=(--prepare --date "$TODAY" --root "$ROOT" --run-mode "${XIAOCAO_BOOK_T_V2_RUN_MODE:-real}")
+  local producer_args=(--prepare --judgment-wait-seconds 120 --date "$TODAY" --root "$ROOT" --run-mode "${XIAOCAO_BOOK_T_V2_RUN_MODE:-real}")
   if [ -n "${XIAOCAO_BOOK_T_V2_CAPSULE:-}" ]; then
     producer_args+=(--capsule "$XIAOCAO_BOOK_T_V2_CAPSULE")
   fi

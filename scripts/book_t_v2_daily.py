@@ -48,6 +48,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--date", required=True, help="ISO trading date")
     parser.add_argument("--root", default=os.environ.get("XIAOCAO_ROOT", str(ROOT)))
     parser.add_argument("--run-mode", choices=["real", "rehearsal"], default="real")
+    parser.add_argument("--judgment-wait-seconds", type=float, default=0)
     parser.add_argument("--capsule", help="isolated injected adapter capsule JSON")
     parser.add_argument("--marks", help="isolated close-mark JSON list")
     parser.add_argument(
@@ -69,6 +70,8 @@ def main(argv: list[str] | None = None) -> int:
                 args.date,
                 run_mode=args.run_mode,
                 capsule=capsule,
+                judgment_wait_seconds=args.judgment_wait_seconds,
+                emit=lambda row: print(json.dumps(row,ensure_ascii=False),flush=True),
             )
         elif args.daily_mark:
             marks = None

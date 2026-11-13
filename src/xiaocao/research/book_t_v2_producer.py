@@ -816,11 +816,16 @@ def prepare_book_t_v2_shadow_day(
     run_mode: str = "real",
     capsule: Mapping[str, Any] | None = None,
     client: Any = None,
+    judgment_wait_seconds: float = 0,
+    emit=None,
 ) -> dict[str, Any]:
     """Create an idempotent dated input and a small producer readback."""
 
     root = Path(root).resolve()
     day = _date(date_iso)
+    if capsule is None and run_mode == 'real' and not (root / BOOK_T_V2_SHADOW_INPUT_PATH.format(date=day)).exists():
+        from .book_t_judgment_readiness import await_judgment
+        await_judgment(root, day, wait_seconds=judgment_wait_seconds, emit=emit)
     frozen = build_book_t_v2_shadow_day(
         root,
         day,

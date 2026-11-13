@@ -85,8 +85,20 @@ T control archives exact account/positions/trades under writer lock; v2 shadow
 uses these raw hashes and independent namespace, never formal writes. T initial
 30% sleeve is already allocated: don't take30% again or reuse post-control lots
 as new fills. Historical rehearsals do not count toward5/20 natural gates.
-On T shadow judgment_readiness=no_theme_decision, diagnose the exact dated
-book_t_v2_judgment_draft input after formal business. Preserve pending_observation
+On book_t_v2_judgment_required, read its exact owner-bound request after formal
+business. The original research process holds at most120 seconds before sealing,
+with one immutable deadline. Read docs/TREND_BOOK_DESIGN.md and the source-bound
+schema in strategy/trend_snapshot.py. Review the current complete published
+viewpoints/evaluations and canonical theme registry; prepare the dated structured
+book_t_v2_judgment_draft at the request path, preserving actual sources, clocks,
+source roles, conditions and missing proof. This is research judgment only, not
+new source extraction or financial policy. The original process resumes itself
+and the normal binder independently validates sources and eligibility. An
+explicitly reviewed no-supported-theme result retains zero theme decisions;
+missing evidence remains blocked, never an implicit empty judgment. Finish
+within the original request deadline; timeout is final for this request, no
+producer replay or budget renewal. For an already-sealed zero-theme day use
+judgment_readiness only for diagnosis; never rewrite its immutable input. Preserve pending_observation
 and zero valid theme decisions until reviewed source-supported themes exist;
 engineering success or many source bindings cannot fill this semantic gap.
 Historical report mirror capsules remain relation-target evidence only.

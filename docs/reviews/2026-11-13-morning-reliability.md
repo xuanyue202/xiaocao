@@ -18,7 +18,7 @@ operating checkout; no dated business entry is replayed by this repair.
 |All-COLD B waited for unused09:30–09:31 prices|Plan price capture over current-policy eligible reserve candidates; empty plan seals no_buy immediately|Locked writer rechecks policy/ledger; actual BUY still needs verified first-minute HIGH|
 |T shadow added208 seconds before formal completion was visible|B/T control results are emitted separately before research; shadow follows both business children|Supervisor/shadow finality remains separately observed|
 |K/P prepared27 prior candidates, only2 of today's9 covered|Use several prior original batches, newest first; save completed bounded chunks before unchanged deadline; report missing codes|No today's model inference, invented scores or training|
-|T had1958 source bindings but0 themes and no dated structured judgment draft|Expose draft status/reason and theme readiness separately from engineering/sample qualification; original post-business research owner diagnoses that dated input|Historical mirror cache stays historical-only; no fabricated decisions/fills or sample reset|
+|T had1958 source bindings but0 themes and no dated structured judgment draft|Before freezing a new production research day, request the missing dated draft from the original post-business owner within one immutable120-second deadline; report theme readiness separately from qualification|Historical mirror cache stays historical-only; no fabricated decisions/fills or sample reset|
 |Risk NORMAL and accounting BLOCKED were conflated|Add explanatory admission/exit/accounting scopes without changing original risk receipt|UNKNOWN, financial gates and actual-fee/final-PnL gaps remain|
 |Producer's pending review and July posture caused generic warnings|Report queued/shadow status separately; expired posture is explicitly historical calibration only|Pending reviews are not completed; source/current policy freshness remains independent|
 
@@ -69,3 +69,14 @@ notification preferences and cadences were preserved. The API card exposes no
 machine-readable next-run timestamp; no schedule was changed or UTC-converted.
 Deployment receipts and runtime hash closure are saved in the operating checkout
 under `output/audit/morning-fixes-20261113/`.
+
+
+Final source-gap follow-through: a new real T shadow day with no structured dated
+draft now emits an owner-bound `book_t_v2_judgment_required` request before API
+capture or immutable input creation. The original post-business process waits
+at most120 seconds, admits a supplied draft through the existing source binder,
+and retains the same deadline on follow-up. A timed-out request cannot admit a
+late draft or refund its budget. Existing sealed days remain unchanged; injected
+rehearsals and natural research qualification retain their original boundaries.
+Focused request/producer/supervisor tests:35 passed. No financial branch waits on
+this separate post-business research phase.
