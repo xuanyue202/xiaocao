@@ -18,14 +18,15 @@ EARLY = datetime.fromisoformat('2026-10-22T21:10:00+08:00')
 
 @pytest.mark.parametrize('through, expected', [
     ('2026-10-23T09:27:30+08:00', 'reused'),
-    ('2026-10-23T10:45:00+08:00', 'written'),
-    ('2026-10-23T11:30:00+08:00', 'written'),
+    ('2026-10-23T10:45:00+08:00', 'blocked'),
+    ('2026-10-23T11:30:00+08:00', 'blocked'),
 ])
 def test_rolling_reuse_covers_intended_use_without_renewing_sources(source, monkeypatch, capsys, through, expected):
     import json
     from scripts import kol_trading_prepare as cli
     from xiaocao.kol import trading_context as tc
     monkeypatch.setattr(tc, 'build_trading_context', lambda **kw: {})
+    monkeypatch.setattr(tc, 'latest_report_coverage', lambda *a, **kw: {'scope':'fixture'})
     monkeypatch.setattr(tc, 'write_trading_projection', lambda *a, **kw: source['inputs']['projection'])
     class Clock:
         @classmethod
@@ -35,11 +36,14 @@ def test_rolling_reuse_covers_intended_use_without_renewing_sources(source, monk
     original = source['prepared_path'].read_bytes()
     directory = source['root']/'horizon-check'
     assert cli.main(['rolling-inputs', '--root', str(source['root']), '--output-dir', str(directory),
-                     '--fresh-through', through]) == 0
+                     '--fresh-through', through]) == (2 if expected == 'blocked' else 0)
     result = json.loads(capsys.readouterr().out)
     assert result['status'] == expected
     assert result['fresh_through'] == through
     assert source['prepared_path'].read_bytes() == original
+    if expected == 'blocked':
+        assert result['source_readiness']['expired_before_use_count'] == 4
+        assert result['model_dispatch'] == 'not_required_source_expiry'
     if expected == 'written':
         assert Path(result['path']).is_file()
         assert result['rebuild_reason'] in {'PREPARATION_EXPIRES_BEFORE_USE', 'KOL_PREPARATION_ROLLING_SOURCE_EXPIRED'}
@@ -53,6 +57,7 @@ def test_source_owner_rebuilds_after_known_instruction_closure_upgrade(source, m
     prior['rules'].pop()
     save(source['path'], prior)
     monkeypatch.setattr(tc, 'build_trading_context', lambda **kw: {})
+    monkeypatch.setattr(tc, 'latest_report_coverage', lambda *a, **kw: {'scope':'fixture'})
     monkeypatch.setattr(tc, 'write_trading_projection', lambda *a, **kw: source['inputs']['projection'])
     class Clock:
         @classmethod

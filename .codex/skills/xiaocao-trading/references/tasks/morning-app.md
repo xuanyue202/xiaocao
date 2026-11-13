@@ -73,7 +73,7 @@ its early/evening slot; only current applicability/delta is new at freeze.
 
 ## Frozen event: conditional draft, policy, current account and batch
 
-New requests bind judgment_mode=conditional_first_v1. No current-worker preload
+New requests bind judgment_mode=conditional_first_v2. No current-worker preload
 or post-freeze semantic dispatch. Follow [conditional-first morning](../kol-conditional-morning.md).
 On dispatch_path read that one artifact. independently_review_prepared_draft:
 immediately review its exact unapproved decision, current facts and prepared

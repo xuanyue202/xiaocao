@@ -31,9 +31,9 @@ def _remaining(deadline, now):
 
 def pipeline_status(live_dir: Path, date: str) -> dict:
     now = datetime.now(A_SHARE_TZ)
-    from .morning_support import CONDITIONAL_FIRST, opening_cutoff
+    from .morning_support import CURRENT_CONDITIONAL, opening_cutoff
     result = {"market_date": date, "observed_at": now.isoformat(),
-        "support_cutoff": opening_cutoff(date, mode=CONDITIONAL_FIRST).isoformat(),
+        "support_cutoff": opening_cutoff(date, mode=CURRENT_CONDITIONAL).isoformat(),
         "support_cutoff_basis": "new_conditional_first_requests_only_original_receipts_keep_own_deadlines",
         "owners": [], "app": [],
         "meaning": "observations_only_producer_ready_is_not_consumer_success"}
@@ -153,6 +153,13 @@ def pipeline_status(live_dir: Path, date: str) -> dict:
         result["paper_b_result"]["entry_source_failures"] = terminal.get("entry_source_failures", []) if terminal else []
     except (OSError, ValueError, TypeError, KeyError):
         result["paper_b_result"] = {"status": "unproved"}
+    result['paper_business'] = {
+        'book_b': result['paper_b_result']['status'],
+        'book_t_control': result['paper_t_control']['status'],
+        'shadow_is_business_dependency': False,
+        'shadow': result['paper_t_shadow']['status'],
+        'supervisor_terminality': 'separate_original_process_receipt_required',
+    }
     paper = result["paper_b_result"].get("strategy_adjudication", {})
     comparisons = []
     for app in result["app"]:

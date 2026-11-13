@@ -39,9 +39,9 @@ def main():
                     as_of=now, read_report_ids=[], include_report_bodies=False), repo_root=state_root)
                 inputs = prep.input_payload(summary, binding=binding, repo_root=state_root)
                 input_path = prep.write_artifact(run, inputs, '.early-kol-inputs.json')
-            from xiaocao.live.morning_support import CONDITIONAL_FIRST
+            from xiaocao.live.morning_support import CURRENT_CONDITIONAL
             value = {'event':'paper_kol_conditional_preparation', 'warmup_path':None,
-                     'judgment_mode':CONDITIONAL_FIRST, 'authority':0,
+                     'judgment_mode':CURRENT_CONDITIONAL, 'authority':0,
                      'input_path':str(input_path) if input_path else None,
                      'preparation_path':str(source[0]) if source else None,
                      'status':'ready_for_fact_checks' if source else 'unavailable'}

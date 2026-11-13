@@ -229,3 +229,21 @@ def test_gate_passes_actual_acquisition_time_to_child(tmp_path):
     ])
     assert completed.returncode == 0
     assert completed.stdout.splitlines()[1] == "2026-11-01T23:59:59+08:00"
+
+
+def test_early_owner_obligation_precedes_child_and_busy_has_no_support_work(tmp_path, monkeypatch):
+    owner = 'xiaocao-kol-hourly-low-bandwidth-operation'
+    monkeypatch.delenv('CODEX_AUTOMATION_ID', raising=False)
+    completed = _run_gate(tmp_path, '2026-11-13T07:30:00+08:00',
+                          [sys.executable, '-c', "print('capture-started')"], owner)
+    assert completed.returncode == 0
+    lines = completed.stdout.splitlines()
+    assert json.loads(lines[0])['status'] == 'hour_acquired'
+    assert json.loads(lines[1])['event'] == 'kol_shared_preparation_due'
+    assert lines[2] == 'capture-started'
+    with (tmp_path/owner/'20261113T0700+0800.lock').open('a+') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        busy = _run_gate(tmp_path, '2026-11-13T07:31:00+08:00',
+                         [sys.executable, '-c', 'raise SystemExit(9)'], owner)
+    assert busy.returncode == 0
+    assert json.loads(busy.stdout)['status'] == 'hour_busy'

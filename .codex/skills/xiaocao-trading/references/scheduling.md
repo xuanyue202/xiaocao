@@ -5,7 +5,7 @@ Read this file only when creating, changing or auditing Xiaocao schedules.
 ## Intended China-local cadence
 
 - Shared rolling source reasoning: existing remote writer07:30/21:30 slots,
-  after the original capture/publication runner exits; Contract §1d and the
+  immediately on the acquired-slot preparation obligation; Contract §1d and the
   rolling guide separate historical reminder uncertainty from source readiness.
   Both slots check and record preparation; independent of APP, no new Automation.
 - Morning prerecommendation: wake 09:10 weekdays; capture gate 09:25:01.

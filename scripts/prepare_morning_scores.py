@@ -84,17 +84,28 @@ def main():
     path = ROOT / "kronos_screen/scripts/secondary_screen.py"
     spec = importlib.util.spec_from_file_location("prepared_secondary_screen", path)
     module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
-    candidates = [{"code": code} for code in codes]
-    module.score(candidates, client, args.date, cache_path=ROOT / "output/.cache/xiaocao.db")
-    client.check()
-    if not client.dates:
-        raise ValueError("MORNING_SCORE_HISTORICAL_INPUT_REQUIRED")
-    def finite(value): return float(value) if value is not None and math.isfinite(float(value)) else None
-    result = save_scores(ROOT, args.date,
-        {r["code"]: {key: finite(r.get(key)) for key in ("k_score", "p_score")} for r in candidates},
-        fingerprint=fingerprint, input_max_date=max(client.dates), input_hashes=client.hashes,
-        completed_at=datetime.now(deadline.tzinfo).isoformat())
-    print(json.dumps({"status": "prepared", "covered": len(candidates), "sha256": result["sha256"]}))
+    # Commit bounded completed batches before the original process is stopped at
+    # its market gate. A later timeout must not discard earlier valid scores.
+    candidates, result = [], None
+    for offset in range(0, len(codes), 16):
+        client.check()
+        batch = [{"code": code} for code in codes[offset:offset+16]]
+        module.score(batch, client, args.date, cache_path=ROOT / "output/.cache/xiaocao.db")
+        client.check()
+        candidates.extend(batch)
+        if not client.dates:
+            raise ValueError("MORNING_SCORE_HISTORICAL_INPUT_REQUIRED")
+        def finite(value):
+            return float(value) if value is not None and math.isfinite(float(value)) else None
+        result = save_scores(ROOT, args.date,
+            {r["code"]: {key: finite(r.get(key)) for key in ("k_score", "p_score")} for r in candidates},
+            fingerprint=fingerprint, input_max_date=max(client.dates), input_hashes=client.hashes,
+            completed_at=datetime.now(deadline.tzinfo).isoformat())
+        print(json.dumps({"status": "prepared_partial" if len(candidates) < len(codes) else "prepared",
+            "attempted": len(candidates), "universe": len(codes),
+            "covered": sum(all(r.get(key) is not None and math.isfinite(float(r[key]))
+                               for key in ("k_score", "p_score")) for r in candidates),
+            "sha256": result["sha256"]}), flush=True)
 
 
 if __name__ == "__main__":

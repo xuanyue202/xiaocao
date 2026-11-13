@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import copy
 import math
+from pathlib import Path
 from datetime import date, datetime, timezone
 from time import perf_counter
 
@@ -102,8 +103,26 @@ def _bound_template(prepared: dict, packet: dict, request: dict, now: datetime) 
              'PREPARED_POLICY_NOT_REVIEWED')
     reports={r['report_id']:r for r in prepared['context']['reports']}
     validate_template(template,reports)
+    source_matches = packet['source_fingerprint']==prepared['source_fingerprint']
+    from xiaocao.live.morning_support import CURRENT_CONDITIONAL
+    if request.get('judgment_mode') == CURRENT_CONDITIONAL:
+        from .opening_preparation import _inputs, read_projection, viewpoint_units
+        from xiaocao.runner_recovery import _hash
+        current, projection = _inputs(Path(packet['current_input_path']))
+        current_semantics = canonical_sha256(viewpoint_units(projection))
+        prepared_semantics = canonical_sha256(viewpoint_units(read_projection(prepared['projection'])))
+        _require(_hash(current)==packet['current_input_sha256']
+                 and current['source_fingerprint']==packet['source_fingerprint']
+                 and current['rules']==prepared['rules']
+                 and packet.get('semantic_source_sha256')==current_semantics
+                 and packet.get('prepared_semantic_source_sha256')==prepared_semantics,
+                 'PREPARED_POLICY_SEMANTIC_SOURCE_BINDING_INVALID')
+        source_matches = current_semantics == prepared_semantics
+        if prepared.get('schema_version') == 'kol-opening-preparation.v2':
+            from .rolling_preparation import validate_current_sources
+            validate_current_sources(prepared, now=now)
     _require(packet['preparation_sha256']==prepared['preparation_sha256']
-             and packet['source_fingerprint']==prepared['source_fingerprint']
+             and source_matches
              and all(not packet['delta'].get(name) for name in ('added','changed','removed')),
              'PREPARED_POLICY_SOURCE_DELTA_REQUIRES_WORKER')
     unsigned={k:v for k,v in request.items() if k not in {'request_id','request_sha256'}}

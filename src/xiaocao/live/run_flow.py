@@ -214,6 +214,7 @@ def supporting_health_from_live(
     live_dir: Path,
     market_date: str,
     posture_path: Path | None = None,
+    review_dependency: str = 'required',
 ) -> dict[str, Any]:
     """Summarize optional sensor/cortex health without changing main-chain truth."""
     from xiaocao.live import data_health
@@ -236,7 +237,7 @@ def supporting_health_from_live(
             queue = {}
     except (OSError, json.JSONDecodeError):
         queue = {}
-    if not queue:
+    if not queue and review_dependency == 'required':
         issues.append({"surface": "agent_review", "severity": "warn",
                        "detail": "review_queue_missing_or_invalid; review completion unproven"})
     expected_refs = {str(item.get("code") or ""): item.get("evidence_freeze_ref")
@@ -272,7 +273,7 @@ def supporting_health_from_live(
     )
     reviewed = len(reviewed_codes)
     pending = len(pending_codes)
-    if pending:
+    if pending and review_dependency == 'required':
         issues.append({
             "surface": "agent_review",
             "severity": "warn",
@@ -290,7 +291,7 @@ def supporting_health_from_live(
         issues.append({
             "surface": "posture",
             "severity": "warn",
-            "detail": f"valid_until={valid_until or 'missing'} market_date={market_date[:10]}",
+            "detail": f"historical_prior_calibration_only; valid_until={valid_until or 'missing'} market_date={market_date[:10]}; no current trading authority",
         })
     return {
         "status": "degraded" if issues else "healthy",
@@ -300,7 +301,12 @@ def supporting_health_from_live(
             "reviewed": reviewed,
             "pending": pending,
         },
+        "review_dependency": review_dependency,
+        "review_completion": 'pending' if pending or not queue else 'observed',
         "posture_valid_until": valid_until or None,
+        "posture_scope": 'historical_prior_calibration_only',
+        "posture_currently_usable": bool(valid_until and market_date[:10] <= valid_until),
+        "current_kol_policy": 'independent_request_bound_verification_required',
     }
 
 

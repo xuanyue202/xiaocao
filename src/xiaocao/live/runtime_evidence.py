@@ -430,7 +430,20 @@ def _launch(script: Path, root: Path, args: list[str], market_date: str) -> int:
                 message=f"{row['program']}: {row['reason']} exit={row['exit_code']}",
                 ts=row['ts'], detail=detail))
         events = parsed + command_events
-        health = run_flow.supporting_health_from_live(live_dir=root / 'output/live', market_date=market_date)
+        review_dependency = 'queued_for_consumer' if automation == 'morning-prerecommend' else 'required'
+        wait_path = run_dir / 'intelligence-wait.receipt.json'
+        if automation == 'morning-execute' and wait_path.is_file() and not wait_path.is_symlink():
+            wait = json.loads(wait_path.read_bytes())
+            from xiaocao.runner_recovery import _hash
+            claimed = wait.pop('receipt_sha256', None)
+            if (claimed == _hash(wait) and wait.get('market_date') == market_date
+                    and wait.get('run_id') == run_id
+                    and wait.get('automation_id') == os.environ.get('CODEX_AUTOMATION_ID')
+                    and wait.get('owner_thread_id') == os.environ.get('CODEX_THREAD_ID')
+                    and wait.get('intelligence_mode') in {'off', 'shadow'}):
+                review_dependency = 'shadow_not_awaited'
+        health = run_flow.supporting_health_from_live(live_dir=root / 'output/live', market_date=market_date,
+                                                     review_dependency=review_dependency)
         if context_exit:
             health['status'] = 'degraded'
             health.setdefault('issues', []).append({'surface': 'finalization', 'detail': f'context_pack exit={context_exit}'})

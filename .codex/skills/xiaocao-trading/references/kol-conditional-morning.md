@@ -1,12 +1,18 @@
 # Conditional-first morning
 
-New morning requests bind `judgment_mode=conditional_first_v1` into their immutable
+New morning requests bind `judgment_mode=conditional_first_v2` into their immutable
 SHA. Source owner prepares before09:20; consumer finishes as soon as ready, within
 min(original requested_at+max_wait_seconds (at most120), review_wait_until,
 entry_deadline, dated09:27:30). At or after the bound, degrade and continue the
 original execution path. This reserves the opening tail for allocation/serial
 acceptance; it is not order/fill proof or permission to extend the09:30 window.
-Legacy requests keep their original09:27 and earlier recorded budgets.
+Existing v1 requests retain their09:20 preparation-admission and original09:27:30
+or earlier recorded budgets. Older legacy requests retain original09:27.
+For v2,09:20 is a readiness target: valid late support is marked late_ready and
+checked once at original freeze without waiting for the source owner. Exact
+semantic-unit equality (viewpoints/evaluations/relation history) permits reuse
+across audit-only fingerprint drift; preserve both fingerprints and normal current
+source verification. Semantic change/unmatched/unknown conditions defer immediately.
 
 ## Source owner before the window
 

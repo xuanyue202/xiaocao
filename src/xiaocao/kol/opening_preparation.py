@@ -278,6 +278,9 @@ def opening_packet(preparation_path: Path, current_input_path: Path, request: di
     if adoption_path is not None:
         from .preparation_adoption import read_adoption
         adopted = read_adoption(adoption_path, preparation_path, current_input_path, now=now)
+        if (adopted.get('schema_version') == 'kol-preparation-adoption.v2'
+                and adopted.get('judgment_mode') != request.get('judgment_mode')):
+            raise ValueError('KOL_PREPARATION_ADOPTION_MODE_MISMATCH')
     if (now.utcoffset() is None or not request.get("freeze_sha256") or not request.get("strategy_sha")
             or (not adopted and (prepared["binding"] != current["binding"] or prepared["rules"] != current["rules"]))
             or (adopted is not None and (request.get('binding') != current['binding']
@@ -332,4 +335,8 @@ def opening_packet(preparation_path: Path, current_input_path: Path, request: di
         value['preparation_adoption'] = {'path': str(adoption_path.resolve()),
             'sha256': adopted['adoption_sha256'], 'source_binding': adopted['source_binding'],
             'binding': adopted['binding']}
+    from xiaocao.live.morning_support import CURRENT_CONDITIONAL
+    if request.get('judgment_mode') == CURRENT_CONDITIONAL:
+        value.update(semantic_source_sha256=canonical_sha256(new),
+                     prepared_semantic_source_sha256=canonical_sha256(old))
     return {**value, "packet_sha256": canonical_sha256(value)}

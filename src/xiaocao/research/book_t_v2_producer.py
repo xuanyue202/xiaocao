@@ -229,6 +229,7 @@ def _load_publications(root: Path, *, as_of: datetime | None = None) -> tuple[li
         readback = publication_from_report_readback(json.loads(raw), as_of=bound_as_of)
         if readback:
             completed.append(readback)
+            head_candidates.append(readback)
     for status in current_publication_heads(head_candidates, as_of=bound_as_of):
         key = status["source_key"]
         if status.get("completed") is True:

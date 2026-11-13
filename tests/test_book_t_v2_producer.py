@@ -281,3 +281,30 @@ def test_relation_targets_load_only_exact_historical_evidence_and_missing_stays_
     repaired,_=_load_publications(tmp_path,as_of=asof)
     assert {r['viewpoint_id'] for r in repaired}=={origin,target}
     assert next(r for r in repaired if r['viewpoint_id']==target)['historical_reference_only'] is True
+
+
+def test_current_report_readback_is_considered_as_a_current_head(tmp_path, monkeypatch):
+    import copy
+    from datetime import datetime, timezone
+    from tests.test_trend_snapshot import _source
+    from xiaocao.kol.publication import PublicationLedger, build_publish_request
+    from xiaocao.research.book_t_v2_producer import _load_publications
+    status = _source(source_key='current-cache', kol_id='kol-lv-xiaotong')
+    records = copy.deepcopy(status['artifact']['records'])
+    report = records[0]
+    request = build_publish_request(records, idempotency_key='current-cache', reason='fixture')
+    report.update(state='published', manifest=request['records'],
+                  manifest_sha256=request['manifest_sha256'], updated_at='2026-08-16T03:00:00Z')
+    for record in records[1:]:
+        record['state'] = 'immutable'
+    capsule = {'source': 'lianghui.get_kol_record', 'observed_at': '2026-08-16T05:00:00Z',
+               'report': report, 'records': records}
+    raw = json.dumps(capsule, sort_keys=True).encode()
+    folder = tmp_path / 'output/live/kol_daily/publication_readbacks'
+    folder.mkdir(parents=True)
+    (folder / (hashlib.sha256(raw).hexdigest()+'.json')).write_bytes(raw)
+    monkeypatch.setattr(PublicationLedger, 'status_snapshot', lambda self: {})
+    sources, errors = _load_publications(tmp_path, as_of=datetime(2026, 8, 16, 6, tzinfo=timezone.utc))
+    assert not errors
+    assert [row['viewpoint_id'] for row in sources] == [records[1]['record_id']]
+    assert sources[0].get('historical_reference_only') is not True

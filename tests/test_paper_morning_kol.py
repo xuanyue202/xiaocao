@@ -92,7 +92,8 @@ def test_paper_reuses_source_without_app_task_or_worker_dependency(shared_owner)
     assert review.request['kol_inputs']['warm_worker'] is None
     handoff = prep.read_json(Path(owner[4][0]['dispatch_path']))
     assert handoff['next_action'] == 'independently_review_prepared_draft'
-    assert review.request['judgment_mode'] == 'conditional_first_v1'
+    from xiaocao.live.morning_support import CURRENT_CONDITIONAL
+    assert review.request['judgment_mode'] == CURRENT_CONDITIONAL
     assert 'current_warmup_path' not in review.request['kol_inputs']
 
 

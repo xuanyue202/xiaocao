@@ -338,7 +338,10 @@ class BookBLiveIntradayReceipt:
     batch_failure: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        from .readiness_scope import account_readiness
+        value = asdict(self)
+        value['readiness_scope'] = account_readiness(self.account, self.risk_receipt)
+        return value
 
 
 def _existing_sell_plan_for_lot(

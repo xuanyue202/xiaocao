@@ -41,16 +41,18 @@ def current_source_snapshot(root: Path, now: datetime, trade_date: str) -> dict:
     summary = write_trading_projection(context, repo_root=root)
     projection = preparation.read_projection(summary)
     return {'source_fingerprint': projection['source_fingerprint'],
+            'semantic_source_sha256': canonical_sha256(preparation.viewpoint_units(projection)),
             'source_coverage': latest_report_coverage(context, projection, kol_id='kol-xiaocao')}
 
 
-def registered_preparation(root: Path, trade_date: str, *, now: datetime) -> tuple[Path, dict] | None:
+def registered_preparation(root: Path, trade_date: str, *, now: datetime,
+                         judgment_mode: str | None = None) -> tuple[Path, dict] | None:
     """Read an accepted source brief without waiting for its APP owner."""
     from .rolling_preparation import registered
     rolling = registered(root, now=now)
     if rolling is not None:
-        if preparation.aware(rolling[1]['accepted_at']) >= preparation.aware(trade_date+'T09:20:00+08:00'):
-            raise ValueError('KOL_PREPARATION_ROLLING_LATE_FOR_OPENING')
+        from xiaocao.live.morning_support import preparation_timing
+        preparation_timing(preparation.aware(rolling[1]['accepted_at']), trade_date, mode=judgment_mode)
         return rolling
     accepted = []
     for path in sorted((root / 'output/live/kol_selection_preparations' / trade_date).glob('*.json')):
@@ -82,7 +84,9 @@ def preview(rows: list[dict], freeze: dict, *, root: Path, now: datetime,
         'baseline_codes': baseline, 'selected_codes': baseline,
         'policy_adoption': 'not_performed', 'status': 'baseline', 'reason': 'PREPARATION_UNAVAILABLE'}
     try:
-        accepted = registered_preparation(root, freeze['market_date'], now=now)
+        from xiaocao.live.morning_support import CURRENT_CONDITIONAL
+        accepted = registered_preparation(root, freeze['market_date'], now=now,
+                                         judgment_mode=CURRENT_CONDITIONAL)
         if accepted:
             _, prepared = accepted
             preferences = prepared['draft'].get('selection_preferences', [])
@@ -102,9 +106,15 @@ def preview(rows: list[dict], freeze: dict, *, root: Path, now: datetime,
                 if isinstance(current, dict):
                     result['source_coverage'] = current['source_coverage']
                 if fingerprint != prepared['source_fingerprint']:
-                    result['current_source_head'] = 'local_fingerprint_changed'
-                    raise ValueError('PREPARATION_SOURCE_CHANGED')
-                result['current_source_head'] = 'fingerprint_matched'
+                    semantics = canonical_sha256(preparation.viewpoint_units(
+                        preparation.read_projection(prepared['projection'])))
+                    if not isinstance(current, dict) or current.get('semantic_source_sha256') != semantics:
+                        result['current_source_head'] = 'local_fingerprint_changed'
+                        raise ValueError('PREPARATION_SOURCE_CHANGED')
+                    result['current_source_head'] = 'semantic_units_matched'
+                    result['audit_fingerprint_changed'] = True
+                else:
+                    result['current_source_head'] = 'fingerprint_matched'
             executable = (any(item['applicability']=='supported' for item in preferences)
                           and not (rolling and result['unresolved_semantic_conditions']))
             from .prepared_policy import preview_risk
@@ -121,8 +131,6 @@ def preview(rows: list[dict], freeze: dict, *, root: Path, now: datetime,
                     selected_codes=selection.receipt['selected_codes'], selection=selection.receipt,
                     preparation_sha256=prepared['preparation_sha256'],
                     source_fingerprint=prepared['source_fingerprint'])
-                if rolling:
-                    result['current_source_head'] = 'fingerprint_matched'
                 if risk is not None:
                     adjusted = [dict(row) for row in selection.rows]
                     for row in adjusted:

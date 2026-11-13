@@ -34,7 +34,9 @@ def model_fingerprint(root: Path) -> str:
     return hashlib.sha256(json.dumps(hashes).encode()).hexdigest()
 
 
-def previous_codes(live_dir: Path, day: str) -> list[str]:
+def previous_codes(live_dir: Path, day: str, *, prior_batches: int = 5) -> list[str]:
+    """Broaden prewake coverage from original prior batches, newest first."""
+    codes, seen, batches = [], set(), 0
     for folder in sorted((live_dir / "morning_bundles").glob("*"), reverse=True):
         try:
             date.fromisoformat(folder.name)
@@ -45,8 +47,14 @@ def previous_codes(live_dir: Path, day: str) -> list[str]:
         result = acquire_bundle(live_dir, folder.name, repair=False)
         if result.get("status") != "ready":
             continue
-        return sorted({str(r["code"]) for r in read_consumed_rows(result, folder.name, live_dir=live_dir)})
-    return []
+        for code in sorted({str(r["code"]) for r in read_consumed_rows(result, folder.name, live_dir=live_dir)}):
+            if code not in seen:
+                codes.append(code)
+                seen.add(code)
+        batches += 1
+        if batches >= prior_batches:
+            break
+    return codes
 
 
 def cache_path(root: Path, day: str) -> Path:
@@ -127,4 +135,6 @@ def apply_scores(candidates: list[dict], record: dict, *, top_n: int) -> dict:
     covered = sum(r["kp_score_basis"] == "prepared_prior_day" for r in candidates)
     return {"status": "complete" if covered == len(candidates) else "degraded",
         "covered": covered, "missing": len(candidates)-covered, "cache_sha256": record.get("sha256"),
-        "cache_path": record.get("archive_path")}
+        "cache_path": record.get("archive_path"),
+        "missing_codes": sorted(r["code"] for r in candidates if r["kp_score_basis"] != "prepared_prior_day"),
+        "coverage_scope": "prior_original_batches_only_no_current_model_inference"}

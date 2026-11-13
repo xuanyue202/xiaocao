@@ -848,11 +848,12 @@ def _run(args, notices):
         if clock >= cutoff:
             record_checklist("kol_decision", "degraded", evidence=fresh, reason="LIVE_REVIEW_TIMEOUT_NEUTRAL_FALLBACK")
             return {"status": "timed_out", "reason": "LIVE_REVIEW_TIMEOUT_NEUTRAL_FALLBACK", "supporting_health": "degraded"}
+        from xiaocao.live.morning_support import conditional_first
         request = {**request, "dispatch_budget": {"observed_at": clock.isoformat(),
             "total_remaining_seconds": max(0.0, (cutoff-clock).total_seconds()),
             "includes": ["source_verification", "independent_review", "publication"],
             "cutoff": cutoff.isoformat(), "dispatch": "conditional_draft_or_deferred"
-                if request.get('judgment_mode') == 'conditional_first_v1' else "immediate_to_warm_worker"}}
+                if conditional_first(request) else "immediate_to_warm_worker"}}
         result = _review_rendezvous(request, poll_seconds=args.poll_seconds)
         record_checklist("kol_decision", "passed" if result["status"] == "validated" else "degraded",
             evidence={"receipt_path": result["receipt_path"], "request_sha256": result["request_sha256"]},

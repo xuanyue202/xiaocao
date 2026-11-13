@@ -34,15 +34,29 @@ def main(argv=None):
     try:
         if args.command == 'rolling-inputs':
             from xiaocao.kol import rolling_preparation as rolling
-            from xiaocao.kol.trading_context import build_trading_context, write_trading_projection
+            from xiaocao.kol.trading_context import build_trading_context, write_trading_projection, latest_report_coverage
             if os.environ.get('CODEX_AUTOMATION_ID') != rolling.OWNER or not os.environ.get('CODEX_THREAD_ID'):
                 raise ValueError('KOL_PREPARATION_ROLLING_OWNER_REQUIRED')
             through = prep.aware(args.fresh_through) if args.fresh_through else now
             if through < now:
                 raise ValueError('KOL_PREPARATION_REUSE_HORIZON_PAST')
             reuse_audit = {'fresh_through': through.isoformat()}
-            summary = write_trading_projection(build_trading_context(repo_root=args.root,
-                read_report_ids=[], include_report_bodies=False, as_of=now), repo_root=args.root)
+            context = build_trading_context(repo_root=args.root,
+                read_report_ids=[], include_report_bodies=False, as_of=now)
+            summary = write_trading_projection(context, repo_root=args.root)
+            reuse_audit['source_coverage'] = latest_report_coverage(
+                context, prep.read_projection(summary), kol_id='kol-xiaocao')
+            summary = {**summary, 'source_coverage': reuse_audit['source_coverage']}
+            readiness = rolling.source_readiness(prep.read_projection(summary), through=through)
+            reuse_audit['source_readiness'] = readiness
+            if readiness['status'] != 'ready':
+                diagnostic = {'status': 'blocked', 'authority': 0,
+                    'reason': 'KOL_PREPARATION_SOURCE_EXPIRES_BEFORE_USE', **reuse_audit,
+                    'model_dispatch': 'not_required_source_expiry',
+                    'next_action': 'source_owner_verify_current_evaluations_or_explicit_source_only_scope'}
+                path = prep.write_artifact(args.output_dir, diagnostic, '.readiness.json')
+                print(json.dumps({**diagnostic, 'path': str(path)}))
+                return 2
             try:
                 cached = rolling.registered(args.root, now=now)
                 if cached is not None:
@@ -57,17 +71,20 @@ def main(argv=None):
                     raise
                 cached = None
                 reuse_audit['rebuild_reason'] = str(exc)
-            if (cached is not None and cached[1]['source_fingerprint'] == prep.read_projection(summary)['source_fingerprint']
-                    and prep.viewpoint_units(prep.read_projection(cached[1]['projection'])) ==
+            if (cached is not None and prep.viewpoint_units(prep.read_projection(cached[1]['projection'])) ==
                     prep.viewpoint_units(prep.read_projection(summary))):
                 print(json.dumps({'status': 'reused', 'authority': 0, 'path': str(cached[0]),
                     'preparation_sha256': cached[1]['preparation_sha256'],
+                    'current_source_fingerprint': prep.read_projection(summary)['source_fingerprint'],
+                    'semantic_source_sha256': prep.canonical_sha256(prep.viewpoint_units(prep.read_projection(summary))),
+                    'source_verification': 'not_performed',
                     **reuse_audit,
                     'elapsed_seconds': perf_counter()-started}))
                 return 0
             binding = {'automation_id': rolling.OWNER, 'owner_thread_id': os.environ['CODEX_THREAD_ID'],
                 'trade_date': now.astimezone(prep.TZ).date().isoformat(), 'scope': 'source_reasoning_only'}
-            value = rolling.input_payload(summary, binding=binding, repo_root=args.root)
+            value = rolling.input_payload(summary, binding=binding, repo_root=args.root,
+                                          intended_use_at=args.fresh_through)
         elif args.command == "inputs":
             value = prep.input_payload(read_json(args.projection_summary), binding=read_json(args.binding), repo_root=args.root)
         elif args.command == "template":

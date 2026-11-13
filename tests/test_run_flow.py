@@ -112,3 +112,16 @@ def test_partial_agent_review_is_supporting_degradation(tmp_path: Path) -> None:
     assert health["status"] == "degraded"
     assert health["agent_review"] == {"selected": 2, "reviewed": 1, "pending": 1}
     assert any(issue["surface"] == "agent_review" for issue in health["issues"])
+
+
+def test_pending_shadow_or_producer_queue_is_not_a_failed_business_dependency(tmp_path):
+    (tmp_path/'intelligence_review_queue_2026-11-13.json').write_text(json.dumps({
+        'market_date':'2026-11-13', 'items':[{'code':'A'}]}))
+    for dependency in ['shadow_not_awaited', 'queued_for_consumer']:
+        result = run_flow.supporting_health_from_live(live_dir=tmp_path, market_date='2026-11-13',
+                                                      review_dependency=dependency)
+        assert result['agent_review']['pending'] == 1
+        assert result['review_completion'] == 'pending'
+        assert not any(row['surface']=='agent_review' for row in result['issues'])
+        assert result['posture_currently_usable'] is False
+        assert result['posture_scope'] == 'historical_prior_calibration_only'

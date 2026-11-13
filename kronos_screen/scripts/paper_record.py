@@ -1136,14 +1136,7 @@ def _main_locked(a=None):
             "market_date": a.date, "snapshot_sha256": frozen_rows_digest(latest_rows),
             "snapshot_raw_sha256": snapshot_sha256, "snapshot_row_count": len(latest_rows),
         }
-        support_receipt = None
-        if getattr(a, "kol_review_receipt", None):
-            from xiaocao.live.paper_morning_kol import read_support
-            try:
-                support_receipt = read_support(a.kol_review_receipt, a.date, explanation_freeze,
-                                              Path(os.environ["XIAOCAO_DAILY_RUN_DIR"]))
-            except (OSError, ValueError, KeyError, TypeError):
-                support_receipt = {"status": "deferred", "reason": "PAPER_KOL_SUPPORT_RECEIPT_UNPROVEN"}
+        support_receipt = _morning_support_receipt(a, explanation_freeze)
         policy_fence = kol_policy.review_publication_fence(support_receipt)
         decision_for_selection = kol_policy.load_decision(
             ROOT / "output/live/kol_policy/decisions", book="B", runtime="paper",
@@ -2337,6 +2330,17 @@ def _load_positions_from_file(path: Path) -> list[dict]:
     return accounts.load_positions(path)
 
 
+def _morning_support_receipt(a, freeze):
+    if not getattr(a, 'kol_review_receipt', None):
+        return None
+    from xiaocao.live.paper_morning_kol import read_support
+    try:
+        return read_support(a.kol_review_receipt, a.date, freeze,
+                            Path(os.environ['XIAOCAO_DAILY_RUN_DIR']))
+    except (OSError, ValueError, KeyError, TypeError):
+        return {'status': 'deferred', 'reason': 'PAPER_KOL_SUPPORT_RECEIPT_UNPROVEN'}
+
+
 def _prepare_opening_high(a) -> None:
     """Collect source proof outside the ledger lock, then reload under it.
 
@@ -2350,10 +2354,18 @@ def _prepare_opening_high(a) -> None:
                else acquire_bundle(live_dir, a.date))
     receipt = resolve_receipt(receipt, a.date, live_dir=live_dir)
     rows = read_consumed_rows(receipt, a.date, live_dir=live_dir)
-    codes = sorted({row["code"] for row in rows if row.get("date") == a.date
-                    and row.get("is_live") and row.get("book", "B") == "B"})
-    client = XiaocaoClient(minimum_request_interval=1, timeout=3, retries=0)
-    proofs = capture_opening_high(client, codes, a.date)
+    rows = [row for row in rows if row.get('date') == a.date and row.get('is_live')
+            and row.get('book', 'B') == 'B']
+    support = _morning_support_receipt(a, receipt)
+    policy = kol_policy.load_decision(ROOT/'output/live/kol_policy/decisions', 'B', 'paper',
+        datetime.now(A_SHARE_TZ), **kol_policy.review_publication_fence(support))
+    derived = adjudicate_book_b(rows, policy, freeze=receipt, runtime='paper', support_receipt=support)
+    # All eligible reserve candidates need cost proof, not only the final three.
+    # This is an observation plan: the writer rechecks current policy under lock.
+    eligible = _mode_exec_candidate_pool(derived.rows)
+    codes = sorted({row['code'] for row in eligible})
+    proofs = (capture_opening_high(XiaocaoClient(minimum_request_interval=1, timeout=3, retries=0),
+                                  codes, a.date) if codes else {})
     a._opening_high_snapshot_sha256 = receipt["snapshot_raw_sha256"]
     a._opening_high_proofs = proofs
     binding = {"automation_id": os.environ.get("CODEX_AUTOMATION_ID"),
@@ -2364,7 +2376,9 @@ def _prepare_opening_high(a) -> None:
     for proof in proofs.values():
         proof["binding"] = binding
     artifact = {"schema_version": "paper-opening-high-capture.v1", "date": a.date,
-                "binding": binding, "proofs": proofs}
+                "binding": binding, "proofs": proofs,
+                'adjudication_sha256': derived.receipt['receipt_sha256'],
+                'observation_status': 'eligible_cost_capture' if codes else 'no_eligible_candidate'}
     artifact["sha256"] = canonical_sha256(artifact)
     directory = Path(os.environ.get("XIAOCAO_DAILY_RUN_DIR") or live_dir / "paper_opening_high")
     directory.mkdir(parents=True, exist_ok=True)

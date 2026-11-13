@@ -1,6 +1,6 @@
 # 小草运营契约（Operating Contract, SSOT）
 
-**版本**：4.62
+**版本**：4.63
 **状态**：现行
 **适用范围**：所有 paper / 未来 real 的实盘环（live_recommend → paper_record → live_monitor → eod）与回测
 **关联实现**：`src/xiaocao/live/{safety,capital_keychain,foundersc_native_ax,foundersc_native_broker,trading_execution,book_b_live_lifecycle,book_b_live_intraday}.py`、`src/xiaocao/live/intelligence_policy.py`、`src/xiaocao/strategy/{mode_switch,trend_rules,kol_reference}.py`、`native/foundersc_ax_executor/`、`kronos_screen/scripts/{capture_signals,forward_eval,paper_record,settle_book_a,settle_book_t,decompose_pnl,quality_governor}.py`、`scripts/{book_b_live_morning,book_b_live_intraday,live_monitor,research_mode_switch_replay}.py`
@@ -208,12 +208,16 @@ KOL 提前准备（2026-10-23 用户批准）在09:20前由§2a指定路由worke
 盘前备好引用正文和输出结构；正式发布仍须当前来源核验、独立主审与原请求绑定。
 2026-11-03 用户进一步批准：小草前一晚及近几天判断由独立来源 owner 提前综合，
 APP、推荐及 Paper 共用，早盘仅判断当前是否适用。沿用远端 KOL writer 的21:30及07:30
-既有 slot，在本轮采集/语义发布操作退出、来源发布证据完整后准备 authority=0 的
+既有 slot，取得原小时所有权后立即检查已完整发布快照，准备 authority=0 的
 `kol-opening-preparation.v2`；空队列仍静默，但这两个时段必须检查共享准备。
 2026-11-11 用户要求修复准备连续过期：逐依赖判断，历史提醒送达未决只约束该提醒的
 原 claim、对账与 ACK，不阻断对完整已发布来源的独立准备；保留其未决事实，禁止重发或
-冒认送达。该例外仅限历史提醒；其他未完成或不确定副作用仍沿原受阻分支。hour_busy、
-仍在运行的采集/发布、来源发布未证明或投影质量缺失仍阻断准备。
+冒认送达。该例外仅限历史提醒；其他未完成或不确定副作用仍沿原受阻分支。hour_busy、来源发布未证明或投影质量缺失仍阻断准备。
+2026-11-13 用户要求修复准备失约：耗时采集/分析不再全局阻塞独立的已发布快照准备。
+来源 owner 收到 kol_shared_preparation_due 后立即启动此阶段，保留原采集进程/stdin；
+只使用完整已发布 manifest，正在发布的半成品不进入输入。仍待采集/分析/发布的来源列入
+coverage limits；新发布改变观点/评价/关系时使旧效果失效，由同一 owner 更新准备。
+这些工作可并行，仍只有原 source/effect writer；不把准备当成第二轮抓取或语义发布。
 准备不消费提醒、Book 或 ACK 状态作为来源真实性证明；来源门由原发布回执、完整
 manifest、投影及引用核验独立证明。准备只消费已发布合格观点/评价/关系，完整覆盖不按 latest-N
 或关键词筛选；小草判断按真实来源时点保留跨日延续、修订、冲突、条件、反证与缺源。
@@ -227,8 +231,10 @@ manifest、投影及引用核验独立证明。准备只消费已发布合格观
 
 每轮早晚来源 owner 在退出前分别记录原业务状态与准备状态：not_started、reused、
 accepted 或 blocked，以及精确原因、输入/指纹、原观点到期、实际耗时与独立接受回执。
-07:30 原来源工作完成后立即准备，09:20前完成；21:30完成当晚准备，次晨仍验证来源与
-原观点有效期，不要求晚间准备自然跨过到期观点。缺失、即将到期、规则或来源改变时由
+07:30 取得原小时后立即准备已发布快照，09:20前完成；21:30同时检查下个已证明交易日的准备，次晨仍验证来源与
+原观点有效期。模型派发前以 --fresh-through <已证明交易日>T09:27:30+08:00 检查每条
+原观点到期和最终草案期限；不能覆盖则立即保存 blocked 与具体 IDs，不花完整模型成本
+再把它报为次晨就绪。可明确生成 source-only 准备，但它没有 morning-ready 证明。缺失、即将到期、规则或来源改变时由
 来源 owner 当轮重新准备或修复具体依赖，不让早盘消费者补做、延时或延长旧有效期。
 
 APP 和 Paper 以各自原 Automation/Thread/run 或 PID 生成不可变采用回执，绑定来源
@@ -236,14 +242,20 @@ owner、准备 hash、当前完整投影/规则/指纹和全部观点单元；�
 另一账户政策。推荐直接读取同一产物作 authority=0 预览。缺失/过期/规则或来源变化
 明确 deferred，保留独立有效政策和确定性基线；早盘不补派完整来源综合、不轮询来源
 owner。现存 v1 APP/Paper 自有回执保留精确兼容读回。
-2026-11-05 用户确认新早盘请求采用 `judgment_mode=conditional_first_v1`：盘前由来源
+2026-11-05 用户确认条件优先；2026-11-13 新请求绑定 `judgment_mode=conditional_first_v2`：盘前由来源
 owner 与独立主审审核可执行条件语义；早盘只核验原冻结/账户/风险/阶段及候选有限谓词，
 装配具体草案后由消费者父级立即独立复核，再正常核验当前来源、发布与消费。不再预载或
 新派早盘 current worker；来源改变、条件不匹配、重要未解语义或缺证据立即明确 deferred。
 条件接口不能表达的广度、私有分数、模式/赛道映射继续保留未知，不清空以制造可执行性。
 不因偏好为空而声称中性判断完成。新路径支持总预算仍最多120秒，完成即返回；硬截止为
 原请求预算、更早owner截止与当日09:27:30的最小值，发布/消费共同执行，迟到不补。
-旧请求保留原09:27及更早预算，不重算、不重放；旧worker仅供已绑定历史路径。
+新 v2 保留09:20准备目标，并在采用回执明确 prepared_on_time / late_ready；
+错过准备目标不单独否决仍在原支持预算内完成、来源有效且精确匹配的准备。
+冻结时由原 prepare_inputs/checklist 再读取一次，不等待来源任务、不派新综合模型。
+完整 eligible 观点、评价、关系历史相同而仅审计上下文/全库指纹变化时，可复用语义准备，
+保留双方指纹、完整语义单元 hash 和当前独立来源核验；任何语义变化仍立即降级。
+已有 conditional_first_v1 请求维持其09:20准备准入和原09:27:30/更早预算；
+更早 legacy 请求保留原09:27及更早预算，不重算、不重放；旧worker仅供已绑定历史路径。
 最终政策、独立复核、账户与订单门保留，不形成任务相互等待。操作见
 [条件优先早盘](../.codex/skills/xiaocao-trading/references/kol-conditional-morning.md)。
 
@@ -957,6 +969,7 @@ no-KOL三项纸盘挑战，共同风险与B退出，仅前向独立账本。原�
 
 | 版本 | 日期 | 说明 |
 |------|------|------|
+| 4.63 | 2026-11-13 | 修复早晚来源准备被长采集串行拖迟；派发前验证次晨有效期，新条件优先v2在不延长原截止下接受有效迟到准备，完整语义相同的审计漂移不重复综合。Paper shadow移出业务依赖，零候选免价格等待；业务、支持、研究与会计证明分开。 |
 | 4.62 | 2026-11-11 | DAY 失效释放绑定原 submit claim 的首次 CLAIMED 原生回执，避免后续原生对账失败覆盖 template 而制造提交路径证明；旧 v2 保留历史读回，当前证明补充 submit_origin_bound。 |
 | 4.61 | 2026-11-11 | 普通原生 DAY 委托跨交易日释放未成交部分的未来现金占用；潜在历史持仓按完整当前持仓扣除自有股数后约束，多笔旧单共用数量上界。保留原 UNKNOWN、claim、同代码门与会计待核，v1 隔离证明精确兼容。 |
 | 4.60 | 2026-11-11 | 修复共享准备被历史提醒送达未决全局阻断；已发布来源独立核验后继续authority=0准备，旧通知claim/对账/ACK不变。早晚owner必须分别记录准备是否启动、复用/接受或精确受阻原因，原观点有效期与09:20完成要求保留。 |

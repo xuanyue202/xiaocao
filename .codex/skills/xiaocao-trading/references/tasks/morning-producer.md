@@ -11,7 +11,9 @@ Read [shared contract](../automation-context.md) and Contract §1b/1c. The super
 pins source/rules/runtime and shared output before waiting. Later deployment edits
 are audit facts, not an excuse to replace the intact pinned process.
 Prewake K/P uses only previous-day model/hash-bound inputs until09:24:45; missing
-scores are neutral degraded support. Do not train cold models in capture time.
+scores are neutral degraded support with exact missing codes. Prewake covers
+several original prior candidate batches and archives completed chunks before
+the unchanged deadline; it never infers today's missing scores at capture. Do not train cold models in capture time.
 
 After09:25:01 the original process retries required source/detail/active-price
 facts every2s. Successful nonempty valid fresh stock directory excludes only

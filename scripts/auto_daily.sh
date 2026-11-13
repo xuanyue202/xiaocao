@@ -58,7 +58,7 @@ run_book_b_morning() {
     return "$FREEZE_EXIT"
   fi
   log "bounded agent-review rendezvous (structured review only; timeout falls back to base picks)"
-  REVIEW_RENDEZVOUS="$(run_python scripts/wait_for_agent_reviews.py --kol-preparation --date "$TODAY" --morning-freeze-receipt "$FREEZE_RECEIPT" --timeout-sec "${XIAOCAO_AGENT_REVIEW_TIMEOUT_SEC:-180}" 2>&1)" || true
+  REVIEW_RENDEZVOUS="$(run_python scripts/wait_for_agent_reviews.py --kol-preparation --intelligence-trade shadow --date "$TODAY" --morning-freeze-receipt "$FREEZE_RECEIPT" --timeout-sec "${XIAOCAO_AGENT_REVIEW_TIMEOUT_SEC:-180}" 2>&1)" || true
   log "agent-review rendezvous result: $REVIEW_RENDEZVOUS"
   log "paper-record ★E mode-qualified picks"
   if ! run_python kronos_screen/scripts/paper_record.py --date "$TODAY" --pick mode_exec_star --kol-review-receipt "$XIAOCAO_DAILY_RUN_DIR/paper-kol-review.receipt.json" --morning-freeze-receipt "$FREEZE_RECEIPT" --initial-capital 100000 --fee-rate 0.0001 --deploy-ratio 0.5 --max-total-exposure-ratio 1.0 --quality-governor shadow --intelligence-trade shadow >>"$LOG" 2>&1; then
@@ -96,7 +96,7 @@ run_book_t_morning() {
     log "morning execute FAILED: Book T paper-record failed"
     return 1
   fi
-  run_book_t_shadow_if_frozen
+  log "Book T control completed; original immutable receipt ready, shadow pending"
 }
 run_morning_books() {
   # Only preparation/waits overlap; paper_record owns the shared ledger lock.
@@ -110,8 +110,10 @@ run_morning_books() {
   wait "$book_t_pid"
   book_t_exit=$?
   trap - TERM INT
+  log "morning business completed: Book B exit=$book_b_exit; Book T control exit=$book_t_exit; research pending"
   log "isolated APP-rule Book B research after both original business branches"
   run_python scripts/research_book_b_forward.py --phase morning >>"$LOG" 2>&1 || log "APP B research degraded; production receipts remain authoritative"
+  if [ "$book_t_exit" -eq 0 ]; then run_book_t_shadow_if_frozen; fi
   if [ "$book_t_exit" -ne 0 ]; then return "$book_t_exit"; fi
   if [ "$book_b_exit" -ne 0 ]; then
     log "morning execution FAILED: Book B failed; Book T completed independently"

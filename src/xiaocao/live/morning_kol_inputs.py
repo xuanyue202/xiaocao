@@ -40,18 +40,21 @@ def prepare_inputs(checklist: MorningChecklist, *, repo_root: Path) -> dict:
         shared = registered(repo_root, now=now)
         if shared is not None:
             source_path, prepared = shared
-            adopted = adoption(source_path, path, now=now)
+            from .morning_support import CURRENT_CONDITIONAL
+            adopted = adoption(source_path, path, now=now, judgment_mode=CURRENT_CONDITIONAL)
             adopted_path = write_artifact(checklist.path.parent, adopted, '.adoption.json')
             evidence.update(preparation_path=str(source_path), preparation_sha256=prepared['preparation_sha256'],
                 preparation_adoption_path=str(adopted_path), source_worker_id=prepared['worker_id'],
                 worker_id=None, authority=0, preparation_status='shared_rolling_adopted')
-            from .morning_support import CONDITIONAL_FIRST
-            evidence.update(judgment_mode=CONDITIONAL_FIRST, current_warmup_path=None,
+            evidence.update(judgment_mode=CURRENT_CONDITIONAL,
+                            preparation_timing=adopted['preparation_timing'], current_warmup_path=None,
                             current_warmup_status='not_required_conditional_first')
             checklist.record('kol_inputs_loaded', 'passed', evidence=evidence,
                              valid_until=datetime.fromisoformat(prepared['draft']['valid_until']))
         else:
             evidence['preparation_status'] = 'shared_rolling_unavailable'
+            checklist.record('kol_inputs_loaded', 'degraded', evidence=evidence,
+                             reason='KOL_SHARED_PREPARATION_UNAVAILABLE')
     except (OSError, ValueError, KeyError, TypeError) as exc:
         evidence.update(preparation_status='deferred', preparation_reason=str(exc))
         checklist.record('kol_inputs_loaded', 'degraded', evidence=evidence, reason=str(exc))

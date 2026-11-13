@@ -1,4 +1,4 @@
-For new morning requests marked `conditional_first_v1`, follow
+For new morning requests marked `conditional_first_v2`, follow
 [conditional-first morning](kol-conditional-morning.md): only a reviewed prepared
 conditional draft or immediate explicit deferral. Do not launch a current worker.
 Finish before the original budget (at most120 seconds) and hard09:27:30. Legacy

@@ -36,6 +36,20 @@ def _hour_key(hour_start: datetime) -> str:
     return hour_start.strftime("%Y%m%dT%H%M%z")
 
 
+def preparation_obligation(automation_id: str, now: datetime) -> dict | None:
+    """Expose the source-only duty before a long original acquisition starts."""
+    hour = automation_hour_start(now)
+    if automation_id != 'xiaocao-kol-hourly-low-bandwidth-operation' or hour.hour not in {7, 21}:
+        return None
+    return {'event': 'kol_shared_preparation_due', 'authority': 0,
+        'automation_id': automation_id, 'owner_thread_id': os.environ.get('CODEX_THREAD_ID'),
+        'observed_at': now.isoformat(), 'source_publication_required': True,
+        'capture_completion_required': False, 'next_action': 'prepare_published_snapshot',
+        'target_trading_date': 'prove_calendar_before_morning_horizon',
+        'preparation_target': '09:20', 'consumer_hard_cutoff': '09:27:30',
+        'scope': 'coherent_published_snapshot_only_pending_sources_explicit'}
+
+
 def _emit(status: str, *, hour_start: datetime, now: datetime, automation_id: str, owner=None) -> None:
     print(
         json.dumps(
@@ -124,6 +138,9 @@ def main(argv: list[str] | None = None) -> int:
         os.fsync(lock_fd)
 
         _emit("hour_acquired", hour_start=hour_start, now=now, automation_id=args.automation_id)
+        obligation = preparation_obligation(args.automation_id, now)
+        if obligation is not None:
+            print(json.dumps(obligation, ensure_ascii=False, separators=(',', ':')), flush=True)
         os.set_inheritable(lock_fd, True)
         environment = os.environ.copy()
         environment["CODEX_AUTOMATION_ID"] = args.automation_id

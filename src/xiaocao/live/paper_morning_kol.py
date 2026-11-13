@@ -180,9 +180,10 @@ class PaperKolReview:
         self.started = self.now()
         if not math.isfinite(budget_seconds) or budget_seconds < 0:
             raise ValueError("PAPER_KOL_INVALID_ORIGINAL_BUDGET")
-        from .morning_support import CONDITIONAL_FIRST, opening_cutoff
+        from .morning_support import CURRENT_CONDITIONAL, opening_cutoff
+        self.judgment_mode = CURRENT_CONDITIONAL
         self.cutoff = min(self.started + timedelta(seconds=min(120, budget_seconds)),
-                          opening_cutoff(date, mode=CONDITIONAL_FIRST))
+                          opening_cutoff(date, mode=self.judgment_mode))
         try:
             self._start(preview)
         except (OSError, ValueError, KeyError, TypeError, RuntimeError) as exc:
@@ -207,7 +208,8 @@ class PaperKolReview:
                 raise ValueError('PAPER_KOL_PREPARATION_OWNER_MISMATCH')
         else:
             from xiaocao.kol.selection_preview import registered_preparation
-            shared = registered_preparation(state_root, self.date, now=self.now())
+            shared = registered_preparation(state_root, self.date, now=self.now(),
+                                            judgment_mode=self.judgment_mode)
             if shared is None:
                 self._finish('deferred', 'PAPER_KOL_SHARED_PREPARATION_UNAVAILABLE')
                 return
@@ -220,7 +222,7 @@ class PaperKolReview:
         adoption_path = None
         if not use_legacy:
             from xiaocao.kol.preparation_adoption import adoption
-            adopted = adoption(preparation_path, input_path, now=self.now())
+            adopted = adoption(preparation_path, input_path, now=self.now(), judgment_mode=self.judgment_mode)
             adoption_path = self.run_dir / 'kol-preparation-adoption.json'
             write_once(adoption_path, adopted)
         facts, risk = preview(self.root, deadline=self.cutoff)
@@ -236,8 +238,7 @@ class PaperKolReview:
             "freeze_sha256": self.freeze["snapshot_sha256"], "freeze": self.freeze,
             "strategy_sha": self.freeze["strategy_sha"], "candidates": rows,
             "account_facts": facts, "account_risk": risk}
-        from .morning_support import CONDITIONAL_FIRST
-        request['judgment_mode'] = CONDITIONAL_FIRST
+        request['judgment_mode'] = self.judgment_mode
         request = preparation.normalized_review_facts(request)
         packet = preparation.opening_packet(preparation_path, input_path, request, now=self.now(),
                                             adoption_path=adoption_path)
@@ -266,7 +267,7 @@ class PaperKolReview:
     def _finish(self, status: str, reason: str, policy=None):
         completed = self.now()
         value = {"schema_version": "paper-morning-kol-review.v1", "binding": self.binding,
-            "judgment_mode": "conditional_first_v1", "review_wait_until": self.cutoff.isoformat(),
+            "judgment_mode": self.judgment_mode, "review_wait_until": self.cutoff.isoformat(),
             "trade_date": self.date, "freeze_sha256": self.freeze["snapshot_sha256"],
             "checkpoint_sha256": self.freeze.get("checkpoint_sha256"), "status": status, "reason": reason,
             "request_sha256": (self.request or {}).get("request_sha256"),

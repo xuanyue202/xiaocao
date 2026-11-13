@@ -77,11 +77,14 @@ def main() -> None:
     parser.add_argument("--min-reviews", type=int, default=0, help="0 means wait for every selected item")
     parser.add_argument("--morning-freeze-receipt", type=Path)
     parser.add_argument("--kol-preparation", action="store_true", help="Original paper owner KOL support; requires original freeze")
+    parser.add_argument("--intelligence-trade", choices=('off', 'shadow', 'on'), default='on',
+                        help="Only on-mode intelligence is a dependency of this original business wait")
     args = parser.parse_args()
     live = Path(args.live_dir)
     queue = live / f"intelligence_review_queue_{args.date[:10]}.json"
     history = live / "stock_sentiment_history.jsonl"
-    deadline = time.monotonic() + max(0.0, args.timeout_sec)
+    started = time.monotonic()
+    deadline = started + max(0.0, args.timeout_sec)
     binding = None
     if args.morning_freeze_receipt:
         from xiaocao.live.morning_bundle import resolve_receipt
@@ -95,22 +98,37 @@ def main() -> None:
                              args.date, binding, budget_seconds=max(0.0, deadline-time.monotonic()))
     progress = review_progress(queue, history, expected_date=args.date, expected_binding=binding)
     while time.monotonic() < deadline:
-        if progress.get("status") == "queue_invalid":
+        if progress.get("status") == "queue_invalid" and args.intelligence_trade == 'on':
             if kol is not None:
                 kol.defer("PAPER_INTELLIGENCE_QUEUE_INVALID")
             break
         target = args.min_reviews if args.min_reviews > 0 else progress["selected"]
         kol_done = kol is None or kol.tick()
-        if not progress.get("status") and progress["reviewed"] >= target and kol_done:
+        if kol_done and (args.intelligence_trade != 'on'
+                         or (not progress.get("status") and progress["reviewed"] >= target)):
             break
         time.sleep(min(max(0.05, args.poll_sec), max(0.0, deadline - time.monotonic())))
         progress = review_progress(queue, history, expected_date=args.date, expected_binding=binding)
     target = args.min_reviews if args.min_reviews > 0 else progress["selected"]
-    progress.setdefault("status", "reviewed" if progress["reviewed"] >= target else "fallback_timeout")
+    progress.setdefault("status", ('shadow_not_awaited' if args.intelligence_trade != 'on' else
+                                    'reviewed' if progress["reviewed"] >= target else 'fallback_timeout'))
     if kol is not None:
         kol.defer("PAPER_ORIGINAL_RENDEZVOUS_EXHAUSTED")
         progress["kol_support"] = {"status": kol.receipt["status"], "receipt_path": str(kol.path)}
     progress["authority"] = "shadow_only"
+    progress['intelligence_mode'] = args.intelligence_trade
+    progress['waited_seconds'] = time.monotonic() - started
+    if os.environ.get('XIAOCAO_DAILY_RUN_DIR') and binding is not None:
+        from xiaocao.utils.atomic_files import atomic_write
+        from xiaocao.runner_recovery import _hash
+        receipt = {**progress, 'market_date': args.date[:10], 'run_id': os.environ.get('XIAOCAO_DAILY_RUN_ID'),
+            'checkpoint_sha256': binding['checkpoint_sha256'],
+            'snapshot_sha256': binding['snapshot_sha256'],
+            'automation_id': os.environ.get('CODEX_AUTOMATION_ID'),
+            'owner_thread_id': os.environ.get('CODEX_THREAD_ID')}
+        receipt['receipt_sha256'] = _hash(receipt)
+        atomic_write(Path(os.environ['XIAOCAO_DAILY_RUN_DIR'])/'intelligence-wait.receipt.json',
+                     json.dumps(receipt, ensure_ascii=False, sort_keys=True).encode(), immutable=True)
     print(json.dumps(progress, ensure_ascii=False, sort_keys=True))
 
 

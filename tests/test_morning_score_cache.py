@@ -88,3 +88,12 @@ def test_all_minute_response_dates_must_agree(other):
         datetime.fromisoformat("2099-10-12T09:24:45+08:00"))
     with pytest.raises(ValueError, match="RESPONSE_DATE_MISMATCH"):
         wrapper.minute_line("A", trade_date="2026-10-09", count=241)
+
+
+def test_prewake_codes_cover_prior_original_batches_only(tmp_path, monkeypatch):
+    for day in ['2026-11-10','2026-11-11','2026-11-12','2026-11-13','2026-11-14']:
+        (tmp_path/'morning_bundles'/day).mkdir(parents=True)
+    monkeypatch.setattr(cache, 'acquire_bundle', lambda live, day, **kwargs: {'status':'ready', 'day':day})
+    monkeypatch.setattr(cache, 'read_consumed_rows', lambda value, *args, **kwargs:
+        [{'code':value['day']}, {'code':'DUP'}])
+    assert cache.previous_codes(tmp_path, '2026-11-13', prior_batches=2) == ['2026-11-12','DUP','2026-11-11']

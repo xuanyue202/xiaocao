@@ -37,10 +37,12 @@ checkpoint bytes; formal paper never falls back to mutable snapshots/legacy flag
 
 Consume dated immutable queue/evidence_freeze_ref; structured intelligence
 reviews use agent_intelligence_review with exact --evidence-freeze-ref, never
-keyword scoring. Derived queue waits share original budget; timeout preserves
-baseline and explicit degradation. Intelligence on still needs same-batch support.
+keyword scoring. In the deployed shadow mode these reviews run after original B/T business; they
+are not a rendezvous dependency. The immutable intelligence-wait receipt retains
+pending counts and exact original freeze. Only intelligence on-mode waits for
+same-batch completion under its original budget. Intelligence on still needs same-batch support.
 On paper_kol_review_requested read the one original dispatch artifact.
-For conditional_first_v1, independently_review_prepared_draft means immediately
+For conditional_first_v2, independently_review_prepared_draft means immediately
 review its exact unapproved decision/context and actual current facts, then normal
 source verification and runtime=paper publication. continue_original_baseline_deferred
 means preserve named uncertainty, skip model/publication and continue original
@@ -60,7 +62,9 @@ No APP run is started or awaited. Source/code damage never becomes a normal no-b
 Paper B cost is Contract §5 verified09:30–09:31 HIGH, intentionally adverse,
 not VWAP/min(limit)/day-HIGH/point maximum. Original boundary capture occurs
 outside ledger lock; raw source/receive clocks/hash/freeze/checkpoint must prove
-it before consumption after09:32:05. Missing/changed-boundary proof is
+it before consumption after09:32:05 when a buy needs that price. A current-policy
+adjudication with zero eligible candidates seals no_buy immediately without price
+capture/wait; the writer still rechecks policy and ledger under the original lock. Missing/changed-boundary proof is
 source_blocked or bought_source_blocked, retains actual buys and nonzero result;
 no fabricated buy or retrospective source replacement. Book A shares B's cost;
 APP/T/funded retain their own models. Why: changing cost to improve PnL would
@@ -72,7 +76,10 @@ Require each original child's actual receipt/ledger and separate supervisor
 terminal. Compare APP/Paper common strategy selection only on same original
 canonical/checkpoint; allocation/fills differ. Selection captures are authority0,
 not another funded portfolio. The existing supervisor runs funded morning AFTER
-both B/T children; do not duplicate it and keep research failure separate.
+both B/T control children; do not duplicate it and keep research failure separate.
+T v2 shadow follows those formal results; report business completion before shadow
+and supervisor completion. A pending/rejected research result never erases a
+proved B/T business receipt.
 
 T control archives exact account/positions/trades under writer lock; v2 shadow
 uses these raw hashes and independent namespace, never formal writes. T initial

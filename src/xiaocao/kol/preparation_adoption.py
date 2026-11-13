@@ -11,7 +11,8 @@ from .trading_decision import read_json
 from xiaocao.runner_recovery import _hash
 
 
-def adoption(preparation_path: Path, current_input_path: Path, *, now: datetime) -> dict:
+def adoption(preparation_path: Path, current_input_path: Path, *, now: datetime,
+             judgment_mode: str | None = None) -> dict:
     prepared = prep.read_preparation(preparation_path, now=now)
     current, projection = prep._inputs(current_input_path)
     source = prepared['binding']
@@ -19,8 +20,9 @@ def adoption(preparation_path: Path, current_input_path: Path, *, now: datetime)
     paper = consumer.get('automation_id') == 'xiaocao-daily-morning-execution'
     live = consumer.get('automation_id') == 'xiaocao-book-b-live-morning'
     rolling = prepared.get('schema_version') == 'kol-opening-preparation.v2'
-    if rolling and prep.aware(prepared['accepted_at']) >= prep.aware(consumer['trade_date']+'T09:20:00+08:00'):
-        raise ValueError('KOL_PREPARATION_ROLLING_LATE_FOR_OPENING')
+    from xiaocao.live.morning_support import preparation_timing, CURRENT_CONDITIONAL
+    timing = preparation_timing(prep.aware(prepared['accepted_at']), consumer['trade_date'],
+                                mode=judgment_mode) if rolling else 'prepared_on_time'
     if paper:
         from xiaocao.live.paper_morning_kol import owner_binding
         if owner_binding(current_input_path.parent, consumer['trade_date']) != consumer:
@@ -48,6 +50,9 @@ def adoption(preparation_path: Path, current_input_path: Path, *, now: datetime)
         'current_input_path': str(current_input_path.resolve()), 'current_input_sha256': _hash(current),
         'source_fingerprint': current['source_fingerprint'], 'adopted_at': now.isoformat(),
         'scope': 'conditional_source_reasoning_only', 'policy_adoption': 'not_performed'}
+    if judgment_mode == CURRENT_CONDITIONAL:
+        value.update(schema_version='kol-preparation-adoption.v2', judgment_mode=judgment_mode,
+                     preparation_timing=timing)
     return {**value, 'adoption_sha256': canonical_sha256(value)}
 
 
@@ -58,7 +63,8 @@ def read_adoption(path: Path, preparation_path: Path, current_input_path: Path, 
     if (value.get('adoption_sha256') != canonical_sha256(
             {k: v for k, v in value.items() if k != 'adoption_sha256'})
             or now < prep.aware(value['adopted_at'])
-            or value != adoption(preparation_path, current_input_path, now=prep.aware(value['adopted_at']))):
+            or value != adoption(preparation_path, current_input_path, now=prep.aware(value['adopted_at']),
+                                 judgment_mode=value.get('judgment_mode'))):
         raise ValueError('KOL_PREPARATION_ADOPTION_ALTERED')
     prep.read_preparation(preparation_path, now=now)
     return value

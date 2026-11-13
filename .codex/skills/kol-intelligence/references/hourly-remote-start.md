@@ -58,12 +58,15 @@ pinned semantic packet: those bytes participate in executable evidence hashes.
 
 ## Early/evening shared trading reasoning
 
-After the original hour-acquired07:30/21:30 capture/publication runner exits,
-including a healthy empty queue, follow [shared rolling preparation](../../xiaocao-trading/references/kol-rolling-preparation.md)
-and save its separate result before ending. Contract §1d separates a historical
-reminder-only uncertainty from independently verified published-source readiness;
-retain that reminder's claim/reconciliation/ACK fence and continue preparation.
-All other unfinished/uncertain effects retain the original blocked branch.
-hour_busy, active source work, unproved source publication or degraded projection
-remain blocked with their exact reason. Keep output quiet. This authority0 phase
-uses published semantics, with no new extraction/publication or financial effect.
+On `kol_shared_preparation_due` immediately follow [shared rolling preparation](../../xiaocao-trading/references/kol-rolling-preparation.md)
+while retaining the original capture runner/stdin. Prepare the coherent fully
+published snapshot before waiting for long capture/analysis. List pending source
+work explicitly; a partial publication is never input. Recheck after new source
+publication; changed semantic units invalidate old effects. Keep one source writer.
+Contract §1d separates historical reminder-only uncertainty from independently
+verified published sources; preserve its claim/reconciliation/ACK fence.
+hour_busy, unproved publication and degraded projection retain exact blocked
+receipts. Before ending save separate original-business and preparation results,
+including actual target trading day, horizon, timing, input hash and acceptance.
+A healthy empty queue still checks preparation. Why: waiting for all acquisition
+previously pushed07:30 preparation past the irreversible opening window.
