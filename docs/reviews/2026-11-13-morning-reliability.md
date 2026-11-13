@@ -26,8 +26,11 @@ operating checkout; no dated business entry is replayed by this repair.
 
 Reproduced expiry-before-dispatch, exact semantic audit drift, shadow wait,
 zero-candidate price capture as failing
-behavior before their repairs. Scoped regression:400 passed. Additional deployment
-closure and independent review outcomes are recorded below after completion.
+behavior before their repairs. Scoped regression:411 passed; independent risk/accounting/lifecycle regression:332
+passed. Deployment/contract checks initially exposed a stale producer09:18 test
+expectation; active schedule and existing mirror were already09:10. Corrected
+the deployment assertion without changing cadence; final closure130 checks plus
+that corrected assertion passed.
 APP-related engineering checks ran in the explicitly open11:30–13:00 test window;
 all adapters were isolated fixtures, with no extra APP order or business replay.
 
@@ -49,3 +52,20 @@ all adapters were isolated fixtures, with no extra APP order or business replay.
 Source/configuration/test success is not natural-run acceptance. Actual fees,
 final APP PnL, old unresolved claims, missing current sources/scores and inadequate
 research samples remain unresolved until their own evidence exists.
+
+
+## Independent review and deployment
+
+Standards initially found the final-PnL schema mismatch and a missing APP test
+marker; Spec found improper historical T cache admission and the same PnL issue.
+All findings were fixed, behavior tests added and both independent re-reviews
+passed against the explicit baseline and follow-up diff. Historical cache remains
+reference-only. Missing T judgment is now reported honestly rather than promoted.
+
+The four existing KOL/APP/producer/Paper Automations were updated through the
+Automation API and reopened through that API. Exact prompt hashes and state were
+read back from its written mirrors; status, host/project, model/effort,
+notification preferences and cadences were preserved. The API card exposes no
+machine-readable next-run timestamp; no schedule was changed or UTC-converted.
+Deployment receipts and runtime hash closure are saved in the operating checkout
+under `output/audit/morning-fixes-20261113/`.
