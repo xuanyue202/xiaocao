@@ -9,7 +9,8 @@ config/semantic-analyst.json, NOT the trading-applicability model.
 
 Verify exact initial scheduler Automation ID and actual Thread; start one PTY:
 `CODEX_AUTOMATION_ID=xiaocao-kol-hourly-low-bandwidth-operation PYTHONPATH=src .venv/bin/python scripts/kol_automation_slot_gate.py --automation-id xiaocao-kol-hourly-low-bandwidth-operation --lock-dir output/live/kol_automation_hour_locks --prepare-opening -- .venv/bin/python scripts/kol_daily.py run`.
-The opt-in phase runs only on fresh06/21 run tails. An already bound exact continuation substitutes its exact tail, including later
+The opt-in phase runs only on fresh morning06–09 / evening21 run tails, retaining
+the actual gate acquisition and original deadline. An already bound exact continuation substitutes its exact tail, including later
 narrow resumes through this launcher. hour_busy is terminal before projection,
 mailbox, owner scan or effects. hour_acquired retains same process/stdin. Different
 hours may overlap under resource/object claims; don't add global peer discovery.
