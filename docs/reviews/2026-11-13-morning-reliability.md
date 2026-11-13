@@ -78,5 +78,11 @@ at most120 seconds, admits a supplied draft through the existing source binder,
 and retains the same deadline on follow-up. A timed-out request cannot admit a
 late draft or refund its budget. Existing sealed days remain unchanged; injected
 rehearsals and natural research qualification retain their original boundaries.
-Focused request/producer/supervisor tests:35 passed. No financial branch waits on
+Follow-up independent review found bare-empty placeholders and mutable late draft
+rereads; both are repaired. Requested replies require dated request/hash-bound
+readiness_review; explicit empty results require reviewed no_supported_theme and
+reasons. Actual received bytes/hash are snapshotted and passed directly into source
+assembly; file-read and persistence time consume the original deadline. A received
+snapshot alone is not completed research or a theme decision.
+Focused request/producer/supervisor tests:38 passed. No financial branch waits on
 this separate post-business research phase.

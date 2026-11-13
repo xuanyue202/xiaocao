@@ -91,7 +91,11 @@ with one immutable deadline. Read docs/TREND_BOOK_DESIGN.md and the source-bound
 schema in strategy/trend_snapshot.py. Review the current complete published
 viewpoints/evaluations and canonical theme registry; prepare the dated structured
 book_t_v2_judgment_draft at the request path, preserving actual sources, clocks,
-source roles, conditions and missing proof. This is research judgment only, not
+source roles, conditions and missing proof. Include readiness_review with the
+request's listed fields and canonical draft hash excluding readiness_review; an
+empty result also needs status=no_supported_theme and its actual reason. The
+receiver checks actual review/read clocks and seals the accepted bytes/hash;
+later file changes cannot change the consumed draft. This is research judgment only, not
 new source extraction or financial policy. The original process resumes itself
 and the normal binder independently validates sources and eligibility. An
 explicitly reviewed no-supported-theme result retains zero theme decisions;

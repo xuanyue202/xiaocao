@@ -320,7 +320,7 @@ def _load_portfolio(root: Path, receipt: Mapping[str, Any] | None = None) -> dic
     }
 
 
-def _load_real_sources(root: Path, date_iso: str, *, client: Any = None) -> dict[str, Any]:
+def _load_real_sources(root: Path, date_iso: str, *, client: Any = None, judgment_draft: dict | None = None) -> dict[str, Any]:
     """Read production adapters with bounded, cache-aware degradation."""
 
     errors: list[str] = []
@@ -439,12 +439,12 @@ def _load_real_sources(root: Path, date_iso: str, *, client: Any = None) -> dict
             "calendar_source": "p-xcapi_trade_cal",
         },
         "xiaocao_context": _load_dated_optional(root, "book_t_v2_context", date_iso),
-        "agent_draft": _load_dated_optional(root, "book_t_v2_judgment_draft", date_iso)
-        or {
+        "agent_draft": judgment_draft if judgment_draft is not None else
+        (_load_dated_optional(root, "book_t_v2_judgment_draft", date_iso) or {
             "themes": [],
             "status": "pending_observation",
             "reason": "dated_structured_judgment_draft_unavailable",
-        },
+        }),
         "market_validation": {},
         "adapter_errors": sorted(set(errors)),
     }
@@ -646,6 +646,7 @@ def build_book_t_v2_shadow_day(
     run_mode: str = "real",
     capsule: Mapping[str, Any] | None = None,
     client: Any = None,
+    admitted_judgment: dict | None = None,
 ) -> dict[str, Any]:
     """Assemble one frozen v2 input from real adapters or an injected capsule."""
 
@@ -655,7 +656,8 @@ def build_book_t_v2_shadow_day(
     if mode not in {"real", "rehearsal"}:
         raise BookTV2ProducerError("run_mode must be real or rehearsal")
     receipt = _load_receipt(root, day)
-    sources = _copy(dict(capsule)) if capsule is not None else _load_real_sources(root, day, client=client)
+    sources = _copy(dict(capsule)) if capsule is not None else _load_real_sources(root, day, client=client,
+        judgment_draft=admitted_judgment['draft'] if admitted_judgment else None)
     if capsule is None:
         # Match the exact successful control writer, even if B later updates shared files.
         sources["portfolio"] = _load_portfolio(root, receipt)
@@ -789,6 +791,7 @@ def build_book_t_v2_shadow_day(
                 "catalog_version": catalog.get("version"),
                 "v1_control_receipt_sha256": receipt.get("receipt_sha256"),
             },
+            "judgment_admission": admitted_judgment,
             "judgment_readiness": {
                 "status": "theme_decision_observed" if snapshot_value.get("themes") else "no_theme_decision",
                 "theme_count": len(snapshot_value.get("themes") or []),
@@ -823,15 +826,17 @@ def prepare_book_t_v2_shadow_day(
 
     root = Path(root).resolve()
     day = _date(date_iso)
+    admitted = None
     if capsule is None and run_mode == 'real' and not (root / BOOK_T_V2_SHADOW_INPUT_PATH.format(date=day)).exists():
         from .book_t_judgment_readiness import await_judgment
-        await_judgment(root, day, wait_seconds=judgment_wait_seconds, emit=emit)
+        admitted = await_judgment(root, day, wait_seconds=judgment_wait_seconds, emit=emit)
     frozen = build_book_t_v2_shadow_day(
         root,
         day,
         run_mode=run_mode,
         capsule=capsule,
         client=client,
+        admitted_judgment=admitted,
     )
     input_path = root / BOOK_T_V2_SHADOW_INPUT_PATH.format(date=day)
     if input_path.exists():
