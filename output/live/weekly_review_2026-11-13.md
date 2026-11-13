@@ -8,6 +8,9 @@
 - 本周模式：保留提案，证据不足不晋级（`PROPOSAL_ONLY`）。
 - 自动改策略代码：没有。没有完整证据链时只产出提案/审计，不想当然改策略。
 - 需要你确认的事项：0 个；另有 1 条本地工作区提醒，见下一节。
+
+## 执行与交接审计
+
 - APP 执行故障复核：未结计划 3，阻断检查点 5，缺失 EOD 0，缺失结算日 5，缺失日复盘 0；逐项核对卖价/买盘/成交窗口及后续买入影响，不能只归为外部状态。
   - 未结 `book-b:2026-09-18:000572.XSHE:SELL:087c4339d890`：unknown / NATIVE_HISTORY_QUERY_CAPTURE_INCOMPLETE；委托 6007019；证据 `output/live/book_b_live_execution/events.jsonl`（sha256=c37ec86f74ddd9c0972a940e31801634ef61f8e4825f95b5c6c51e24081df7cf）
   - 未结 `book-b:2026-09-30:301382.XSHE:SELL:9c1cb5e059e5`：unknown / NATIVE_HISTORICAL_STATUS_UNPROVEN；委托 6004811；证据 `output/live/book_b_live_execution/events.jsonl`（sha256=c37ec86f74ddd9c0972a940e31801634ef61f8e4825f95b5c6c51e24081df7cf）
