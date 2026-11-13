@@ -1,6 +1,7 @@
 """Budgeted source-owner preparation, separate from opening policy and effects."""
 from __future__ import annotations
 
+import atexit
 import hashlib
 import json
 import os
@@ -57,7 +58,9 @@ def stage_for_input(inputs: dict) -> tuple[Path, dict, dict]:
             or binding['automation_id'] != OWNER or binding['trade_date'] != plan['source_day']):
         raise ValueError('KOL_PREOPEN_STAGE_BINDING_INVALID')
     stage = read(stage_path)
-    if (stage['plan_sha256'] != plan['sha256'] or stage['input_sha256'] != _hash(inputs)):
+    if (stage['plan_sha256'] != plan['sha256'] or stage['input_sha256'] != _hash(inputs)
+            or inputs.get('intended_use_at') != stage.get('fresh_through')
+            or stage.get('fresh_through') and stage['calendar_proof'].get('latest') != stage['fresh_through'][:10]):
         raise ValueError('KOL_PREOPEN_INPUT_CHANGED')
     return stage_path, stage, plan
 
@@ -137,7 +140,7 @@ def create_plan(root: Path, *, acquired_at: datetime, slot: datetime, calendar: 
     candidate = day if slot.hour == 6 else day+timedelta(days=1)
     trading = calendar.get('latest') == candidate.isoformat()
     target = candidate.isoformat() if trading else None
-    deadline = (datetime.fromisoformat(str(day)+'T09:20:00+08:00') if slot.hour==6 and trading
+    deadline = (datetime.fromisoformat(str(day)+'T09:20:00+08:00') if slot.hour==6
                 else acquired_at+timedelta(minutes=60))
     release = (datetime.fromisoformat(str(day)+'T07:30:00+08:00') if slot.hour==6 else acquired_at)
     value = {'schema_version':'kol-preopen-program.v1','authority':0,'automation_id':OWNER,
@@ -147,7 +150,7 @@ def create_plan(root: Path, *, acquired_at: datetime, slot: datetime, calendar: 
         'fresh_through':target+'T09:27:30+08:00' if target else None,
         'complete_by':deadline.isoformat(),'source_release_at':release.isoformat(),
         'dispatch_seconds':300,'synthesis_seconds':1800,'review_seconds':900,
-        'readiness_target':'09:20','scope':'morning' if slot.hour==6 and trading else 'source_only_or_evening'}
+        'readiness_target':'09:20','scope':'morning' if slot.hour==6 and (trading or not calendar.get('latest')) else 'source_only_or_evening'}
     directory=root/'output/live/kol_preopen_programs'/slot.strftime('%Y%m%dT%H00%z')/thread_id
     path=directory/'plan.json'
     if path.exists():
@@ -174,11 +177,16 @@ def source_release_admitted(slot: datetime, acquired_at: datetime | None, now: d
 class Program:
     """One local owner; models are dispatched by the agent via exact receipts."""
     def __init__(self, root: Path, path: Path, *, now=clock, sleep=time.sleep, emit=None,
-                 input_builder=None):
+                 input_builder=None, calendar_probe=None):
         self.root,self.path,self.plan=root,path,read(path)
         self.now,self.sleep=now,sleep
         self.emit=emit or (lambda row:print(json.dumps(row,ensure_ascii=False),flush=True))
         self.input_builder=input_builder or self._inputs
+        self.calendar=dict(self.plan['calendar_proof'])
+        self.target_trade_date=self.plan['target_trade_date']
+        self.fresh_through=self.plan['fresh_through']
+        self.calendar_retry_after=prep.aware(self.plan['acquired_at'])+timedelta(minutes=5)
+        self.calendar_probe=calendar_probe or (lambda:probe_calendar(self.root,self.calendar['queried_date']))
         self._mutex=threading.RLock()
         self.current=None
         self.seen=set()
@@ -196,20 +204,37 @@ class Program:
     def _inputs(self) -> dict:
         args=[sys.executable,str(self.root/'scripts/kol_trading_prepare.py'),'rolling-inputs',
               '--root',str(self.root),'--output-dir',str(self.path.parent/'inputs')]
-        if self.plan['fresh_through']:
-            args+=['--fresh-through',self.plan['fresh_through']]
+        if self.fresh_through:
+            args+=['--fresh-through',self.fresh_through]
         result=subprocess.run(args,cwd=self.root,text=True,capture_output=True,timeout=45)
         try:return json.loads(result.stdout.splitlines()[-1])
         except (ValueError,IndexError):return {'status':'blocked','reason':'KOL_PREOPEN_INPUT_COMMAND_FAILED'}
 
     def refresh(self) -> dict:
         with self._mutex:
-            return self._refresh()
+            try:
+                return self._refresh()
+            except (ValueError,OSError,KeyError,TypeError,subprocess.TimeoutExpired) as exc:
+                reason=(str(exc) if str(exc).startswith('KOL_PREOPEN_') else
+                        'KOL_PREOPEN_INPUT_TIMEOUT' if isinstance(exc,subprocess.TimeoutExpired) else type(exc).__name__)
+                self.current={**(self.current or {}),'status':'source_verification_failed',
+                              'sources_current':False,'reason':reason}
+                self.event('kol_preopen_program_fault',reason=reason)
+                return self.status()
 
     def _refresh(self) -> dict:
         now=self.now()
         if now>=prep.aware(self.plan['complete_by']):return self.status()
-        result=self.input_builder()
+        if not self.calendar.get('latest') and now>=self.calendar_retry_after:
+            self.calendar_retry_after=now+timedelta(minutes=5)
+            resolved=self.calendar_probe()
+            if resolved.get('latest'):
+                candidate=self.calendar.get('queried_date',self.plan['source_day'])
+                self.calendar=seal(self.path.parent/('calendar-'+canonical_sha256(resolved)+'.json'),resolved)
+                self.target_trade_date=candidate if resolved['latest']==candidate else None
+                self.fresh_through=candidate+'T09:27:30+08:00' if self.target_trade_date else None
+        result=(self.input_builder() if self.calendar.get('latest') else
+                {'status':'blocked','reason':'KOL_PREOPEN_CALENDAR_UNPROVEN'})
         now=self.now()
         if now>=prep.aware(self.plan['complete_by']):
             self.current={**(self.current or {}),'status':'source_verification_late','sources_current':False}
@@ -218,7 +243,7 @@ class Program:
         if result['status']=='reused':
             self.current={'status':'reused','preparation_path':result['path'],
                           'preparation_sha256':result['preparation_sha256'],'sources_current':True,'observed_at':now.isoformat()}
-            if previous and previous.get('stage_path') and Path(previous['stage_path']).with_name('dispatch.json').exists() and not Path(previous['stage_path']).with_name('completed.json').exists():
+            if previous and previous.get('stage_path') and Path(previous['stage_path']).with_name('dispatch.json').exists() and not Path(previous['stage_path']).with_name('completed.json').exists() and not Path(previous['stage_path']).with_name('worker-terminal.json').exists():
                 self.current={**previous,'status':'reused_waiting_owned_worker','sources_current':True}
         elif result['status']!='written':
             self.current={'status':'source_blocked','reason':result.get('reason','KOL_PREOPEN_SOURCE_UNPROVEN'),
@@ -228,16 +253,16 @@ class Program:
                 self.current={**previous,**self.current,'status':'source_blocked_worker_still_owned','sources_current':False}
         else:
             inputs=json.loads(Path(result['path']).read_bytes())
-            if self.plan['fresh_through'] and inputs.get('intended_use_at') != self.plan['fresh_through']:
+            if self.fresh_through and inputs.get('intended_use_at') != self.fresh_through:
                 raise ValueError('KOL_PREOPEN_MORNING_HORIZON_UNPROVEN')
             projection=prep.read_projection(inputs['projection'])
             key=canonical_sha256({'units':prep.viewpoint_units(projection),'rules':inputs['rules'],
-                                   'fresh_through':self.plan['fresh_through']})
+                                   'fresh_through':self.fresh_through})
             stage_path=self.path.parent/'stages'/key/'stage.json'
             previous=self.current
             if previous and previous.get('stage_path') and previous.get('key')!=key:
                 old=Path(previous['stage_path'])
-                if (old.with_name('dispatch.json').exists() and not old.with_name('completed.json').exists()):
+                if (old.with_name('dispatch.json').exists() and not old.with_name('completed.json').exists() and not old.with_name('worker-terminal.json').exists()):
                     self.current={**previous,'status':'source_changed_worker_still_owned','pending_key':key,'sources_current':False}
                     self.event('kol_preopen_source_changed',stage_path=str(old))
                     return self.status()
@@ -250,6 +275,7 @@ class Program:
                 bound=prep.write_artifact(stage_path.parent,inputs,'.inputs.json')
                 seal(stage_path,{'plan_sha256':self.plan['sha256'],'key':key,
                     'input_path':str(bound),'input_sha256':_hash(inputs),'opened_at':now.isoformat(),
+                    'fresh_through':self.fresh_through,'calendar_proof':self.calendar,
                     'dispatch_by':min(now+timedelta(minutes=5),end,
                         prep.aware(self.plan['acquired_at'])+timedelta(minutes=5) if self.last_refresh is None else end).isoformat(),
                     'review_open_by':(end-timedelta(seconds=reserve)).isoformat(), 'complete_by':end.isoformat()})
@@ -287,9 +313,10 @@ class Program:
         if now>=prep.aware(self.plan['complete_by']) and result['status'] not in {'accepted','reused'}:
             result['status']='missed_readiness_deadline'
         result.update(program_sha256=self.plan['sha256'],observed_at=now.isoformat(),
-                      complete_by=self.plan['complete_by'],target_trade_date=self.plan['target_trade_date'],
+                      complete_by=self.plan['complete_by'],target_trade_date=self.target_trade_date,
                       sources_verified_as_of=self.last_refresh.isoformat() if self.last_refresh else None,
-                      policy_adoption='not_performed')
+                      policy_adoption='not_performed',
+                      morning_ready=result['status'] in {'accepted','reused'} and self.target_trade_date is not None)
         atomic_write(self.path.with_name('status.json'),json.dumps(result,sort_keys=True).encode())
         return result
 
@@ -312,11 +339,14 @@ class Program:
                 ledger=self.root/'output/live/kol_daily/publications/events.jsonl'
                 signature=(ledger.stat().st_mtime_ns,ledger.stat().st_size) if ledger.exists() else None
                 done=Path(self.current['stage_path']).with_name('completed.json') if self.current and self.current.get('stage_path') else None
-                signature=(signature,done.stat().st_mtime_ns if done and done.exists() else None)
+                terminal=done.with_name('worker-terminal.json') if done else None
+                signature=(signature,done.stat().st_mtime_ns if done and done.exists() else None,
+                           terminal.stat().st_mtime_ns if terminal and terminal.exists() else None)
                 checkpoint_key=stamp.strftime('%Y-%m-%dT%H:%M')
                 checkpoint=stamp.strftime('%H:%M') in {'08:30','09:00','09:10'} and checkpoint_key!=self.last_checkpoint
                 changed=signature!=self.last_watch
-                if stamp<prep.aware(self.plan['complete_by']) and (changed or checkpoint):
+                calendar_due=not self.calendar.get('latest') and stamp>=self.calendar_retry_after
+                if stamp<prep.aware(self.plan['complete_by']) and (changed or checkpoint or calendar_due):
                     self.last_watch=signature
                     if checkpoint:self.last_checkpoint=checkpoint_key
                     self.refresh()
@@ -332,15 +362,27 @@ class Program:
         return self.monitor_thread
 
     def finish(self) -> dict:
+        if getattr(self,'finished',False):return self.status()
         while self.now()<prep.aware(self.plan['complete_by']):
             status=self.status()
-            if self.plan['scope']!='morning' and status['status'] in {'accepted','reused','source_blocked'}:break
+            if (self.plan['scope']!='morning' or self.calendar.get('latest') and not self.target_trade_date) and status['status'] in {'accepted','reused','source_blocked'}:break
             self.sleep(1)
         self.stop.set()
         if getattr(self,'monitor_thread',None):self.monitor_thread.join(timeout=46)
         status=self.status()
         self.event('kol_preopen_program_result',**status)
+        self.finished=True
         return status
+
+
+def probe_calendar(root: Path, day: str) -> dict:
+    command=[sys.executable,'-m','xiaocao','--format','json','--timeout','8','--retries','0',
+             'calendar','latest','--date',day]
+    try:
+        result=subprocess.run(command,cwd=root,text=True,capture_output=True,timeout=15)
+        calendar=json.loads(result.stdout) if result.returncode==0 else {'status':'unproved'}
+    except (OSError,ValueError,subprocess.TimeoutExpired):calendar={'status':'unproved'}
+    return {**calendar,'queried_date':day,'observed_at':clock().isoformat()}
 
 
 def startup(root: Path) -> Program | None:
@@ -353,19 +395,33 @@ def startup(root: Path) -> Program | None:
     from .automation_slot import validate_automation_slot
     validate_automation_slot(slot,acquired,clock())
     candidate=acquired.astimezone(TZ).date()+timedelta(days=1 if slot.hour==21 else 0)
-    command=[sys.executable,'-m','xiaocao','--format','json','--timeout','8','--retries','0',
-             'calendar','latest','--date',str(candidate)]
-    try:
-        result=subprocess.run(command,cwd=root,text=True,capture_output=True,timeout=15)
-        calendar=json.loads(result.stdout) if result.returncode==0 else {'status':'unproved'}
-    except (OSError,ValueError,subprocess.TimeoutExpired):calendar={'status':'unproved'}
-    calendar={**calendar,'queried_date':str(candidate),'observed_at':clock().isoformat()}
+    calendar=probe_calendar(root,str(candidate))
     path,plan=create_plan(root,acquired_at=acquired,slot=slot,calendar=calendar,
                            runner_pid=os.getpid(),thread_id=os.environ['CODEX_THREAD_ID'])
     os.environ['XIAOCAO_KOL_PREOPEN_PLAN']=str(path)
     program=Program(root,path)
+    atexit.register(program.finish)
     program.event('kol_preopen_program_started',complete_by=plan['complete_by'],
                   source_release_at=plan['source_release_at'],synthesis_seconds=1800,review_seconds=900)
     program.monitor()
     program.before_source()
     return program
+
+
+def record_worker_terminal(input_path: Path, receipt_path: Path, *, now: datetime) -> dict:
+    """Release a finished model, never infer completion from a timeout/rejection."""
+    inputs,_=prep._inputs(input_path)
+    stage_path,stage,plan=stage_for_input(inputs);owner(plan)
+    dispatched=read(stage_path.with_name('dispatch.json'))
+    receipt=json.loads(receipt_path.read_bytes())
+    agents=(receipt.get('tool_result') or {}).get('agents',[])
+    matches=[row for row in agents if row.get('agent_name')==dispatched['worker_id']]
+    status=matches[0].get('agent_status') if len(matches)==1 else None
+    if (receipt.get('tool_name')!='collaboration.list_agents' or receipt.get('tool_arguments')!={}
+            or not isinstance(status,dict) or set(status)!={'completed'}
+            or not isinstance(status['completed'],str)
+            or not (prep.aware(dispatched['recorded_at'])<=prep.aware(receipt['observed_at'])<=now)):
+        raise ValueError('KOL_PREOPEN_WORKER_TERMINAL_UNPROVEN')
+    return seal(stage_path.with_name('worker-terminal.json'),{'stage_sha256':stage['sha256'],
+        'worker_id':dispatched['worker_id'],'receipt_path':str(receipt_path.resolve()),
+        'receipt_sha256':canonical_sha256(receipt),'observed_at':receipt['observed_at']})

@@ -8,16 +8,20 @@ from xiaocao.kol import preopen_program as program
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command',choices=['dispatch','review-open','status'])
+    parser.add_argument('command',choices=['dispatch','review-open','worker-terminal','status'])
     parser.add_argument('--input',type=Path)
     parser.add_argument('--dispatch',type=Path)
     parser.add_argument('--context',type=Path)
+    parser.add_argument('--receipt',type=Path)
     parser.add_argument('--program',type=Path)
     args=parser.parse_args()
     try:
         if args.command=='dispatch':
             if not args.input or not args.dispatch:parser.error('dispatch requires --input and --dispatch')
             result=program.record_dispatch(args.input,args.dispatch,now=program.clock())
+        elif args.command=='worker-terminal':
+            if not args.input or not args.receipt:parser.error('worker-terminal requires --input and --receipt')
+            result=program.record_worker_terminal(args.input,args.receipt,now=program.clock())
         elif args.command=='review-open':
             if not args.input or not args.context:parser.error('review-open requires --input and --context')
             result=program.record_review(args.input,args.context,now=program.clock())

@@ -6061,6 +6061,9 @@ def main() -> int:
     )
     if result.get("ledger_available") is False:
         _print(result)
+        if preopen_program is not None:
+            preparation=preopen_program.finish()
+            if preparation['status'] not in {'accepted','reused'}:return 2
         return 0
     result["latest_lv_video_goal"] = _latest_lv_video_goal(
         args.video_output_dir,
