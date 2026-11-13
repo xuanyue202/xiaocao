@@ -1060,12 +1060,14 @@ class RemoteMailboxDrain:
                 details[key] = value
         if source.get("user_action_required") is True:
             details["user_action_required"] = True
-        if not details:
-            details = {
-                "category": "processor_error",
-                "code": "processor_result_incomplete",
-                "stage": "business_processing",
-            }
+        # A waiting result can supply only a stage or reconciliation hint.
+        # Preserve those diagnostics while completing the required failure fields.
+        for key, fallback in (
+            ("category", "processor_error"),
+            ("code", "processor_result_incomplete"),
+            ("stage", "business_processing"),
+        ):
+            details.setdefault(key, fallback)
         if (
             details.get("category") == "provider_wait"
             and not details.get("next_poll_not_before")

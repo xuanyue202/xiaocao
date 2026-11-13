@@ -14,6 +14,7 @@ from xiaocao.kol.mailbox import (
 )
 from xiaocao.kol.enrichment_types import EnrichmentDiagnosticError
 from xiaocao.kol.publication import PublicationError
+from xiaocao.kol.writer_progress import WriterProgress
 
 
 def _official_capsule() -> dict[str, object]:
@@ -541,6 +542,56 @@ def test_remote_drain_preserves_safe_waiting_diagnostics(tmp_path) -> None:
     waiting_event = client.ledger.events()[-1]
     assert waiting_event["stage"] == "cloud_transcript"
     assert waiting_event["code"] == "transcript_pending"
+
+
+@pytest.mark.parametrize("diagnostics", [
+    {"stage": "waiting_semantic_input"},
+    {"category": "input_error"},
+    {"code": "semantic_input_unavailable"},
+    {"reconciliation": "exact_claim_pending"},
+])
+@pytest.mark.parametrize("explicit_reconciliation", [False, True])
+def test_remote_drain_records_incomplete_wait_without_ack(
+    tmp_path, diagnostics, explicit_reconciliation,
+) -> None:
+    message = _mailbox_message("a" * 64)
+    pages = iter([[message], []])
+
+    def exchange(request):
+        assert request["operation"] == "list_mailbox_messages"
+        return {"operation": "list_mailbox_messages", "page": {
+            "items": next(pages), "next_cursor": None, "has_more": False,
+        }}
+
+    summary = {"claim_count": 1, "receipt_count": 0, "uncertain_effect_count": 1}
+    outcome = {"business_complete": False, "waiting_items": [diagnostics],
+               "claim_receipt_summary": summary}
+    if explicit_reconciliation:
+        outcome["writer_progress"] = WriterProgress.reconcile_required(
+            item_identity="a" * 64,
+            stage="notification",
+            effect_kind="notification",
+            claim_identity="c" * 64,
+            readback_operation="get_notification_receipt",
+            claim_receipt_summary=summary,
+        ).to_dict()
+    client = LiangHuiMailboxClient(MailboxLedger(tmp_path / "mailbox"), exchange=exchange)
+    result = RemoteMailboxDrain(
+        client,
+        failure_revision="b" * 40,
+        processor=lambda _message: outcome,
+    ).run()
+
+    assert result["acked_message_ids"] == []
+    assert result["waiting_message_ids"] == ["a" * 64]
+    item = result["items"][0]
+    assert all(item[key] == value for key, value in diagnostics.items())
+    if explicit_reconciliation:
+        assert item["writer_progress"] == outcome["writer_progress"]
+    else:
+        assert item["writer_progress"]["status"] == "repair_required"
+    assert item["writer_progress"]["claim_receipt_summary"]["uncertain_effect_count"] == 1
+    assert client.ledger.events()[-1]["event"] == "mailbox_message_waiting"
 
 
 def test_remote_drain_preserves_structured_exception_diagnostics(tmp_path) -> None:
