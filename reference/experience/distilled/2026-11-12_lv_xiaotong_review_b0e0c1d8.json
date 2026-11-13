@@ -1,0 +1,141 @@
+{
+  "date": "2026-11-12",
+  "date_basis": "原图页面明确显示2026-11-12；提供方修改时间仅作为同一来源版本的辅助元数据。",
+  "kind": "吕晓彤短图文观点",
+  "author": "吕晓彤",
+  "source": "baidu_subscription_share_browser",
+  "authority": 0,
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_lv_subscription/artifacts/0cfe0fc074581c60ce4ecb0282bf9d2c120b208cfb8a39cae5a80dca5c2eb294/evidence.txt",
+      "sha256": "b0e0c1d8ef8b6f9e6e67b13014863b1a3c0eb2c99d50e0f05bff37598d81984a",
+      "size": 326
+    }
+  ],
+  "summary": "吕晓彤在本条只对一次未点名对象的逼宫作出判断：他认为结果已超出董事会内部决定，华盛顿政治力量、华尔街资本和希望重新分割芯片利益格局的参与者可能影响结果。系统据此提出一个authority=0的跨事件研究候选：分析战略芯片企业的控制权或领导层冲突时，可把正式治理与外部政治、资本、产业利益相关者分层核对。这个通用命题、检验方案和预期效果均为系统研究设计，不是吕晓彤的普遍断言，也没有新增经验事实；原文仍未点明公司、人物、证券、证据或时间边界，乔布斯只是类比。",
+  "posture": {
+    "regime": "not_applied_other_author",
+    "dominant_style": "关注战略芯片产业中的公司治理、政治力量、资本力量和利益格局，而非价格、风格或市值交易判断。",
+    "risk": "来源未点名事件对象和具体参与方，也没有独立证据证明政治、资本与产业力量存在协调行动；把相邻材料中的公司或人物补入本条会造成错误归因。",
+    "style_ranking": [
+      "战略芯片产业的外部利益相关者与公司治理风险",
+      "政治、资本和产业利益对控制权结果的潜在影响",
+      "乔布斯经历作为历史类比而非当前事实证据",
+      "没有对象、证券映射和执行条件时不形成交易动作"
+    ]
+  },
+  "regime_call": {
+    "horizon": "类似战略芯片企业出现控制权、领导层或治理冲突时的事件研究周期",
+    "what_would_falsify": [
+      "后续权威材料显示目标事件完全由公司章程、董事会程序和经营分歧决定，没有可识别的外部政治、资本或产业利益影响。",
+      "在一组可比的芯片企业治理事件中，外部政策、资本关系和产业利益变量对结果没有稳定解释力。",
+      "无法识别本条所指对象，因而不能把后续任何具体事件与本条主张建立可靠对应。"
+    ]
+  },
+  "directions": [
+    {
+      "name": "战略芯片产业的治理与利益格局",
+      "stance": "吕晓彤断言，这一次未点名对象的逼宫早已不取决于会议室里的董事，而是华盛顿的政客、华尔街的资本以及渴望重新分割芯片利益版图的各方势力在运筹帷幄；来源没有给出具体事件对象、参与者、证券或协调证据。"
+    }
+  ],
+  "stocks": [],
+  "decision_trace": [
+    "来源观察：吕晓彤把“这一次的逼宫”与乔布斯的遭遇相比，并明确说结果不再只取决于会议室里的董事。",
+    "来源判断：吕晓彤认为华盛顿政治力量、华尔街资本和希望重新分割芯片利益格局的参与者正在影响这一次未具名事件。",
+    "系统泛化：把单一事件主张转成多方利益相关者核对框架；该跨事件适用性不是吕晓彤的普遍断言。",
+    "系统研究动作：先识别对象，再分别核对董事会程序、政策介入、资本关系和产业利益证据；证据链不完整时只保留authority=0候选，不映射证券交易。"
+  ],
+  "method_principles": [
+    "系统研究框架：分析战略产业公司的治理冲突时，把正式董事会程序与外部政治、资本、产业利益影响分层核对。",
+    "系统研究边界：先识别事件对象和参与方，再讨论因果；不能从未绑定材料自动补入公司和人物。",
+    "系统证据门槛：利益相关者存在不等于已经协调行动，必须分别寻找政策文件、公司披露、资本关系和可验证的行为证据。",
+    "系统执行边界：公司治理风险要转化为投资结论，还需补足证券映射、影响方向、估值、时间窗口、触发条件和失效条件。",
+    "来源边界：乔布斯是作者的历史类比，只用于还原本条表达，不能替代对当前事件的事实核验。"
+  ],
+  "exit_lessons": [
+    "本条没有给出持仓或退出规则；当事件对象仍不可识别时，应退出具体证券推演，只保留待核实问题。",
+    "若权威材料证明事件主要由内部治理程序解释，应撤销外部力量主导的研究假设。",
+    "即使外部力量参与得到证明，也不能在缺少资产方向和执行边界时把治理风险直接转成买卖。"
+  ],
+  "hypotheses": [
+    {
+      "claim": "在具有战略意义的芯片企业中，领导层或控制权冲突的结果可能受到董事会之外的政治、资本和产业利益相关者显著影响。",
+      "implied_rule": "复盘此类事件时，除公司章程和董事会记录外，还应建立政策、资本关系和产业利益相关者清单，并把每条影响路径绑定到可核验证据；研究通过前不进入确定性策略。",
+      "falsifiable_test": "收集公开披露充分的芯片企业领导层或控制权争议样本，逐项编码董事会程序、监管或政策介入、重要资本关系和产业竞争利益，再比较这些外部变量对最终治理结果、事件持续时间和证券风险溢价的增量解释力。",
+      "expected_effect": "若假设成立，加入外部政治、资本和产业利益变量后，对治理结果或风险溢价的解释应稳定优于只使用董事会内部变量的基准；若没有增量解释力则拒绝。",
+      "category": "corporate_governance",
+      "provenance": "system_research_synthesis：来源只陈述这一次未具名事件；跨事件泛化、变量设计、检验方法和预期效果均由系统提出，不是吕晓彤的普遍断言或已证实结论。",
+      "source_basis": [
+        "来源明确说，这一次的逼宫已经不取决于会议室里的董事，而是受到华盛顿政治力量、华尔街资本及希望重新分割芯片利益格局的各方势力影响。",
+        "来源没有点明事件对象、具体参与者、证券、证据或时间边界，也没有主张这一机制普遍适用于所有战略芯片企业。",
+        "假设中的跨事件适用性、变量编码、对照比较、风险溢价指标和预期增量解释力全部是SYSTEM research design，不是来源已提供的事实或效果。"
+      ],
+      "related_existing_ids": [
+        "XH-129"
+      ],
+      "dedup_boundary": "XH-129研究公司融资和控制人行为如何穿透到稀释、资金用途、质押、解禁和司法事实；本候选只研究战略芯片企业领导层或控制权冲突中，董事会之外的政治、资本和产业利益变量是否具有增量解释力。当前来源无法识别具体事件，因此不登记为XH-129复现。"
+    }
+  ],
+  "timing_notes": [
+    "原图页面日期为2026-11-12，作者使用“这一次”指向当时正在讨论的事件，但没有给出事件起止时间。",
+    "来源没有说明该判断适用于一个交易日、数周还是更长治理周期。",
+    "乔布斯的遭遇只是作者的比较对象，不能据此补写当前事件的公司、人物或结局。"
+  ],
+  "judgment_heuristics": [
+    "先问事件对象是谁，再问谁拥有正式决策权、谁拥有外部影响力以及每条影响路径有什么证据。",
+    "把作者的幕后博弈判断与系统已核实事实分开；缺少证据时使用“待核实”，不升级为已证实协调。",
+    "只有对象、证券、影响方向和时间边界都能可靠绑定后，才讨论投资可执行性。",
+    "将政治、资本与产业利益视为候选解释变量，而不是预设结论。"
+  ],
+  "typo_corrections": [
+    {
+      "raw": "吕晓彤 國",
+      "corrected": "原图作者栏清楚显示吕晓彤；尾随字符属于低置信OCR噪声，读者文案统一为吕晓彤。"
+    }
+  ],
+  "action_summary": {
+    "posture_update": "不应用：吕晓彤属于其他作者，本条只形成authority=0候选知识，不修改小草posture_current或REGIME_TIMELINE。",
+    "playbook_update": "SYSTEM候选补充战略产业治理事件的多方利益相关者核对框架；来源只支持单一未具名事件主张，尚未进入正式判断手册。",
+    "hypothesis_update": "新增一条SYSTEM跨事件研究候选，并记录与XH-129的去重边界；测试设计与预期效果不是吕晓彤的普遍断言，也没有新增经验事实，仍须经过研究护栏与人工门。",
+    "audit_evidence": "完整证据326字节、12个稳定segment逐段复核；原图、OCR与规范化文本已交叉读取，未把未绑定的相邻材料补入。",
+    "instrumentation_todo": "后续研究需先取得可识别事件样本及公司披露、政策资料、资本关系和价格风险数据；当前不创建策略、参数或交易规则。",
+    "routing": [
+      "corporate_governance",
+      "stakeholder_mapping",
+      "chip_industry",
+      "hypothesis"
+    ]
+  },
+  "archive_provenance": {
+    "source_event_identity": "2b9342a756c9a1b6afa9d69d668d3e0142e3e2503c509b38fb53260a110950e2",
+    "source_version_key": "0cfe0fc074581c60ce4ecb0282bf9d2c120b208cfb8a39cae5a80dca5c2eb294",
+    "accepted_semantic_knowledge_draft_path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_lv_subscription/artifacts/0cfe0fc074581c60ce4ecb0282bf9d2c120b208cfb8a39cae5a80dca5c2eb294/.semantic_delegation/3e59cbb3af955ad1cceb999ef3dfe94e2bc743b3fa29d8c73635f783eafd81ad/context-760310f73e36c522e534d71213b184eeb83fc930052b50359cda6d84d94156d4/knowledge_draft.json",
+    "accepted_semantic_knowledge_draft_sha256": "6c3f8b7b6b7ee7bebee4c3f84992dd4496217887a4aa489ef2a4dc6627c3bff6",
+    "normalized_evidence_archive": {
+      "path": "reference/experience/transcripts/2026-11/2026-11-12_lv_xiaotong_review_b0e0c1d8.txt",
+      "sha256": "b0e0c1d8ef8b6f9e6e67b13014863b1a3c0eb2c99d50e0f05bff37598d81984a"
+    },
+    "archived_at": "2026-11-13T01:55:39.787834+00:00",
+    "parent_changes": "Archive/lifecycle metadata only; semantic claims unchanged from independently accepted source analyst draft.",
+    "source_dates_are_not_ingestion_dates": true,
+    "corrective_knowledge_review": {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_lv_subscription/artifacts/0cfe0fc074581c60ce4ecb0282bf9d2c120b208cfb8a39cae5a80dca5c2eb294/.semantic_delegation/3e59cbb3af955ad1cceb999ef3dfe94e2bc743b3fa29d8c73635f783eafd81ad/context-347f35cc34f577b17fef383ad9b26c655775d849f3ada6ec3444c098a80f48b7/knowledge_draft.json",
+      "sha256": "ff15c2e416a0bbce5f80d617d33e0925de428943aa92e03f0f6df99d92e8bbc8",
+      "reviewed_at": "2026-11-13T02:09:41.069427+00:00",
+      "reviewer": "parent_main_agent",
+      "finding": "knowledge_spec_review_v1.md source4 attribution P2",
+      "scope": "directions[0].stance only; published report and original runtime knowledge effect immutable; no effect replay."
+    }
+  },
+  "ingestion_status": "candidate_hypotheses_ingested_authority0",
+  "ingest_execution": {
+    "status": "completed",
+    "authority": 0,
+    "started_at": "2026-11-13T01:58:44.890325+00:00",
+    "ended_at": "2026-11-13T01:58:44.932148+00:00",
+    "returncode": 0,
+    "result": "ingest: +1 new candidate(s), ~0 recurrence-merge(s) -> xiaocao_hypotheses.jsonl (normalized-claim dedup; new ids XH-375..XH-375). Candidates enter authority=0; review the git diff, then they must clear the guards + §10.",
+    "workflow_owner_thread": "01a1d219-84a6-7792-957e-6df25b6eb13c",
+    "review_boundary": "Candidate ingestion is not research validation, parameter promotion, or current trading policy."
+  }
+}

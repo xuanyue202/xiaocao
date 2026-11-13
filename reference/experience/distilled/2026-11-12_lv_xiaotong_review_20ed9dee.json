@@ -1,0 +1,150 @@
+{
+  "knowledge_status": "reusable_knowledge",
+  "date": "2026-11-12",
+  "date_basis": "内容页显示2026-11-12；提供方修改时间也在同日，但未提供陈天桥原始演讲的日期与全文。",
+  "kind": "AI未知答案验证与商业化尽调问题",
+  "author": "吕晓彤",
+  "source": "baidu_subscription_share_browser",
+  "authority": 0,
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_lv_subscription/artifacts/72e18a377e02f1cacd9e038d155b5164e909575c0f28f00fb0627f9f401020ab/evidence.txt",
+      "sha256": "20ed9deefe519d907d2ee2c6d2875313541547f25ace38f7bcb6e228bf4dd7df",
+      "size": 668
+    }
+  ],
+  "summary": "来源分为两层：吕晓彤转述陈天桥关于未知AI答案需要经受质疑、实验并反馈改进判断的观点；吕晓彤本人从投资角度提出三问——谁为验证后的结果付费、换一组人能否复验、计入验证成本后业务是否仍赚钱，并追问具体行业由谁验收AI答案。系统仅把这些问题蒸馏为authority=0研究候选，不把它们改写成作者已经给出的筛选结论、因果效果或交易规则。",
+  "posture": {
+    "regime": "not_applied_other_author",
+    "dominant_style": "系统候选研究方向是把AI结果验证、复验、付费、验证成本和行业验收分别留证。",
+    "risk": "没有具体AI项目、公司、证券、样本、成本、收入、利润或行业验收事实；陈天桥原演讲也未取得。",
+    "style_ranking": [
+      "先保留来源提出的真实性验证问题",
+      "再分别回答付费、换组复验和验证后盈利三问",
+      "最后识别具体行业的验收者与证据门槛",
+      "没有实证前不生成估值、仓位或交易结论"
+    ]
+  },
+  "regime_call": {
+    "horizon": "跨研发、验证与商业化周期；原文未给出具体期限",
+    "what_would_falsify": [
+      "后续完整来源显示吕晓彤并未把付费、复验、验证成本和行业验收作为投资追问。",
+      "陈天桥原始演讲与吕晓彤转述的验证观点不一致。",
+      "系统后续研究显示这些问题对AI项目商业持续性没有稳定解释力。"
+    ]
+  },
+  "directions": [
+    {
+      "name": "被引的AI答案验证问题",
+      "stance": "吕晓彤转述陈天桥主张用质疑、实验和反馈改进判断；这是被引观点，不提升为纵向作者观点。"
+    },
+    {
+      "name": "吕晓彤的三项投资追问",
+      "stance": "来源明确提出付费、换组复验和计入验证成本后的盈利三个问题，但没有给出答案、阈值或通过后的投资动作。"
+    },
+    {
+      "name": "行业验收关口",
+      "stance": "来源追问AI答案在具体行业要通过谁的检验，但没有点名行业、验收者或标准。"
+    }
+  ],
+  "stocks": [],
+  "decision_trace": [
+    "观察：吕晓彤转述陈天桥对未知AI答案真实性的追问和验证体系主张。",
+    "来源含义：被引观点强调质疑、实验和基于结果的下一轮判断。",
+    "系统动作：只把它保存为验证问题，不宣称原演讲或技术效果已获核实。",
+    "观察：吕晓彤从投资角度提出付费、换组复验、验证后盈利三问。",
+    "来源含义：三问没有答案、通过阈值或具体项目。",
+    "系统动作：后续研究分别搜集证据，在实证前不把问题改写成只有满足条件才可投资的作者规则。",
+    "观察：吕晓彤追问AI答案在行业内要过谁那一关。",
+    "来源含义：验收者未指明。",
+    "系统动作：逐项目识别真实验收者；找不到时保持未知，不补造监管结论。"
+  ],
+  "method_principles": [
+    "系统候选方法：把AI输出、实验验证、换组复验、客户付费、验证成本和行业验收分层记录。",
+    "系统候选方法：区分作者提出的问题与系统设计的指标，不能把后者写回作者原话。",
+    "系统候选方法：二手转述只证明来源作了该转述，不能替代原演讲或技术事实核验。",
+    "系统候选方法：没有具体项目与商业数据时，不生成估值、仓位和交易动作。"
+  ],
+  "exit_lessons": [
+    "来源没有持仓或退出案例，不能提炼卖出规则。",
+    "系统可把长期无法回答来源三问视作研究假设削弱，但这不是吕晓彤已经给出的退出条件。"
+  ],
+  "hypotheses": [
+    {
+      "claim": "系统候选：能分别提供换组复验、验证后付费和全口径验证成本数据的AI项目，可能具有更可评估的商业持续性。",
+      "implied_rule": "建立点时研究面板分别记录三类证据；研究通过前不进入确定性策略。",
+      "falsifiable_test": "比较不同项目未来四至八个季度的收入留存、毛利率、现金消耗、客户续费和失败率，并控制融资阶段与行业差异。",
+      "expected_effect": "若三类证据对商业持续性没有稳定增量解释力，则拒绝该系统候选。",
+      "category": "ai_commercial_validation",
+      "provenance": "吕晓彤只提出三问；预期效果、样本和指标均为系统设计。",
+      "source_basis": "验证后付费、换组复验和计入验证成本后的盈利三个问题。",
+      "related_existing_ids": [],
+      "dedup_boundary": "不覆盖一般软件增长或单纯模型精度研究。"
+    },
+    {
+      "claim": "系统候选：行业验收者和证据门槛的清晰度，可能与AI应用的部署和采购结果相关。",
+      "implied_rule": "逐行业记录验收者、证据标准和责任边界；缺失时保持未知。",
+      "falsifiable_test": "跨行业比较验收路径清晰度与部署周期、采购转化、合规退回和客户留存。",
+      "expected_effect": "若验收路径与采用结果没有稳定关系，则拒绝该系统候选。",
+      "category": "ai_industry_acceptance",
+      "provenance": "吕晓彤只提出‘要过谁那一关’；相关性预期和测试设计均为系统生成。",
+      "source_basis": "行业内AI答案的最终验证关口问题。",
+      "related_existing_ids": [],
+      "dedup_boundary": "不替代模型性能、付费或单位经济研究。"
+    }
+  ],
+  "timing_notes": [
+    "内容页日期为2026-11-12，手机状态栏22:48不是投资观点的期限。",
+    "提供方修改时间只能作为来源代理时间，不能证明陈天桥演讲时间。",
+    "方法问题没有具体交易日、预测期或失效日期。"
+  ],
+  "judgment_heuristics": [
+    "先逐字区分被引方观点与吕晓彤本人的投资问题。",
+    "把问题保留为问题；没有答案时不补成只有满足条件才可投资的规则。",
+    "任何因果收益、筛选阈值和执行含义都标为系统候选。",
+    "没有具体标的和当前事实时不进入短线判断。"
+  ],
+  "typo_corrections": [
+    {
+      "raw": "Al 的答案",
+      "corrected": "原图清晰显示为‘AI的答案’，读者文案据原图和上下文校正为AI。"
+    }
+  ],
+  "action_summary": {
+    "posture_update": "不应用：吕晓彤属于其他作者，本条不修改小草posture_current或REGIME_TIMELINE。",
+    "playbook_update": "仅提出authority=0候选：分层记录来源三问与行业验收问题，并区分作者提问和系统指标。",
+    "hypothesis_update": "形成两个明确标注为系统设计的待研究假设；尚未经过研究护栏与人工门。",
+    "audit_evidence": "完整证据668字节、17个稳定segment逐段复核；被引观点与吕晓彤本人问题分开归属。",
+    "instrumentation_todo": "后续补具体项目、复验、付费、成本、经营结果和行业验收数据；当前不创建策略或交易效果。",
+    "routing": [
+      "ai_validation",
+      "ai_commercial_due_diligence",
+      "industry_acceptance",
+      "hypothesis"
+    ]
+  },
+  "archive_provenance": {
+    "source_event_identity": "971fd129aed198217c42605fe5de0d428207c154a136fe1239b74b882abd103a",
+    "source_version_key": "72e18a377e02f1cacd9e038d155b5164e909575c0f28f00fb0627f9f401020ab",
+    "accepted_semantic_knowledge_draft_path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_lv_subscription/artifacts/72e18a377e02f1cacd9e038d155b5164e909575c0f28f00fb0627f9f401020ab/.semantic_delegation/0e323d895d917811d16996692180c5f791a1c25f9b886f2ddc27e50ab43c814e/context-aec75bb90efe9f70bcf4302e0833085ac0c547f7a8a0d8edd76cc2b536e3342b/knowledge_draft.json",
+    "accepted_semantic_knowledge_draft_sha256": "2a3b0990c990661d696300bf15d3b8aa4f42b56a8787f3993fc33595887d7249",
+    "normalized_evidence_archive": {
+      "path": "reference/experience/transcripts/2026-11/2026-11-12_lv_xiaotong_review_20ed9dee.txt",
+      "sha256": "20ed9deefe519d907d2ee2c6d2875313541547f25ace38f7bcb6e228bf4dd7df"
+    },
+    "archived_at": "2026-11-13T01:55:39.787834+00:00",
+    "parent_changes": "Archive/lifecycle metadata only; semantic claims unchanged from independently accepted source analyst draft.",
+    "source_dates_are_not_ingestion_dates": true
+  },
+  "ingestion_status": "candidate_hypotheses_ingested_authority0",
+  "ingest_execution": {
+    "status": "completed",
+    "authority": 0,
+    "started_at": "2026-11-13T01:58:44.804616+00:00",
+    "ended_at": "2026-11-13T01:58:44.846899+00:00",
+    "returncode": 0,
+    "result": "ingest: +2 new candidate(s), ~0 recurrence-merge(s) -> xiaocao_hypotheses.jsonl (normalized-claim dedup; new ids XH-371..XH-372). Candidates enter authority=0; review the git diff, then they must clear the guards + §10.",
+    "workflow_owner_thread": "01a1d219-84a6-7792-957e-6df25b6eb13c",
+    "review_boundary": "Candidate ingestion is not research validation, parameter promotion, or current trading policy."
+  }
+}
