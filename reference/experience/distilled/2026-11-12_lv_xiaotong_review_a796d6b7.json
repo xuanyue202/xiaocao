@@ -1,0 +1,148 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-12",
+  "kind": "吕晓彤订阅图文中的公司治理方法观察",
+  "knowledge_status": "reusable_knowledge",
+  "ingestion_status": "archived_no_candidate_hypotheses",
+  "authority": 0,
+  "author": "吕晓彤",
+  "source": "百度网盘订阅分享中的吕晓彤图文",
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_lv_subscription/artifacts/be112a8bc4a6821b0dc93e04e8335a267d83ee59ecb462d6fe979f696f8e3aaf/evidence.txt",
+      "sha256": "a796d6b755c6890ec6bc5bf6cd12e4d1672985b8e70bc68097858ecd94ae8175",
+      "size": 378
+    },
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_lv_subscription/artifacts/be112a8bc4a6821b0dc93e04e8335a267d83ee59ecb462d6fe979f696f8e3aaf/browser_preview.jpg",
+      "sha256": "4b1aee8c5339dcdc5f853215365609515cc4d922f024c5c13163d1ff636cc1e9",
+      "size": 47811
+    }
+  ],
+  "summary": "本条可复用的不是166.19美元附近是否已经见底，而是一项公司治理研究方法：领导者仍在位时，关键人物能力和控制力可能是估值变量；领导者退出后，应把继任者身份与组织自身的客户关系、经营系统、产品路线图和人才体系分开验证。吕晓彤用英伟达与美国总统作类比，主张组织价值不完全由单一人物决定；这只是来源观点和authority=0研究先验，官方对经营连续性的预期尚未经过交接后的实际经营检验。",
+  "posture": {
+    "regime": "其他作者针对英伟达领导层交接的公司治理观察，不应用为小草当前A股姿态。",
+    "dominant_style": "把关键人物风险与组织韧性分开，先验证经营连续性，再判断事件性下跌是否构成机会。",
+    "risk": "单一类比不能证明公司已经摆脱创始人依赖，也不能证明股价已经见底；继任安排、客户承诺、经营和产品路线图仍需后续事实检验。",
+    "style_ranking": [
+      "先识别关键人物在战略、客户、产品和资本配置中的实际作用",
+      "再检查组织流程、人才梯队和客户承诺能否在交接后延续",
+      "最后才把事件性价格下跌与估值、入场和退出条件连接"
+    ]
+  },
+  "regime_call": {
+    "horizon": "适用于创始人或关键首席执行官离任后的数个财季治理研究，不构成当前市场姿态。",
+    "what_would_falsify": [
+      "交接后客户、经营、产品路线图或核心人才出现持续中断，说明组织价值仍高度依赖离任者。",
+      "跨样本研究显示，组织连续性指标不能区分关键人物离任后的经营与风险调整收益。",
+      "继任者身份、治理安排和资本配置差异持续主导公司结果，不能被组织流程所吸收。"
+    ]
+  },
+  "directions": [
+    "建立关键人物依赖度清单，分别记录战略、客户、产品、人才和资本配置责任。",
+    "用交接后的客户留存、经营指标、路线图兑现和核心团队稳定性检验组织韧性。",
+    "把事件性回撤、估值和执行条件作为独立层，不用组织韧性叙事直接替代价格判断。"
+  ],
+  "stocks": [
+    {
+      "name": "英伟达（NVDA）",
+      "role": "领导层交接与组织韧性的来源案例；不是已经验证的抄底样本。",
+      "authority": 0
+    }
+  ],
+  "method_principles": [
+    "关键人物仍在位时，其能力和控制力可以是公司判断变量；离任后应改为验证组织是否能独立维持客户、经营、产品和人才体系。",
+    "公司官方对经营连续性的预期属于待验证承诺，不能当作交接已经成功的结果。",
+    "组织韧性、估值便宜和可执行买点是三件不同的事，必须分别给出证据与反证。"
+  ],
+  "exit_lessons": [
+    "若交接后出现客户流失、经营受扰、路线图延误或核心团队失稳，应撤销组织韧性先验，不能继续用创始人已离任来合理化补仓。"
+  ],
+  "hypotheses": [],
+  "timing_notes": [
+    "吕晓彤在2026年11月12日给出的“择机抄底”属于当前决策分支，原文没有入场价、跌幅、仓位、期限或失效条件，不沉淀为永久买入规则。",
+    "行情工具最近成交166.19美元及单日下跌4.39%只用于当前事实边界，不能进入治理方法的稳定规则。",
+    "公司计划于2026年11月17日披露第三财季结果，可作为后续经营连续性的首个观察点，但不是来源原文给出的期限。"
+  ],
+  "typo_corrections": [
+    {
+      "raw": "吕晓彤 创修",
+      "normalized": "吕晓彤 创作者",
+      "reason": "原图作者栏可辨认为“创作者”；该修正只校正页面身份文字，不改变投资观点。"
+    }
+  ],
+  "decision_trace": [
+    {
+      "observation": "吕晓彤认为，黄仁勋任职时首席执行官是谁很重要；黄仁勋离任后，继任者是谁就没有那么重要，并以美国不由某一位总统定义作类比。",
+      "inference": "来源把英伟达的长期价值归因于超越单一领导者的组织能力；系统可将其一般化为关键人物依赖与组织韧性分层验证的方法。",
+      "action": "只形成authority=0治理研究方法，不把类比当作经营连续性、估值低估或底部已经确认的证据。"
+    },
+    {
+      "observation": "英伟达官方确认黄仁勋已经离任，并表示预计客户承诺、经营和产品路线图不会中断。",
+      "inference": "离任事实已确认，但连续性仍是公司预期，尚未经过后续经营结果检验。",
+      "action": "后续以客户、经营、路线图、核心团队和继任安排的可验证变化复核该方法先验。"
+    }
+  ],
+  "judgment_heuristics": [
+    "研究创始人离任时，先列出个人不可替代职责，再列出组织可复制能力，避免把人物崇拜或人物否定当作公司估值。",
+    "把公司对交接连续性的承诺视为待验证变量，用后续经营结果而不是公告措辞裁决。",
+    "事件性下跌只有同时满足基本面连续、估值合理、入场和退出条件清楚时，才可能从研究线索升级为交易计划。"
+  ],
+  "deduplication_review": {
+    "status": "reviewed_against_current_ledger",
+    "adjacent_existing_ids": [
+      {
+        "id": "XH-095",
+        "relationship": "相邻但不构成完整复现",
+        "reason": "XH-095研究管理层更替后的经营对比；本条新增的是关键人物依赖与组织韧性的分层方法，但只有一个英伟达案例，尚不足以创建近义候选。"
+      }
+    ],
+    "new_distinct_candidates": [],
+    "conclusion": "保留方法原则和后续验证清单，不创建新假设，不复用或改写XH-095的原claim。"
+  },
+  "action_summary": {
+    "posture_update": "不应用：吕晓彤是其他作者，本条不得修改小草posture_current或REGIME_TIMELINE。",
+    "playbook_update": "no_change：只形成关键人物依赖与组织韧性的authority=0研究方法，未通过研究与人工门。",
+    "hypothesis_update": "no_change：与XH-095相邻但不是完整复现；不创建近义候选。",
+    "audit_evidence": "完整读取并绑定2026年11月12日图文、原始预览、OCR、官方交接公告和行情边界；来源主张与系统核验分开。",
+    "instrumentation_todo": "若后续获授权，建立领导层交接样本的客户留存、经营、产品路线图、核心团队、估值和事件收益面板。",
+    "routing": [
+      "authority_0_durable_knowledge",
+      "attributed_distillation_only",
+      "no_posture_update",
+      "no_new_hypothesis",
+      "not_ingested"
+    ]
+  },
+  "provenance": {
+    "analysis_request_sha256": "6ad03c072603bda24d7166afe6c782939de3b0d3e059bb5f8c878267f15e654a",
+    "packet_sha256": "f10cd0cd9c3778205a127e3de6a1997413c4da44a6bb7e9146aa7f919c72e5c0",
+    "evidence_sha256": "a796d6b755c6890ec6bc5bf6cd12e4d1672985b8e70bc68097858ecd94ae8175",
+    "market_evidence_sha256": "392797a7f3144759d2b9cc57b3b748181ca1ef2666cbe7b845c1d0a0b20f429d",
+    "household_context_sha256": null,
+    "durable_contract_sha256": "44b6316a5631ff1f29d47b962a578dfb2247d636cde0a5a4fa5d00aeb1b550b8"
+  },
+  "archive_provenance": {
+    "source_event_identity": "ad1db2f8e2ae18e88b541542122bab94d46fce342a0fc482982b7a202b0cd6b1",
+    "source_version_key": "be112a8bc4a6821b0dc93e04e8335a267d83ee59ecb462d6fe979f696f8e3aaf",
+    "accepted_semantic_knowledge_draft_path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_lv_subscription/artifacts/be112a8bc4a6821b0dc93e04e8335a267d83ee59ecb462d6fe979f696f8e3aaf/.semantic_delegation/6ad03c072603bda24d7166afe6c782939de3b0d3e059bb5f8c878267f15e654a/context-dfcb692de58d7a6a3d46b95a8dafb0a7906bc480428262c0a12b91bf1b768c62/knowledge_draft.json",
+    "accepted_semantic_knowledge_draft_sha256": "6e95b007dcc2fe915915107e4d712f75f9bc054cbd125c6927011be9afcfa1d0",
+    "normalized_evidence_archive": {
+      "path": "reference/experience/transcripts/2026-11/2026-11-12_lv_xiaotong_review_a796d6b7.txt",
+      "sha256": "a796d6b755c6890ec6bc5bf6cd12e4d1672985b8e70bc68097858ecd94ae8175"
+    },
+    "archived_at": "2026-11-13T01:55:39.787834+00:00",
+    "parent_changes": "Archive/lifecycle metadata only; semantic claims unchanged from independently accepted source analyst draft.",
+    "source_dates_are_not_ingestion_dates": true
+  },
+  "ingest_execution": {
+    "status": "completed",
+    "authority": 0,
+    "started_at": "2026-11-13T01:58:44.932703+00:00",
+    "ended_at": "2026-11-13T01:58:44.968335+00:00",
+    "returncode": 0,
+    "result": "ingest: +0 new candidate(s), ~0 recurrence-merge(s) -> xiaocao_hypotheses.jsonl (normalized-claim dedup; new ids —). Candidates enter authority=0; review the git diff, then they must clear the guards + §10.",
+    "workflow_owner_thread": "01a1d219-84a6-7792-957e-6df25b6eb13c",
+    "review_boundary": "Candidate ingestion is not research validation, parameter promotion, or current trading policy."
+  }
+}
