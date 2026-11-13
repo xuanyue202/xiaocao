@@ -149,7 +149,7 @@ def main(argv: list[str] | None = None) -> int:
         environment.pop('XIAOCAO_KOL_PREOPEN_ENABLED',None)
         environment.pop('XIAOCAO_KOL_PREOPEN_PLAN',None)
         if (args.prepare_opening and args.automation_id == 'xiaocao-kol-hourly-low-bandwidth-operation'
-                and hour_start.hour in {6,21} and fresh_source_run):
+                and hour_start.hour in {6,7,8,9,21} and fresh_source_run):
             environment['XIAOCAO_KOL_PREOPEN_ENABLED']='v1'
         environment["XIAOCAO_AUTOMATION_HOUR_START_AT"] = (
             hour_start.isoformat(timespec="seconds")

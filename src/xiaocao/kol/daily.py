@@ -3025,7 +3025,7 @@ class DailyCoordinator:
         admitted = ((slot_start.hour in DAYTIME_HOURS or
                      (admitted_at.hour == 23 and slot_start.hour == 0))
                     if allow_early_start else admitted_at.hour in DAYTIME_HOURS)
-        if not admitted and slot_start.hour == 6:
+        if not admitted and slot_start.hour in {6,7,8,9}:
             from .preopen_program import source_release_admitted
             admitted = source_release_admitted(slot_start,automation_acquired_at,now)
         if not admitted:

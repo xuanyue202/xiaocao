@@ -137,15 +137,16 @@ def complete(preparation_path: Path) -> dict:
 
 def create_plan(root: Path, *, acquired_at: datetime, slot: datetime, calendar: dict,
                 runner_pid: int, thread_id: str) -> tuple[Path, dict]:
-    if slot.hour not in {6,21} or not thread_id or '/' in thread_id or thread_id in {'.','..'}:
+    if slot.hour not in {6,7,8,9,21} or not thread_id or '/' in thread_id or thread_id in {'.','..'}:
         raise ValueError('KOL_PREOPEN_SLOT_OR_OWNER_INVALID')
     day = acquired_at.astimezone(TZ).date()
-    candidate = day if slot.hour == 6 else day+timedelta(days=1)
+    candidate = day+timedelta(days=1) if slot.hour == 21 else day
     trading = calendar.get('latest') == candidate.isoformat()
     target = candidate.isoformat() if trading else None
-    deadline = (datetime.fromisoformat(str(day)+'T09:20:00+08:00') if slot.hour==6
+    deadline = (datetime.fromisoformat(str(day)+'T09:20:00+08:00') if slot.hour in {6,7,8,9}
                 else acquired_at+timedelta(minutes=60))
-    release = (datetime.fromisoformat(str(day)+'T07:30:00+08:00') if slot.hour==6 else acquired_at)
+    release = (max(datetime.fromisoformat(str(day)+'T07:30:00+08:00'),acquired_at)
+               if slot.hour in {6,7,8,9} else acquired_at)
     value = {'schema_version':'kol-preopen-program.v1','authority':0,'automation_id':OWNER,
         'owner_thread_id':thread_id,'runner_pid':runner_pid,'source_day':str(day),
         'slot_start':slot.isoformat(),'acquired_at':acquired_at.isoformat(),
@@ -153,7 +154,7 @@ def create_plan(root: Path, *, acquired_at: datetime, slot: datetime, calendar: 
         'fresh_through':target+'T09:27:30+08:00' if target else None,
         'complete_by':deadline.isoformat(),'source_release_at':release.isoformat(),
         'dispatch_seconds':300,'synthesis_seconds':1800,'review_seconds':900,
-        'readiness_target':'09:20','scope':'morning' if slot.hour==6 and (trading or not calendar.get('latest')) else 'source_only_or_evening'}
+        'readiness_target':'09:20','scope':'morning' if slot.hour in {6,7,8,9} and (trading or not calendar.get('latest')) else 'source_only_or_evening'}
     directory=root/'output/live/kol_preopen_programs'/slot.strftime('%Y%m%dT%H00%z')/thread_id
     path=directory/'plan.json'
     if path.exists():
@@ -166,14 +167,14 @@ def create_plan(root: Path, *, acquired_at: datetime, slot: datetime, calendar: 
 
 def source_release_admitted(slot: datetime, acquired_at: datetime | None, now: datetime) -> bool:
     raw=os.environ.get('XIAOCAO_KOL_PREOPEN_PLAN')
-    if not raw or slot.hour != 6 or acquired_at is None:
+    if not raw or slot.hour not in {6,7,8,9} or acquired_at is None:
         return False
     plan=read(Path(raw));owner(plan)
     release=read(Path(raw).with_name('source-release.json'))
     return (plan['runner_pid']==os.getpid() and plan['slot_start']==slot.isoformat()
         and plan['acquired_at']==acquired_at.isoformat()
         and release['plan_sha256']==plan['sha256']
-        and plan['source_release_at']==slot.replace(hour=7,minute=30).isoformat()
+        and plan['source_release_at']==max(slot.replace(hour=7,minute=30),acquired_at).isoformat()
         and prep.aware(release['released_at']).astimezone(TZ).date()==slot.astimezone(TZ).date()
         and prep.aware(plan['source_release_at']) <= prep.aware(release['released_at']) <= now)
 
@@ -282,12 +283,14 @@ class Program:
                     'fresh_through':self.fresh_through,'calendar_proof':self.calendar,
                     'dispatch_by':min(now+timedelta(minutes=5),end,
                         prep.aware(self.plan['acquired_at'])+timedelta(minutes=5) if self.last_refresh is None else end).isoformat(),
-                    'review_open_by':(end-timedelta(seconds=reserve)).isoformat(), 'complete_by':end.isoformat()})
+                    'review_open_by':(end-timedelta(seconds=reserve)).isoformat(), 'complete_by':end.isoformat(),
+                    'synthesis_budget_seconds':remaining-reserve,'review_budget_seconds':reserve})
             self.current={'status':'preparing','stage_path':str(stage_path),'key':key,'sources_current':True}
             stage=read(stage_path)
             if not stage_path.with_name('dispatch.json').exists():
                 self.event('kol_preopen_dispatch_required',input_path=stage['input_path'],
                     stage_path=str(stage_path),dispatch_by=stage['dispatch_by'],
+                    synthesis_budget_seconds=stage['synthesis_budget_seconds'],review_budget_seconds=stage['review_budget_seconds'],
                     review_open_by=stage['review_open_by'],complete_by=stage['complete_by'])
         self.last_refresh=now
         return self.status()
@@ -312,6 +315,13 @@ class Program:
         if result.get('stage_path'):
             path=Path(result['stage_path']);stage=read(path)
             done=path.with_name('completed.json')
+            result['stage_timing']={key:stage[key] for key in ('opened_at','dispatch_by','review_open_by','complete_by','synthesis_budget_seconds','review_budget_seconds')}
+            for name,field in [('dispatch.json','recorded_at'),('review-open.json','opened_at')]:
+                receipt_path=path.with_name(name)
+                if receipt_path.exists():
+                    receipt=read(receipt_path)
+                    if receipt['stage_sha256']!=stage['sha256']:raise ValueError('KOL_PREOPEN_STAGE_PROOF_MISMATCH')
+                    result['stage_timing'][name]=receipt[field]
             if done.exists() and result.get('sources_current') is True:
                 proof=read_completed(path)
                 result.update(status='accepted',preparation_path=proof['preparation_path'],
@@ -329,7 +339,7 @@ class Program:
         result.update(program_sha256=self.plan['sha256'],observed_at=now.isoformat(),
                       complete_by=self.plan['complete_by'],target_trade_date=self.target_trade_date,
                       sources_verified_as_of=self.last_refresh.isoformat() if self.last_refresh else None,
-                      policy_adoption='not_performed',
+                      policy_adoption='not_performed',authority=0,source_verification_scope='local_published_cache_only',
                       morning_ready=result['status'] in {'accepted','reused'} and self.target_trade_date is not None)
         atomic_write(self.path.with_name('status.json'),json.dumps(result,sort_keys=True).encode())
         return result

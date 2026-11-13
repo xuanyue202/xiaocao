@@ -288,3 +288,16 @@ def test_running_tool_status_cannot_release_worker(source,monkeypatch):
     with pytest.raises(ValueError,match='TERMINAL_UNPROVEN'):
         pp.record_worker_terminal(Path(stage['input_path']),receipt,now=current[0])
     assert not stage_path.with_name('worker-terminal.json').exists()
+
+
+@pytest.mark.parametrize('hour',[7,8,9])
+def test_late_morning_uses_actual_owner_and_only_remaining_preopen_time(tmp_path,monkeypatch,hour):
+    monkeypatch.setenv('CODEX_AUTOMATION_ID',pp.OWNER)
+    monkeypatch.setenv('CODEX_THREAD_ID','late-source-owner')
+    acquired=EARLY.replace(hour=hour,minute=5)
+    path,value=pp.create_plan(tmp_path,acquired_at=acquired,slot=acquired.replace(minute=0),
+        calendar={'latest':DAY},runner_pid=os.getpid(),thread_id='late-source-owner')
+    assert value['slot_start']==acquired.replace(minute=0).isoformat()
+    assert value['target_trade_date']==DAY and value['fresh_through']==DAY+'T09:27:30+08:00'
+    assert prep.aware(value['complete_by'])==EARLY.replace(hour=9,minute=20)
+    assert prep.aware(value['source_release_at'])==max(acquired,EARLY.replace(hour=7,minute=30))
