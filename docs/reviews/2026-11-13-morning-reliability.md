@@ -18,14 +18,14 @@ operating checkout; no dated business entry is replayed by this repair.
 |All-COLD B waited for unused09:30–09:31 prices|Plan price capture over current-policy eligible reserve candidates; empty plan seals no_buy immediately|Locked writer rechecks policy/ledger; actual BUY still needs verified first-minute HIGH|
 |T shadow added208 seconds before formal completion was visible|B/T control results are emitted separately before research; shadow follows both business children|Supervisor/shadow finality remains separately observed|
 |K/P prepared27 prior candidates, only2 of today's9 covered|Use several prior original batches, newest first; save completed bounded chunks before unchanged deadline; report missing codes|No today's model inference, invented scores or training|
-|T cached current report proof was validated but omitted from head selection|Include the validated current-envelope proof in normal current report-head selection|No source text invention, fabricated fills, rehearsal promotion or sample reset|
+|T had1958 source bindings but0 themes and no dated structured judgment draft|Expose draft status/reason and theme readiness separately from engineering/sample qualification; original post-business research owner diagnoses that dated input|Historical mirror cache stays historical-only; no fabricated decisions/fills or sample reset|
 |Risk NORMAL and accounting BLOCKED were conflated|Add explanatory admission/exit/accounting scopes without changing original risk receipt|UNKNOWN, financial gates and actual-fee/final-PnL gaps remain|
 |Producer's pending review and July posture caused generic warnings|Report queued/shadow status separately; expired posture is explicitly historical calibration only|Pending reviews are not completed; source/current policy freshness remains independent|
 
 ## Validation
 
 Reproduced expiry-before-dispatch, exact semantic audit drift, shadow wait,
-zero-candidate price capture and omitted current report readback as failing
+zero-candidate price capture as failing
 behavior before their repairs. Scoped regression:400 passed. Additional deployment
 closure and independent review outcomes are recorded below after completion.
 APP-related engineering checks ran in the explicitly open11:30–13:00 test window;

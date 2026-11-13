@@ -124,6 +124,9 @@ def test_producer_builds_pending_shadow_input_from_injected_source_adapters(tmp_
     assert frozen["bindings"]["selection_plan"]["selection_plan_sha256"]
     assert frozen["bindings"]["portfolio"]["account_equity"] == 30000
     assert frozen["evidence_lifecycle"]["outcome_status"] == "not_applicable"
+    assert result['judgment_readiness']['status'] == 'no_theme_decision'
+    assert result['judgment_readiness']['draft_status'] == 'pending_observation'
+    assert result['judgment_readiness']['authority'] == 'research_observation_only'
     assert run["engineering"]["engineering_day_valid"] is True
     assert run["engineering"]["outcome_matured"] is False
     assert evaluation["status"] == "pending_observation"
@@ -283,7 +286,7 @@ def test_relation_targets_load_only_exact_historical_evidence_and_missing_stays_
     assert next(r for r in repaired if r['viewpoint_id']==target)['historical_reference_only'] is True
 
 
-def test_current_report_readback_is_considered_as_a_current_head(tmp_path, monkeypatch):
+def test_historical_report_readback_does_not_become_a_current_source(tmp_path, monkeypatch):
     import copy
     from datetime import datetime, timezone
     from tests.test_trend_snapshot import _source
@@ -306,5 +309,4 @@ def test_current_report_readback_is_considered_as_a_current_head(tmp_path, monke
     monkeypatch.setattr(PublicationLedger, 'status_snapshot', lambda self: {})
     sources, errors = _load_publications(tmp_path, as_of=datetime(2026, 8, 16, 6, tzinfo=timezone.utc))
     assert not errors
-    assert [row['viewpoint_id'] for row in sources] == [records[1]['record_id']]
-    assert sources[0].get('historical_reference_only') is not True
+    assert sources == []

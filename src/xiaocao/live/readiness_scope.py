@@ -21,5 +21,6 @@ def account_readiness(account: dict | None, risk: dict | None) -> dict:
                        'fee_status': accounting.get('fee_status', 'unproved'),
                        'final_pnl_proven': accounting.get('cumulative_pnl') is not None
                            and accounting.get('cash_integrity_proven') is True
-                           and accounting.get('actual_fees_complete') is True},
+                           and accounting.get('fee_status') == 'actual_fees_complete'
+                           and accounting.get('status') == 'reconciled'},
         'risk_receipt_unchanged': True}

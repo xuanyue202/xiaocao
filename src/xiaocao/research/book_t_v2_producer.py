@@ -229,7 +229,6 @@ def _load_publications(root: Path, *, as_of: datetime | None = None) -> tuple[li
         readback = publication_from_report_readback(json.loads(raw), as_of=bound_as_of)
         if readback:
             completed.append(readback)
-            head_candidates.append(readback)
     for status in current_publication_heads(head_candidates, as_of=bound_as_of):
         key = status["source_key"]
         if status.get("completed") is True:
@@ -790,6 +789,15 @@ def build_book_t_v2_shadow_day(
                 "catalog_version": catalog.get("version"),
                 "v1_control_receipt_sha256": receipt.get("receipt_sha256"),
             },
+            "judgment_readiness": {
+                "status": "theme_decision_observed" if snapshot_value.get("themes") else "no_theme_decision",
+                "theme_count": len(snapshot_value.get("themes") or []),
+                "draft_status": (sources.get("agent_draft") or {}).get("status", "not_recorded"),
+                "draft_reason": (sources.get("agent_draft") or {}).get("reason"),
+                "next_action": "evaluate_qualification_separately" if snapshot_value.get("themes") else
+                    "original_post_business_research_owner_review_dated_theme_input",
+                "authority": "research_observation_only",
+            },
             "adapter_errors": sorted({_text(error) for error in sources.get("adapter_errors", []) if _text(error)}),
         },
     }
@@ -840,6 +848,7 @@ def prepare_book_t_v2_shadow_day(
         "fill_or_skip_rows": len(frozen["shadow"]["fills"]),
         "formal_ledger_mutations": _copy(_ZERO_MUTATIONS),
         "adapter_errors": frozen.get("producer", {}).get("adapter_errors", []),
+        "judgment_readiness": frozen.get("producer", {}).get("judgment_readiness", {}),
     }
     _atomic_json(root / f"output/live/book_t_v2_shadow_producer_{day}.json", readback)
     return {"input": input_path, "readback": root / f"output/live/book_t_v2_shadow_producer_{day}.json", **readback}

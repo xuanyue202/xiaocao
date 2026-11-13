@@ -85,6 +85,11 @@ T control archives exact account/positions/trades under writer lock; v2 shadow
 uses these raw hashes and independent namespace, never formal writes. T initial
 30% sleeve is already allocated: don't take30% again or reuse post-control lots
 as new fills. Historical rehearsals do not count toward5/20 natural gates.
+On T shadow judgment_readiness=no_theme_decision, diagnose the exact dated
+book_t_v2_judgment_draft input after formal business. Preserve pending_observation
+and zero valid theme decisions until reviewed source-supported themes exist;
+engineering success or many source bindings cannot fill this semantic gap.
+Historical report mirror capsules remain relation-target evidence only.
 Refresh morning_pipeline_status.py after dependency/terminal; report actual
 B buys/skips/cash, T/control/shadow and supporting fallback separately. Perform
 only original next-natural acceptance; no daily replay to manufacture proof.
