@@ -1,0 +1,281 @@
+{
+  "date": "2026-11-16",
+  "kind": "kol_durable_knowledge_draft",
+  "summary": "本期可复用价值不在作者“卧倒”或“必回本”的情绪化结论，而在三条可证伪的研究边界：不加杠杆并不能消除永久损失；做空要防急速反弹与路径风险；AI硬件被从成长叙事重新标成周期制造业时，低估值本身未必构成短期保护。另保留“物理AI商业化可能增加存储需求”作为待验证产业假设。",
+  "author": "吕晓彤",
+  "source": "11月16日直播逐字稿",
+  "source_metadata": {
+    "title": "11月16日直播逐字稿",
+    "published_at": "2026-11-16",
+    "source_kind": "subscription_video_transcript",
+    "source_item_id": "577212f89493ccb202df4572edfebe339b54f5718575dcfabf12dadb0926a8d1"
+  },
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_subscription_videos/enrichment/577212f89493ccb202df4572edfebe339b54f5718575dcfabf12dadb0926a8d1/artifacts/kol-netdisk-cloud-af0fb79b5a804622/11月16日.txt",
+      "sha256": "d181ee7dc2f6a148770a5fbd5497243ae1ac1957829445c37a8592b4d6089175",
+      "size_bytes": 70760,
+      "size": 70760
+    }
+  ],
+  "authority": 0,
+  "posture": {
+    "regime": "not_applied_other_author",
+    "dominant_style": "把当前AI硬件估值压缩、长期物理AI需求、个股领导者更替和作者个人持仓情绪分开验证；不以低PE、无杠杆或反讽类比替代风险审计。",
+    "risk": "作者深度亏损且现金耗尽，存在显著持仓偏差；三至五年必回本、存储永久稀缺、2027年6月关键人物回归及全市场都亏均可能把预测或自我安慰误当事实。",
+    "style_ranking": [
+      "短线先核海外候选市场与AI硬件盈利修正、资金流和价格",
+      "长期需求先核物理AI部署、单位存储强度、供给和成交价格",
+      "工具选择分开比较非杠杆ETF的成分更替与单票领导者失效",
+      "作者现金约束和卧倒只作来源偏差，不迁移为家庭规则",
+      "反讽、音译和无单位数字保持原始边界"
+    ],
+    "provenance": "system_posture_synthesis_not_author_posture",
+    "source_basis": "来源明确说AI硬件被按周期制造业重估、物理AI突破可能增加存储需求、个股等待五至八年可能更换龙头，并自述亏损与现金耗尽；排序、验证指标和风险边界由系统提出。",
+    "status": "source_only",
+    "may_update_current_posture": false,
+    "may_tune_strategy": false,
+    "may_authorize_trade": false,
+    "reason": "知识草稿只记录可复核候选；来源是单场直播，含显著持仓偏差、反讽和未核预测。"
+  },
+  "regime_call": {
+    "horizon": "当前至未来数年",
+    "claim": "AI硬件可能同时受盈利周期与估值叙事重分类影响；长期物理AI需求和ETF领导者更替需要独立的点时研究，不能由本场口播直接更新全局市场制度。",
+    "what_would_falsify": "若控制盈利修正、估值分位、供需和流动性后，叙事重分类没有样本外增量解释力；若物理AI部署不带来存储出货或价格改善；或长期单票领导者组合不劣于非杠杆主题ETF，则相应候选被否定。",
+    "provenance": "system_research_synthesis_from_attributed_source",
+    "source_basis": "来源提供周期制造业重分类、物理AI与存储、五至八年领导者更替三个原始判断；控制变量、对照与否定条件由系统提出。",
+    "status": "not_created",
+    "reason": "作者称2026年多类资产和管理人普遍亏损，但没有完整样本、同口径净值或行情面板，不能据此建立市场制度判断。"
+  },
+  "directions": [
+    {
+      "subject": "无杠杆持有与永久损失",
+      "source_claim": "作者认为只要没有杠杆、三至五年内资产就“必回来”。",
+      "knowledge_judgment": "反向形成风险边界：无杠杆只降低强平风险，不消除基本面失效、退市治理、机会成本和永久损失。",
+      "reusable": true,
+      "authority": 0,
+      "provenance": "system_fact_check_boundary_not_author_method",
+      "source_basis": "来源原话是无杠杆就熬、三至五年必回来；永久损失边界来自系统事实核验，不归因于作者。"
+    },
+    {
+      "subject": "空头路径风险",
+      "source_claim": "作者说做空很危险，可能遭遇一段猛拉升，并披露自己次日早上已清空头。",
+      "knowledge_judgment": "做空候选除方向和估值外，还要核反弹波动、挤压风险、期限与退出条件；单一直播不能证明稳定收益规则。",
+      "reusable": true,
+      "authority": 0,
+      "provenance": "source_risk_observation_plus_system_test_boundary",
+      "source_basis": "作者明确说做空危险、可能猛拉升并披露次日清仓；联合门槛与验证要求由系统提出。"
+    },
+    {
+      "subject": "成长硬件的叙事重分类",
+      "source_claim": "作者观察到AI硬件被市场从高科技成长重新描述为“周期性制造业”；随后在反讽中夸张到海力士即使“两倍PE也不管用”、英伟达即使“十倍PE也嫌高”。",
+      "knowledge_judgment": "可研究叙事重分类是否通过估值区间、盈利预期和资金流影响短期回撤；后半段消费品牌与科技硬件比较是反讽，不能按字面生成多空规则。",
+      "reusable": true,
+      "authority": 0,
+      "provenance": "system_research_synthesis_from_attributed_source",
+      "source_basis": "来源明确说AI硬件被当成周期性制造业、低PE也可能失效；点时标签、控制变量和对照设计由系统提出。"
+    },
+    {
+      "subject": "物理AI与存储需求",
+      "source_claim": "作者预测物理AI若突破会使存储长期稀缺，并认为约三至五年内会发生。",
+      "knowledge_judgment": "只保留成可证伪产业假设，必须以真实部署、单位算力存储量、出货、库存和价格兑现验证；“永远稀缺”和具体期限均不作为事实。",
+      "reusable": true,
+      "authority": 0,
+      "provenance": "partial_support_to_existing_XH_240_not_full_recurrence",
+      "source_basis": "来源只称物理AI突破会增加存储需求并预测三至五年；没有XH-240的2027年第四季度高点、DRAM接力或需求缺口条件。",
+      "related_existing_ids": [
+        "XH-240",
+        "XH-122",
+        "XH-127"
+      ],
+      "dedup_boundary": "本期只对物理AI可能成为存储新增需求提供局部支持，不能冒报完整复现XH-240，也不另建更宽泛的新候选。"
+    }
+  ],
+  "stocks": [
+    {
+      "name": "NVIDIA",
+      "symbol": "NVDA",
+      "role": "AI硬件与关键人物依赖的反讽案例",
+      "boundary": "“十倍PE也嫌高”位于美年达、北冰洋与网红带货反讽中，不是现行估值；官方只支持黄仁勋离任事实，不支持2027年6月回归预测。"
+    },
+    {
+      "name": "SK hynix",
+      "symbol": null,
+      "role": "存储低估值保护失效的反讽案例",
+      "boundary": "“两倍PE也不管用”处于周期制造业与华莱士谐音反讽中，不作为现行估值。"
+    },
+    {
+      "name": "AMD",
+      "symbol": "AMD",
+      "role": "NVIDIA竞争类比",
+      "boundary": "没有独立方向或交易建议。"
+    },
+    {
+      "name": "Anthropic",
+      "symbol": "ANT（拟议）",
+      "role": "可能对应ASR“i soo pic”的IPO候选",
+      "boundary": "SEC文件的70—78美元与11月19日前后交易安排不等于来源的1.5/1.3/1口述；对象、单位和市场仍未唯一解析。"
+    }
+  ],
+  "method_principles": [
+    "把“没有杠杆”与“资产一定回本”分开；前者是融资约束，后者仍需基本面、治理、退出和机会成本检验。",
+    "同一口播中的持仓情绪、作者自我安慰、预测和系统事实分别记录，不能互相升级。",
+    "对低倍PE的保护作用要与盈利下修、周期位置和市场叙事一起检验。",
+    "反讽文本只提炼其所讽刺的市场重分类现象，不把炸鸡、饮料、猪肉等类比写成字面行业建议。",
+    "含糊音译、无单位数字和未具名公司不得静默映射为可交易证券。"
+  ],
+  "exit_lessons": [
+    "长期持有计划必须预设基本面失效、最大损失、机会成本与再平衡条件，不能只用“等回本”作为退出逻辑。",
+    "短仓在可能出现急速反弹时需要独立的挤压风险和有效期管理；作者一次清仓回顾不是经研究的通用规则。"
+  ],
+  "hypotheses": [
+    {
+      "candidate_id": "KOL-20261116-NARRATIVE-RECLASSIFICATION",
+      "claim": "当成长型AI硬件被市场重新归类为周期制造业时，低历史估值对短期回撤的保护可能显著减弱。",
+      "implied_rule": "研究时同时记录估值分位、盈利预期修正、周期价格、资金流和叙事标签变化；未经样本外验证不触发交易或参数调整。",
+      "falsifiable_test": "在研究开始前定义“成长叙事”和“周期制造业叙事”的词典、文本来源、打分阈值与观察时点，并用切换前可得估值把每个行业公司固定分成低估值组与非低估值组；冻结每个公司日或周的点时标签。对首次由成长切换为周期制造业的样本，用同日未切换公司作匹配对照，控制此前收益、盈利预期修正、行业价格、流动性和市值。主要检验量定义为低估值保护差异：同一叙事状态下，非低估值组未来5、20、60日最大回撤减去低估值组最大回撤；原命题预期该保护差异在切换组显著小于未切换组。滚动样本外若两组保护差异相等，或切换组的低估值保护反而更强，则直接否定。叙事切换的主效应只作辅助结果，不能单独证明低估值保护减弱。",
+      "expected_effect": "SYSTEM待验预期：点时叙事切换后，低估值相对非低估值的回撤保护差异缩小；检验对象是叙事与低估值的交互差异，不是一般叙事负效应。若样本外交互不成立则拒绝，不生成交易规则。",
+      "triggers": [
+        "分析师盈利预测持续下修",
+        "存储或硬件价格/订单转弱",
+        "估值压缩伴随资金持续流出"
+      ],
+      "falsifiers": [
+        "切换组的低估值保护差异与未切换组相等或更强",
+        "叙事与低估值的交互差异在滚动样本外不稳定或方向相反"
+      ],
+      "uncertainties": [
+        "单场直播没有历史面板",
+        "“周期制造业”判断来自市场口述",
+        "海力士与英伟达倍数位于反讽中，不能当作现行估值"
+      ],
+      "authority": 0,
+      "provenance": "SYSTEM_research_synthesis_from_attributed_source",
+      "source_basis": "作者原话是AI硬件被当成周期性制造业，并在反讽中夸张海力士即使“两倍PE也不管用”、英伟达即使“十倍PE也嫌高”；这些不是现行估值。词典、点时标签、匹配对照、控制变量、期限和预期效果均由系统提出，不归作者。",
+      "related_existing_ids": [
+        "XH-079",
+        "XH-239",
+        "XH-308",
+        "XH-330",
+        "XH-376"
+      ],
+      "dedup_boundary": "XH-079研究业绩超预期收窄后的预期重估，XH-239研究存储股价领先盈利峰值与静态低PE风险，XH-308研究长期协议兑现，XH-330研究存储价格与指引拐点，XH-376研究关键人物离任；本候选只检验点时可观测的估值叙事标签切换在控制这些基本面变量后是否仍有增量。"
+    },
+    {
+      "candidate_id": "KOL-20261116-ETF-LEADER-TURNOVER",
+      "claim": "在技术主题的五至八年持有期内，非杠杆主题ETF通过成分更替分散现任龙头失效风险，可能比持有起点的单一龙头获得更好的长期风险调整结果。",
+      "implied_rule": "长期主题工具比较必须把点时指数成分、换入换出、费用、跟踪误差、退市和单票领导者失效纳入同一回测；未经研究不把ETF视为无风险替代。",
+      "falsifiable_test": "按历史时点冻结AI、半导体和其他技术主题的非杠杆ETF成分与当时收入或市值第一名龙头，构造买入后持有5年和8年的ETF总回报与起点单一龙头这一主要对照；计入费率、跟踪误差、退市、并购、不可交易和税费，按主题与起始估值分层比较复利、最大回撤、永久损失率和恢复时间。若起点单一龙头在样本外的风险调整结果不劣于ETF，或ETF成分更替没有降低相对单一龙头的永久损失率，则否定。起点前五龙头等权和定期再平衡组合仅作为机制稳健性对照，分别报告，不能替代或否定主要的ETF与单一龙头比较。",
+      "expected_effect": "SYSTEM待验预期：非杠杆主题ETF的成分更替降低单一领导者失效导致的永久损失，但可能以费用、稀释和强龙头阶段跑输为代价；若样本外无优势则拒绝。",
+      "triggers": [
+        "持有期限达到五至八年",
+        "主题领导者发生更替、退市或基本面失效",
+        "ETF按点时规则完成成分调整"
+      ],
+      "falsifiers": [
+        "起点单一龙头长期风险调整结果不劣于ETF",
+        "ETF成分更替未降低永久损失率",
+        "费用与稀释使ETF长期结果更差"
+      ],
+      "uncertainties": [
+        "来源未指定ETF或指数",
+        "五至八年样本受指数存续和幸存者偏差影响",
+        "不同技术主题的领导者集中度差异很大"
+      ],
+      "authority": 0,
+      "provenance": "SYSTEM_research_synthesis_from_attributed_source",
+      "source_basis": "作者原话是若五至八年后才突破，个股龙头可能已经更换，并以是否持有ETF作对照；具体ETF、回测组合、成本和预期效果均由系统提出，不归作者。",
+      "related_existing_ids": [
+        "XH-047",
+        "XH-055"
+      ],
+      "dedup_boundary": "XH-047只比较长期科技趋势中的非杠杆ETF与倍数ETF路径风险，XH-055只比较同主题ETF的成交摩擦；两者都未检验非杠杆ETF成分更替相对起点单一龙头的五至八年领导者失效风险，因此本候选具有独立增量。"
+    }
+  ],
+  "timing_notes": [
+    "作者的三至五年回本、三年左右物理AI突破、2027年6月黄仁勋回归均是来源预测，不是知识事实。",
+    "“本周五”可能对应Anthropic拟在2026-11-19前后开始交易，但来源音译和数字单位无法唯一对齐，不能用官方文件替换原话。"
+  ],
+  "typo_corrections": [
+    {
+      "raw": "i soo pic",
+      "candidate": "Anthropic",
+      "confidence": "medium",
+      "boundary": "仅因拟议IPO时间相近而作为候选；1.5/1.3/1与SEC的70—78美元报价不一致，禁止强制归一。"
+    }
+  ],
+  "decision_trace": {
+    "included": [
+      "无杠杆不等于无永久损失",
+      "做空的反弹路径风险",
+      "AI硬件叙事重分类",
+      "物理AI需求对XH-240的局部支持",
+      "ETF成分更替与单票领导者失效的新候选"
+    ],
+    "excluded": [
+      {
+        "claim": "作者现金耗尽后只能卧倒",
+        "reason": "这是作者个体仓位与情绪，不是经研究的风控规则；相关预算边界已由XH-070覆盖。"
+      },
+      {
+        "claim": "三至五年必回本",
+        "reason": "与永久损失事实冲突，且XH-260已明确反对等待回本。"
+      },
+      {
+        "claim": "物理AI规模部署会造成存储永久稀缺",
+        "reason": "XH-240已研究人形机器人接力DRAM需求；本期没有2027年第四季度高点或需求缺口条件，只记局部支持，不冒报完整复现，也不新建宽泛版本。"
+      },
+      {
+        "claim": "市场普遍没人赚钱",
+        "reason": "缺少完整、同口径样本；不形成制度或策略知识。"
+      }
+    ]
+  },
+  "judgment_heuristics": [
+    "先判断来源是否在表达事实、预测、自我安慰、风险披露或反讽，再决定是否进入知识层。",
+    "部分支持只记部分支持；同题相邻不等于完整复现。",
+    "作者个体持仓行为不能自动升级为家庭组合规则。"
+  ],
+  "prior_feedback_response": {
+    "calibration": "flagged_none",
+    "current_posture": "expired",
+    "effect": "没有用过期姿态支持或反驳本期观点，也没有把旧知识候选当作当前交易事实。"
+  },
+  "deduplication_review": {
+    "status": "completed_against_parent_candidate_set",
+    "existing_ids_reviewed": [
+      "XH-047",
+      "XH-079",
+      "XH-058",
+      "XH-070",
+      "XH-092",
+      "XH-122",
+      "XH-127",
+      "XH-169",
+      "XH-239",
+      "XH-240",
+      "XH-260",
+      "XH-267",
+      "XH-308",
+      "XH-330",
+      "XH-376"
+    ],
+    "result": "不新增卧倒、等回本或宽泛物理AI存储版本；XH-240只记局部支持。保留两个有独立增量的新候选：点时叙事重分类，以及非杠杆ETF成分更替相对起点龙头的长期风险。",
+    "parent_candidate_path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261117_06_01a1e67f/video_knowledge_prior_candidates.json",
+    "additional_dedup_search_path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261117_06_01a1e67f/video_new_candidate_dedup_search.json"
+  },
+  "action_summary": {
+    "posture_update": "not_applied：吕晓彤属于其他作者，现行小草姿态已过期；本草稿不修改或续期全局姿态和时间线。",
+    "playbook_update": "no_deterministic_change：作者卧倒、三至五年必回本和反讽类比不进入正式方法；两个新候选在研究与人工门前不改变策略、仓位、参数或退出。",
+    "hypothesis_update": "candidate_only：提出点时叙事重分类和ETF领导者更替两个authority=0新候选；物理AI存储只对XH-240提供局部支持，禁止按完整claim复现合并。",
+    "audit_evidence": "完整逐字稿70760字节、SHA-256=d181ee7dc2f6a148770a5fbd5497243ae1ac1957829445c37a8592b4d6089175；202个稳定段完成独立二遍复核，反讽、含糊IPO、未具名公司与系统事实均分层保存。",
+    "instrumentation_todo": "为叙事候选预注册点时文本词典、阈值、盈利修正、估值、资金流与匹配对照；为ETF候选冻结历史指数成分、单票龙头、退市、费用、跟踪误差和五至八年样本。XH-240沿用既有2027至2030年AI服务器与机器人DRAM位需求研究，不新建宽泛面板。",
+    "routing": [
+      "authority=0研究候选",
+      "XH-240局部支持但不合并来源",
+      "不进入全局姿态与时间线",
+      "待research_run与人工门验证"
+    ],
+    "authority": 0
+  }
+}
