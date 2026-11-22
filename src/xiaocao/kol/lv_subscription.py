@@ -8071,7 +8071,12 @@ try {
                         raise EnrichmentError(
                             "actionable OCR ambiguity requires human confirmation"
                         )
-                elif text and text in actionable_text:
+                elif text and (
+                    # A UI count of 0 is not evidence for a claim about 30 or 0.5.
+                    text in re.findall(r"\d+(?:\.\d+)?", actionable_text)
+                    if text.isdecimal()
+                    else text in actionable_text
+                ):
                     raise EnrichmentError(
                         "excluded OCR ambiguity cannot support a claim"
                     )

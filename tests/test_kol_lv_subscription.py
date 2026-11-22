@@ -5039,6 +5039,59 @@ def test_image_decision_requires_every_low_confidence_ocr_line_to_be_excluded_or
     assert result["status"] == "decided"
 
 
+@pytest.mark.parametrize(
+    ("ambiguous_text", "claim_text", "actionable", "error"),
+    [
+        ("0", "11月30日左右见底", False, None),
+        ("0", "仓位0.5%", False, None),
+        ("0", "仓位10%", False, None),
+        ("0", "仓位0%", False, "excluded OCR ambiguity"),
+        ("0", "仓位为0", False, "excluded OCR ambiguity"),
+        ("0", "仓位0.", False, "excluded OCR ambiguity"),
+        ("0", "仓位0...", False, "excluded OCR ambiguity"),
+        ("0", "11月30日左右见底", True, "requires human confirmation"),
+        ("纳指持仓", "疑似纳指持仓", False, "excluded OCR ambiguity"),
+    ],
+)
+def test_image_ocr_numeric_ambiguity_matches_a_number_not_its_digits(
+    tmp_path, ambiguous_text, claim_text, actionable, error,
+):
+    service = LvSubscriptionService(tmp_path / "subscription", now=lambda: NOW)
+    downloaded = tmp_path / "12.png"
+    downloaded.write_bytes(b"\x89PNG\r\nreal-subscription-image")
+    entry = _representative_subscription_entries()[0]
+    entry["size"] = downloaded.stat().st_size
+    update = service.observe_browser_listing([entry])["updates"][0]
+    _capture_browser_download(service, update["identity"], downloaded)
+    source_quote = "今天市场缩量，下一交易日先看成交额是否恢复。" + claim_text
+    evidence = service.ingest_browser_download(
+        update["identity"],
+        ocr_runner=lambda _path: {
+            "engine": "macos_vision",
+            "lines": [
+                {"text": source_quote, "confidence": 0.99,
+                 "bounding_box": [0.1, 0.7, 0.8, 0.1]},
+                {"text": ambiguous_text, "confidence": 0.3,
+                 "bounding_box": [0.1, 0.1, 0.1, 0.1]},
+            ],
+        },
+    )
+    bundle = _decision_bundle(evidence)
+    item = bundle["items"][0]
+    item["claims"][0]["quote"] = source_quote
+    attach_claim_contract(item, evidence["evidence_path"])
+    item["ocr_ambiguity_assessment"] = [{
+        "text": ambiguous_text, "actionable": actionable,
+        "human_confirmed": False, "reason": "单独评估低置信OCR行。",
+    }]
+
+    if error:
+        with pytest.raises(EnrichmentError, match=error):
+            service._validate_decision_bundle(bundle, ingest=evidence)
+    else:
+        assert service._validate_decision_bundle(bundle, ingest=evidence) is item
+
+
 def test_high_confidence_question_mark_is_still_an_ocr_ambiguity(tmp_path):
     service = LvSubscriptionService(tmp_path / "subscription", now=lambda: NOW)
     downloaded = tmp_path / "12.png"
