@@ -1692,6 +1692,16 @@ def _canonical_wechat_official_source_repair_profile(
                 "source_run",
             ),
             (
+                "code_error",
+                "unhandled_source_exception",
+                "source_run",
+            ),
+            (
+                "contract_error",
+                "mailbox_response_invalid",
+                "mailbox_response",
+            ),
+            (
                 "configuration",
                 "wechat_cli_missing",
                 "wechat_official_scan",

@@ -1320,6 +1320,18 @@ def test_repair_validation_accepts_shared_lv_listing_validation_profile(
             "kol_wechat_official_accounts_source_run",
         ),
         (
+            "code_error",
+            "unhandled_source_exception",
+            "source_run",
+            "kol_wechat_official_accounts_source_run",
+        ),
+        (
+            "contract_error",
+            "mailbox_response_invalid",
+            "mailbox_response",
+            "kol_wechat_official_accounts_source_run",
+        ),
+        (
             "configuration",
             "wechat_cli_missing",
             "wechat_official_scan",
