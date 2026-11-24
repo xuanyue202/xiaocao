@@ -194,7 +194,12 @@ unchanged. The backend holds the fresh ticket in RAM, reserves and checks the
 new target, and marks the exact resume before provider I/O. Its dedicated start
 path never pauses another task. The original task continues only after a durable
 resume claim and exact provider readback; any uncertain preparation or start
-stays claimed for exact reconciliation and is never blindly reissued. A backend
+stays claimed for exact reconciliation and is never blindly reissued. A fresh
+merchant-issued alias may change between the two explicitly authorized recorded
+hosts only when the exact encoded path, original resource, file and material are
+independently proved; persist separate original and alias resource hashes. This
+is not redirect permission: changed-path or cross-host redirects remain denied.
+A backend
 restart is protected by the source and shared lifecycle leases; no lifecycle
 lease spans Browser input. Ordinary recording acceptance and cloud/mailbox
 readback still apply before any completion claim.

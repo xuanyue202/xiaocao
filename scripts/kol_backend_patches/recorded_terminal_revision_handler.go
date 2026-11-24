@@ -59,7 +59,7 @@ func (c *APIClient) handlePrepareRecordedTerminalRevision(ctx *gin.Context) {
 	}
 	extra["recorded_ticket_candidate_id"] = body.AliasID
 	request := DownloadTaskPayload{URL: task.Meta.Req.URL, Extra: extra}
-	if err := resolveXiaocaoCaptureDownload(&request, c.cfg.RootDir); err != nil {
+	if err := resolveXiaocaoCaptureDownloadWithTerminalAlias(&request, c.cfg.RootDir, true); err != nil {
 		ctx.JSON(http.StatusConflict, gin.H{"code": 409, "msg": "fresh recorded ticket evidence invalid"})
 		return
 	}

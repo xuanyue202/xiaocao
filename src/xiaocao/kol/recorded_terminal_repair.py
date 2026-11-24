@@ -62,7 +62,14 @@ def inspect_terminal_task(current: dict[str, Any], tasks: list[dict[str, Any]],
     meta = task.get('meta') or {}
     labels = meta.get('labels') or (meta.get('req') or {}).get('labels') or {}
     opts = meta.get('opts') or {}
-    from .recorded_recovery import resource_hash
+    from urllib.parse import urlsplit
+    from .recorded_recovery import RECORDED_MEDIA_HOSTS, resource_hash
+    original_url=str((meta.get('req') or {}).get('url') or '')
+    original_resource=urlsplit(original_url)
+    if (original_resource.scheme!='https' or original_resource.netloc not in RECORDED_MEDIA_HOSTS
+        or original_resource.username is not None or original_resource.password is not None or original_resource.fragment
+        or resource_hash(original_url)!=binding.get('media_resource_sha256')):
+        raise EnrichmentError('recorded terminal provider original resource changed')
     for other in tasks:
         if other is task:
             continue
@@ -71,8 +78,11 @@ def inspect_terminal_task(current: dict[str, Any], tasks: list[dict[str, Any]],
         other_labels = other_meta.get('labels') or other_req.get('labels') or {}
         other_opts = other_meta.get('opts') or {}
         other_url = str(other_req.get('url') or '')
-        same_resource = bool(other_url and binding.get('media_resource_sha256')
-                             and resource_hash(other_url) == binding['media_resource_sha256'])
+        other_resource=urlsplit(other_url)
+        same_resource = bool(other_url and other_resource.scheme=='https'
+            and other_resource.netloc in RECORDED_MEDIA_HOSTS
+            and other_resource.username is None and other_resource.password is None and not other_resource.fragment
+            and other_resource.path==original_resource.path)
         if (other_labels.get('capture_id') == cid or same_resource
             or (other_labels.get('recorded_resource_id') == resource and other_labels.get('recorded_media_file_id') == file_id)
             or (opts.get('path') and opts.get('name') and other_opts.get('path') == opts.get('path') and other_opts.get('name') == opts.get('name'))):
@@ -138,6 +148,41 @@ def inspect_terminal_task(current: dict[str, Any], tasks: list[dict[str, Any]],
             'terminal_sha256': _sha(terminal)}
 
 
+def _verified_same_file_alias(service: Any, binding: dict[str, Any], proof: dict[str, Any]) -> dict[str, Any]:
+    """Prove the merchant-issued alias retains the exact path and original file."""
+    from urllib.parse import urlsplit
+    from .recorded_recovery import RECORDED_MEDIA_HOSTS, resource_hash
+    keys=('identity','capture_job_id','source_message_sha256','published_at','recording',
+          'app_id','media_file_id','material_id')
+    if any(proof.get(k)!=binding.get(k) for k in keys):
+        raise EnrichmentError('recorded terminal alias changed original source or file')
+    rows=service.sniffer.candidates()
+    original=[row for row in rows if row.get('id')==binding.get('candidate_id')]
+    alias=[row for row in rows if row.get('id')==proof.get('candidate_id')]
+    if len(original)!=1 or len(alias)!=1:
+        raise EnrichmentError('recorded terminal alias candidate is ambiguous')
+    old, new=original[0],alias[0]
+    old_url,new_url=str(old.get('url') or ''),str(new.get('url') or '')
+    before,after=urlsplit(old_url),urlsplit(new_url)
+    merchant=f"https://{binding['app_id']}.h5.xiaoeknow.com/xe.material-center.play/getPlayUrl"
+    if (any(u.scheme!='https' or u.netloc not in RECORDED_MEDIA_HOSTS or u.username is not None
+            or u.password is not None or u.fragment for u in (before,after))
+        or not before.path or before.path!=after.path
+        or old.get('media_type')!='m3u8' or new.get('media_type')!='m3u8'
+        or old.get('source_url')!=merchant or new.get('source_url')!=merchant
+        or old.get('source_path')!='/xe.material-center.play/getPlayUrl'
+        or new.get('source_path')!='/xe.material-center.play/getPlayUrl'
+        or resource_hash(old_url)!=binding.get('media_resource_sha256')
+        or resource_hash(new_url)!=proof.get('media_resource_sha256')):
+        raise EnrichmentError('recorded terminal alias host, path or merchant changed')
+    return {'original_candidate_id':binding['candidate_id'],'alias_candidate_id':proof['candidate_id'],
+            'original_resource_sha256':binding['media_resource_sha256'],
+            'alias_resource_sha256':proof['media_resource_sha256'],
+            'original_host':before.netloc,'alias_host':after.netloc,
+            'provider_path_sha256':hashlib.sha256(before.path.encode()).hexdigest(),
+            'media_file_id':binding['media_file_id'],'material_id':binding['material_id']}
+
+
 def _durable_transition(store: Any, current: dict[str, Any], event: str, **changes: Any) -> dict[str, Any]:
     """Persist an exact claim before crossing a provider-effect boundary."""
     result = store.transition(current, event, **changes)
@@ -184,10 +229,7 @@ def prepare_terminal_revision(service: Any, item: dict[str, Any], proof_path: Pa
     proof = json.loads(proof_path.read_text())
     validate_recorded_proof(proof, item, capture_id)
     binding = current.get('recorded_replay_binding') or {}
-    keys = ('identity','capture_job_id','source_message_sha256','published_at','recording',
-            'app_id','media_file_id','media_resource_sha256','material_id')
-    if (not proof.get('candidate_id') or any(proof.get(k) != binding.get(k) for k in keys)):
-        raise EnrichmentError('recorded terminal alias changed original source or file')
+    alias_binding = _verified_same_file_alias(service,binding,proof)
     driver = XiaocaoLiveCaptureDriver(item_root.parent.parent)
     driver._service = lambda _identity: service
     fresh = collect_recorded_proof(item_root.parent.parent, identity, capture_id,
@@ -208,7 +250,7 @@ def prepare_terminal_revision(service: Any, item: dict[str, Any], proof_path: Pa
              'previous_media_sha256':preflight['partial_sha256'],
              'previous_media_size_bytes':preflight['partial_size_bytes'],
              'task_id':task_id, 'candidate_id':preflight['candidate_id'],
-             'alias_candidate_id':proof['candidate_id'], 'proof_path':str(proof_path),
+             'alias_candidate_id':proof['candidate_id'], 'alias_binding':alias_binding, 'proof_path':str(proof_path),
              'proof_sha256':_sha(proof_path), 'preflight':preflight}
     latest = service.capture_store.latest(capture_id)
     if latest != current:
@@ -383,10 +425,7 @@ def observe_terminal_alias(sub: Any, item: dict[str, Any], service: Any, *, outp
     proof=collect_recorded_proof(root,identity,capture_id,response['candidate_id'],
         player_duration=response['player_duration_seconds'],player_left=response['player_left'],
         driver=sub.capture_driver,observation_path=claim_path)
-    keys=('identity','capture_job_id','source_message_sha256','published_at','recording',
-          'app_id','media_file_id','media_resource_sha256','material_id')
-    if any(proof.get(k)!=binding.get(k) for k in keys):
-        raise EnrichmentError('recorded terminal alias does not match original file')
+    _verified_same_file_alias(service,binding,proof)
     proof_path=folder/f'recorded-terminal-proof-{sub.human_entry_session_id}.json'
     with proof_path.open('x') as f:
         json.dump(proof,f,ensure_ascii=False,indent=2); f.write('\n'); f.flush(); os.fsync(f.fileno())
@@ -450,17 +489,29 @@ def restart_terminal_backend(sub: Any, service: Any, item: dict[str, Any], *, ou
         if not installed.is_file():
             raise EnrichmentError('recorded terminal backend is unavailable')
         installed_sha=_sha256_file(installed)
-        prior=current.get('recorded_terminal_backend_claim')
+        primary=current.get('recorded_terminal_backend_claim')
+        followup=bool(primary and primary.get('replacement_sha256')!=replacement_sha256)
+        claim_field='recorded_terminal_backend_followup_claim' if followup else 'recorded_terminal_backend_claim'
+        receipt_field='recorded_terminal_backend_followup_receipt' if followup else 'recorded_terminal_backend_receipt'
+        if followup:
+            predecessor=current.get('recorded_terminal_backend_receipt') or {}
+            if (predecessor.get('capture_job_id')!=capture_id or predecessor.get('task_id')!=before['task_id']
+                or predecessor.get('backend_sha256')!=primary.get('replacement_sha256')
+                or primary.get('preflight')!=before):
+                raise EnrichmentError('recorded terminal prior backend effect is not reconciled')
+        prior=current.get(claim_field)
         if prior:
             if (prior.get('capture_job_id')!=capture_id or prior.get('task_id')!=before['task_id']
                 or prior.get('replacement_sha256')!=replacement_sha256
                 or prior.get('preflight')!=before or installed_sha not in {prior.get('previous_sha256'),replacement_sha256}):
                 raise EnrichmentError('recorded terminal backend claim changed')
         else:
+            if followup and installed_sha!=primary.get('replacement_sha256'):
+                raise EnrichmentError('recorded terminal prior backend identity changed')
             prior={'capture_job_id':capture_id,'task_id':before['task_id'],
                    'replacement_sha256':replacement_sha256,'previous_sha256':installed_sha,'preflight':before}
             current=_durable_transition(service.capture_store,current,'recorded_terminal_backend_claimed',
-                                        recorded_terminal_backend_claim=prior)
+                                        **{claim_field:prior})
         if installed_sha!=replacement_sha256:
             replacement=Path(replacement_binary)
             if (replacement.is_symlink() or not replacement.is_file() or replacement.resolve().parent!=installed.parent
@@ -474,9 +525,9 @@ def restart_terminal_backend(sub: Any, service: Any, item: dict[str, Any], *, ou
         if again!=before:
             raise EnrichmentError('recorded terminal provider effect changed after backend restart')
         receipt={'capture_job_id':capture_id,'task_id':before['task_id'],'backend_sha256':replacement_sha256}
-        if after.get('recorded_terminal_backend_receipt')!=receipt:
+        if after.get(receipt_field)!=receipt:
             _durable_transition(service.capture_store,after,'recorded_terminal_backend_reconciled',
-                                recorded_terminal_backend_receipt=receipt)
+                                **{receipt_field:receipt})
         return {'status':'ready',**receipt,'preflight':before}
 
 
@@ -497,9 +548,8 @@ def reconcile_terminal_preparation(service: Any, item: dict[str, Any], *, output
         raise EnrichmentError('recorded terminal retained alias proof changed')
     proof=json.loads(path.read_text()); validate_recorded_proof(proof,item,capture_id)
     binding=current.get('recorded_replay_binding') or {}
-    keys=('identity','capture_job_id','source_message_sha256','published_at','recording',
-          'app_id','media_file_id','media_resource_sha256','material_id')
-    if proof.get('candidate_id')!=repair.get('alias_candidate_id') or any(proof.get(k)!=binding.get(k) for k in keys):
+    if (proof.get('candidate_id')!=repair.get('alias_candidate_id')
+        or _verified_same_file_alias(service,binding,proof)!=repair.get('alias_binding')):
         raise EnrichmentError('recorded terminal retained alias changed original file')
     driver=XiaocaoLiveCaptureDriver(item_root.parent.parent); driver._service=lambda _:service
     observed=collect_recorded_proof(item_root.parent.parent,identity,capture_id,proof['candidate_id'],

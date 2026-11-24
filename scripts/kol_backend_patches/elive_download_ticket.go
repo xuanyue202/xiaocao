@@ -16,9 +16,22 @@ import (
 	"wx_channel/internal/livecapture"
 )
 
+// A terminal recording alias may use either explicitly approved host, but
+// must retain the exact encoded provider path; this never authorizes redirects.
+func sameRecordedTerminalResource(original, alias *url.URL) bool {
+	return original != nil && alias != nil && original.Scheme == "https" && alias.Scheme == "https" &&
+		recordedCourseMediaHost(original.Host) && recordedCourseMediaHost(alias.Host) &&
+		original.User == nil && alias.User == nil && original.Fragment == "" && alias.Fragment == "" &&
+		original.EscapedPath() == alias.EscapedPath()
+}
+
 // Resolve only inside the singleton: public candidate APIs deliberately omit
 // signed queries. The caller supplies identity, never extracts the media ticket.
 func resolveXiaocaoCaptureDownload(body *DownloadTaskPayload, rootDir string) error {
+	return resolveXiaocaoCaptureDownloadWithTerminalAlias(body, rootDir, false)
+}
+
+func resolveXiaocaoCaptureDownloadWithTerminalAlias(body *DownloadTaskPayload, rootDir string, allowTerminalHostChange bool) error {
 	if body.Extra["type"] != "live_capture" || body.Extra["source"] != "xiaocao" {
 		return nil
 	}
@@ -61,10 +74,14 @@ func resolveXiaocaoCaptureDownload(body *DownloadTaskPayload, rootDir string) er
 		u, e := url.Parse(ticket)
 		original, oe := url.Parse(selected.URL)
 		at, ae := time.ParseInLocation("2006-01-02 15:04:05", alias.Captured, time.Local)
+		terminalAlias := recorded && allowTerminalHostChange
+		sameResource := e == nil && oe == nil && u.Scheme == original.Scheme && u.Host == original.Host && u.EscapedPath() == original.EscapedPath()
+		if terminalAlias && e == nil && oe == nil {
+			sameResource = sameRecordedTerminalResource(original, u)
+		}
 		if ticket == "" || e != nil || oe != nil || ae != nil || at.Before(time.Now().Add(-20*time.Minute)) || at.After(time.Now().Add(30*time.Second)) ||
 			alias.MediaType != "m3u8" || alias.SourceURL != selected.SourceURL || alias.SourcePath != selected.SourcePath ||
-			u.Scheme != original.Scheme || u.Host != original.Host || u.Path != original.Path ||
-			!hasObservedEndedRecordedPlaylist(rootDir, *alias, u, body.Extra) {
+			!sameResource || !hasObservedEndedRecordedPlaylist(rootDir, *alias, u, body.Extra) {
 			return fmt.Errorf("xiaocao ticket alias differs from exact recording")
 		}
 		raw = ticket
@@ -81,9 +98,13 @@ func resolveXiaocaoCaptureDownload(body *DownloadTaskPayload, rootDir string) er
 	}
 	observed, observedErr := url.Parse(raw)
 	requested, requestedErr := url.Parse(body.URL)
+	sameResource := observedErr == nil && requestedErr == nil && observed.Scheme == requested.Scheme &&
+		observed.Host == requested.Host && observed.EscapedPath() == requested.EscapedPath()
+	if recorded && allowTerminalHostChange && observedErr == nil && requestedErr == nil {
+		sameResource = sameRecordedTerminalResource(requested, observed)
+	}
 	if raw == "" || observedErr != nil || requestedErr != nil || observed.Scheme != "https" ||
-		observed.User != nil || requested.User != nil || observed.Scheme != requested.Scheme ||
-		observed.Host != requested.Host || observed.Path != requested.Path ||
+		observed.User != nil || requested.User != nil || !sameResource ||
 		(liveID == "" && !hasObservedEndedRecordedPlaylist(rootDir, *selected, observed, body.Extra)) ||
 		(!eliveFinitePlaylistName.MatchString(filepath.Base(observed.Path)) &&
 			!hasObservedEndedNativePlaylist(rootDir, *selected, observed) &&

@@ -257,3 +257,72 @@ func TestNumericNativeReplayRequiresObservedEndedPlaylist(t *testing.T) {
 		})
 	}
 }
+
+func TestRecordedTerminalCrossHostRequiresExactApprovedPath(t *testing.T) {
+	original, _ := url.Parse("https://t-vod.h5.xed.plus/account/a/drm/v.f123.m3u8?old=private")
+	for raw, want := range map[string]bool{
+		"https://encrypt-k-vod.xet.tech/account/a/drm/v.f123.m3u8?new=private": true,
+		"https://t-vod.h5.xed.plus/account/a/drm/v.f123.m3u8?new=private":      true,
+		"https://other.h5.xed.plus/account/a/drm/v.f123.m3u8?new=private":      false,
+		"https://encrypt-k-vod.xet.tech:443/account/a/drm/v.f123.m3u8":         false,
+		"http://encrypt-k-vod.xet.tech/account/a/drm/v.f123.m3u8":              false,
+		"https://encrypt-k-vod.xet.tech/account/b/drm/v.f123.m3u8":             false,
+		"https://encrypt-k-vod.xet.tech/account/%61/drm/v.f123.m3u8":           false,
+	} {
+		alias, err := url.Parse(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := sameRecordedTerminalResource(original, alias); got != want {
+			t.Fatal("terminal host or path gate changed")
+		}
+	}
+}
+
+func TestCrossHostTicketAliasIsRestrictedToTerminalRepair(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "elive_live_debug", "m3u8")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	path := "/account/c700e05f5001834826931137742/drm/v.f421220.m3u8"
+	old := "https://t-vod.h5.xed.plus" + path
+	fresh := "https://encrypt-k-vod.xet.tech" + path
+	base := eliveLiveCandidate{ID: "original-terminal", LiveID: "l_room", URL: old, Captured: time.Now().Add(-time.Hour).Format("2006-01-02 15:04:05"), MediaType: "m3u8", SourceURL: "https://appsnm3rlcp3566.h5.xiaoeknow.com/xe.material-center.play/getPlayUrl", SourcePath: "/xe.material-center.play/getPlayUrl"}
+	alias := base
+	alias.ID = "fresh-terminal-alias"
+	alias.URL = fresh
+	alias.Captured = time.Now().Format("2006-01-02 15:04:05")
+	f, err := os.Create(filepath.Join(root, "elive_live_debug", "candidates.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []eliveLiveCandidate{base, alias} {
+		b, _ := json.Marshal(c)
+		if _, err = f.Write(append(b, '\n')); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f.Close()
+	playlist := filepath.Join(dir, "finite.m3u8")
+	if err = os.WriteFile(playlist, []byte("#EXTM3U\n#EXTINF:120,\nsegment.ts\n#EXT-X-ENDLIST\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	event, _ := json.Marshal(map[string]any{"kind": "response.body", "status": 200, "url": fresh, "at": time.Now().Format(time.RFC3339Nano), "file": playlist})
+	if err = os.WriteFile(filepath.Join(root, "elive_live_debug", "events.jsonl"), append(event, '\n'), 0600); err != nil {
+		t.Fatal(err)
+	}
+	livecapture.RememberCandidateURL(alias.ID, fresh+"?fresh=private")
+	extra := map[string]string{"type": "live_capture", "source": "xiaocao", "capture_id": base.ID, "live_id": base.LiveID, "recorded_resource_id": "v_6aeac14ce4b023c0863c984c", "recorded_media_file_id": "5001834826931137742", "recorded_ticket_candidate_id": alias.ID}
+	body := DownloadTaskPayload{URL: old, Extra: extra}
+	if resolveXiaocaoCaptureDownload(&body, root) == nil {
+		t.Fatal("ordinary task accepted cross-host alias")
+	}
+	body = DownloadTaskPayload{URL: old, Extra: extra}
+	if err = resolveXiaocaoCaptureDownloadWithTerminalAlias(&body, root, true); err != nil {
+		t.Fatal("exact terminal alias rejected", err)
+	}
+	if body.URL != fresh+"?fresh=private" {
+		t.Fatal("terminal ticket changed")
+	}
+}

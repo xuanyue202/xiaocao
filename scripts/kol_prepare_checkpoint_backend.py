@@ -49,15 +49,17 @@ def main() -> int:
     bindings=json.loads((resources/'integration_bindings.json').read_text())
     terminal=json.loads((resources/'recorded-terminal-bindings.json').read_text()) if args.recorded_terminal else []
     terminal_after={entry['path']:entry['after_sha256'] for entry in terminal}
+    terminal_previous={entry['path']:set(entry.get('previous_after_sha256',[])) for entry in terminal}
     states=[]
     for item in bindings:
         actual=sha(backend/item['path'])
         accepted={item['before_sha256'],item['after_sha256']}
         if args.recorded_terminal and item['path'] in terminal_after:
             accepted.add(terminal_after[item['path']])
+            accepted.update(terminal_previous[item['path']])
         if actual not in accepted:
             raise RuntimeError('backend source drift: '+item['path'])
-        states.append(actual in {item['after_sha256'],terminal_after.get(item['path'])})
+        states.append(actual in ({item['after_sha256'],terminal_after.get(item['path'])} | terminal_previous.get(item['path'],set())))
     if any(states) and not all(states):
         raise RuntimeError('partially applied backend integration requires diagnosis')
     copies={
@@ -79,17 +81,19 @@ def main() -> int:
         subprocess.run(['git','-C',str(backend),'apply','--check',str(resources/'integration.patch')],check=True)
         subprocess.run(['git','-C',str(backend),'apply',str(resources/'integration.patch')],check=True)
     for item in bindings:
-        if sha(backend/item['path']) not in {item['after_sha256'],terminal_after.get(item['path'])}:
+        if sha(backend/item['path']) not in ({item['after_sha256'],terminal_after.get(item['path'])} | terminal_previous.get(item['path'],set())):
             raise RuntimeError('backend integration hash mismatch')
     if args.recorded_terminal:
-        terminal_states=[]
-        for item in terminal:
-            actual=sha(backend/item['path'])
-            if actual not in {item['before_sha256'],item['after_sha256']}:
-                raise RuntimeError('recorded terminal backend source drift: '+item['path'])
-            terminal_states.append(actual==item['after_sha256'])
-        if any(terminal_states) and not all(terminal_states):
-            raise RuntimeError('partially applied recorded terminal integration')
+        actuals=[sha(backend/item['path']) for item in terminal]
+        if all(actual==item['before_sha256'] for actual,item in zip(actuals,terminal)):
+            terminal_mode='initial'
+        elif all(actual==item['after_sha256'] for actual,item in zip(actuals,terminal)):
+            terminal_mode='current'
+        elif all(actual in ({item['after_sha256']} | set(item.get('previous_after_sha256',[])))
+                 for actual,item in zip(actuals,terminal)):
+            terminal_mode='upgrade'
+        else:
+            raise RuntimeError('recorded terminal backend source drift or partial integration')
         terminal_copies={
             'recorded_terminal_revision_handler.go':'internal/api/recorded_terminal_revision_handler.go',
             'recorded_terminal_revision_handler_test.go':'internal/api/recorded_terminal_revision_handler_test.go',
@@ -99,9 +103,9 @@ def main() -> int:
             'ticket_memory.go':'pkg/gopeed/pkg/protocol/stream/ticket_memory.go',
             'ticket_memory_test.go':'pkg/gopeed/pkg/protocol/stream/ticket_memory_test.go',
         }
-        sync_additive_sources(backend,resources,terminal_copies,{})
-        if not all(terminal_states):
-            patch=resources/'recorded-terminal-integration.patch'
+        sync_additive_sources(backend,resources,terminal_copies,previous)
+        if terminal_mode!='current':
+            patch=resources/('recorded-terminal-upgrade.patch' if terminal_mode=='upgrade' else 'recorded-terminal-integration.patch')
             subprocess.run(['git','-C',str(backend),'apply','--check',str(patch)],check=True)
             subprocess.run(['git','-C',str(backend),'apply',str(patch)],check=True)
         for item in terminal:

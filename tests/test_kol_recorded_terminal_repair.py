@@ -18,13 +18,16 @@ def stopped(tmp_path):
     (cache/'binding.json').write_text(json.dumps({'Binding':'a'*64,'Manifest':'b'*64,'Segments':2}))
     blob = cache/(('c'*64)+'.ts.bin'); blob.write_bytes(b'verified-segment')
     Path(str(blob)+'.json').write_text(json.dumps({'sha256':hashlib.sha256(blob.read_bytes()).hexdigest(), 'size':blob.stat().st_size}))
+    from xiaocao.kol.recorded_recovery import resource_hash
+    old_url='https://t-vod.h5.xed.plus/account/12345678'+file_id+'/drm/v.f123.m3u8'
     current = {'job_id':'original','status':'download_failed','download_task_id':'task',
         'candidate_key':'id:'+cid,'candidate':{'id':cid},'expected_media_file_id':file_id,
         'download_task':{'meta':{'opts':{'path':str(tmp_path),'name':media.name}}},
         'expected_source':{'source_resource_id':resource},
         'recorded_replay_binding':{'candidate_id':cid,'capture_job_id':'original','media_file_id':file_id,
-          'recording':{'resource_id':resource}, 'finite_playlist':{'ended':True,'segments':2,'sha256':'b'*64}}}
-    task = {'id':'task','status':'pause','protocol':'stream','meta':{'opts':{'path':str(tmp_path),'name':media.name},
+          'recording':{'resource_id':resource}, 'media_resource_sha256':resource_hash(old_url),
+          'finite_playlist':{'ended':True,'segments':2,'sha256':'b'*64}}}
+    task = {'id':'task','status':'pause','protocol':'stream','meta':{'req':{'url':old_url},'opts':{'path':str(tmp_path),'name':media.name},
         'labels':{'capture_id':cid,'recorded_resource_id':resource,'recorded_media_file_id':file_id,
           'type':'live_capture','compress_inline':'true','checkpoint_basis':'verified_hls_segments','checkpoint_segments':'2'}}}
     return current,task,cache,tmp_path
@@ -55,19 +58,24 @@ def _terminal_service(stopped, tmp_path, monkeypatch):
     from types import SimpleNamespace
     import xiaocao.kol.recorded_flow  # Bind its production imports before patching the collector.
     import xiaocao.kol.recorded_recovery as recovery
+    from xiaocao.kol.recorded_recovery import resource_hash
     current, task, _, output_root = stopped
+    cid = current['candidate']['id']
     identity = 'kol-wechat-test'
     item = {'identity':identity,'capture_job_id':'original','published_at':'2026-11-17T16:27:00+08:00',
             'message_sha256':'d'*64}
     binding = current['recorded_replay_binding']
+    provider_path='/account/123456785001834828749775294/drm/v.f123.m3u8'
+    old_url='https://t-vod.h5.xed.plus'+provider_path
+    alias_url='https://encrypt-k-vod.xet.tech'+provider_path
     binding.update(identity=identity,source_message_sha256=item['message_sha256'],published_at=item['published_at'],
-        app_id='appTest', media_resource_sha256='e'*64, material_id='material')
+        app_id='appTest', media_resource_sha256=resource_hash(old_url), material_id='material')
     binding['recording']['course_id']='course_Example'
     current.update(source_subscription_id=identity,source_published_at=item['published_at'],source_message_sha256=item['message_sha256'])
     current['expected_source'].update(source_app_id='appTest',source_identity='xiaoetong:appTest:'+binding['recording']['resource_id'])
     current['checkpoint_resume_claim']={'task_id':'task'}
     current['checkpoint_resume_receipt']={'id':'task'}
-    proof = {**binding,'candidate_id':'fresh-alias','player_duration_seconds':100,
+    proof = {**binding,'candidate_id':'fresh-alias','media_resource_sha256':resource_hash(alias_url),'player_duration_seconds':100,
              'player_left':True,'observation_receipt_path':'observation'}
     root=tmp_path/'subscription'/'items'/identity; root.mkdir(parents=True)
     proof_path=root/'alias.json'; proof_path.write_text(json.dumps(proof))
@@ -85,6 +93,10 @@ def _terminal_service(stopped, tmp_path, monkeypatch):
     store=Store()
     class Sniffer:
         def __init__(self): self.task=deepcopy(task); self.calls=[]; self.fail_prepare=False
+        def candidates(self):
+            merchant='https://appTest.h5.xiaoeknow.com/xe.material-center.play/getPlayUrl'
+            return [dict(id=cid,url=old_url,media_type='m3u8',source_url=merchant,source_path='/xe.material-center.play/getPlayUrl'),
+                    dict(id='fresh-alias',url=alias_url,media_type='m3u8',source_url=merchant,source_path='/xe.material-center.play/getPlayUrl')]
         def complete_tasks_for_reconciliation(self): return [deepcopy(self.task)]
         def prepare_recorded_terminal_revision(self, task_id, **kwargs):
             assert store.events[-1]=='recorded_terminal_revision_claimed'
@@ -159,7 +171,8 @@ def test_terminal_alias_uses_same_original_and_exact_browser_shape(stopped,tmp_p
     monkeypatch.setattr(wechat,'read_original_history',lambda *a:{})
     monkeypatch.setattr(wechat,'parse_xiaocao_live_messages',lambda _:[])
     monkeypatch.setattr(playback,'enable_capture_listener_pac',lambda:None)
-    proof={**binding,'candidate_id':'fresh-alias','player_duration_seconds':4215,'player_left':True}
+    proof={**binding,'candidate_id':'fresh-alias','media_resource_sha256':recovery.resource_hash(service.sniffer.candidates()[1]['url']),
+           'player_duration_seconds':4215,'player_left':True}
     monkeypatch.setattr(recovery,'collect_recorded_proof',lambda *a,**k:proof)
     requests=[]
     def exchange(request,_item):
@@ -313,8 +326,8 @@ def test_terminal_runtime_keeps_observation_outside_lifecycle_lock(monkeypatch,t
 def test_terminal_preflight_rejects_unlabelled_same_resource_task(stopped):
     from xiaocao.kol.recorded_recovery import resource_hash
     current,task,_,root=stopped
-    url='https://encrypt-k-vod.xet.tech/a/drm/v.f1.m3u8'
-    current['recorded_replay_binding']['media_resource_sha256']=resource_hash(url)
+    old=task['meta']['req']['url']
+    url=old.replace('t-vod.h5.xed.plus','encrypt-k-vod.xet.tech')
     other={'id':'unlabelled','status':'done','meta':{'req':{'url':url+'?redacted'}}}
     with pytest.raises(EnrichmentError,match='another matching provider effect'):
         inspect_terminal_task(current,[task,other],output_root=root)
@@ -401,3 +414,50 @@ def test_unproved_preparation_never_repeats_provider_call(stopped,tmp_path,monke
     with pytest.raises(EnrichmentError,match='effect is uncertain'):
         reconcile_terminal_preparation(service,item,output_root=root)
     assert service.sniffer.calls==['prepare']
+
+
+def test_cross_host_alias_requires_exact_provider_path_and_merchant(stopped,tmp_path,monkeypatch):
+    from copy import deepcopy
+    from xiaocao.kol.recorded_terminal_repair import _verified_same_file_alias
+    from xiaocao.kol.recorded_recovery import resource_hash
+    service,item,proof_path,_=_terminal_service(stopped,tmp_path,monkeypatch)
+    binding=service.capture_store.latest('original')['recorded_replay_binding']; proof=json.loads(proof_path.read_text())
+    assert _verified_same_file_alias(service,binding,proof)['original_host']=='t-vod.h5.xed.plus'
+    assert _verified_same_file_alias(service,binding,proof)['alias_host']=='encrypt-k-vod.xet.tech'
+    original=service.sniffer.candidates()
+    for changed in ('path','host','port','merchant','material'):
+        rows=deepcopy(original); candidate=rows[1]; p=deepcopy(proof)
+        if changed=='path': candidate['url']=candidate['url'].replace('/account/','/another/')
+        if changed=='host': candidate['url']=candidate['url'].replace('encrypt-k-vod.xet.tech','other.h5.xed.plus')
+        if changed=='port': candidate['url']=candidate['url'].replace('encrypt-k-vod.xet.tech','encrypt-k-vod.xet.tech:443')
+        if changed=='merchant': candidate['source_url']='https://wrong.example/xe.material-center.play/getPlayUrl'
+        if changed=='material': p['material_id']='another-material'
+        p['media_resource_sha256']=resource_hash(candidate['url'])
+        service.sniffer.candidates=lambda:rows
+        with pytest.raises(EnrichmentError): _verified_same_file_alias(service,binding,p)
+
+
+def test_followup_backend_repair_preserves_original_claim_and_requires_predecessor(stopped,tmp_path,monkeypatch):
+    from contextlib import nullcontext
+    import xiaocao.yangsheng.capture as yangsheng
+    import xiaocao.kol.recorded_terminal_repair as terminal
+    service,item,_,root=_terminal_service(stopped,tmp_path,monkeypatch)
+    monkeypatch.setattr(yangsheng,'lifecycle_lease',lambda **kw:nullcontext())
+    monkeypatch.setattr(terminal,'_verify_terminal_original',lambda *a:None)
+    monkeypatch.setattr(terminal,'_require_shared_backend_idle',lambda _:None)
+    installed=tmp_path/'backend'; installed.write_bytes(b'old')
+    first=tmp_path/'backend.first'; first.write_bytes(b'first'); first_sha=hashlib.sha256(b'first').hexdigest()
+    second=tmp_path/'backend.second'; second.write_bytes(b'second'); second_sha=hashlib.sha256(b'second').hexdigest()
+    service.sniffer_binary=installed; service.start=lambda:{'capture_job_id':'original'}; calls=[]
+    def replace(current, *, replacement_binary, preserve_native_arm):
+        calls.append(replacement_binary.name); installed.write_bytes(replacement_binary.read_bytes()); return {'capture_job_id':'original'}
+    service._replace_sniffer_for_repair=replace
+    terminal.restart_terminal_backend(None,service,item,output_root=root,replacement_binary=first,replacement_sha256=first_sha)
+    old_claim=service.capture_store.latest('original')['recorded_terminal_backend_claim']
+    terminal.restart_terminal_backend(None,service,item,output_root=root,replacement_binary=second,replacement_sha256=second_sha)
+    result=service.capture_store.latest('original')
+    assert result['recorded_terminal_backend_claim']==old_claim
+    assert result['recorded_terminal_backend_receipt']['backend_sha256']==first_sha
+    assert result['recorded_terminal_backend_followup_receipt']['backend_sha256']==second_sha
+    terminal.restart_terminal_backend(None,service,item,output_root=root,replacement_binary=second,replacement_sha256=second_sha)
+    assert calls==['backend.first','backend.second']

@@ -1,9 +1,18 @@
 {
   "elive_download_ticket.go": [
-    "8e11495189633dd2109de025a7e42625a6c844dc37141f67e673a3f3b1d4f6fa"
+    "8e11495189633dd2109de025a7e42625a6c844dc37141f67e673a3f3b1d4f6fa",
+    "300b60594b88018f1cb4538060b26f42ecc2b4f4a29e5cab839b297077bae074"
   ],
   "elive_download_ticket_test.go": [
-    "b151d24820a6bd69a794928fa72d4ea224a0db23a869685dceb76c4b8570da4c"
+    "b151d24820a6bd69a794928fa72d4ea224a0db23a869685dceb76c4b8570da4c",
+    "dafc4bff888109f2b3074b46656f0592978829a46f7f43313972b2bee8f2ff91"
+  ],
+  "recorded_terminal_revision_handler.go": [
+    "9ae391ba2432e536fe6aa475f42df1efb1d0d7388bd668adef306b48f05636c2"
+  ],
+  "recorded_terminal_ticket_test.go": [
+    "0a3b92f71c6b83d2746c9853e6f7a0386bd31cfe05ec3b421e966d33af05eef7",
+    "4d0d2cc79333390bc1b440fc0bc2ca7af18225b536ac839ed36fa713e67e0be9"
   ],
   "replay_cache.go": [
     "eecbe2669ebc5898c969b8a1c15a24d946bc11735cd2e31437d6e9c5f7b4bce0",
@@ -13,13 +22,13 @@
     "792324eff3fc222b6c1ba5d59615e1cad5d11c308af8b57fee2cb08004ac2abe",
     "73588c2be306c5a427312198f489adcabd3035afe386d023f73b255ef0725157"
   ],
-  "replay_discontinuity_test.go": [
-    "f837b5dc45ec6a262d3ea90beb9e0f1687d447c607e4443b68cb7f50af343b9f"
-  ],
   "replay_cache_test.go": [
     "82f297f96c469885370b2c9ca07349201032e0bb537d474bab1895fb33320fc6",
     "5686297ae1ded4e92aa17189fbef5c134b367997df554ba239337139f29814bb",
     "d928b749e0e4c4e3d4a30329c8b02fa38e883c43a66cc1f4a1e9640b5a93de10",
     "ba8c77fe0e05d89a02c07d44d81386f9d33b199e69bde94ce08d3b8bedd96dad"
+  ],
+  "replay_discontinuity_test.go": [
+    "f837b5dc45ec6a262d3ea90beb9e0f1687d447c607e4443b68cb7f50af343b9f"
   ]
 }
