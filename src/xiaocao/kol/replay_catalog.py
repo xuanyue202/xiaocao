@@ -188,7 +188,7 @@ def match_original(rows: list[dict], published_at: str) -> dict | None:
         # Same date with different session wording is evidence to investigate,
         # not proof that the recording is unpublished or the same course.
         if any(re.fullmatch(
-                   re.escape(date) + r".{1,8}大师班直播(?:YJ)?",
+                   re.escape(date) + r".{1,8}大师班直播.*",
                    _course_title_key(r['title']))
                and not any(other in _course_title_key(r['title'])
                            for other in ({"早盘", "复盘"} - {session}))

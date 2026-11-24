@@ -429,7 +429,7 @@ def parse_xiaocao_live_messages(payload: dict[str, Any]) -> list[dict[str, Any]]
         header=re.sub(r'\s+','',raw_message.split('文字复盘总结',1)[0])
         future_notice=bool(re.search(r'存好别丢.*?以后听课固定这(?:一个)?链接.*?明天.*?到点点开',header))
         navigation=re.search(
-            r'(?m)^[ \t]*(?:[①-⑳]|[0-9]{1,2}[.、．)）])?[ \t]*'
+            r'(?m)^[ \t]*(?:[①-⑳]|[0-9]\ufe0f?\u20e3|[0-9]{1,2}[.、．)）])?[ \t]*'
             r'历史直播回放点击链接学习[:：][ \t]*(https://\S+)[ \t]*$',
             raw_message,
         )

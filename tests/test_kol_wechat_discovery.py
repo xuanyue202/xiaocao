@@ -15,6 +15,18 @@ from xiaocao.kol.xiaocao_wechat import (
 )
 
 
+def test_keycap_numbered_history_link_is_bound_to_same_message():
+    history = {"chat": "test-contact", "username": "exact-contact-id", "messages": [
+        "[2026-11-23 09:17] test-contact: 1⃣课程：#小程序://见势擒龙团/abc12345\n"
+        "2️⃣历史直播回放点击链接学习：https://yv9lc.xetslk.com/s/4uRHyc"
+    ]}
+    items = parse_xiaocao_live_messages(history)
+    mini = next(item for item in items if item.get("entry_kind") == "wechat_mini_program")
+    link = next(item for item in items if item.get("source_url"))
+    assert link["recorded_navigation_marker"] is True
+    assert link["message_sha256"] == mini["message_sha256"]
+
+
 def test_retained_capture_repair_still_discovers_new_original_entries(tmp_path):
     now = [datetime.fromisoformat("2026-10-20T16:00:00+08:00")]
     coordinator = DailyCoordinator(tmp_path / "daily", now=lambda: now[0])

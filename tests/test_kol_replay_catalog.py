@@ -101,6 +101,15 @@ def test_exact_session_title_order_is_supported_but_intraday_is_not_guessed():
     assert result['recording'] is None
 
 
+def test_dated_unfamiliar_session_with_suffix_is_not_unpublished():
+    item = {**ITEM, 'published_at': '2026-11-23T09:17:00+08:00'}
+    rows = [row(1, '11月23日盘前大师班直播YJ(35)-2026-11-23 10:27:29'),
+            row(2, '11月23日复盘大师班直播')]
+    with pytest.raises(ReplayCatalogError, match='recorded_session_title_unverified'):
+        inspect_original(CONFIG, item, now=NOW.replace(month=11, day=24, hour=11),
+                         session=Session([page(rows)]))
+
+
 def test_multipart_recording_is_an_agent_repair_not_unpublished_or_one_part_acceptance():
     item = {**ITEM, 'published_at':'2026-11-04T17:00:00+08:00'}
     now = NOW.replace(hour=22)
