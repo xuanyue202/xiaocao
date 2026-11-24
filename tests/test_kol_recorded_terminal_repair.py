@@ -461,3 +461,132 @@ def test_followup_backend_repair_preserves_original_claim_and_requires_predecess
     assert result['recorded_terminal_backend_followup_receipt']['backend_sha256']==second_sha
     terminal.restart_terminal_backend(None,service,item,output_root=root,replacement_binary=second,replacement_sha256=second_sha)
     assert calls==['backend.first','backend.second']
+
+
+def test_pending_preparation_requires_backend_drain_and_preserves_claim(stopped,tmp_path,monkeypatch):
+    from contextlib import nullcontext
+    import xiaocao.yangsheng.capture as yangsheng
+    import xiaocao.kol.recorded_terminal_repair as terminal
+    service,item,proof,root=_terminal_service(stopped,tmp_path,monkeypatch)
+    monkeypatch.setattr(yangsheng,'lifecycle_lease',lambda **kw:nullcontext())
+    monkeypatch.setattr(terminal,'_verify_terminal_original',lambda *a:None)
+    monkeypatch.setattr(terminal,'_require_shared_backend_idle',lambda _:None)
+    installed=tmp_path/'backend'; installed.write_bytes(b'old')
+    replacement=tmp_path/'backend.new'; replacement.write_bytes(b'reviewed')
+    digest=hashlib.sha256(replacement.read_bytes()).hexdigest()
+    service.sniffer_binary=installed; service.start=lambda:{'capture_job_id':'original'}
+    restarts=[]
+    def replace(current, *, replacement_binary, preserve_native_arm):
+        assert current['media_repair']['state']=='preparing'
+        restarts.append(True); installed.write_bytes(replacement_binary.read_bytes())
+        return {'capture_job_id':'original'}
+    service._replace_sniffer_for_repair=replace
+    service.sniffer.fail_prepare=True
+    with pytest.raises(RuntimeError): terminal.prepare_terminal_revision(service,item,proof,output_root=root)
+    old_claim=service.capture_store.latest('original')['media_repair']
+    # An unchanged backend cannot prove the old request has drained.
+    with pytest.raises(EnrichmentError,match='requires a separately claimed backend restart'):
+        terminal.restart_terminal_backend(None,service,item,output_root=root,replacement_binary=installed,
+            replacement_sha256=hashlib.sha256(installed.read_bytes()).hexdigest())
+    assert restarts==[]
+    terminal.restart_terminal_backend(None,service,item,output_root=root,replacement_binary=replacement,replacement_sha256=digest)
+    reconciled=service.capture_store.latest('original')['media_repair']
+    assert restarts==[True] and reconciled['state']=='absence_verified'
+    assert {k:reconciled[k] for k in old_claim if k!='state'}=={k:v for k,v in old_claim.items() if k!='state'}
+    assert reconciled['absence_receipt']['backend_restart_receipt']['backend_sha256']==digest
+    service.sniffer.fail_prepare=False
+    prepared=terminal.prepare_terminal_revision(service,item,proof,output_root=root)
+    assert prepared['media_repair']['prior_attempt']==reconciled
+    assert service.sniffer.calls==['prepare','prepare']
+
+
+@pytest.mark.parametrize('kind',['matching_marker','unknown_marker','unmarked_reservation','changed_partial','provider_revision','downstream'])
+def test_pending_preparation_with_unresolved_effect_never_restarts(stopped,tmp_path,monkeypatch,kind):
+    from contextlib import nullcontext
+    import xiaocao.yangsheng.capture as yangsheng
+    import xiaocao.kol.recorded_terminal_repair as terminal
+    service,item,proof,root=_terminal_service(stopped,tmp_path,monkeypatch)
+    monkeypatch.setattr(yangsheng,'lifecycle_lease',lambda **kw:nullcontext())
+    monkeypatch.setattr(terminal,'_verify_terminal_original',lambda *a:None)
+    monkeypatch.setattr(terminal,'_require_shared_backend_idle',lambda _:None)
+    installed=tmp_path/'backend'; installed.write_bytes(b'old')
+    replacement=tmp_path/'backend.new'; replacement.write_bytes(b'new')
+    service.sniffer_binary=installed; service.start=lambda:{'capture_job_id':'original'}
+    service._replace_sniffer_for_repair=lambda *a,**kw:pytest.fail('uncertain effect must not be restarted')
+    service.sniffer.fail_prepare=True
+    with pytest.raises(RuntimeError): terminal.prepare_terminal_revision(service,item,proof,output_root=root)
+    if kind=='matching_marker': (root/'other.reservation.json').write_text(json.dumps({'task_id':'task'}))
+    if kind=='unknown_marker': (root/'other.reservation.json').write_text('{}')
+    if kind=='unmarked_reservation': (root/'recording-compressed (1).mp4').touch()
+    if kind=='changed_partial': (root/'recording-compressed.mp4').write_bytes(b'changed')
+    if kind=='provider_revision': service.sniffer.task['meta']['labels']['media_repair_revision']='a'*64
+    if kind=='downstream': service._event=lambda *a,**kw:{'effect':True}
+    with pytest.raises(EnrichmentError):
+        terminal.restart_terminal_backend(None,service,item,output_root=root,replacement_binary=replacement,
+            replacement_sha256=hashlib.sha256(b'new').hexdigest())
+    assert service.capture_store.latest('original')['media_repair']['state']=='preparing'
+
+
+def test_reconciled_preparation_uses_third_backend_claim_without_overwrite(stopped,tmp_path,monkeypatch):
+    from contextlib import nullcontext
+    import xiaocao.yangsheng.capture as yangsheng
+    import xiaocao.kol.recorded_terminal_repair as terminal
+    service,item,proof,root=_terminal_service(stopped,tmp_path,monkeypatch)
+    monkeypatch.setattr(yangsheng,'lifecycle_lease',lambda **kw:nullcontext())
+    monkeypatch.setattr(terminal,'_verify_terminal_original',lambda *a:None)
+    monkeypatch.setattr(terminal,'_require_shared_backend_idle',lambda _:None)
+    installed=tmp_path/'backend'; installed.write_bytes(b'original')
+    service.sniffer_binary=installed; service.start=lambda:{'capture_job_id':'original'}
+    def replace(current, *, replacement_binary, preserve_native_arm):
+        installed.write_bytes(replacement_binary.read_bytes()); return {'capture_job_id':'original'}
+    service._replace_sniffer_for_repair=replace
+    for value in (b'first', b'second'):
+        candidate=tmp_path/('backend.'+value.decode()); candidate.write_bytes(value)
+        terminal.restart_terminal_backend(None,service,item,output_root=root,replacement_binary=candidate,
+            replacement_sha256=hashlib.sha256(value).hexdigest())
+    before=service.capture_store.latest('original')
+    old={k:v for k,v in before.items() if k.startswith('recorded_terminal_backend_')}
+    service.sniffer.fail_prepare=True
+    with pytest.raises(RuntimeError): terminal.prepare_terminal_revision(service,item,proof,output_root=root)
+    candidate=tmp_path/'backend.third'; candidate.write_bytes(b'third')
+    terminal.restart_terminal_backend(None,service,item,output_root=root,replacement_binary=candidate,
+        replacement_sha256=hashlib.sha256(b'third').hexdigest())
+    after=service.capture_store.latest('original')
+    assert all(after[k]==v for k,v in old.items())
+    assert after['recorded_terminal_backend_reconciled_followup_receipt']['backend_sha256']==hashlib.sha256(b'third').hexdigest()
+    assert after['media_repair']['state']=='absence_verified'
+
+
+def test_preparation_effect_appearing_during_drain_remains_uncertain(stopped,tmp_path,monkeypatch):
+    from contextlib import nullcontext
+    import xiaocao.yangsheng.capture as yangsheng
+    import xiaocao.kol.recorded_terminal_repair as terminal
+    service,item,proof,root=_terminal_service(stopped,tmp_path,monkeypatch)
+    monkeypatch.setattr(yangsheng,'lifecycle_lease',lambda **kw:nullcontext())
+    monkeypatch.setattr(terminal,'_verify_terminal_original',lambda *a:None)
+    monkeypatch.setattr(terminal,'_require_shared_backend_idle',lambda _:None)
+    installed=tmp_path/'backend'; installed.write_bytes(b'old')
+    candidate=tmp_path/'backend.new'; candidate.write_bytes(b'new')
+    service.sniffer_binary=installed; service.start=lambda:{'capture_job_id':'original'}
+    service.sniffer.fail_prepare=True
+    with pytest.raises(RuntimeError): terminal.prepare_terminal_revision(service,item,proof,output_root=root)
+    def effect_during_restart(current, *, replacement_binary, preserve_native_arm):
+        (root/'recording-compressed (1).mp4').touch()
+        installed.write_bytes(replacement_binary.read_bytes())
+        return {'capture_job_id':'original'}
+    service._replace_sniffer_for_repair=effect_during_restart
+    with pytest.raises(EnrichmentError,match='unbound revision output'):
+        terminal.restart_terminal_backend(None,service,item,output_root=root,replacement_binary=candidate,
+            replacement_sha256=hashlib.sha256(b'new').hexdigest())
+    assert service.capture_store.latest('original')['media_repair']['state']=='preparing'
+    assert service.sniffer.calls==['prepare']
+
+
+def test_changed_absence_receipt_blocks_followup(stopped,tmp_path,monkeypatch):
+    from xiaocao.kol.recorded_terminal_repair import _require_prior_absence_receipt
+    service,item,proof,root=_terminal_service(stopped,tmp_path,monkeypatch)
+    current=service.capture_store.latest('original')
+    preflight=inspect_terminal_task(current,service.sniffer.complete_tasks_for_reconciliation(),output_root=root)
+    current['media_repair']={'state':'absence_verified','preflight':preflight,'absence_receipt':{'task_id':'other'}}
+    with pytest.raises(EnrichmentError,match='absence receipt changed'):
+        _require_prior_absence_receipt(current,preflight)

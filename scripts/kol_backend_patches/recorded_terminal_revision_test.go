@@ -48,12 +48,29 @@ func recordedTerminalFixture(t *testing.T) (*Task, string, string) {
 	return task, partial, manifest
 }
 
+func recordedTestEvidence(t *testing.T, task *Task) (string, string) {
+	t.Helper()
+	cache := task.Meta.SingleFilepath() + ".hls-cache"
+	var values []string
+	for _, name := range []string{"binding.json", "terminal.json"} {
+		data, err := os.ReadFile(filepath.Join(cache, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		digest := sha256.Sum256(data)
+		values = append(values, hex.EncodeToString(digest[:]))
+	}
+	return values[0], values[1]
+}
+
 func TestRecordedTerminalPlanKeepsOriginalAndRequiresExactBinding(t *testing.T) {
 	task, partial, manifest := recordedTerminalFixture(t)
+	checkpointHash, terminalHash := recordedTestEvidence(t, task)
 	resource, fileID := task.Meta.Req.Labels["recorded_resource_id"], task.Meta.Req.Labels["recorded_media_file_id"]
 	name := task.Meta.SingleFilepath()
+	task.Meta.Req.URL = recordedTestURL + "?secret=rotated"
 	before, _ := os.ReadFile(name)
-	plan, err := recordedTerminalPlan(task, "original-candidate", resource, fileID, partial, manifest, recordedTestResourceHash(), "fresh-alias")
+	plan, err := recordedTerminalPlan(task, "original-candidate", resource, fileID, partial, manifest, recordedTestResourceHash(), checkpointHash, terminalHash, "fresh-alias")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,17 +88,18 @@ func TestRecordedTerminalPlanKeepsOriginalAndRequiresExactBinding(t *testing.T) 
 		{"original-candidate", resource, fileID, partial, strings.Repeat("0", 64), "fresh-alias"},
 		{"original-candidate", resource, fileID, partial, manifest, ""},
 	} {
-		if _, err := recordedTerminalPlan(task, bad.candidate, bad.resource, bad.file, bad.hash, bad.manifest, recordedTestResourceHash(), bad.alias); err == nil {
+		if _, err := recordedTerminalPlan(task, bad.candidate, bad.resource, bad.file, bad.hash, bad.manifest, recordedTestResourceHash(), checkpointHash, terminalHash, bad.alias); err == nil {
 			t.Fatal("changed binding accepted")
 		}
 	}
-	if _, err := recordedTerminalPlan(task, "original-candidate", resource, fileID, partial, manifest, strings.Repeat("0", 64), "fresh-alias"); err == nil {
+	if _, err := recordedTerminalPlan(task, "original-candidate", resource, fileID, partial, manifest, strings.Repeat("0", 64), checkpointHash, terminalHash, "fresh-alias"); err == nil {
 		t.Fatal("changed resource path accepted")
 	}
 }
 
 func TestRecordedTerminalPreparationReservesSameTaskWithoutStarting(t *testing.T) {
 	task, partial, manifest := recordedTerminalFixture(t)
+	checkpointHash, terminalHash := recordedTestEvidence(t, task)
 	resource, fileID := task.Meta.Req.Labels["recorded_resource_id"], task.Meta.Req.Labels["recorded_media_file_id"]
 	original := task.Meta.SingleFilepath()
 	before, _ := os.ReadFile(original)
@@ -99,7 +117,7 @@ func TestRecordedTerminalPreparationReservesSameTaskWithoutStarting(t *testing.T
 	if task.Meta.Req.Labels["capture_id"] != "original-candidate" {
 		t.Fatal("snapshot modified live task")
 	}
-	result, err := d.PrepareRecordedTerminalRevision(task.ID, "original-candidate", resource, fileID, partial, manifest, recordedTestResourceHash(), "fresh-alias")
+	result, err := d.PrepareRecordedTerminalRevision(task.ID, "original-candidate", resource, fileID, partial, manifest, recordedTestResourceHash(), checkpointHash, terminalHash, "fresh-alias")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,25 +135,26 @@ func TestRecordedTerminalPreparationReservesSameTaskWithoutStarting(t *testing.T
 	if _, err := os.Stat(task.Meta.SingleFilepath() + ".reservation.json"); err != nil {
 		t.Fatal("revision reservation missing")
 	}
-	again, err := d.PrepareRecordedTerminalRevision(task.ID, "original-candidate", resource, fileID, partial, manifest, recordedTestResourceHash(), "fresh-alias")
+	again, err := d.PrepareRecordedTerminalRevision(task.ID, "original-candidate", resource, fileID, partial, manifest, recordedTestResourceHash(), checkpointHash, terminalHash, "fresh-alias")
 	if err != nil || again != result {
 		t.Fatal("untouched exact reservation was not reconciled")
 	}
-	if _, err := d.PrepareRecordedTerminalRevision(task.ID, "original-candidate", resource, fileID, partial, manifest, recordedTestResourceHash(), "different-alias"); err == nil {
+	if _, err := d.PrepareRecordedTerminalRevision(task.ID, "original-candidate", resource, fileID, partial, manifest, recordedTestResourceHash(), checkpointHash, terminalHash, "different-alias"); err == nil {
 		t.Fatal("different alias replaced exact reservation")
 	}
 	if err := os.WriteFile(task.Meta.SingleFilepath()+".recorded-started", []byte(result.Revision), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := d.PrepareRecordedTerminalRevision(task.ID, "original-candidate", resource, fileID, partial, manifest, recordedTestResourceHash(), "fresh-alias"); err == nil {
+	if _, err := d.PrepareRecordedTerminalRevision(task.ID, "original-candidate", resource, fileID, partial, manifest, recordedTestResourceHash(), checkpointHash, terminalHash, "fresh-alias"); err == nil {
 		t.Fatal("consumed resume was prepared again")
 	}
 }
 
 func TestRecordedTerminalPlanRejectsSymlinkAndChangedCheckpoint(t *testing.T) {
-	for _, mode := range []string{"media-symlink", "terminal-symlink", "wrong-terminal", "wrong-segments", "wrong-binding"} {
+	for _, mode := range []string{"media-symlink", "terminal-symlink", "wrong-terminal", "terminal-reformatted", "wrong-segments", "wrong-binding"} {
 		t.Run(mode, func(t *testing.T) {
 			task, partial, manifest := recordedTerminalFixture(t)
+			checkpointHash, terminalHash := recordedTestEvidence(t, task)
 			resource, fileID := task.Meta.Req.Labels["recorded_resource_id"], task.Meta.Req.Labels["recorded_media_file_id"]
 			name := task.Meta.SingleFilepath()
 			if mode == "media-symlink" {
@@ -160,6 +179,11 @@ func TestRecordedTerminalPlanRejectsSymlinkAndChangedCheckpoint(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
+			if mode == "terminal-reformatted" {
+				if err := os.WriteFile(terminal, []byte(`{ "status": 403 }`), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
 			if mode == "wrong-segments" {
 				task.Meta.Req.Labels["checkpoint_segments"] = "3"
 			}
@@ -169,7 +193,7 @@ func TestRecordedTerminalPlanRejectsSymlinkAndChangedCheckpoint(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			if _, err := recordedTerminalPlan(task, "original-candidate", resource, fileID, partial, manifest, recordedTestResourceHash(), "fresh-alias"); err == nil {
+			if _, err := recordedTerminalPlan(task, "original-candidate", resource, fileID, partial, manifest, recordedTestResourceHash(), checkpointHash, terminalHash, "fresh-alias"); err == nil {
 				t.Fatal("changed checkpoint accepted")
 			}
 		})
@@ -178,6 +202,7 @@ func TestRecordedTerminalPlanRejectsSymlinkAndChangedCheckpoint(t *testing.T) {
 
 func TestRecordedTerminalStartNeverPausesOtherTasksOrRepeats(t *testing.T) {
 	task, partial, manifest := recordedTerminalFixture(t)
+	checkpointHash, terminalHash := recordedTestEvidence(t, task)
 	task.ID = "recorded-terminal-start-task"
 	d := NewDownloader(&DownloaderConfig{StorageDir: t.TempDir()})
 	if err := d.storage.Setup([]string{bucketTask, bucketSave, bucketConfig}); err != nil {
@@ -186,7 +211,7 @@ func TestRecordedTerminalStartNeverPausesOtherTasksOrRepeats(t *testing.T) {
 	defer d.storage.Close()
 	d.tasks = []*Task{task}
 	resource, fileID := task.Meta.Req.Labels["recorded_resource_id"], task.Meta.Req.Labels["recorded_media_file_id"]
-	receipt, err := d.PrepareRecordedTerminalRevision(task.ID, "original-candidate", resource, fileID, partial, manifest, recordedTestResourceHash(), "fresh-alias")
+	receipt, err := d.PrepareRecordedTerminalRevision(task.ID, "original-candidate", resource, fileID, partial, manifest, recordedTestResourceHash(), checkpointHash, terminalHash, "fresh-alias")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -219,6 +244,7 @@ func TestRecordedTerminalStartNeverPausesOtherTasksOrRepeats(t *testing.T) {
 
 func TestConcurrentRecordedPreparationAndStartDoNotDuplicateEffects(t *testing.T) {
 	task, partial, manifest := recordedTerminalFixture(t)
+	checkpointHash, terminalHash := recordedTestEvidence(t, task)
 	task.ID = "recorded-concurrent-task"
 	d := NewDownloader(&DownloaderConfig{StorageDir: t.TempDir()})
 	if err := d.storage.Setup([]string{bucketTask, bucketSave, bucketConfig}); err != nil {
@@ -234,7 +260,7 @@ func TestConcurrentRecordedPreparationAndStartDoNotDuplicateEffects(t *testing.T
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			p, e := d.PrepareRecordedTerminalRevision(task.ID, "original-candidate", resource, fileID, partial, manifest, recordedTestResourceHash(), "fresh-alias")
+			p, e := d.PrepareRecordedTerminalRevision(task.ID, "original-candidate", resource, fileID, partial, manifest, recordedTestResourceHash(), checkpointHash, terminalHash, "fresh-alias")
 			plans <- p
 			errors <- e
 		}()

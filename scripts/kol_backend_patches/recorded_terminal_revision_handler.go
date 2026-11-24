@@ -28,6 +28,8 @@ func (c *APIClient) handlePrepareRecordedTerminalRevision(ctx *gin.Context) {
 		PartialSHA  string `json:"partial_sha256"`
 		ManifestSHA string `json:"manifest_sha256"`
 		ResourceSHA string `json:"resource_sha256"`
+		BindingSHA  string `json:"checkpoint_binding_sha256"`
+		TerminalSHA string `json:"terminal_sha256"`
 		AliasID     string `json:"alias_candidate_id"`
 	}
 	data, readErr := io.ReadAll(io.LimitReader(ctx.Request.Body, 8193))
@@ -92,7 +94,7 @@ func (c *APIClient) handlePrepareRecordedTerminalRevision(ctx *gin.Context) {
 		expiry = limit
 	}
 	receipt, err := c.downloader.PrepareRecordedTerminalRevision(body.ID, body.Candidate, body.Resource,
-		body.FileID, body.PartialSHA, body.ManifestSHA, body.ResourceSHA, body.AliasID)
+		body.FileID, body.PartialSHA, body.ManifestSHA, body.ResourceSHA, body.BindingSHA, body.TerminalSHA, body.AliasID)
 	if err != nil {
 		ctx.JSON(http.StatusConflict, gin.H{"code": 409, "msg": "recorded task revision not prepared"})
 		return

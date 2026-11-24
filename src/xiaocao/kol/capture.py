@@ -586,13 +586,15 @@ class SnifferClient:
 
     def prepare_recorded_terminal_revision(self, task_id: str, *, candidate_id: str,
             resource_id: str, media_file_id: str, partial_sha256: str,
-            manifest_sha256: str, resource_sha256: str, alias_candidate_id: str) -> dict[str, Any]:
+            manifest_sha256: str, resource_sha256: str, checkpoint_binding_sha256: str,
+            terminal_sha256: str, alias_candidate_id: str) -> dict[str, Any]:
         """Prepare the same stopped task; provider tickets never cross this API."""
         return dict(self._json(
             '/api/task/prepare-recorded-terminal-revision', method='POST', timeout=60,
             payload={'id':task_id, 'candidate_id':candidate_id, 'resource_id':resource_id,
                      'media_file_id':media_file_id, 'partial_sha256':partial_sha256,
                      'manifest_sha256':manifest_sha256, 'resource_sha256':resource_sha256,
+                     'checkpoint_binding_sha256':checkpoint_binding_sha256, 'terminal_sha256':terminal_sha256,
                      'alias_candidate_id':alias_candidate_id},
         ).get('data') or {})
 

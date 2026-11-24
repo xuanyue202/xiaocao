@@ -48,7 +48,7 @@ func (d *Downloader) RecordedRepairTaskSnapshot(id string) (*Task, error) {
 
 // recordedTerminalPlan is deliberately read-only. The old media and checkpoint
 // remain immutable; a revision reserves a separate output on the same task.
-func recordedTerminalPlan(task *Task, candidate, resource, fileID, partialSHA, manifestSHA, resourceSHA, aliasID string) (StreamRepairReceipt, error) {
+func recordedTerminalPlan(task *Task, candidate, resource, fileID, partialSHA, manifestSHA, resourceSHA, bindingSHA, terminalSHA, aliasID string) (StreamRepairReceipt, error) {
 	if task == nil || task.Meta == nil || task.Meta.Req == nil || task.Meta.Opts == nil || task.Meta.Res == nil ||
 		len(task.Meta.Res.Files) != 1 || task.Meta.Res.Files[0] == nil || task.Meta.Res.Files[0].Path != "" ||
 		task.Protocol != "stream" || (task.Status != base.DownloadStatusPause && task.Status != base.DownloadStatusError) {
@@ -57,6 +57,7 @@ func recordedTerminalPlan(task *Task, candidate, resource, fileID, partialSHA, m
 	labels := task.Meta.Req.Labels
 	if candidate == "" || aliasID == "" || !recordedResource.MatchString(resource) || !recordedFile.MatchString(fileID) ||
 		!recordedHexSHA.MatchString(partialSHA) || !recordedHexSHA.MatchString(manifestSHA) || !recordedHexSHA.MatchString(resourceSHA) ||
+		!recordedHexSHA.MatchString(bindingSHA) || !recordedHexSHA.MatchString(terminalSHA) ||
 		labels["capture_id"] != candidate || labels["recorded_resource_id"] != resource ||
 		labels["recorded_media_file_id"] != fileID || labels["type"] != "live_capture" ||
 		labels["source"] != "xiaocao" || labels["compress_inline"] != "true" ||
@@ -93,6 +94,7 @@ func recordedTerminalPlan(task *Task, candidate, resource, fileID, partialSHA, m
 		if task.Status != base.DownloadStatusPause || !recordedHexSHA.MatchString(existingRevision) ||
 			labels["recorded_ticket_repair_revision"] != existingRevision || labels["recorded_ticket_alias_id"] != aliasID ||
 			labels["media_repair_previous_sha256"] != partialSHA || labels["recorded_original_manifest_sha256"] != manifestSHA ||
+			labels["recorded_original_binding_sha256"] != bindingSHA || labels["recorded_original_terminal_sha256"] != terminalSHA ||
 			labels["media_repair_task_id"] != task.ID || previous == "" || filepath.Base(previous) != previous ||
 			filepath.Base(task.Meta.Opts.Name) != task.Meta.Opts.Name {
 			return StreamRepairReceipt{}, fmt.Errorf("recorded revision binding changed")
@@ -158,6 +160,10 @@ func recordedTerminalPlan(task *Task, candidate, resource, fileID, partialSHA, m
 	if err != nil {
 		return StreamRepairReceipt{}, err
 	}
+	terminalDigest := sha256.Sum256(terminal)
+	if hex.EncodeToString(terminalDigest[:]) != terminalSHA {
+		return StreamRepairReceipt{}, fmt.Errorf("recorded terminal evidence changed")
+	}
 	var stopped struct {
 		Status int `json:"status"`
 	}
@@ -172,8 +178,11 @@ func recordedTerminalPlan(task *Task, candidate, resource, fileID, partialSHA, m
 		Binding, Manifest string
 		Segments          int
 	}
-	oldBinding := sha256.Sum256([]byte(candidate + ":" + labels["live_id"] + "\n" + task.Meta.Req.URL))
-	if json.Unmarshal(data, &binding) != nil || binding.Binding != hex.EncodeToString(oldBinding[:]) ||
+	// The old task URL may have been rotated by an earlier exact-task retry.
+	// Verify the complete checkpoint and terminal bytes against the durable
+	// preflight claim instead; never reuse its cached segments in the new output.
+	checkpointDigest := sha256.Sum256(data)
+	if hex.EncodeToString(checkpointDigest[:]) != bindingSHA || json.Unmarshal(data, &binding) != nil || !recordedHexSHA.MatchString(binding.Binding) ||
 		binding.Manifest != manifestSHA || binding.Segments <= 0 ||
 		fmt.Sprint(binding.Segments) != labels["checkpoint_segments"] {
 		return StreamRepairReceipt{}, fmt.Errorf("recorded checkpoint manifest changed")
@@ -185,7 +194,7 @@ func recordedTerminalPlan(task *Task, candidate, resource, fileID, partialSHA, m
 			return StreamRepairReceipt{}, fmt.Errorf("recorded revision output unavailable")
 		}
 	}
-	revision := sha256.Sum256([]byte(strings.Join([]string{task.ID, candidate, resource, fileID, partialSHA, manifestSHA, resourceSHA, aliasID, newName}, "\n")))
+	revision := sha256.Sum256([]byte(strings.Join([]string{task.ID, candidate, resource, fileID, partialSHA, manifestSHA, resourceSHA, bindingSHA, terminalSHA, aliasID, newName}, "\n")))
 	revisionText := hex.EncodeToString(revision[:])
 	if existingRevision != "" {
 		// Only an untouched reservation can be reconciled. Once a resume may
@@ -223,7 +232,7 @@ func recordedTerminalPlan(task *Task, candidate, resource, fileID, partialSHA, m
 // existing task. It never starts, resumes, deletes, or changes the old files.
 // Actual ticket validation and process-local installation are performed by the
 // API layer before a separate, independently claimed resume.
-func (d *Downloader) PrepareRecordedTerminalRevision(id, candidate, resource, fileID, partialSHA, manifestSHA, resourceSHA, aliasID string) (StreamRepairReceipt, error) {
+func (d *Downloader) PrepareRecordedTerminalRevision(id, candidate, resource, fileID, partialSHA, manifestSHA, resourceSHA, bindingSHA, terminalSHA, aliasID string) (StreamRepairReceipt, error) {
 	d.lock.Lock()
 	defer d.lock.Unlock()
 	task := d.GetTask(id)
@@ -241,7 +250,7 @@ func (d *Downloader) PrepareRecordedTerminalRevision(id, candidate, resource, fi
 	defer task.lock.Unlock()
 	d.checkDuplicateLock.Lock()
 	defer d.checkDuplicateLock.Unlock()
-	plan, err := recordedTerminalPlan(task, candidate, resource, fileID, partialSHA, manifestSHA, resourceSHA, aliasID)
+	plan, err := recordedTerminalPlan(task, candidate, resource, fileID, partialSHA, manifestSHA, resourceSHA, bindingSHA, terminalSHA, aliasID)
 	if err != nil {
 		return StreamRepairReceipt{}, err
 	}
@@ -268,6 +277,8 @@ func (d *Downloader) PrepareRecordedTerminalRevision(id, candidate, resource, fi
 	projection.Meta.Req.Labels["recorded_ticket_alias_id"] = aliasID
 	projection.Meta.Req.Labels["recorded_original_manifest_sha256"] = manifestSHA
 	projection.Meta.Req.Labels["recorded_original_resource_sha256"] = resourceSHA
+	projection.Meta.Req.Labels["recorded_original_binding_sha256"] = bindingSHA
+	projection.Meta.Req.Labels["recorded_original_terminal_sha256"] = terminalSHA
 	projection.updateStatus(base.DownloadStatusPause)
 	if err = d.storage.Put(bucketTask, id, projection); err != nil {
 		return StreamRepairReceipt{}, err
@@ -316,7 +327,8 @@ func (d *Downloader) startRecordedTerminalRevision(id, revision string, start fu
 		labels := task.Meta.Req.Labels
 		plan, err := recordedTerminalPlan(task, labels["capture_id"], labels["recorded_resource_id"], labels["recorded_media_file_id"],
 			labels["media_repair_previous_sha256"], labels["recorded_original_manifest_sha256"],
-			labels["recorded_original_resource_sha256"], labels["recorded_ticket_alias_id"])
+			labels["recorded_original_resource_sha256"], labels["recorded_original_binding_sha256"],
+			labels["recorded_original_terminal_sha256"], labels["recorded_ticket_alias_id"])
 		valid = err == nil && plan.Revision == revision
 	}
 	task.lock.Unlock()

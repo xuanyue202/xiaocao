@@ -4720,6 +4720,22 @@ class DailyRuntime:
         if not root.is_absolute():
             raise EnrichmentError('recorded terminal original output path is invalid')
         repair = current.get('media_repair') or {}
+        if repair.get('state') == 'preparing':
+            _verify_terminal_original(subscription,item,current)
+            ready=service.start()
+            if ready.get('capture_job_id')!=item['capture_job_id']:
+                raise EnrichmentError('recorded terminal backend resumed another capture')
+            tasks=service.sniffer.complete_tasks_for_reconciliation()
+            exact=[task for task in tasks if task.get('id')==repair.get('task_id')]
+            if len(exact)!=1:
+                raise EnrichmentError('recorded terminal preparation provider state is ambiguous')
+            meta=exact[0].get('meta') or {}; labels=meta.get('labels') or (meta.get('req') or {}).get('labels') or {}
+            if not labels.get('media_repair_revision'):
+                # Restarting the singleton drains any in-flight old request;
+                # both sides of the restart must prove the same absent effect.
+                restart_terminal_backend(subscription,service,item,output_root=root,replacement_binary=replacement_binary,
+                                         replacement_sha256=replacement_sha256)
+                repair=service.capture_store.latest(item['capture_job_id']).get('media_repair') or {}
         if repair.get('state') in {'preparing','prepared','resume_claimed','running'}:
             expected_status = 'download_failed' if repair['state']=='preparing' else 'downloading'
             if current.get('status')!=expected_status or item.get('status') in {'completed','handoff_ready'}:

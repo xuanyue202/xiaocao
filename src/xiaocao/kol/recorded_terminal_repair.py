@@ -201,6 +201,24 @@ def _durable_transition(store: Any, current: dict[str, Any], event: str, **chang
     return result
 
 
+def _require_prior_absence_receipt(current: dict[str, Any], preflight: dict[str, Any]) -> None:
+    prior = current.get('media_repair') or {}
+    if not prior:
+        return
+    receipt = prior.get('absence_receipt') or {}
+    backend = receipt.get('backend_restart_receipt') or {}
+    known = (current.get('recorded_terminal_backend_receipt'),
+             current.get('recorded_terminal_backend_followup_receipt'),
+             current.get('recorded_terminal_backend_reconciled_followup_receipt'))
+    if (prior.get('state') != 'absence_verified' or prior.get('preflight') != preflight
+        or prior.get('prior_attempt') or receipt.get('preflight') != preflight
+        or receipt.get('task_id') != preflight['task_id']
+        or receipt.get('provider_revision_absent') is not True or receipt.get('task_reservation_absent') is not True
+        or not backend or backend not in known or backend.get('capture_job_id') != preflight['capture_job_id']
+        or backend.get('task_id') != preflight['task_id']):
+        raise EnrichmentError('recorded terminal prior absence receipt changed')
+
+
 def prepare_terminal_revision(service: Any, item: dict[str, Any], proof_path: Path,
                               *, output_root: Path) -> dict[str, Any]:
     """Prepare one retained terminal task after fresh same-file evidence.
@@ -213,7 +231,7 @@ def prepare_terminal_revision(service: Any, item: dict[str, Any], proof_path: Pa
     identity = str(item.get('identity') or '')
     capture_id = str(item.get('capture_job_id') or '')
     current = service.capture_store.latest(capture_id)
-    if not current or current.get('media_repair'):
+    if not current or (current.get('media_repair') and current['media_repair'].get('state') != 'absence_verified'):
         raise EnrichmentError('recorded terminal revision already claimed; reconcile exact task')
     if any(current.get(k) for k in ('media_sha256','netdisk_job_id','handoff_id')):
         raise EnrichmentError('recorded terminal has downstream binding; reconcile first')
@@ -243,6 +261,7 @@ def prepare_terminal_revision(service: Any, item: dict[str, Any], proof_path: Pa
             raise EnrichmentError('recorded terminal has downstream effect; reconcile first')
     preflight = inspect_terminal_task(current, service.sniffer.complete_tasks_for_reconciliation(),
                                       output_root=output_root)
+    _require_prior_absence_receipt(current, preflight)
     task_id = preflight['task_id']
     if (current.get('checkpoint_resume_claim') or {}).get('task_id') != task_id or (current.get('checkpoint_resume_receipt') or {}).get('id') != task_id:
         raise EnrichmentError('recorded prior checkpoint attempt is not reconciled')
@@ -252,6 +271,8 @@ def prepare_terminal_revision(service: Any, item: dict[str, Any], proof_path: Pa
              'task_id':task_id, 'candidate_id':preflight['candidate_id'],
              'alias_candidate_id':proof['candidate_id'], 'alias_binding':alias_binding, 'proof_path':str(proof_path),
              'proof_sha256':_sha(proof_path), 'preflight':preflight}
+    if current.get('media_repair'):
+        prior['prior_attempt'] = current['media_repair']
     latest = service.capture_store.latest(capture_id)
     if latest != current:
         raise EnrichmentError('recorded terminal capture changed before claim')
@@ -260,7 +281,8 @@ def prepare_terminal_revision(service: Any, item: dict[str, Any], proof_path: Pa
         candidate_id=preflight['candidate_id'], resource_id=preflight['resource_id'],
         media_file_id=preflight['media_file_id'], partial_sha256=preflight['partial_sha256'],
         manifest_sha256=binding['finite_playlist']['sha256'],
-        resource_sha256=binding['media_resource_sha256'], alias_candidate_id=proof['candidate_id'])
+        resource_sha256=binding['media_resource_sha256'], checkpoint_binding_sha256=preflight['checkpoint_binding_sha256'],
+        terminal_sha256=preflight['terminal_sha256'], alias_candidate_id=proof['candidate_id'])
     tasks = service.sniffer.complete_tasks_for_reconciliation()
     selected = [task for task in tasks if task.get('id') == task_id]
     task = selected[0] if len(selected) == 1 else {}
@@ -365,9 +387,11 @@ def observe_terminal_alias(sub: Any, item: dict[str, Any], service: Any, *, outp
     root = Path(sub.output_dir).resolve()
     identity, capture_id = str(item['identity']), str(item['capture_job_id'])
     current = service.capture_store.latest(capture_id)
-    if not current or item.get('human_playback_deferred') or current.get('media_repair'):
-        raise EnrichmentError('recorded terminal alias requires an unclaimed original')
+    if (not current or item.get('human_playback_deferred') or
+        (current.get('media_repair') and current['media_repair'].get('state') != 'absence_verified')):
+        raise EnrichmentError('recorded terminal alias requires a reconciled original')
     preflight = inspect_terminal_task(current, service.sniffer.complete_tasks_for_reconciliation(), output_root=output_root)
+    _require_prior_absence_receipt(current, preflight)
     binding = current.get('recorded_replay_binding') or {}
     config = _verify_terminal_original(sub,item,current)
     clock = sub.clock()
@@ -467,7 +491,8 @@ def restart_terminal_backend(sub: Any, service: Any, item: dict[str, Any], *, ou
     capture_id=str(item.get('capture_job_id') or '')
     current=service.capture_store.latest(capture_id)
     if (not current or item.get('human_playback_deferred') or current.get('user_resume_required')
-        or current.get('media_repair') or not re.fullmatch(r'[0-9a-f]{64}',replacement_sha256)):
+        or (current.get('media_repair') and current['media_repair'].get('state') not in {'preparing','absence_verified'})
+        or not re.fullmatch(r'[0-9a-f]{64}',replacement_sha256)):
         raise EnrichmentError('recorded terminal backend repair is not eligible')
     _verify_terminal_original(sub,item,current)
     ready=service.start()
@@ -475,7 +500,8 @@ def restart_terminal_backend(sub: Any, service: Any, item: dict[str, Any], *, ou
         raise EnrichmentError('recorded terminal backend resumed another capture')
     with lifecycle_lease(closing=True):
         current=service.capture_store.latest(capture_id)
-        if not current or current.get('media_repair') or current.get('user_resume_required'):
+        if (not current or current.get('user_resume_required') or
+            (current.get('media_repair') and current['media_repair'].get('state') not in {'preparing','absence_verified'})):
             raise EnrichmentError('recorded terminal capture changed before backend repair')
         before=inspect_terminal_task(current,service.sniffer.complete_tasks_for_reconciliation(),output_root=output_root)
         if ((current.get('checkpoint_resume_claim') or {}).get('task_id')!=before['task_id']
@@ -489,24 +515,38 @@ def restart_terminal_backend(sub: Any, service: Any, item: dict[str, Any], *, ou
         if not installed.is_file():
             raise EnrichmentError('recorded terminal backend is unavailable')
         installed_sha=_sha256_file(installed)
-        primary=current.get('recorded_terminal_backend_claim')
-        followup=bool(primary and primary.get('replacement_sha256')!=replacement_sha256)
-        claim_field='recorded_terminal_backend_followup_claim' if followup else 'recorded_terminal_backend_claim'
-        receipt_field='recorded_terminal_backend_followup_receipt' if followup else 'recorded_terminal_backend_receipt'
-        if followup:
-            predecessor=current.get('recorded_terminal_backend_receipt') or {}
-            if (predecessor.get('capture_job_id')!=capture_id or predecessor.get('task_id')!=before['task_id']
-                or predecessor.get('backend_sha256')!=primary.get('replacement_sha256')
-                or primary.get('preflight')!=before):
+        pending = (current.get('media_repair') or {}).get('state') == 'preparing'
+        if pending:
+            _check_absent_terminal_preparation(service,item,current,output_root=output_root)
+            if installed_sha == replacement_sha256:
+                raise EnrichmentError('pending recorded preparation requires a separately claimed backend restart')
+        pairs = [('recorded_terminal_backend_claim','recorded_terminal_backend_receipt'),
+                 ('recorded_terminal_backend_followup_claim','recorded_terminal_backend_followup_receipt'),
+                 ('recorded_terminal_backend_reconciled_followup_claim','recorded_terminal_backend_reconciled_followup_receipt')]
+        claim_field = receipt_field = None
+        predecessor = None
+        for claim_key, receipt_key in pairs:
+            claim, receipt = current.get(claim_key), current.get(receipt_key)
+            if not claim:
+                claim_field, receipt_field = claim_key, receipt_key
+                break
+            if (claim.get('capture_job_id') != capture_id or claim.get('task_id') != before['task_id']
+                or claim.get('preflight') != before):
+                raise EnrichmentError('recorded terminal prior backend claim changed')
+            if claim.get('replacement_sha256') == replacement_sha256:
+                claim_field, receipt_field = claim_key, receipt_key
+                if installed_sha not in {claim.get('previous_sha256'),replacement_sha256}:
+                    raise EnrichmentError('recorded terminal backend identity changed')
+                break
+            if (not receipt or receipt.get('capture_job_id') != capture_id or receipt.get('task_id') != before['task_id']
+                or receipt.get('backend_sha256') != claim.get('replacement_sha256')):
                 raise EnrichmentError('recorded terminal prior backend effect is not reconciled')
-        prior=current.get(claim_field)
-        if prior:
-            if (prior.get('capture_job_id')!=capture_id or prior.get('task_id')!=before['task_id']
-                or prior.get('replacement_sha256')!=replacement_sha256
-                or prior.get('preflight')!=before or installed_sha not in {prior.get('previous_sha256'),replacement_sha256}):
-                raise EnrichmentError('recorded terminal backend claim changed')
-        else:
-            if followup and installed_sha!=primary.get('replacement_sha256'):
+            predecessor = claim
+        if claim_field is None:
+            raise EnrichmentError('recorded terminal backend repair chain exhausted')
+        prior = current.get(claim_field)
+        if not prior:
+            if predecessor and installed_sha != predecessor['replacement_sha256']:
                 raise EnrichmentError('recorded terminal prior backend identity changed')
             prior={'capture_job_id':capture_id,'task_id':before['task_id'],
                    'replacement_sha256':replacement_sha256,'previous_sha256':installed_sha,'preflight':before}
@@ -525,10 +565,65 @@ def restart_terminal_backend(sub: Any, service: Any, item: dict[str, Any], *, ou
         if again!=before:
             raise EnrichmentError('recorded terminal provider effect changed after backend restart')
         receipt={'capture_job_id':capture_id,'task_id':before['task_id'],'backend_sha256':replacement_sha256}
-        if after.get(receipt_field)!=receipt:
-            _durable_transition(service.capture_store,after,'recorded_terminal_backend_reconciled',
-                                **{receipt_field:receipt})
+        if after.get(receipt_field) and after[receipt_field] != receipt:
+            raise EnrichmentError('recorded terminal prior backend receipt changed')
+        if not after.get(receipt_field):
+            after=_durable_transition(service.capture_store,after,'recorded_terminal_backend_reconciled',
+                                      **{receipt_field:receipt})
+        if pending:
+            _check_absent_terminal_preparation(service,item,after,output_root=output_root)
+            repair=after['media_repair']
+            _durable_transition(service.capture_store,after,'recorded_terminal_preparation_absence_verified',
+                media_repair={**repair,'state':'absence_verified','absence_receipt':{
+                    'task_id':before['task_id'],'preflight':before,'provider_revision_absent':True,
+                    'task_reservation_absent':True,'backend_restart_receipt':receipt}})
         return {'status':'ready',**receipt,'preflight':before}
+
+
+def _check_absent_terminal_preparation(service: Any, item: dict[str, Any], current: dict[str, Any], *, output_root: Path) -> None:
+    """Record a proven absent reservation before a separate same-task attempt.
+
+    Caller holds the source slot and exclusive lifecycle lease. This read-only
+    check alone never proves an in-flight request is gone or permits a retry.
+    """
+    capture_id = str(item.get('capture_job_id') or '')
+    repair = (current or {}).get('media_repair') or {}
+    if (not current or current.get('status') != 'download_failed' or current.get('user_resume_required')
+        or item.get('human_playback_deferred') or repair.get('state') != 'preparing'
+        or repair.get('prior_attempt')):
+        raise EnrichmentError('recorded terminal absence reconciliation is not eligible')
+    tasks = service.sniffer.complete_tasks_for_reconciliation()
+    preflight = inspect_terminal_task(current, tasks, output_root=output_root)
+    if preflight != repair.get('preflight') or preflight['task_id'] != repair.get('task_id'):
+        raise EnrichmentError('recorded terminal original task changed during absence reconciliation')
+    task = next(t for t in tasks if t.get('id') == preflight['task_id'])
+    meta = task.get('meta') or {}; labels = meta.get('labels') or (meta.get('req') or {}).get('labels') or {}
+    if any(labels.get(key) for key in ('media_repair_revision','recorded_ticket_repair_revision','recorded_ticket_alias_id')):
+        raise EnrichmentError('recorded terminal provider revision exists')
+    for event in ('media_validated','netdisk_prepared','netdisk_upload_claimed','cloud_handoff_claimed','cloud_handoff_published'):
+        if service._event(event,capture_job_id=capture_id):
+            raise EnrichmentError('recorded terminal downstream effect requires reconciliation')
+    # The backend creates an empty output before it writes the reservation
+    # marker. A crash in that interval must never look like an absent effect.
+    original = Path(preflight['partial_path'])
+    duplicate = re.compile(re.escape(original.stem) + r' \([1-9][0-9]*\)' + re.escape(original.suffix) + r'$')
+    for path in output_root.iterdir():
+        if duplicate.fullmatch(path.name):
+            raise EnrichmentError('recorded terminal unbound revision output exists')
+    for marker in output_root.glob('*.reservation.json'):
+        _regular(marker)
+        if marker.stat().st_size > 4096:
+            raise EnrichmentError('recorded terminal reservation cannot be reconciled')
+        try:
+            value = json.loads(marker.read_text())
+        except (OSError, ValueError) as exc:
+            raise EnrichmentError('recorded terminal reservation cannot be reconciled') from exc
+        if not isinstance(value,dict) or not isinstance(value.get('task_id'),str):
+            raise EnrichmentError('recorded terminal reservation cannot be reconciled')
+        if value['task_id'] == preflight['task_id']:
+            raise EnrichmentError('recorded terminal reservation exists')
+    if service.capture_store.latest(capture_id) != current:
+        raise EnrichmentError('recorded terminal claim changed during absence reconciliation')
 
 
 def reconcile_terminal_preparation(service: Any, item: dict[str, Any], *, output_root: Path) -> dict[str, Any]:
@@ -582,6 +677,7 @@ def reconcile_terminal_preparation(service: Any, item: dict[str, Any], *, output
         candidate_id=repair['candidate_id'],resource_id=preflight['resource_id'],
         media_file_id=preflight['media_file_id'],partial_sha256=preflight['partial_sha256'],
         manifest_sha256=binding['finite_playlist']['sha256'],resource_sha256=binding['media_resource_sha256'],
+        checkpoint_binding_sha256=preflight['checkpoint_binding_sha256'],terminal_sha256=preflight['terminal_sha256'],
         alias_candidate_id=repair['alias_candidate_id'])
     if (receipt.get('id')!=task_id or receipt.get('revision')!=revision
         or receipt.get('previous_sha256')!=repair['previous_media_sha256']

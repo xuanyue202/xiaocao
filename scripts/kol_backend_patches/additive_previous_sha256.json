@@ -8,7 +8,8 @@
     "dafc4bff888109f2b3074b46656f0592978829a46f7f43313972b2bee8f2ff91"
   ],
   "recorded_terminal_revision_handler.go": [
-    "9ae391ba2432e536fe6aa475f42df1efb1d0d7388bd668adef306b48f05636c2"
+    "9ae391ba2432e536fe6aa475f42df1efb1d0d7388bd668adef306b48f05636c2",
+    "a9a70035fe1f64597c4d557b8597669cb77056cee424e7b5a0fb6b814bae3966"
   ],
   "recorded_terminal_ticket_test.go": [
     "0a3b92f71c6b83d2746c9853e6f7a0386bd31cfe05ec3b421e966d33af05eef7",
@@ -30,5 +31,11 @@
   ],
   "replay_discontinuity_test.go": [
     "f837b5dc45ec6a262d3ea90beb9e0f1687d447c607e4443b68cb7f50af343b9f"
+  ],
+  "recorded_terminal_revision.go": [
+    "d87f9f76fba0305060f6b9d4601d9e89e49b81084dc90dff9a686628fdaf278c"
+  ],
+  "recorded_terminal_revision_test.go": [
+    "21a9c6ee74ecaf96042829920405aae50a2ca1833a62599459872ac7950d338b"
   ]
 }
