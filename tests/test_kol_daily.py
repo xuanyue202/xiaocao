@@ -10020,3 +10020,22 @@ def test_remote_gate_slot_does_not_widen_real_execution_window(tmp_path, now, sl
     )
     assert result["status"] == "outside_window"
     assert calls == []
+
+
+def test_local_official_repair_uses_exact_item_without_scan(monkeypatch):
+    calls=[]
+    runtime=SimpleNamespace(args=SimpleNamespace(local_capture=True,source_identity='wechat-official:original'),
+        wechat_official_reconcile_exact=lambda identity:calls.append(identity) or {'status':'no_update'},
+        wechat_official_local=lambda:pytest.fail('must not scan official source'))
+    runner=_source_cli_narrow_runner(runtime,'wechat_official_accounts')
+    assert runner('wechat_official_accounts:source')['status']=='no_update'
+    assert calls==['wechat-official:original']
+    with pytest.raises(DailyError): runner('wechat_official_accounts:another')
+
+
+def test_mailbox_response_invalid_is_agent_diagnostic(monkeypatch):
+    monkeypatch.setattr(kol_daily_script,'_read_agent_json',lambda _: (_ for _ in ()).throw(DailyError('invalid JSON')))
+    with pytest.raises(EnrichmentDiagnosticError) as exc:
+        kol_daily_script._read_mailbox_json({'operation':'send_mailbox_message'})
+    assert exc.value.diagnostic_code=='mailbox_response_invalid'
+    assert exc.value.diagnostic_stage=='mailbox_response'

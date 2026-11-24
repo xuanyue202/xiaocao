@@ -1226,3 +1226,49 @@ def test_no_image_article_materializes_markdown_without_agent_input(tmp_path):
     assert "正文没有需要逐图读取的图片" in Path(ready["evidence_path"]).read_text(
         encoding="utf-8"
     )
+
+
+def test_official_exact_reconcile_after_uncertain_send_never_scans_or_resends(tmp_path):
+    from xiaocao.kol.mailbox import LiangHuiMailboxClient, MailboxLedger
+    from xiaocao.kol.wechat_official import _capsule
+    ledger=MailboxLedger(tmp_path/'mailbox')
+    def lost_send(request):
+        assert request['operation']=='send_mailbox_message'
+        raise RuntimeError('connector response lost')
+    mailbox=LiangHuiMailboxClient(ledger,exchange=lost_send)
+    subscription=OfficialAccountSubscription(tmp_path/'local',reader=_payload,handoff_exchange=mailbox.publish_handoff)
+    manifest=subscription._load(); subscription._poll(manifest)
+    item=next(x for x in manifest['items'].values() if x['title']=='业绩炸裂')
+    capsule=_capsule(item)
+    with pytest.raises(RuntimeError): subscription._dispatch(manifest,item)
+    claim=ledger.handoff_state(capsule['handoff_id'])
+    assert claim['event']=='mailbox_send_attempted'
+    message={'mailbox_id':'kol.handoff','message_id':capsule['handoff_id'],
+        'message_type':'xiaocao.kol_handoff','schema_version':1,'subject':'[文章] '+item['title'],
+        'correlation_id':capsule['handoff_id'],'payload':capsule,'content_sha256':claim['content_sha256'],
+        'family_id':'family','created_by':'user','created_at':'2026-11-24T12:00:00.000Z',
+        'status':'pending','ack_receipt':None}
+    calls=[]
+    def exact_get(request):
+        assert request['operation']=='get_mailbox_message'
+        calls.append(request['arguments']['message_id'])
+        return {'operation':'get_mailbox_message','message':message}
+    mailbox.exchange=exact_get
+    subscription.reader=lambda: pytest.fail('exact reconciliation must not scan')
+    result=subscription.reconcile_exact_handoff(item['identity'],mailbox=mailbox)
+    assert result['reconciled'] and result['handoff_id']==capsule['handoff_id']
+    assert calls==[capsule['handoff_id'],capsule['handoff_id']]
+    assert ledger.handoff_state(capsule['handoff_id'])['event']=='mailbox_send_reconciled'
+    assert subscription._load()['items'][item['identity']]['status']=='completed'
+    result=subscription.reconcile_exact_handoff(item['identity'],mailbox=mailbox)
+    assert result['already_completed'] and len(calls)==3
+
+
+def test_official_exact_reconcile_rejects_missing_claim_before_effect(tmp_path):
+    from xiaocao.kol.mailbox import LiangHuiMailboxClient, MailboxLedger
+    mailbox=LiangHuiMailboxClient(MailboxLedger(tmp_path/'mailbox'),exchange=lambda _:pytest.fail('must not access mailbox'))
+    subscription=OfficialAccountSubscription(tmp_path/'local',reader=_payload,handoff_exchange=mailbox.publish_handoff)
+    manifest=subscription._load();subscription._poll(manifest)
+    item=next(x for x in manifest['items'].values() if x['title']=='业绩炸裂')
+    with pytest.raises(EnrichmentError,match='claim is missing or changed'):
+        subscription.reconcile_exact_handoff(item['identity'],mailbox=mailbox)

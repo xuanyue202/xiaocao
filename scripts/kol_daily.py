@@ -1340,7 +1340,13 @@ def _read_agent_json(request: dict[str, Any]) -> dict[str, Any]:
 
 def _read_mailbox_json(request: dict[str, Any]) -> dict[str, Any]:
     """Accept the connector's send envelope without rewriting its receipt."""
-    value = _read_agent_json(request)
+    try:
+        value = _read_agent_json(request)
+    except DailyError as exc:
+        raise EnrichmentDiagnosticError(
+            "mailbox response is invalid; reconcile the exact claim before retry",
+            category="contract_error", code="mailbox_response_invalid", stage="mailbox_response",
+        ) from exc
     receipt = value.get("receipt")
     if (
         request.get("operation") == "send_mailbox_message"
@@ -1968,6 +1974,11 @@ def _source_cli_narrow_runner(runtime: "DailyRuntime", adapter: str):
         return runtime.xiaocao_wechat_narrow_resume
     if adapter == "wechat_official_accounts":
         if getattr(getattr(runtime, "args", None), "local_capture", False):
+            identity = getattr(runtime.args, "source_identity", None)
+            if identity:
+                return lambda surface: _adapter_scope_resume(
+                    adapter, surface, lambda: runtime.wechat_official_reconcile_exact(identity),
+                )
             return lambda surface: _adapter_scope_resume(
                 adapter, surface, runtime.wechat_official_local,
             )
@@ -4838,6 +4849,23 @@ class DailyRuntime:
             publishers=publishers,
         )
         return subscription.run_once()
+
+    def wechat_official_reconcile_exact(self, identity: str) -> dict[str, Any]:
+        """Read back one existing local article claim; never scan or send a new item."""
+        mailbox = self._mailbox()
+        original_exchange = mailbox.exchange
+        def read_only_exchange(request):
+            if request.get('operation') != 'get_mailbox_message':
+                raise EnrichmentError('official exact reconciliation cannot send')
+            return original_exchange(request)
+        mailbox.exchange = read_only_exchange
+        subscription = OfficialAccountSubscription(
+            self.args.wechat_official_output_dir,
+            reader=lambda: (_ for _ in ()).throw(DailyError("exact reconciliation cannot scan")),
+            handoff_exchange=mailbox.publish_handoff,
+            publishers=tuple(self.args.wechat_official_publishers),
+        )
+        return subscription.reconcile_exact_handoff(identity, mailbox=mailbox)
 
     def wechat_official(
         self,

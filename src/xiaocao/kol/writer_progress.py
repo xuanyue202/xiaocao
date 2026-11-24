@@ -924,6 +924,7 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
         (
             "wechat_official_cli_missing_repair_resumes_remote_inbox_only or "
             "local_official_repair_preserves_capture_ownership or "
+            "local_official_repair_uses_exact_item or official_exact_reconcile or mailbox_response_invalid or "
             "mailbox_connector_send_envelope or "
             "official_account_parser_uses_exact_publishers_and_url_only_metadata or "
             "official_account_reader_calls_one_stateless_combined_window or "
