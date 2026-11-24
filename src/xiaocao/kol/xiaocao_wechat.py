@@ -428,6 +428,19 @@ def parse_xiaocao_live_messages(payload: dict[str, Any]) -> list[dict[str, Any]]
         ).replace(tzinfo=BEIJING)
         header=re.sub(r'\s+','',raw_message.split('文字复盘总结',1)[0])
         future_notice=bool(re.search(r'存好别丢.*?以后听课固定这(?:一个)?链接.*?明天.*?到点点开',header))
+        # This one source template explicitly labels both sessions and the
+        # morning start. Keep it tied to the original message hash.
+        clocks_preopen = list(re.finditer(
+            r'⏰企业微信app课程已发送[，,]\s*(\d{1,2})[:：](\d{2})和草神一起看', raw_message))
+        preopen_start = ""
+        if (len(clocks_preopen) == 1 and raw_message.count('⏰') == 1
+            and len(list(_XIAOCAO_LIVE_MINI_PROGRAM.finditer(raw_message))) == 1
+            and re.search(r'(?m)^[ \t]*1\ufe0f?\u20e3盘前早盘\+晚盘【密码[^】]+】：', raw_message)):
+            hour, minute = map(int, clocks_preopen[0].groups())
+            if hour == 9 and minute < 60 and published.hour < 12:
+                start = published.replace(hour=hour, minute=minute, second=0, microsecond=0)
+                if published <= start <= published + timedelta(hours=1):
+                    preopen_start = start.isoformat(timespec="seconds")
         navigation=re.search(
             r'(?m)^[ \t]*(?:[①-⑳]|[0-9]\ufe0f?\u20e3|[0-9]{1,2}[.、．)）])?[ \t]*'
             r'历史直播回放点击链接学习[:：][ \t]*(https://\S+)[ \t]*$',
@@ -476,6 +489,7 @@ def parse_xiaocao_live_messages(payload: dict[str, Any]) -> list[dict[str, Any]]
                 "mini_program_name": mini_program_name,
                 "mini_program_token": mini_program_token,
                 "message_sha256": _sha256_text(raw_message),
+                **({"recorded_preopen_start_at": preopen_start} if preopen_start else {}),
                 **({"announced_start_at": announced} if announced else {}),
                 **({'recorded_inventory_reason':'future_fixed_entry_notice'} if future_notice else {}),
             }
@@ -569,7 +583,21 @@ class WechatCliHistoryReader:
         self.limit = int(limit)
         self._runner = runner
 
+    def read_original(self, published_at: str) -> dict[str, Any]:
+        """Read a bounded source window for one already-identified original."""
+        try:
+            published = datetime.fromisoformat(published_at)
+            if published.tzinfo is None:
+                raise ValueError('original timestamp is naive')
+            published = published.astimezone(BEIJING)
+        except (TypeError, ValueError) as exc:
+            raise EnrichmentError('original source timestamp invalid') from exc
+        return self._read(published)
+
     def __call__(self) -> dict[str, Any]:
+        return self._read(None)
+
+    def _read(self, published: datetime | None) -> dict[str, Any]:
         if not self.executable.is_file():
             raise EnrichmentDiagnosticError(
                 "wechat-cli is unavailable",
@@ -578,20 +606,27 @@ class WechatCliHistoryReader:
                 stage="wechat_scan",
             )
         try:
-            result = self._runner(
-                [
+            command = [
                     str(self.executable),
                     "history",
                     self.contact,
                     "--limit",
                     str(self.limit),
+                    "--voice", "off",
                     "--format",
                     "json",
-                ],
+                ]
+            if published is not None:
+                command.extend([
+                    '--start-time', (published - timedelta(minutes=1)).strftime('%Y-%m-%d %H:%M:%S'),
+                    '--end-time', (published + timedelta(minutes=1)).strftime('%Y-%m-%d %H:%M:%S'),
+                ])
+            result = self._runner(
+                command,
                 check=True,
                 capture_output=True,
                 text=True,
-                timeout=30,
+                timeout=60,
             )
             value = json.loads(result.stdout)
         except subprocess.TimeoutExpired as exc:
@@ -612,7 +647,19 @@ class WechatCliHistoryReader:
             raise EnrichmentError("WeChat history response is invalid")
         if str(value.get("chat") or "") != self.contact:
             raise EnrichmentError("WeChat history resolved another contact")
+        if value.get('failures') not in (None, []):
+            raise EnrichmentError('WeChat history response is incomplete')
+        if published is not None and (value.get('offset') != 0 or value.get('limit') != self.limit
+            or not isinstance(value.get('messages'), list) or type(value.get('count')) is not int
+            or value['count'] != len(value['messages']) or value['count'] >= self.limit):
+            raise EnrichmentError('WeChat original history window is incomplete')
         return value
+
+
+def read_original_history(reader: Any, published_at: str) -> dict[str, Any]:
+    """Preserve injectable test readers while using narrow real history reads."""
+    narrow = getattr(reader, 'read_original', None)
+    return narrow(published_at) if callable(narrow) else reader()
 
 
 class XiaocaoLiveCaptureDriver:

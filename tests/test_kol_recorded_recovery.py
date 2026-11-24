@@ -79,6 +79,57 @@ def test_recorded_proof_binds_merchant_course_media_and_finite_playlist_without_
     assert 'sign=private' not in json.dumps(proof)
 
 
+def test_preopen_proof_requires_fresh_original_session_evidence(recorded, monkeypatch):
+    _,item,_,_,_,proof,_ = recorded
+    item = {**item,'published_at':'2026-11-23T09:17:00+08:00'}
+    anchor = '2026-11-23T09:20:00+08:00'
+    recording = {**proof['recording'], 'title':'11月23日盘前大师班直播YJ(35)-2026-11-23 10:27:29',
+                 'duration_seconds':3988}
+    proof = {**proof,'published_at':item['published_at'],'recording':recording,
+             'finite_playlist':{**proof['finite_playlist'],'duration_seconds':3988},
+             'recorded_preopen_start_at':anchor}
+    import xiaocao.kol.xiaocao_wechat as wechat
+    monkeypatch.setattr(wechat,'parse_xiaocao_live_messages',lambda _: [{**item,'recorded_preopen_start_at':anchor}])
+    validate_recorded_proof(proof,item,CAPTURE)
+    monkeypatch.setattr(wechat,'parse_xiaocao_live_messages',lambda _: [{**item,'recorded_preopen_start_at':'2026-11-23T09:30:00+08:00'}])
+    with pytest.raises(EnrichmentError,match='session evidence changed'):
+        validate_recorded_proof(proof,item,CAPTURE)
+
+
+def test_preopen_observation_requires_exact_detail_title(recorded, monkeypatch):
+    root,item,driver,service,candidate,_,folder = recorded
+    item = {**item,'published_at':'2026-11-23T09:17:00+08:00'}
+    (root/'manifest.json').write_text(json.dumps({'items':{IDENTITY:item}}))
+    anchor = '2026-11-23T09:20:00+08:00'
+    import xiaocao.kol.xiaocao_wechat as wechat
+    monkeypatch.setattr(wechat,'parse_xiaocao_live_messages',lambda _: [{**item,'recorded_preopen_start_at':anchor}])
+    candidate['captured'] = '2026-11-23 15:10:26'
+    claim = folder/'observation.json'
+    claim.write_text(json.dumps(dict(identity=IDENTITY,capture_job_id=CAPTURE,
+        resource_id=RESOURCE,observed_after='2026-11-23T15:09:59+08:00')))
+    debug = service.sniffer_binary.parent/'elive_live_debug'
+    events = [json.loads(line) for line in (debug/'events.jsonl').read_text().splitlines()]
+    for event in events:
+        event['at'] = '2026-11-23T15:10:28+08:00'
+    (debug/'events.jsonl').write_text(''.join(json.dumps(event)+'\n' for event in events))
+    title = '11月23日盘前大师班直播YJ(35)-2026-11-23 10:27:29'
+    catalog = debug/'json'/'0.json'; data = json.loads(catalog.read_text())
+    data['data']['list'][0].update(chapter_title=title,video_length=3988)
+    catalog.write_text(json.dumps(data))
+    detail = debug/'json'/'1.json'; data = json.loads(detail.read_text())
+    data['data']['video_info'].update(file_name=title,video_length=3988)
+    detail.write_text(json.dumps(data))
+    (debug/'m3u8'/'actual.m3u8').write_text('#EXTM3U\n#EXTINF:3988,\na.ts\n#EXT-X-ENDLIST\n')
+    proof = collect_recorded_proof(root,IDENTITY,CAPTURE,'exact',player_duration=3988,
+        player_left=True,driver=driver,observation_path=claim)
+    assert proof['recorded_preopen_start_at'] == anchor
+    data['data']['video_info']['file_name'] = title.replace('(35)', '(36)')
+    detail.write_text(json.dumps(data))
+    with pytest.raises(EnrichmentError,match='browser/course binding invalid'):
+        collect_recorded_proof(root,IDENTITY,CAPTURE,'exact',player_duration=3988,
+            player_left=True,driver=driver,observation_path=claim)
+
+
 def test_recorded_proof_accepts_only_authorized_exact_xed_media_host(recorded):
     root,_,driver,service,candidate,_,folder=recorded
     candidate['url']=ALT_MEDIA

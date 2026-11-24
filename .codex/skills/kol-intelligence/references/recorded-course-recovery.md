@@ -121,6 +121,23 @@ relax the exact URL, same-message identity or merchant/course checks. A saved
 navigation item is not a completed recording and never invokes the legacy
 live-room identity resolver in recorded mode.
 
+For the exact morning announcement template `盘前早盘+晚盘`, the cached original
+may supply a unique 09:xx start in that same message. A uniquely dated `盘前`
+recording with the full timestamped `YJ(...)` title is a candidate only when
+its title date agrees and its title timestamp minus the reported duration is
+within two minutes of that start. This is supporting session evidence, not a
+claim about the platform's timestamp semantics or media acceptance. Preserve
+the complete literal title and require the video detail filename to match the
+catalogue title under the existing narrow formatting normalization, plus all
+normal fresh entitled catalogue, detail, material and finite-HLS gates. Missing
+or altered source evidence, title ambiguity, another same-session candidate,
+different dates or durations outside the window remain unverified.
+
+For a known original, read the exact two-minute cached history window around its
+published timestamp with voice transcription disabled; require an untruncated
+response and revalidate the message hash, contact and source token. This avoids
+a wide 80-message read blocking exact-item recovery. Discovery remains separate.
+
 Anonymous `is_subscribe=0`/`is_unlock=0` describes that anonymous session, not
 the human's account. The human's Nov4 recorded-course recovery task authorizes
 the normally logged-in history-course Browser path separately from opaque

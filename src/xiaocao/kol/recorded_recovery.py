@@ -10,7 +10,8 @@ from zoneinfo import ZoneInfo
 
 from .capture import canonical_xiaoetong_source
 from .enrichment_types import EnrichmentError
-from .replay_catalog import ReplayCatalogConfig, match_original, verify_original
+from .replay_catalog import ReplayCatalogConfig, match_original, verify_original, verified_preopen_anchor
+from .human_playback import _course_title_key
 
 
 RECORDED_MEDIA_HOSTS = {
@@ -61,8 +62,8 @@ def collect_recorded_proof(subscription_dir, identity, capture_id, candidate_id,
                            player_duration, player_left, driver, observation_path):
     root = Path(subscription_dir).resolve()
     item = json.loads((root/'manifest.json').read_text())['items'][identity]
-    from .xiaocao_wechat import WechatCliHistoryReader, parse_xiaocao_live_messages
-    originals=parse_xiaocao_live_messages(WechatCliHistoryReader()())
+    from .xiaocao_wechat import WechatCliHistoryReader, parse_xiaocao_live_messages, read_original_history
+    originals=parse_xiaocao_live_messages(read_original_history(WechatCliHistoryReader(),item['published_at']))
     verify_original(item,identity,originals)
     config = ReplayCatalogConfig.from_dict(json.loads((root.parent/'native_share_bridge.json').read_text())['replay_catalog'])
     from .replay_catalog import verify_catalogue_binding
@@ -92,11 +93,14 @@ def collect_recorded_proof(subscription_dir, identity, capture_id, candidate_id,
         raise EnrichmentError('recorded detail/play response mapping missing')
     rows = [dict(title=r.get('chapter_title'),resource_id=r.get('chapter_id'),
             duration_seconds=r.get('video_length'),course_id=r.get('course_id')) for r in catalog.get('list',[])]
-    selected = match_original(rows,item['published_at'])
+    preopen_start = verified_preopen_anchor(item, originals)
+    selected = match_original(rows,item['published_at'],preopen_start_at=preopen_start)
+    is_preopen = bool(selected and preopen_start and '盘前大师班直播YJ' in _course_title_key(selected['title']))
     if (not selected or selected['resource_id'] != claim['resource_id']
         or selected['course_id'] != config.course_id or info.get('app_id') != config.app_id
         or info.get('resource_id') != selected['resource_id']
         or info.get('video_length') != selected['duration_seconds']
+        or (is_preopen and _course_title_key(str(info.get('file_name') or '')) != _course_title_key(selected['title']))
         or not math.isfinite(player_duration) or abs(player_duration-selected['duration_seconds']) > 1
         or player_left is not True):
         raise EnrichmentError('recorded browser/course binding invalid')
@@ -133,7 +137,7 @@ def collect_recorded_proof(subscription_dir, identity, capture_id, candidate_id,
             finite={'path':str(p),'sha256':hashlib.sha256(body).hexdigest(),
                     'duration_seconds':sum(durations),'segments':len(durations),'ended':True}
     if finite is None:raise EnrichmentError('recorded finite media evidence unavailable')
-    return dict(identity=identity,capture_job_id=capture_id,source_message_sha256=item['message_sha256'],
+    proof = dict(identity=identity,capture_job_id=capture_id,source_message_sha256=item['message_sha256'],
         published_at=item['published_at'],recording=selected,app_id=config.app_id,
         candidate_id=candidate_id,media_file_id=file_ids[0],media_resource_sha256=sha,
         material_id=info['material_id'],play_sign_sha256=hashlib.sha256(play_sign.encode()).hexdigest(),
@@ -142,15 +146,24 @@ def collect_recorded_proof(subscription_dir, identity, capture_id, candidate_id,
         observation_receipt_sha256=hashlib.sha256(claim_body).hexdigest(),
         entitled_course=True,catalog_evidence=catalog_file,detail_evidence=detail_file,
         play_evidence=play_file,finite_playlist=finite,method='authorized_recorded_course_web')
+    if is_preopen:
+        proof['recorded_preopen_start_at'] = preopen_start
+    return proof
 
 
 def validate_recorded_proof(proof, item, capture_id):
     recording=proof.get('recording') or {}; published=datetime.fromisoformat(item['published_at'])
+    anchor = str(proof.get('recorded_preopen_start_at') or '')
+    if anchor:
+        from .xiaocao_wechat import WechatCliHistoryReader, parse_xiaocao_live_messages, read_original_history
+        originals = parse_xiaocao_live_messages(read_original_history(WechatCliHistoryReader(),item['published_at']))
+        if verified_preopen_anchor(item, originals) != anchor:
+            raise EnrichmentError('recorded source session evidence changed')
     if (proof.get('identity')!=item['identity'] or proof.get('capture_job_id')!=capture_id
         or proof.get('source_message_sha256')!=item['message_sha256']
         or proof.get('published_at')!=item['published_at'] or proof.get('entitled_course') is not True
         or proof.get('player_left') is not True or proof.get('method')!='authorized_recorded_course_web'
-        or match_original([recording],item['published_at'])!=recording
+        or match_original([recording],item['published_at'],preopen_start_at=anchor)!=recording
         or not re.fullmatch(r'v_[0-9a-f]{24}',str(recording.get('resource_id','')))
         or not re.fullmatch(r'[0-9]{8,}',str(proof.get('media_file_id','')))
         or not re.fullmatch(r'[0-9a-f]{64}',str(proof.get('media_resource_sha256','')))
@@ -164,11 +177,11 @@ def bind_recorded_recovery(subscription_dir,identity,capture_id,proof_path,*,dri
     root=Path(subscription_dir).resolve(); path=proof_path.resolve()
     if not path.is_relative_to(root/'items'/identity):raise EnrichmentError('recorded proof outside original')
     body=path.read_bytes();proof=json.loads(body)
-    from .xiaocao_wechat import XiaocaoWechatLiveSubscription, WechatCliHistoryReader, parse_xiaocao_live_messages
+    from .xiaocao_wechat import XiaocaoWechatLiveSubscription, WechatCliHistoryReader, parse_xiaocao_live_messages, read_original_history
     history=WechatCliHistoryReader();sub=XiaocaoWechatLiveSubscription(root,history_reader=history,
         browser_exchange=lambda _:None,capture_driver=driver)
     manifest=sub._load();item=manifest['items'][identity]
-    verify_original(item,identity,parse_xiaocao_live_messages(history()))
+    verify_original(item,identity,parse_xiaocao_live_messages(read_original_history(history,item['published_at'])))
     validate_recorded_proof(proof,item,capture_id)
     binding={**proof,'proof_path':str(path),'proof_sha256':hashlib.sha256(body).hexdigest()}
     service=driver._service(identity);current=service.capture_store.latest(capture_id)
@@ -233,8 +246,8 @@ def restart_recorded_backend(subscription_dir,identity,capture_id,proof_path,rep
     current=service.capture_store.latest(capture_id)
     if current.get('recorded_replay_binding'):
         _require_unexecuted_recorded_claim(current,proof_path,service)
-        from .xiaocao_wechat import WechatCliHistoryReader, parse_xiaocao_live_messages
-        verify_original(item,identity,parse_xiaocao_live_messages(WechatCliHistoryReader()()))
+        from .xiaocao_wechat import WechatCliHistoryReader, parse_xiaocao_live_messages, read_original_history
+        verify_original(item,identity,parse_xiaocao_live_messages(read_original_history(WechatCliHistoryReader(),item['published_at'])))
     else:
         driver.require_idle_human_entry(identity,capture_id)
         reconstructed=collect_recorded_proof(root,identity,capture_id,proof['candidate_id'],

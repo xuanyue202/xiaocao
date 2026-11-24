@@ -16,6 +16,8 @@ from xiaocao.kol.xiaocao_wechat import (
 
 
 def test_keycap_numbered_history_link_is_bound_to_same_message():
+    from xiaocao.kol.replay_catalog import ReplayCatalogConfig, ReplayCatalogError, verify_catalogue_binding
+
     history = {"chat": "test-contact", "username": "exact-contact-id", "messages": [
         "[2026-11-23 09:17] test-contact: 1⃣课程：#小程序://见势擒龙团/abc12345\n"
         "2️⃣历史直播回放点击链接学习：https://yv9lc.xetslk.com/s/4uRHyc"
@@ -25,6 +27,49 @@ def test_keycap_numbered_history_link_is_bound_to_same_message():
     link = next(item for item in items if item.get("source_url"))
     assert link["recorded_navigation_marker"] is True
     assert link["message_sha256"] == mini["message_sha256"]
+    config = ReplayCatalogConfig('appTest123', 'course_Example123', 'OldToken',
+        navigation_source_url='https://yv9lc.xetslk.com/s/4uRHyc')
+    verify_catalogue_binding(config, mini, items)
+    with pytest.raises(ReplayCatalogError, match='original_catalog_binding_invalid'):
+        verify_catalogue_binding(config, mini, [mini, link, {**mini, 'identity': 'kol-wechat-' + 'f' * 24}])
+
+
+def test_preopen_anchor_requires_exact_original_session_announcement():
+    message = ("[2026-11-23 09:17] test-contact: ⏰企业微信app课程已发送，09：20和草神一起看\n\n"
+               "1⃣盘前早盘+晚盘【密码666】：#小程序://见势擒龙团/abc12345\n"
+               "2️⃣历史直播回放点击链接学习：https://yv9lc.xetslk.com/s/4uRHyc")
+    def mini(text):
+        history = {'chat':'test-contact', 'username':'exact-contact-id', 'messages':[text]}
+        return next(x for x in parse_xiaocao_live_messages(history) if x.get('entry_kind') == 'wechat_mini_program')
+    assert mini(message)['recorded_preopen_start_at'] == '2026-11-23T09:20:00+08:00'
+    for changed in (message.replace('盘前早盘+晚盘', '课程回放'),
+                    message.replace('09：20', '08：20'),
+                    message + '\n#小程序://见势擒龙团/another123',
+                    message.replace('企业微信app课程已发送', '明天课程')):
+        assert 'recorded_preopen_start_at' not in mini(changed)
+
+
+def test_exact_original_history_is_bounded_complete_and_never_transcribes(tmp_path):
+    from xiaocao.kol.enrichment_types import EnrichmentError
+    from xiaocao.kol.xiaocao_wechat import WechatCliHistoryReader
+    executable = tmp_path/'wechat-cli'; executable.touch()
+    calls = []
+    def runner(command, **kwargs):
+        calls.append((command,kwargs))
+        return SimpleNamespace(stdout=json.dumps({'chat':'contact','messages':['one'],
+                                                  'count':1,'limit':80,'offset':0,'failures':[]}))
+    reader = WechatCliHistoryReader('contact', executable=executable, runner=runner)
+    assert reader.read_original('2026-11-23T09:17:00+08:00')['count'] == 1
+    command, options = calls[0]
+    assert command[command.index('--voice')+1] == 'off'
+    assert command[command.index('--start-time')+1] == '2026-11-23 09:16:00'
+    assert command[command.index('--end-time')+1] == '2026-11-23 09:18:00'
+    assert options['timeout'] == 60
+    def truncated(command, **kwargs):
+        return SimpleNamespace(stdout=json.dumps({'chat':'contact','messages':['x']*80,
+                                                  'count':80,'limit':80,'offset':0}))
+    with pytest.raises(EnrichmentError, match='window is incomplete'):
+        WechatCliHistoryReader('contact',executable=executable,runner=truncated).read_original('2026-11-23T09:17:00+08:00')
 
 
 def test_retained_capture_repair_still_discovers_new_original_entries(tmp_path):

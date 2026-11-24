@@ -167,7 +167,7 @@ class ReplayCatalogReader:
             "download_attempted": False}
 
 
-def match_original(rows: list[dict], published_at: str) -> dict | None:
+def match_original(rows: list[dict], published_at: str, *, preopen_start_at: str = "") -> dict | None:
     published = datetime.fromisoformat(published_at)
     if published.tzinfo is None:
         raise ReplayCatalogError("original_timestamp_naive")
@@ -182,18 +182,41 @@ def match_original(rows: list[dict], published_at: str) -> dict | None:
     if segments:
         raise ReplayCatalogError("recorded_course_multipart_requires_assembly")
     matches = [r for r in rows if _course_title_key(r['title']) in titles]
+    preopen_matches = []
+    if preopen_start_at and published.hour < 12:
+        try:
+            start = datetime.fromisoformat(preopen_start_at)
+            if start.tzinfo is None:
+                raise ValueError('naive session')
+            start = start.astimezone(ZoneInfo('Asia/Shanghai'))
+        except (ValueError, TypeError):
+            raise ReplayCatalogError('recorded_session_title_unverified') from None
+        if not (published <= start <= published + timedelta(hours=1) and start.date() == published.date()):
+            raise ReplayCatalogError('recorded_session_title_unverified')
+        pattern = re.escape(date) + r'盘前大师班直播YJ\([0-9]+\)-(\d{4}-\d{2}-\d{2})(\d{2}:\d{2}:\d{2})'
+        for row in rows:
+            match = re.fullmatch(pattern, _course_title_key(row['title']))
+            duration = row.get('duration_seconds')
+            if not match or type(duration) is not int or duration <= 0:
+                continue
+            try:
+                ended = datetime.fromisoformat(match[1] + 'T' + match[2]).replace(tzinfo=ZoneInfo('Asia/Shanghai'))
+            except ValueError:
+                continue
+            if ended.date() == published.date() and abs((ended - timedelta(seconds=duration) - start).total_seconds()) <= 120:
+                preopen_matches.append(row)
+    matches.extend(preopen_matches)
     if len(matches) > 1:
         raise ReplayCatalogError("recorded_session_ambiguous")
-    if not matches:
-        # Same date with different session wording is evidence to investigate,
-        # not proof that the recording is unpublished or the same course.
-        if any(re.fullmatch(
+    # A same-date unfamiliar title remains ambiguous even if another row
+    # matches; selecting the familiar row would silently discard a candidate.
+    if any(r not in preopen_matches and _course_title_key(r['title']) not in titles and re.fullmatch(
                    re.escape(date) + r".{1,8}大师班直播.*",
                    _course_title_key(r['title']))
                and not any(other in _course_title_key(r['title'])
                            for other in ({"早盘", "复盘"} - {session}))
                for r in rows):
-            raise ReplayCatalogError("recorded_session_title_unverified")
+        raise ReplayCatalogError("recorded_session_title_unverified")
     return matches[0] if matches else None
 
 
@@ -206,6 +229,14 @@ def verify_original(item: dict, identity: str, originals: list[dict]) -> None:
             'mini_program_token', 'contact', 'contact_username')
     if len(exact) != 1 or any(item.get(k) != exact[0].get(k) for k in keys):
         raise ReplayCatalogError('original_history_binding_changed')
+
+
+def verified_preopen_anchor(item: dict, originals: list[dict] | None) -> str:
+    if originals is None:
+        return ''
+    verify_original(item, item['identity'], originals)
+    original = next(row for row in originals if row.get('identity') == item['identity'])
+    return str(original.get('recorded_preopen_start_at') or '')
 
 
 def catalogue_navigation_peer(config: ReplayCatalogConfig, item: dict,
@@ -256,7 +287,8 @@ def inspect_original(config: ReplayCatalogConfig, item: dict, *, inspect_access=
     reader = ReplayCatalogReader(config, session=session)
     try:
         rows = reader.read()
-        selected = match_original(rows, item['published_at'])
+        selected = match_original(rows, item['published_at'],
+                                  preopen_start_at=verified_preopen_anchor(item, originals))
         result = {"status": "recorded_replay_candidate_found" if selected else "recorded_replay_not_listed",
             "identity": item['identity'], "capture_job_id": item.get('capture_job_id'),
             "source_message_sha256": item['message_sha256'], "published_at": item['published_at'],
