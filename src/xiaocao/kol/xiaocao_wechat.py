@@ -432,10 +432,12 @@ def parse_xiaocao_live_messages(payload: dict[str, Any]) -> list[dict[str, Any]]
         # morning start. Keep it tied to the original message hash.
         clocks_preopen = list(re.finditer(
             r'⏰企业微信app课程已发送[，,]\s*(\d{1,2})[:：](\d{2})和草神一起看', raw_message))
+        preopen_labels = list(re.finditer(
+            r'(?m)^[ \t]*1\ufe0f?\u20e3盘前早盘\+晚盘【密码[^】]+】：', raw_message))
         preopen_start = ""
         if (len(clocks_preopen) == 1 and raw_message.count('⏰') == 1
             and len(list(_XIAOCAO_LIVE_MINI_PROGRAM.finditer(raw_message))) == 1
-            and re.search(r'(?m)^[ \t]*1\ufe0f?\u20e3盘前早盘\+晚盘【密码[^】]+】：', raw_message)):
+            and len(preopen_labels) == 1):
             hour, minute = map(int, clocks_preopen[0].groups())
             if hour == 9 and minute < 60 and published.hour < 12:
                 start = published.replace(hour=hour, minute=minute, second=0, microsecond=0)

@@ -45,6 +45,7 @@ def test_preopen_anchor_requires_exact_original_session_announcement():
     for changed in (message.replace('盘前早盘+晚盘', '课程回放'),
                     message.replace('09：20', '08：20'),
                     message + '\n#小程序://见势擒龙团/another123',
+                    message + '\n1⃣盘前早盘+晚盘【密码666】：duplicate',
                     message.replace('企业微信app课程已发送', '明天课程')):
         assert 'recorded_preopen_start_at' not in mini(changed)
 
