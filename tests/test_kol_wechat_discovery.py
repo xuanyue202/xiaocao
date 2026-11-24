@@ -73,6 +73,29 @@ def test_exact_original_history_is_bounded_complete_and_never_transcribes(tmp_pa
         WechatCliHistoryReader('contact',executable=executable,runner=truncated).read_original('2026-11-23T09:17:00+08:00')
 
 
+def test_recorded_exact_resume_reads_only_its_original_window(tmp_path, monkeypatch):
+    history = {'chat':'test-contact','username':'exact', 'messages':[
+        '[2026-11-23 09:17] test-contact: 1⃣课程：#小程序://见势擒龙团/abc12345\n'
+        '2️⃣历史直播回放点击链接学习：https://yv9lc.xetslk.com/s/4uRHyc']}
+    item = next(x for x in parse_xiaocao_live_messages(history) if x.get('entry_kind') == 'wechat_mini_program')
+    item.update(status='capture_armed',capture_job_id='original')
+    (tmp_path/'native_share_bridge.json').write_text(json.dumps({'replay_catalog':{
+        'acquisition_mode':'recorded_course','app_id':'appTest123','course_id':'course_Example123',
+        'mini_program_token':'OldToken','navigation_source_url':'https://yv9lc.xetslk.com/s/4uRHyc'}}))
+    class Reader:
+        def __call__(self): pytest.fail('exact resume must not perform a broad history read')
+        def read_original(self, when):
+            assert when == item['published_at']
+            return history
+    sub = XiaocaoWechatLiveSubscription(tmp_path/'subscription',history_reader=Reader(),
+        browser_exchange=lambda _:None,capture_driver=SimpleNamespace())
+    monkeypatch.setattr(sub,'_load',lambda:{'items':{item['identity']:item}})
+    monkeypatch.setattr(sub,'expire_stale_waits',lambda *a,**k:None)
+    monkeypatch.setattr(sub,'_check_playback',lambda *a,**k:(_ for _ in ()).throw(RuntimeError('reached original')))
+    with pytest.raises(RuntimeError,match='reached original'):
+        sub.run_once(opencli_session='unused',only_identity=item['identity'])
+
+
 def test_retained_capture_repair_still_discovers_new_original_entries(tmp_path):
     now = [datetime.fromisoformat("2026-10-20T16:00:00+08:00")]
     coordinator = DailyCoordinator(tmp_path / "daily", now=lambda: now[0])

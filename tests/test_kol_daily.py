@@ -1283,6 +1283,48 @@ def test_agent_json_disables_canonical_tty_for_long_response(
     assert applied[1] == original
 
 
+def test_xiaocao_wait_resume_restores_network_guardian_on_failure(tmp_path, monkeypatch):
+    from contextlib import contextmanager
+    import xiaocao.kol.human_playback as human_playback
+
+    events = []
+    @contextmanager
+    def owner(path):
+        events.append(('acquired', path))
+        try:
+            yield
+        finally:
+            events.append(('restored', path))
+    class Coordinator:
+        def __init__(self, path): self.path = path
+        def resume_wait(self, source, *, item_identity):
+            assert events[-1][0] == 'acquired'
+            assert source['name'] == 'xiaocao_wechat_live'
+            assert item_identity == 'original-item'
+            raise RuntimeError('provider failed')
+    monkeypatch.setattr(human_playback,'human_capture_network_owner',owner)
+    monkeypatch.setattr(kol_daily_script,'DailyCoordinator',Coordinator)
+    args = SimpleNamespace(source_adapter='xiaocao_wechat_live',source_identity='original-item',
+        output_dir=tmp_path/'daily',xiaocao_wechat_output_dir=tmp_path/'subscription')
+    with pytest.raises(RuntimeError,match='provider failed'):
+        kol_daily_script._resume_source_wait(object(),args)
+    assert events == [('acquired',tmp_path/'native_share_bridge.json'),
+                      ('restored',tmp_path/'native_share_bridge.json')]
+
+
+def test_other_source_wait_resume_does_not_acquire_xiaocao_guardian(tmp_path, monkeypatch):
+    import xiaocao.kol.human_playback as human_playback
+    monkeypatch.setattr(human_playback,'human_capture_network_owner',lambda _:pytest.fail('unexpected capture guardian'))
+    class Coordinator:
+        def __init__(self, path): pass
+        def resume_wait(self, source, *, item_identity):
+            return {'source':source['name'],'identity':item_identity}
+    monkeypatch.setattr(kol_daily_script,'DailyCoordinator',Coordinator)
+    args = SimpleNamespace(source_adapter='wechat_official_accounts',source_identity='article',
+        output_dir=tmp_path/'daily',xiaocao_wechat_output_dir=tmp_path/'subscription')
+    assert kol_daily_script._resume_source_wait(object(),args) == {'source':'wechat_official_accounts','identity':'article'}
+
+
 @pytest.mark.parametrize("invalid", [None, "operation", "hash", "identity"])
 def test_mailbox_connector_send_envelope_preserves_receipt_binding(
     tmp_path, monkeypatch, invalid,

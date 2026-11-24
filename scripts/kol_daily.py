@@ -5273,6 +5273,20 @@ def _resume_source_repair_outcome(
     )(surface)
 
 
+def _resume_source_wait(runtime: DailyRuntime, args: argparse.Namespace) -> dict[str, Any]:
+    """Keep the original network guardian around a resumed local capture."""
+    from contextlib import nullcontext
+    from xiaocao.kol.human_playback import human_capture_network_owner
+    owner = (human_capture_network_owner(args.xiaocao_wechat_output_dir.parent / 'native_share_bridge.json')
+             if args.source_adapter == 'xiaocao_wechat_live' else nullcontext())
+    with owner:
+        return DailyCoordinator(args.output_dir).resume_wait(
+            {'name': args.source_adapter,
+             'narrow_resume': lambda surface: _resume_source_repair_outcome(runtime,args.source_adapter,surface)},
+            item_identity=args.source_identity,
+        )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -5437,17 +5451,7 @@ def main() -> int:
                 "resume-source-wait requires source adapter and identity"
             )
         runtime = DailyRuntime(args)
-        result = DailyCoordinator(args.output_dir).resume_wait(
-            {
-                "name": args.source_adapter,
-                "narrow_resume": lambda surface: _resume_source_repair_outcome(
-                    runtime,
-                    args.source_adapter,
-                    surface,
-                ),
-            },
-            item_identity=args.source_identity,
-        )
+        result = _resume_source_wait(runtime, args)
         _print({"source_wait_resume": result})
         return 0
     if args.command == "resume-source-user-action":

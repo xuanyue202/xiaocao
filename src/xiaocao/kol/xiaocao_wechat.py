@@ -2678,7 +2678,9 @@ class XiaocaoWechatLiveSubscription:
             original_item=manifest['items'].get(only_identity)
             if original_item and not any(original_item.get(k) for k in ('source_identity','candidate_id','media_request_observed','handoff_id')):
                 from .recorded_flow import annotate_inventory
-                originals=annotate_inventory(parse_xiaocao_live_messages(self.history_reader()),self.output_dir.parent/'native_share_bridge.json')
+                originals=annotate_inventory(parse_xiaocao_live_messages(
+                    read_original_history(self.history_reader,original_item['published_at'])),
+                    self.output_dir.parent/'native_share_bridge.json')
                 exact=[r for r in originals if r['identity']==only_identity and r['message_sha256']==original_item['message_sha256']]
                 check=getattr(self.capture_driver,'can_expire_wait',None);job=original_item.get('capture_job_id')
                 if len(exact)==1 and exact[0].get('recorded_inventory_reason') and (not job or (check and check(only_identity,job))):
