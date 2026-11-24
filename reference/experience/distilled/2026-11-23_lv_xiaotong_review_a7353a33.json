@@ -1,0 +1,256 @@
+{
+  "schema_version": 1,
+  "knowledge_status": "reusable_knowledge",
+  "authority": 0,
+  "date": "2026-11-23",
+  "kind": "review",
+  "summary": "本场可复用的不是英伟达单日反弹或未解析公司的追高喊话，而是两条受边界约束的方法：第一，当A股科技主线的短期路径明显受美国科技风险资产影响时，外部企稳与仓位缓冲应共同进入风险预算；第二，来源把一笔未说明期限、久期和具体工具的美债仓位拟作指数下跌时的再平衡资金，但不能据此预设债券低波动，研究前必须定义比例、触发阈值、成本、期限、最大损失，并核对价格、汇率和流动性风险。来源还反复强调穿越周期与独立思考，但所有内容仅是吕晓彤来源下的authority=0候选，不修改小草姿态、参数、账户或交易规则。",
+  "author": "吕晓彤",
+  "source": "百度网盘订阅视频《11月23日》",
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_subscription_videos/enrichment/a7353a3346c8e910328811be0004a7b837c3724e4eb221c23b407a1a289c194b/artifacts/kol-netdisk-cloud-252b0497a16017fa/11月23日.txt",
+      "sha256": "cce7445587ce184cd01ded8bd71a458ddac848a606983403e9d81bf98b905dea",
+      "size_bytes": 53609,
+      "size": 53609
+    }
+  ],
+  "independent_verification": {
+    "market_evidence_path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261124_06_01a20a87/market-evidence.json",
+    "market_evidence_sha256": "02449ff31b8a9ffd69392180b9b53035d808a575d78e33195fb55a0c81e99cd8",
+    "supported": [
+      "英伟达官方材料确认黄仁勋立即恢复总裁、首席执行官和董事职务。",
+      "2026年11月23日16:00 EST的券商报价显示英伟达为165.05美元、涨31.48%，支持大幅反弹已经发生。"
+    ],
+    "boundary": "官方同时说明特别委员会调查继续，复职不等于调查结束或不存在问题；绑定证据不支持精确的盘前20%、另一个口述倍数、A股次日必然传导、期权条款、基金净值、境内产品20%溢价、未解析公司回购或政治动机。来源内部相对日期与文件标题冲突，不把‘明天’直接绑定到2026年11月24日。"
+  },
+  "posture": {
+    "regime": "not_applied_other_author",
+    "dominant_style": "把外部科技风险、国内科技主线、仓位缓冲和可验证的市场确认分开；长期持有与短线催化不得互相替代。",
+    "risk": "把单日大涨当成A股科技必涨、复制作者满仓或卖出看跌期权、以群体劝阻代替家庭流动性审查，都可能把路径风险放大成不可逆损失。",
+    "style_ranking": [
+      "先确认外部催化与国内承接，再讨论短线科技暴露",
+      "先保留家庭现金与基础配置，再处理突破桶集中",
+      "先完整核对合约、保证金和指派风险，再研究卖出看跌期权",
+      "长期指数配置优先使用低溢价、无杠杆工具与规则化再平衡",
+      "个人名人仓位、群体劝阻和滞后季报都不替代独立判断"
+    ],
+    "provenance": "system_posture_synthesis_not_author_posture",
+    "source_basis": "来源提供跨市场联动、控制仓位、股债再平衡、穿越周期与独立思考；具体风险顺序和验证门由系统整理。"
+  },
+  "regime_call": {
+    "horizon": "一个交易日到数个交易日的外部联动，以及多年再平衡周期",
+    "claim": "当A股科技成为主线且对美国科技风险资产的短期敏感度上升时，外部企稳、国内承接和仓位缓冲应联合判断；更长周期可用规则化股债再平衡降低追涨杀跌，但不能把单次催化扩展为长期保证。",
+    "what_would_falsify": "若样本显示A股科技在美国科技急跌与急涨时都没有稳定的短期条件相关，或预设阈值的股债再平衡在扣除成本后不能改善回撤与风险调整结果，则应否定或收窄该先验。",
+    "provenance": "system_research_synthesis_from_attributed_source",
+    "source_basis": "来源明确主张当前科技主线使中美科技联动增强，并描述下跌卖债买指数、上涨卖指数补债；联合检验、成本和风险调整指标由系统扩展。"
+  },
+  "directions": [
+    {
+      "name": "跨市场科技路径风险",
+      "view": "A股科技短线不能只看本地基本面或单一隔夜消息，应同时观察美国科技企稳、国内开盘承接、市场广度和仓位缓冲。",
+      "authority": 0,
+      "provenance": "source_causal_model_plus_system_boundary",
+      "source_basis": "来源把消费主线时代的弱联动与科技主线时代的强联动对照；承接、广度和缓冲是系统验证边界。"
+    },
+    {
+      "name": "股债规则再平衡",
+      "view": "来源把未说明具体工具的美债仓位拟作指数下跌时的分批资金，并在上涨后重建该债券仓位；不能把它预设为低波动资产，只有在初始比例、阈值、成本、期限、久期、价格、汇率、流动性和最大风险预算均明确后才是可检验方法。",
+      "authority": 0,
+      "provenance": "source_method_plus_system_boundary",
+      "source_basis": "来源明确描述跌时逐步卖债买纳指和标普、涨时卖指数补债；参数和风险边界由系统补充。"
+    },
+    {
+      "name": "家庭流动性优先于不卖叙事",
+      "view": "穿越周期的前提是资本、生活现金流和经营现金流仍可持续；群体劝阻、名人信念或账面亏损不能单独决定继续持有。",
+      "authority": 0,
+      "provenance": "source_case_plus_system_household_boundary",
+      "source_basis": "来源同时讲述保有有生力量、生活需要可卖出一部分资产，以及巨额回撤者被劝不卖；家庭流动性优先是系统边界。"
+    }
+  ],
+  "stocks": [
+    {
+      "name": "NVIDIA Corporation（NVDA）",
+      "role": "本场跨市场科技催化核心",
+      "boundary": "官方复职和大幅反弹已核，但调查仍在继续；来源的精确盘前涨幅、A股传导和短线交易条件未核。"
+    },
+    {
+      "name": "标的未解析的看跌期权",
+      "role": "作者口述的卖出看跌期权案例",
+      "boundary": "来源没有给出标的名称或代码，也未提供合约、到期日、执行价、保证金或收益分母；不能映射为任何公司、ETF或指数，更不能复制交易。"
+    },
+    {
+      "name": "标普500指数与纳斯达克相关指数",
+      "role": "长期分批投入和股债再平衡对象",
+      "boundary": "方向明确但工具、估值、频率和最大回撤没有定义；境内产品还存在来源所述但未核的溢价风险。"
+    },
+    {
+      "name": "贵州茅台（600519.XSHG）",
+      "role": "过去消费主线时代的联动对照",
+      "boundary": "只用于市场结构类比，没有当前买卖建议、估值或公司经营核验。"
+    },
+    {
+      "name": "字节跳动；阿中、阿g、阿忠、阿涛、阿珍珍",
+      "role": "字节跳动是被质疑的传闻对象；其余为逐字稿中的昵称成员",
+      "boundary": "字节跳动大比例持股传闻被作者质疑；阿中、阿g、阿忠、阿涛、阿珍珍的人员角色与关联证券无法唯一解析，仅阿g被作者口头关联到某个回购对象，不能断言这些昵称都是公司，回购与追高喊话不生成动作。"
+    }
+  ],
+  "method_principles": [
+    "把跨市场催化拆成官方事件、海外定价、国内开盘承接和随后持续性四层，不从任一单层推导必涨。",
+    "对高联动科技仓位，事先写出外部冲击下的最大损失、现金缓冲和减仓条件；满仓案例只能说明风险，不能证明某一固定仓位。",
+    "对卖出看跌期权，必须同时核对标的、到期日、执行价、保证金、指派后的资金占用和极端缺口；权利金百分比不是无风险收益。",
+    "对境内海外指数产品，先核对实时溢价、跟踪误差、费用和交易限制，再讨论指数长期方向。",
+    "对股债再平衡，先核对债券期限、久期、具体工具、价格、汇率和流动性，再预先定义初始比例、触发阈值、分批次数、成本和停止条件，并以最大回撤和扣费后收益检验。",
+    "穿越周期必须以家庭和经营现金流可持续为前提；继续持有、少量卖出维持生活和退出永久损失标的需要分别判断。",
+    "滞后季度披露只能用于验证长期价值姿态，不能作为实时底部信号。"
+  ],
+  "method_principles_provenance": {
+    "provenance": "system_method_synthesis",
+    "source_basis": [
+      "来源明确提出科技主线下中美市场联动增强与控制仓位。",
+      "来源描述卖出看跌期权、境内纳指溢价和股债再平衡。",
+      "来源强调穿越周期、生活开支和独立思考。"
+    ],
+    "system_only_elements": "官方事件与价格分层、开盘承接、最大损失、合约清单、溢价核验、再平衡参数和家庭流动性优先级均由系统提出。"
+  },
+  "exit_lessons": [
+    "单日英伟达大涨不能替代A股开盘后的承接与持续性，尤其不能作为追高或取消止损的唯一依据。",
+    "满仓等待外部企稳会把可控波动变成路径依赖；仓位缓冲应在冲击前建立，而不是回撤后才寻找理由。",
+    "卖出看跌期权的接货义务和保证金风险必须与权利金同时呈现，不能只讨论8%至10%的口述收益。",
+    "长期持有不是不卖规则；当生活现金流、经营现金流、杠杆或永久损失风险变化时，应重新做前瞻判断。",
+    "名人季报滞后一个季度，适合复盘估值纪律，不适合确认当日底部。"
+  ],
+  "exit_lessons_provenance": {
+    "provenance": "system_lessons_from_source_observations",
+    "source_basis": "来源提供不要做T、满仓案例、卖出看跌期权、巨额回撤不卖和季报滞后；退出与流动性边界由系统整理。"
+  },
+  "hypotheses": [
+    {
+      "claim": "当本地股市缺少独立定价并受海外风险资产主导时，只按本地基本面持仓会承受更大的短期路径风险。",
+      "implied_rule": "当A股科技主线与美国科技风险资产的条件联动增强时，把外部走势纳入短期路径风险评估；来源没有提供相关系数、仓位阈值或执行参数。",
+      "falsifiable_test": "按A股主线状态分组，检验美国科技隔夜收益与波动对A股科技次日开盘、收盘、广度和回撤的条件影响；若科技主线阶段也不存在稳定的增量解释力，则否定或收窄。",
+      "expected_effect": "若成立，可减少只看本地基本面而忽略隔夜外部冲击的短期路径风险。",
+      "category": "cross_market_path_risk",
+      "provenance": "source_recurrence_plus_system_test_design",
+      "source_basis": "来源比较消费主线时代的弱相关与科技主线时代的强挂钩，并以满仓案例说明没有为美股下跌做好准备会抹去收益；统计检验和执行边界是系统设计，不是作者原话。",
+      "related_existing_ids": ["XH-167"],
+      "dedup_action": "merge_existing_provenance_only",
+      "dedup_boundary": "完全复用XH-167原claim，不新增假设、不复制历史数字；仅为现有XH-167追加2026-11-23来源日期与本来源证据归属。"
+    }
+  ],
+  "non_ingest_appendix": {
+    "status": "adjacent_and_boundary_only_after_xh167_merge_routing",
+    "items": [
+      {
+        "topic": "treasury_equity_rebalance",
+        "source_observation": "作者描述跌时卖债买指数、涨时卖指数补债。",
+        "system_extension_not_author_claim": "预设阈值的再平衡可能改善回撤和风险调整收益。",
+        "related_existing_ids": ["XH-050", "XH-201"],
+        "dedup_boundary": "本来源补充具体股债方向，但没有比例、阈值或样本结果，仅作为既有现金缓冲与宽基规则的相邻细化。"
+      },
+      {
+        "topic": "average_down_boundary",
+        "source_observation": "作者支持下跌分批定投并用美债补仓。",
+        "system_extension_not_author_claim": "当风险预算耗尽时仍应停止加仓。",
+        "related_existing_ids": ["XH-070"],
+        "dedup_boundary": "XH-070明确现金风险预算耗尽后的停止边界；本来源未给预算，不能覆盖或否定该边界。"
+      },
+      {
+        "topic": "event_day_do_t_warning",
+        "source_observation": "作者在英伟达急涨背景下劝当日做T者不要卖飞。",
+        "system_extension_not_author_claim": "正漂移事件日减少计划外交易可能降低踏空。",
+        "related_existing_ids": ["XH-142"],
+        "dedup_boundary": "只是一场事件口述，没有订单与反事实结果，不构成XH-142的复现或新假设。"
+      }
+    ]
+  },
+  "timing_notes": [
+    "来源标题为2026年11月23日，但转写称11月27日是后天，内部相对日期不一致；不把‘明天’转成确定日历交易指令。",
+    "官方复职与券商收盘报价具有明确日期，A股在绑定家庭上下文时尚未开盘；跨市场传导仍待国内盘面确认。",
+    "期权、境内产品溢价、基金统计、回购公司和高净值案例均缺少可执行的时间与对象核验。",
+    "吕晓彤是其他作者，本草稿不更新小草posture_current或REGIME_TIMELINE。"
+  ],
+  "typo_corrections": [
+    {
+      "raw": "老黄",
+      "normalized": "黄仁勋（Jensen Huang）",
+      "reason": "英伟达复职语境与官方材料一致；只校正人物，不扩展调查结论。"
+    },
+    {
+      "raw": "木头姐",
+      "normalized": "Cathie Wood（人物指代，基金未解析）",
+      "reason": "常见中文昵称但来源没有具体基金、日期或净值，亏损18%不作事实。"
+    },
+    {
+      "raw": "老八",
+      "normalized": null,
+      "reason": "季度报告语境可能暗示知名长期投资者，但来源没有正式姓名，禁止猜测。"
+    },
+    {
+      "raw": "阿中、阿g、阿忠、阿涛、阿珍珍",
+      "normalized": null,
+      "reason": "这些是逐字稿实际出现的昵称成员；人员角色与证券无法唯一映射，仅阿g被口头关联到某回购对象，禁止把全部昵称断言为公司或据此生成交易标的。"
+    }
+  ],
+  "action_summary": {
+    "posture_update": "not_applied：吕晓彤为其他作者；不修改或续期小草全局姿态与时间线。",
+    "playbook_update": "no_deterministic_change：只记录authority=0方法与既有知识的复现、相邻细化和边界，不修改策略、仓位、参数或账户。",
+    "hypothesis_update": "merge_existing_provenance_only：以XH-167的完全相同claim写入hypotheses，仅供正常单文件入库为既有XH-167追加2026-11-23来源链，不创建新假设；XH-050与XH-201仅相邻，XH-070仅为停止边界，XH-142不构成复现。",
+    "audit_evidence": "bound_to_complete_transcript_sha256_cce7445587ce184cd01ded8bd71a458ddac848a606983403e9d81bf98b905dea",
+    "instrumentation_todo": "如进入研究，建立美国科技与A股科技条件联动面板、开盘承接指标、境内指数产品溢价面板和股债阈值再平衡回测。",
+    "routing": ["authority=0可复用方法", "既有知识复现与边界", "待research_run验证", "不更新小草全局姿态", "不修改确定性策略、账户或参数"]
+  },
+  "decision_trace": [
+    {
+      "observation": "来源比较消费主线时代和科技主线时代，认为当前A股科技与美国科技联动增强。",
+      "inference": "本地科技仓位需要把外部路径风险纳入短期预算，但不能把一次英伟达反弹当作稳定因果。",
+      "action": "通过hypotheses中的完全相同claim仅合并XH-167来源链，不新增同义假设；若研究则做条件联动与承接检验。",
+      "evidence": {"segment_ids": ["0c7c2cefded063c288f3a242cddfcf56ca53f256e34c3178c0c4e3ab2bf1f9d4", "4bd81532461a40291040f06f9555e67fdeb366bf01df767021fd5db549297d40"], "quote": "那当然是强挂钩的了", "quote_segment_id": "4bd81532461a40291040f06f9555e67fdeb366bf01df767021fd5db549297d40"}
+    },
+    {
+      "observation": "来源描述股指下跌时逐步卖出美债买入纳指和标普，上涨后再卖指数补回美债。",
+      "inference": "这是规则化缓冲的候选方法，但来源没有参数、成本或结果。",
+      "action": "只作为XH-050和XH-201的相邻细化，不登记新规则。",
+      "evidence": {"segment_ids": ["9a4948bea6497a49ce4732ebcbce5cc3da2b5bc3710b05168c025292cc3222fa", "f5c8a1b8bd151179b5025e80cbafe1500bcbecf624ec61c001d00a358fad7823"], "quote": "再把纳指和标普再抛掉，然后再去买美债等等之类的，就一直在做这个再平衡", "quote_segment_id": "f5c8a1b8bd151179b5025e80cbafe1500bcbecf624ec61c001d00a358fad7823"}
+    },
+    {
+      "observation": "来源同时讲述穿越周期、生活需要可卖出部分资产，以及巨额回撤者在经营和家庭压力下被劝不卖。",
+      "inference": "继续持有的前提必须是流动性和基本面仍可持续，群体态度不能替代家庭约束。",
+      "action": "保留为方法边界，不把不卖写成策略。",
+      "evidence": {"segment_ids": ["62260c273f0bf561b869adaa50cfa8233a158a19e696489900f8a5714e037b27", "0b88acdf09a822b1dd3faf00765583d7b2c03ce71f8aab8fa4b57caedcc377d8", "218ef179f73f03011ce81a22f1f5f7bb5088b18e6dd768be46141bdcd374a320"], "quote": "你就卖点出来", "quote_segment_id": "0b88acdf09a822b1dd3faf00765583d7b2c03ce71f8aab8fa4b57caedcc377d8"}
+    }
+  ],
+  "judgment_heuristics": [
+    "先核事件和定价，再看国内承接，最后决定短线风险预算。",
+    "先保现金与基础配置，再处理高波动突破仓位。",
+    "先核完整期权义务，再讨论权利金收益。",
+    "先核产品溢价与跟踪成本，再配置海外指数。",
+    "先设股债比例和阈值，再执行再平衡。",
+    "先保家庭与经营流动性，再讨论穿越周期。",
+    "先确认人物和披露时点，再使用季报信号。"
+  ],
+  "judgment_heuristics_provenance": {
+    "provenance": "system_judgment_synthesis",
+    "source_basis": "来源提供事件催化、跨市场联动、期权、产品溢价、股债再平衡、长期持有和季度信号；所有先后顺序和验证门由系统派生。"
+  },
+  "prior_feedback_response": {
+    "status": "not_applicable_other_author_without_matching_current_posture",
+    "current_posture": "未更新。本场是吕晓彤来源，不具有小草全局姿态修改权；已知旧posture于2026年7月3日到期，本场不续期、不替代，也不新建当前姿态。",
+    "playbook_comparison": [
+      "跨市场科技路径风险与XH-167一致，可记为复现。",
+      "股债再平衡与既有现金缓冲、宽基规则相邻，但参数和结果缺失。",
+      "卖出看跌期权和次日追高均不构成小草确定性交易证据。"
+    ],
+    "calibration_action": "no_change：父级反馈中没有被标记的当前校准事项，本场也没有同口径交易结果，不新增或修改playbook校准。"
+  },
+  "deduplication_review": {
+    "status": "existing_recurrence_routed_for_merge_no_new_candidate",
+    "reason": "跨市场命题与XH-167原claim完全一致，已通过hypotheses路由为仅合并来源链；股债缓冲与宽基配置仅与XH-050、XH-201相邻，XH-070只是风险预算耗尽边界，XH-142没有形成复现。本场不新增同义或扩张性候选。",
+    "outcomes": [
+      {"candidate": "cross_market_path_risk", "decision": "merge_existing_provenance_only", "related_existing_ids": ["XH-167"], "boundary": "完全复用XH-167原claim，只追加2026-11-23来源链与本场证据归属，不复制历史数字，不创建新假设。"},
+      {"candidate": "treasury_equity_rebalance", "decision": "adjacent_refinement_only", "related_existing_ids": ["XH-050", "XH-201"], "boundary": "来源没有比例、阈值、成本和对照结果。"},
+      {"candidate": "average_down", "decision": "existing_risk_boundary_controls", "related_existing_ids": ["XH-070"], "boundary": "风险预算耗尽时停止加仓，不能被来源的分批买入建议覆盖。"},
+      {"candidate": "event_day_reduce_churn", "decision": "support_only_not_recurrence", "related_existing_ids": ["XH-142"], "boundary": "没有订单和反事实收益，不能认定方法复现。"}
+    ]
+  }
+}
