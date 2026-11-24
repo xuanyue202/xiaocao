@@ -197,6 +197,9 @@ def test_source_adapter_keeps_discovery_capability():
 
 
 def test_local_cli_registers_metadata_only_discovery(tmp_path, monkeypatch):
+    from contextlib import nullcontext
+    import xiaocao.kol.human_playback as playback
+
     calls = []
 
     class Coordinator:
@@ -214,6 +217,7 @@ def test_local_cli_registers_metadata_only_discovery(tmp_path, monkeypatch):
         return {"status": "scanned"}
 
     monkeypatch.setattr(kol_daily, "DailyCoordinator", Coordinator)
+    monkeypatch.setattr(playback, "human_capture_network_owner", lambda _: nullcontext())
     monkeypatch.setattr(kol_daily.DailyRuntime, "xiaocao_wechat", capture)
     monkeypatch.setattr(kol_daily.DailyRuntime, "reconcile_local_mailbox", lambda _: [])
     monkeypatch.setattr(sys, "argv", ["kol_daily.py", "capture-local",
