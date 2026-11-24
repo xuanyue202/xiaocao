@@ -4690,6 +4690,62 @@ class DailyRuntime:
                 run_kwargs["backfill_since"] = backfill_since
         return subscription.run_once(**run_kwargs)
 
+    def xiaocao_recorded_terminal_repair(self, identity: str, *, replacement_binary: Path,
+                                         replacement_sha256: str) -> dict[str, Any]:
+        """Continue one proven terminal recording under the existing source slot."""
+        from xiaocao.kol.recorded_terminal_repair import (
+            _verify_terminal_original, observe_terminal_alias, prepare_terminal_revision,
+            reconcile_terminal_preparation, resume_terminal_revision, restart_terminal_backend,
+        )
+        from xiaocao.yangsheng.capture import lifecycle_lease
+        history = WechatCliHistoryReader(self.args.xiaocao_wechat_contact,
+            executable=self.args.wechat_cli, limit=self.args.wechat_history_limit)
+        capture = XiaocaoLiveCaptureDriver(self.args.xiaocao_wechat_output_dir,
+            decision_output=self.args.decision_output_dir)
+        if not hasattr(self, '_human_entry_session_id'):
+            self._human_entry_session_id = uuid4().hex
+        subscription = XiaocaoWechatLiveSubscription(self.args.xiaocao_wechat_output_dir,
+            history_reader=history, browser_exchange=_read_agent_json,
+            handoff_exchange=self.publish_mailbox_handoff, capture_driver=capture,
+            contact=self.args.xiaocao_wechat_contact, password=self.args.xiaocao_live_password,
+            human_entry_session_id=self._human_entry_session_id,
+            playback_route=XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM)
+        item = subscription._load()['items'].get(identity)
+        if not isinstance(item, dict) or item.get('identity') != identity:
+            raise EnrichmentError('recorded terminal original is missing')
+        service = capture._service(identity)
+        current = service.capture_store.latest(item.get('capture_job_id')) or {}
+        opts = ((current.get('download_task') or {}).get('meta') or {}).get('opts') or {}
+        root = Path(str(opts.get('path') or ''))
+        if not root.is_absolute():
+            raise EnrichmentError('recorded terminal original output path is invalid')
+        repair = current.get('media_repair') or {}
+        if repair.get('state') in {'preparing','prepared','resume_claimed','running'}:
+            expected_status = 'download_failed' if repair['state']=='preparing' else 'downloading'
+            if current.get('status')!=expected_status or item.get('status') in {'completed','handoff_ready'}:
+                raise EnrichmentError('recorded terminal continuation is not an active original')
+            _verify_terminal_original(subscription,item,current)
+            ready=service.start()
+            if ready.get('capture_job_id')!=item['capture_job_id']:
+                raise EnrichmentError('recorded terminal backend resumed another capture')
+            from xiaocao.kol.xiaocao_live import _sha256_file
+            if _sha256_file(service.sniffer_binary)!=replacement_sha256:
+                raise EnrichmentError('recorded terminal reconciler backend changed')
+            if repair['state'] in {'preparing','prepared'}:
+                with lifecycle_lease(closing=True):
+                    reconcile_terminal_preparation(service,item,output_root=root)
+                    resume_terminal_revision(service,item['capture_job_id'])
+            else:
+                resume_terminal_revision(service,item['capture_job_id'])
+            return self.xiaocao_wechat(only_identity=identity)
+        restart_terminal_backend(subscription,service,item,output_root=root,replacement_binary=replacement_binary,
+                                 replacement_sha256=replacement_sha256)
+        proof = observe_terminal_alias(subscription,item,service,output_root=root)
+        with lifecycle_lease(closing=True):
+            prepare_terminal_revision(service,item,proof,output_root=root)
+            resume_terminal_revision(service,item['capture_job_id'])
+        return self.xiaocao_wechat(only_identity=identity)
+
     def xiaocao_wechat_narrow_resume(
         self,
         surface: str,
@@ -5352,6 +5408,8 @@ def main() -> int:
         help="Resume a local official-account capture repair without remote processing",
     )
     parser.add_argument("--source-identity")
+    parser.add_argument("--recorded-terminal-binary", type=Path)
+    parser.add_argument("--recorded-terminal-sha256")
     parser.add_argument(
         "--xiaocao-backfill-since",
         help="Explicit one-item historical capture authorization (YYYY-MM-DD); never for scheduled sweeps",
@@ -5391,6 +5449,10 @@ def main() -> int:
         or args.source_adapter != "wechat_official_accounts"
     ):
         parser.error("--local-capture requires an official-account source repair")
+    if bool(args.recorded_terminal_binary) != bool(args.recorded_terminal_sha256):
+        parser.error("recorded terminal repair requires binary and SHA-256 together")
+    if args.recorded_terminal_binary and (args.command != "capture-xiaocao-item" or not args.source_identity):
+        parser.error("recorded terminal repair requires an exact capture-xiaocao-item")
     if args.xiaocao_backfill_since is not None and (
         args.command != "capture-xiaocao-item" or not args.source_identity
     ):
@@ -5837,9 +5899,13 @@ def main() -> int:
             runtime = DailyRuntime.__new__(DailyRuntime)
             runtime.args = args
             with service._source_locked("xiaocao_wechat_live"):
+                narrow = runtime.xiaocao_wechat_narrow_resume
+                if args.recorded_terminal_binary:
+                    narrow = lambda _surface: runtime.xiaocao_recorded_terminal_repair(
+                        args.source_identity, replacement_binary=args.recorded_terminal_binary,
+                        replacement_sha256=args.recorded_terminal_sha256)
                 result = _classified_narrow_source(
-                    "xiaocao_wechat_live",
-                    runtime.xiaocao_wechat_narrow_resume,
+                    "xiaocao_wechat_live", narrow,
                 )(f"xiaocao_wechat_live:{args.source_identity}")
                 progress = WriterProgress.from_dict(result["writer_progress"])
                 service.record_exact_capture_progress("xiaocao_wechat_live", result)

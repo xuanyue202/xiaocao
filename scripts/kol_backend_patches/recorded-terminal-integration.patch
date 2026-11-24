@@ -1,0 +1,99 @@
+diff --git a/internal/api/routes.go b/internal/api/routes.go
+index 76629ff5..e1149c17 100644
+--- a/internal/api/routes.go
++++ b/internal/api/routes.go
+@@ -62,6 +62,8 @@ func (c *APIClient) SetupRoutes() {
+ 	c.engine.POST("/api/task/pause", c.handlePauseTask)
+ 	c.engine.POST("/api/task/resume", c.handleResumeTask)
+ 	c.engine.POST("/api/task/repair-incomplete-stream", c.handlePrepareIncompleteStreamRevision)
++	c.engine.POST("/api/task/prepare-recorded-terminal-revision", c.handlePrepareRecordedTerminalRevision)
++	c.engine.POST("/api/task/start-recorded-terminal-revision", c.handleStartRecordedTerminalRevision)
+ 	c.engine.POST("/api/task/delete", c.handleDeleteTask)
+ 	c.engine.POST("/api/task/clear", c.handleClearTasks)
+ 	c.engine.GET("/api/file", c.handleFetchFile)
+diff --git a/pkg/gopeed/internal/protocol/stream/fetcher.go b/pkg/gopeed/internal/protocol/stream/fetcher.go
+index 5f7222e2..c114a0f7 100644
+--- a/pkg/gopeed/internal/protocol/stream/fetcher.go
++++ b/pkg/gopeed/internal/protocol/stream/fetcher.go
+@@ -10,6 +10,7 @@ import (
+ 	"os"
+ 	"os/exec"
+ 	"path"
++	"path/filepath"
+ 	"regexp"
+ 	"sort"
+ 	"strconv"
+@@ -36,6 +37,47 @@ type Fetcher struct {
+ 	lock        sync.Mutex
+ }
+ 
++func sameRecordedRecoveryPath(originalRaw, freshRaw string) bool {
++	original, originalErr := url.Parse(originalRaw)
++	alias, aliasErr := url.Parse(freshRaw)
++	return originalErr == nil && aliasErr == nil && recordedReplayOrigin(original) && recordedReplayOrigin(alias) &&
++		original.Scheme == alias.Scheme && original.Host == alias.Host && original.Path == alias.Path &&
++		original.EscapedPath() == alias.EscapedPath() && original.User == nil && original.Fragment == "" &&
++		alias.User == nil && alias.Fragment == ""
++}
++
++func recordedRecoveryHeadersAllowed(extra any) bool {
++	value, ok := extra.(*fstream.ReqExtra)
++	return ok && value != nil && len(value.Header) == 0
++}
++
++// Durably mark the first resume before any fresh provider request. A crash or
++// failure after this point is an uncertain effect and cannot be re-prepared.
++func markRecordedRecoveryStarted(name, revision string) error {
++	f, err := os.OpenFile(name+".recorded-started", os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
++	if err != nil {
++		return fmt.Errorf("recorded recovery resume already claimed")
++	}
++	_, writeErr := f.WriteString(revision + "\n")
++	if writeErr == nil {
++		writeErr = f.Sync()
++	}
++	closeErr := f.Close()
++	if writeErr != nil || closeErr != nil {
++		return fmt.Errorf("recorded recovery resume marker failed")
++	}
++	directory, err := os.Open(filepath.Dir(name))
++	if err != nil {
++		return fmt.Errorf("recorded recovery resume directory unavailable")
++	}
++	syncErr := directory.Sync()
++	closeErr = directory.Close()
++	if syncErr != nil || closeErr != nil {
++		return fmt.Errorf("recorded recovery resume marker not durable")
++	}
++	return nil
++}
++
+ func (f *Fetcher) Setup(ctl *controller.Controller) {
+ 	f.ctl = ctl
+ 	f.doneCh = make(chan error, 1)
+@@ -352,6 +394,25 @@ func (f *Fetcher) Start() (err error) {
+ 		return err
+ 	}
+ 	inputURL := f.meta.Req.URL
++	if revision := f.meta.Req.Labels["recorded_ticket_repair_revision"]; revision != "" {
++		if f.meta.Req.Labels["hls_finite"] != "true" || !streamCompressEnabled(f.meta.Req.Extra, f.meta.Opts.Extra) {
++			return fmt.Errorf("recorded recovery requires a finite compressed checkpoint")
++		}
++		if !recordedRecoveryHeadersAllowed(f.meta.Req.Extra) {
++			return fmt.Errorf("recorded recovery forbids extra headers")
++		}
++		if err := markRecordedRecoveryStarted(name, revision); err != nil {
++			return err
++		}
++		fresh, ok := fstream.TakeRecoveryTicket(revision)
++		if !ok {
++			return fmt.Errorf("recorded recovery ticket is unavailable")
++		}
++		if !sameRecordedRecoveryPath(inputURL, fresh) {
++			return fmt.Errorf("recorded recovery ticket binding changed")
++		}
++		inputURL = fresh
++	}
+ 	var checkpoint *replayCache
+ 	if f.meta.Req.Labels["hls_finite"] == "true" && strings.HasPrefix(inputURL, "http") && streamCompressEnabled(f.meta.Req.Extra, f.meta.Opts.Extra) {
+ 		headers := map[string]string{}

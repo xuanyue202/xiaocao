@@ -185,6 +185,20 @@ capture. It must match original date/course/resource/file/material/path, and the
 backend checks fresh merchant and finite playlist evidence independently. Never
 retry an uncertain dispatch or refresh an already running task.
 
+For an existing terminal 401/403 checkpoint whose original resume was already
+consumed, the separately reviewed terminal-revision path may reserve a distinct
+output for the same provider task only after complete provider reconciliation,
+unchanged original partial/checkpoint evidence and fresh same-file Browser
+proof. The original source, candidate, task, claims and incomplete bytes remain
+unchanged. The backend holds the fresh ticket in RAM, reserves and checks the
+new target, and marks the exact resume before provider I/O. Its dedicated start
+path never pauses another task. The original task continues only after a durable
+resume claim and exact provider readback; any uncertain preparation or start
+stays claimed for exact reconciliation and is never blindly reissued. A backend
+restart is protected by the source and shared lifecycle leases; no lifecycle
+lease spans Browser input. Ordinary recording acceptance and cloud/mailbox
+readback still apply before any completion claim.
+
 ## Stable acquisition route
 
 Use the existing local schedule to inspect published history recordings after

@@ -288,3 +288,17 @@ def test_changed_share_token_requires_exact_same_message_catalogue_anchor():
     with pytest.raises(ReplayCatalogError):
         inspect_original(config, item, originals=[item, navigation,
             {**item, 'identity':'kol-wechat-'+'d'*24}], session=Session([]), now=NOW)
+
+
+def test_evening_original_excludes_dated_preopen_but_rejects_mixed_sessions():
+    from xiaocao.kol.replay_catalog import match_original
+    published='2026-11-17T16:27:00+08:00'
+    morning={'title':'11月17日盘前大师班直播','resource_id':'v_'+'a'*24,'duration_seconds':3116}
+    evening={'title':'11月17日复盘大师班直播','resource_id':'v_'+'b'*24,'duration_seconds':4215}
+    assert match_original([morning,evening],published)==evening
+    with pytest.raises(ReplayCatalogError,match='recorded_session_title_unverified'):
+        match_original([evening,{**morning,'title':'11月17日盘前复盘大师班直播'}],published)
+    with pytest.raises(ReplayCatalogError,match='recorded_session_title_unverified'):
+        match_original([evening,{**morning,'title':'11月17日盘中大师班直播'}],published)
+    with pytest.raises(ReplayCatalogError,match='recorded_session_title_unverified'):
+        match_original([morning],'2026-11-17T09:17:00+08:00')

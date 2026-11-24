@@ -584,6 +584,28 @@ class SnifferClient:
                      "original_sha256": original_sha256},
         ).get("data") or {})
 
+    def prepare_recorded_terminal_revision(self, task_id: str, *, candidate_id: str,
+            resource_id: str, media_file_id: str, partial_sha256: str,
+            manifest_sha256: str, resource_sha256: str, alias_candidate_id: str) -> dict[str, Any]:
+        """Prepare the same stopped task; provider tickets never cross this API."""
+        return dict(self._json(
+            '/api/task/prepare-recorded-terminal-revision', method='POST', timeout=60,
+            payload={'id':task_id, 'candidate_id':candidate_id, 'resource_id':resource_id,
+                     'media_file_id':media_file_id, 'partial_sha256':partial_sha256,
+                     'manifest_sha256':manifest_sha256, 'resource_sha256':resource_sha256,
+                     'alias_candidate_id':alias_candidate_id},
+        ).get('data') or {})
+
+    def start_recorded_terminal_revision(self, task_id: str, *, revision: str) -> dict[str, Any]:
+        """Start one prepared original without the generic capacity/pause policy."""
+        result = dict(self._json(
+            '/api/task/start-recorded-terminal-revision', method='POST',
+            payload={'id': task_id, 'revision': revision},
+        ).get('data') or {})
+        if result != {'id': task_id, 'revision': revision}:
+            raise SnifferError('recorded terminal resume changed the original binding')
+        return result
+
     def pause_task(self, task_id: str) -> dict[str, Any]:
         data = self._json("/api/task/pause", method="POST", payload={"id": task_id}).get("data") or {}
         if data.get("id") != task_id:

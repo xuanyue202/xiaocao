@@ -215,8 +215,9 @@ def match_original(rows: list[dict], published_at: str, *, preopen_start_at: str
     if any(r not in preopen_matches and _course_title_key(r['title']) not in titles and re.fullmatch(
                    re.escape(date) + r".{1,8}大师班直播.*",
                    _course_title_key(r['title']))
-               and not any(other in _course_title_key(r['title'])
-                           for other in ({"早盘", "复盘"} - {session}))
+               and not (session not in _course_title_key(r['title'])
+                        and any(other in _course_title_key(r['title']) for other in
+                                ({"复盘"} if session == "早盘" else {"早盘", "盘前"})))
                for r in rows):
         raise ReplayCatalogError("recorded_session_title_unverified")
     return matches[0] if matches else None

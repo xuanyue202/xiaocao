@@ -39,6 +39,7 @@ def main() -> int:
     parser=argparse.ArgumentParser()
     parser.add_argument('--backend-root',type=Path,required=True)
     parser.add_argument('--output',type=Path,required=True)
+    parser.add_argument('--recorded-terminal',action='store_true')
     args=parser.parse_args()
     backend=args.backend_root.expanduser().resolve()
     output=args.output.expanduser().resolve()
@@ -46,12 +47,17 @@ def main() -> int:
         parser.error('build output must be a separate same-directory candidate, never the installed binary')
     resources=Path(__file__).resolve().parent/'kol_backend_patches'
     bindings=json.loads((resources/'integration_bindings.json').read_text())
+    terminal=json.loads((resources/'recorded-terminal-bindings.json').read_text()) if args.recorded_terminal else []
+    terminal_after={entry['path']:entry['after_sha256'] for entry in terminal}
     states=[]
     for item in bindings:
         actual=sha(backend/item['path'])
-        if actual not in {item['before_sha256'],item['after_sha256']}:
+        accepted={item['before_sha256'],item['after_sha256']}
+        if args.recorded_terminal and item['path'] in terminal_after:
+            accepted.add(terminal_after[item['path']])
+        if actual not in accepted:
             raise RuntimeError('backend source drift: '+item['path'])
-        states.append(actual==item['after_sha256'])
+        states.append(actual in {item['after_sha256'],terminal_after.get(item['path'])})
     if any(states) and not all(states):
         raise RuntimeError('partially applied backend integration requires diagnosis')
     copies={
@@ -73,12 +79,39 @@ def main() -> int:
         subprocess.run(['git','-C',str(backend),'apply','--check',str(resources/'integration.patch')],check=True)
         subprocess.run(['git','-C',str(backend),'apply',str(resources/'integration.patch')],check=True)
     for item in bindings:
-        if sha(backend/item['path'])!=item['after_sha256']:raise RuntimeError('backend integration hash mismatch')
-    subprocess.run(['go','test','./internal/protocol/stream','./pkg/download','-count=1'],cwd=backend/'pkg/gopeed',check=True)
+        if sha(backend/item['path']) not in {item['after_sha256'],terminal_after.get(item['path'])}:
+            raise RuntimeError('backend integration hash mismatch')
+    if args.recorded_terminal:
+        terminal_states=[]
+        for item in terminal:
+            actual=sha(backend/item['path'])
+            if actual not in {item['before_sha256'],item['after_sha256']}:
+                raise RuntimeError('recorded terminal backend source drift: '+item['path'])
+            terminal_states.append(actual==item['after_sha256'])
+        if any(terminal_states) and not all(terminal_states):
+            raise RuntimeError('partially applied recorded terminal integration')
+        terminal_copies={
+            'recorded_terminal_revision_handler.go':'internal/api/recorded_terminal_revision_handler.go',
+            'recorded_terminal_revision_handler_test.go':'internal/api/recorded_terminal_revision_handler_test.go',
+            'recorded_terminal_ticket_test.go':'pkg/gopeed/internal/protocol/stream/recorded_terminal_ticket_test.go',
+            'recorded_terminal_revision.go':'pkg/gopeed/pkg/download/recorded_terminal_revision.go',
+            'recorded_terminal_revision_test.go':'pkg/gopeed/pkg/download/recorded_terminal_revision_test.go',
+            'ticket_memory.go':'pkg/gopeed/pkg/protocol/stream/ticket_memory.go',
+            'ticket_memory_test.go':'pkg/gopeed/pkg/protocol/stream/ticket_memory_test.go',
+        }
+        sync_additive_sources(backend,resources,terminal_copies,{})
+        if not all(terminal_states):
+            patch=resources/'recorded-terminal-integration.patch'
+            subprocess.run(['git','-C',str(backend),'apply','--check',str(patch)],check=True)
+            subprocess.run(['git','-C',str(backend),'apply',str(patch)],check=True)
+        for item in terminal:
+            if sha(backend/item['path'])!=item['after_sha256']:
+                raise RuntimeError('recorded terminal integration hash mismatch')
+    subprocess.run(['go','test','./internal/protocol/stream','./pkg/download','./pkg/protocol/stream','-count=1'],cwd=backend/'pkg/gopeed',check=True)
     subprocess.run(['go','test','./internal/api','./internal/interceptor','-count=1'],cwd=backend,check=True)
     subprocess.run(['go','build','-trimpath','-o',str(output),'.'],cwd=backend,check=True)
     print(json.dumps({'status':'prepared_only','binary':str(output),'sha256':sha(output),
-                      'integration':bindings,'installed':False},ensure_ascii=False))
+                      'integration':bindings,'recorded_terminal_integration':terminal,'installed':False},ensure_ascii=False))
     return 0
 
 if __name__=='__main__':raise SystemExit(main())
