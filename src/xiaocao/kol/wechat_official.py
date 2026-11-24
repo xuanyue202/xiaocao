@@ -563,6 +563,32 @@ class OfficialAccountSubscription:
         )
         return completed
 
+    def reconcile_exact_handoff(self, identity: str, *, mailbox: Any) -> dict[str, Any]:
+        """Reconcile a previously claimed exact article without discovery or send."""
+        manifest = self._load()
+        item = manifest['items'].get(identity)
+        if (not isinstance(item, dict) or item.get('identity') != identity
+            or item.get('status') not in {'discovered','completed'}):
+            raise EnrichmentError('official exact original is missing or ineligible')
+        capsule = _capsule(item)
+        claim = mailbox.ledger.handoff_state(capsule['handoff_id'])
+        if (not claim or claim.get('event') not in {'mailbox_send_attempted', 'mailbox_send_receipted', 'mailbox_send_reconciled'}
+            or claim.get('object_kind') != 'article' or claim.get('message_id') != capsule['handoff_id']):
+            raise EnrichmentError('official exact mailbox claim is missing or changed')
+        response = mailbox.exchange({'event':'daily_lianghui_mailbox_input_required',
+            'operation':'get_mailbox_message',
+            'arguments':{'mailbox_id':claim['mailbox_id'],'message_id':capsule['handoff_id']}})
+        message = mailbox._validate_exact_message(response, sent=claim)
+        if message.get('payload') != capsule:
+            raise EnrichmentError('official exact mailbox payload changed')
+        if item.get('status') == 'completed':
+            if item.get('handoff_id') != capsule['handoff_id'] or item.get('mailbox_content_sha256') != claim.get('content_sha256'):
+                raise EnrichmentError('official completed handoff changed')
+            return {'status':'no_update','already_completed':True,'identity':identity,'handoff_id':capsule['handoff_id']}
+        completed = self._dispatch(manifest, item)
+        return {'status':'no_update','identity':identity,'handoff_id':completed['handoff_id'],
+                'handoff_dispatched_count':0,'reconciled':True}
+
     def run_once(self) -> dict[str, Any]:
         manifest = self._load()
         self._poll(manifest)

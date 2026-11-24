@@ -1320,6 +1320,18 @@ def test_repair_validation_accepts_shared_lv_listing_validation_profile(
             "kol_wechat_official_accounts_source_run",
         ),
         (
+            "code_error",
+            "unhandled_source_exception",
+            "source_run",
+            "kol_wechat_official_accounts_source_run",
+        ),
+        (
+            "contract_error",
+            "mailbox_response_invalid",
+            "mailbox_response",
+            "kol_wechat_official_accounts_source_run",
+        ),
+        (
             "configuration",
             "wechat_cli_missing",
             "wechat_official_scan",
@@ -1366,6 +1378,7 @@ def test_repair_validation_accepts_wechat_official_accounts_source_profile(
         (
             "wechat_official_cli_missing_repair_resumes_remote_inbox_only or "
             "local_official_repair_preserves_capture_ownership or "
+            "local_official_repair_uses_exact_item or official_exact_reconcile or mailbox_response_invalid or "
             "mailbox_connector_send_envelope or "
             "official_account_parser_uses_exact_publishers_and_url_only_metadata or "
             "official_account_reader_calls_one_stateless_combined_window or "
@@ -1602,6 +1615,7 @@ def test_repair_validation_accepts_xiaocao_wechat_source_profile(
         "tests/test_kol_xiaocao_wechat.py",
         "tests/test_kol_writer_progress.py",
         "tests/test_kol_recorded_recovery.py",
+        "tests/test_kol_recorded_terminal_repair.py",
         "tests/test_kol_replay_catalog.py",
         "-q",
         "-k",
@@ -1630,7 +1644,7 @@ def test_repair_validation_accepts_xiaocao_wechat_source_profile(
             "compressed_capture_wait_has_durable_poll_deadline or "
             "advance_rechecks_historical_cleanup_without_stopping_shared_capture or "
             "pending_cloud_handoff_resumes_exact_job_after_stale_playback_state or "
-            "repair_closure_accepts_xiaocao_wechat_source_profile or recorded or catalog"
+            "repair_closure_accepts_xiaocao_wechat_source_profile or recorded or catalog or terminal or pending_preparation or reconciled_preparation"
         ),
     )
     service = RepairValidationService(

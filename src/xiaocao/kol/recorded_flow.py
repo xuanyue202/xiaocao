@@ -80,8 +80,8 @@ def check_recorded_playback(sub,manifest,item,*,reason):
         safe = exc if isinstance(exc, ReplayCatalogError) else ReplayCatalogError(
             'catalog_configuration_invalid')
         raise _catalogue_diagnostic(safe, identity, capture_id) from exc
-    from .xiaocao_wechat import parse_xiaocao_live_messages
-    originals=parse_xiaocao_live_messages(sub.history_reader())
+    from .xiaocao_wechat import parse_xiaocao_live_messages, read_original_history
+    originals=parse_xiaocao_live_messages(read_original_history(sub.history_reader,item['published_at']))
     try:
         verify_original(item,identity,originals)
     except ReplayCatalogError as exc:

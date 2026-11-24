@@ -10,7 +10,7 @@ from xiaocao.kol.replay_catalog import (
     ReplayCatalogConfig, ReplayCatalogError, inspect_original, verify_original,
 )
 from xiaocao.kol.enrichment_types import EnrichmentError
-from xiaocao.kol.xiaocao_wechat import WechatCliHistoryReader, parse_xiaocao_live_messages
+from xiaocao.kol.xiaocao_wechat import WechatCliHistoryReader, parse_xiaocao_live_messages, read_original_history
 
 
 def main() -> int:
@@ -30,7 +30,7 @@ def main() -> int:
         if item.get('human_playback_deferred') or item.get('status') in {'completed', 'handoff_ready'}:
             raise ReplayCatalogError('original_not_eligible_for_catalog_recovery')
         try:
-            originals = parse_xiaocao_live_messages(WechatCliHistoryReader()())
+            originals = parse_xiaocao_live_messages(read_original_history(WechatCliHistoryReader(), item['published_at']))
             verify_original(item, args.identity, originals)
         except EnrichmentError:
             raise ReplayCatalogError('original_history_unavailable') from None

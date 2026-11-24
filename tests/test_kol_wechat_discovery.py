@@ -15,6 +15,87 @@ from xiaocao.kol.xiaocao_wechat import (
 )
 
 
+def test_keycap_numbered_history_link_is_bound_to_same_message():
+    from xiaocao.kol.replay_catalog import ReplayCatalogConfig, ReplayCatalogError, verify_catalogue_binding
+
+    history = {"chat": "test-contact", "username": "exact-contact-id", "messages": [
+        "[2026-11-23 09:17] test-contact: 1⃣课程：#小程序://见势擒龙团/abc12345\n"
+        "2️⃣历史直播回放点击链接学习：https://yv9lc.xetslk.com/s/4uRHyc"
+    ]}
+    items = parse_xiaocao_live_messages(history)
+    mini = next(item for item in items if item.get("entry_kind") == "wechat_mini_program")
+    link = next(item for item in items if item.get("source_url"))
+    assert link["recorded_navigation_marker"] is True
+    assert link["message_sha256"] == mini["message_sha256"]
+    config = ReplayCatalogConfig('appTest123', 'course_Example123', 'OldToken',
+        navigation_source_url='https://yv9lc.xetslk.com/s/4uRHyc')
+    verify_catalogue_binding(config, mini, items)
+    with pytest.raises(ReplayCatalogError, match='original_catalog_binding_invalid'):
+        verify_catalogue_binding(config, mini, [mini, link, {**mini, 'identity': 'kol-wechat-' + 'f' * 24}])
+
+
+def test_preopen_anchor_requires_exact_original_session_announcement():
+    message = ("[2026-11-23 09:17] test-contact: ⏰企业微信app课程已发送，09：20和草神一起看\n\n"
+               "1⃣盘前早盘+晚盘【密码666】：#小程序://见势擒龙团/abc12345\n"
+               "2️⃣历史直播回放点击链接学习：https://yv9lc.xetslk.com/s/4uRHyc")
+    def mini(text):
+        history = {'chat':'test-contact', 'username':'exact-contact-id', 'messages':[text]}
+        return next(x for x in parse_xiaocao_live_messages(history) if x.get('entry_kind') == 'wechat_mini_program')
+    assert mini(message)['recorded_preopen_start_at'] == '2026-11-23T09:20:00+08:00'
+    for changed in (message.replace('盘前早盘+晚盘', '课程回放'),
+                    message.replace('09：20', '08：20'),
+                    message + '\n#小程序://见势擒龙团/another123',
+                    message + '\n1⃣盘前早盘+晚盘【密码666】：duplicate',
+                    message.replace('企业微信app课程已发送', '明天课程')):
+        assert 'recorded_preopen_start_at' not in mini(changed)
+
+
+def test_exact_original_history_is_bounded_complete_and_never_transcribes(tmp_path):
+    from xiaocao.kol.enrichment_types import EnrichmentError
+    from xiaocao.kol.xiaocao_wechat import WechatCliHistoryReader
+    executable = tmp_path/'wechat-cli'; executable.touch()
+    calls = []
+    def runner(command, **kwargs):
+        calls.append((command,kwargs))
+        return SimpleNamespace(stdout=json.dumps({'chat':'contact','messages':['one'],
+                                                  'count':1,'limit':80,'offset':0,'failures':[]}))
+    reader = WechatCliHistoryReader('contact', executable=executable, runner=runner)
+    assert reader.read_original('2026-11-23T09:17:00+08:00')['count'] == 1
+    command, options = calls[0]
+    assert command[command.index('--voice')+1] == 'off'
+    assert command[command.index('--start-time')+1] == '2026-11-23 09:16:00'
+    assert command[command.index('--end-time')+1] == '2026-11-23 09:18:00'
+    assert options['timeout'] == 60
+    def truncated(command, **kwargs):
+        return SimpleNamespace(stdout=json.dumps({'chat':'contact','messages':['x']*80,
+                                                  'count':80,'limit':80,'offset':0}))
+    with pytest.raises(EnrichmentError, match='window is incomplete'):
+        WechatCliHistoryReader('contact',executable=executable,runner=truncated).read_original('2026-11-23T09:17:00+08:00')
+
+
+def test_recorded_exact_resume_reads_only_its_original_window(tmp_path, monkeypatch):
+    history = {'chat':'test-contact','username':'exact', 'messages':[
+        '[2026-11-23 09:17] test-contact: 1⃣课程：#小程序://见势擒龙团/abc12345\n'
+        '2️⃣历史直播回放点击链接学习：https://yv9lc.xetslk.com/s/4uRHyc']}
+    item = next(x for x in parse_xiaocao_live_messages(history) if x.get('entry_kind') == 'wechat_mini_program')
+    item.update(status='capture_armed',capture_job_id='original')
+    (tmp_path/'native_share_bridge.json').write_text(json.dumps({'replay_catalog':{
+        'acquisition_mode':'recorded_course','app_id':'appTest123','course_id':'course_Example123',
+        'mini_program_token':'OldToken','navigation_source_url':'https://yv9lc.xetslk.com/s/4uRHyc'}}))
+    class Reader:
+        def __call__(self): pytest.fail('exact resume must not perform a broad history read')
+        def read_original(self, when):
+            assert when == item['published_at']
+            return history
+    sub = XiaocaoWechatLiveSubscription(tmp_path/'subscription',history_reader=Reader(),
+        browser_exchange=lambda _:None,capture_driver=SimpleNamespace())
+    monkeypatch.setattr(sub,'_load',lambda:{'items':{item['identity']:item}})
+    monkeypatch.setattr(sub,'expire_stale_waits',lambda *a,**k:None)
+    monkeypatch.setattr(sub,'_check_playback',lambda *a,**k:(_ for _ in ()).throw(RuntimeError('reached original')))
+    with pytest.raises(RuntimeError,match='reached original'):
+        sub.run_once(opencli_session='unused',only_identity=item['identity'])
+
+
 def test_retained_capture_repair_still_discovers_new_original_entries(tmp_path):
     now = [datetime.fromisoformat("2026-10-20T16:00:00+08:00")]
     coordinator = DailyCoordinator(tmp_path / "daily", now=lambda: now[0])
@@ -116,6 +197,9 @@ def test_source_adapter_keeps_discovery_capability():
 
 
 def test_local_cli_registers_metadata_only_discovery(tmp_path, monkeypatch):
+    from contextlib import nullcontext
+    import xiaocao.kol.human_playback as playback
+
     calls = []
 
     class Coordinator:
@@ -133,6 +217,7 @@ def test_local_cli_registers_metadata_only_discovery(tmp_path, monkeypatch):
         return {"status": "scanned"}
 
     monkeypatch.setattr(kol_daily, "DailyCoordinator", Coordinator)
+    monkeypatch.setattr(playback, "human_capture_network_owner", lambda _: nullcontext())
     monkeypatch.setattr(kol_daily.DailyRuntime, "xiaocao_wechat", capture)
     monkeypatch.setattr(kol_daily.DailyRuntime, "reconcile_local_mailbox", lambda _: [])
     monkeypatch.setattr(sys, "argv", ["kol_daily.py", "capture-local",

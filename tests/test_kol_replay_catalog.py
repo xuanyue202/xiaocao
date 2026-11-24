@@ -101,6 +101,66 @@ def test_exact_session_title_order_is_supported_but_intraday_is_not_guessed():
     assert result['recording'] is None
 
 
+def test_dated_unfamiliar_session_with_suffix_is_not_unpublished():
+    item = {**ITEM, 'published_at': '2026-11-23T09:17:00+08:00'}
+    rows = [row(1, '11月23日盘前大师班直播YJ(35)-2026-11-23 10:27:29'),
+            row(2, '11月23日复盘大师班直播')]
+    with pytest.raises(ReplayCatalogError, match='recorded_session_title_unverified'):
+        inspect_original(CONFIG, item, now=NOW.replace(month=11, day=24, hour=11),
+                         session=Session([page(rows)]))
+
+
+def test_exact_preopen_source_session_and_recording_time_are_required():
+    from xiaocao.kol.replay_catalog import match_original
+    item_time = '2026-11-23T09:17:00+08:00'
+    anchor = '2026-11-23T09:20:00+08:00'
+    title = '11月23日盘前大师班直播YJ(35)-2026-11-23 10:27:29'
+    candidate = {'resource_id': 'v_'+'a'*24, 'title': title, 'duration_seconds': 3988}
+    assert match_original([candidate], item_time, preopen_start_at=anchor) == candidate
+    with pytest.raises(ReplayCatalogError, match='recorded_session_title_unverified'):
+        match_original([candidate], item_time)
+    for changed in (
+        {**candidate,'title':title.replace('盘前','盘中')},
+        {**candidate,'title':title.replace('2026-11-23','2026-11-22')},
+        {**candidate,'duration_seconds': 2000},
+    ):
+        with pytest.raises(ReplayCatalogError, match='recorded_session_title_unverified'):
+            match_original([changed], item_time, preopen_start_at=anchor)
+    with pytest.raises(ReplayCatalogError, match='recorded_session_ambiguous'):
+        match_original([candidate,{**candidate,'resource_id':'v_'+'b'*24}],item_time,preopen_start_at=anchor)
+    with pytest.raises(ReplayCatalogError, match='recorded_session_title_unverified'):
+        match_original([candidate],item_time,preopen_start_at='2026-11-23T09:20:00')
+    with pytest.raises(ReplayCatalogError, match='recorded_session_title_unverified'):
+        match_original([candidate],'2026-11-23T16:17:00+08:00',preopen_start_at=anchor)
+
+
+def test_preopen_catalogue_uses_fresh_original_not_a_claimed_anchor():
+    from xiaocao.kol.xiaocao_wechat import parse_xiaocao_live_messages
+    text = ("[2026-11-23 09:17] test-contact: ⏰企业微信app课程已发送，09：20和草神一起看\n"
+            "1⃣盘前早盘+晚盘【密码666】：#小程序://见势擒龙团/Token123")
+    history = {'chat':'test-contact','username':'exact','messages':[text]}
+    original = parse_xiaocao_live_messages(history)[0]
+    item = {k:v for k,v in original.items() if k != 'recorded_preopen_start_at'}
+    item['capture_job_id'] = 'kol-original'
+    target = row(1,'11月23日盘前大师班直播YJ(35)-2026-11-23 10:27:29')
+    target['video_length'] = 3988
+    result = inspect_original(CONFIG,item,originals=[original],
+                              now=NOW.replace(month=11,day=24,hour=11),session=Session([page([target])]))
+    assert result['recording']['resource_id'] == target['chapter_id']
+    # An item-supplied claim cannot stand in for freshly parsed source evidence.
+    with pytest.raises(ReplayCatalogError, match='recorded_session_title_unverified'):
+        inspect_original(CONFIG,{**item,'recorded_preopen_start_at':'2026-11-23T09:20:00+08:00'},
+                         originals=[{k:v for k,v in original.items() if k != 'recorded_preopen_start_at'}],
+                         now=NOW.replace(month=11,day=24,hour=11),session=Session([page([target])]))
+
+
+def test_exact_title_does_not_hide_an_unfamiliar_same_day_candidate():
+    rows = [row(1, '11月4日早盘大师班直播'),
+            row(2, '11月4日盘前大师班直播YJ(35)-2026-11-04 10:27:29')]
+    with pytest.raises(ReplayCatalogError, match='recorded_session_title_unverified'):
+        inspect_original(CONFIG, ITEM, now=NOW, session=Session([page(rows)]))
+
+
 def test_multipart_recording_is_an_agent_repair_not_unpublished_or_one_part_acceptance():
     item = {**ITEM, 'published_at':'2026-11-04T17:00:00+08:00'}
     now = NOW.replace(hour=22)
@@ -228,3 +288,17 @@ def test_changed_share_token_requires_exact_same_message_catalogue_anchor():
     with pytest.raises(ReplayCatalogError):
         inspect_original(config, item, originals=[item, navigation,
             {**item, 'identity':'kol-wechat-'+'d'*24}], session=Session([]), now=NOW)
+
+
+def test_evening_original_excludes_dated_preopen_but_rejects_mixed_sessions():
+    from xiaocao.kol.replay_catalog import match_original
+    published='2026-11-17T16:27:00+08:00'
+    morning={'title':'11月17日盘前大师班直播','resource_id':'v_'+'a'*24,'duration_seconds':3116}
+    evening={'title':'11月17日复盘大师班直播','resource_id':'v_'+'b'*24,'duration_seconds':4215}
+    assert match_original([morning,evening],published)==evening
+    with pytest.raises(ReplayCatalogError,match='recorded_session_title_unverified'):
+        match_original([evening,{**morning,'title':'11月17日盘前复盘大师班直播'}],published)
+    with pytest.raises(ReplayCatalogError,match='recorded_session_title_unverified'):
+        match_original([evening,{**morning,'title':'11月17日盘中大师班直播'}],published)
+    with pytest.raises(ReplayCatalogError,match='recorded_session_title_unverified'):
+        match_original([morning],'2026-11-17T09:17:00+08:00')

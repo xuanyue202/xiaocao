@@ -1,0 +1,13 @@
+diff --git a/pkg/gopeed/internal/protocol/stream/fetcher.go b/pkg/gopeed/internal/protocol/stream/fetcher.go
+index c114a0f7..57ff8385 100644
+--- a/pkg/gopeed/internal/protocol/stream/fetcher.go
++++ b/pkg/gopeed/internal/protocol/stream/fetcher.go
+@@ -41,7 +41,7 @@ func sameRecordedRecoveryPath(originalRaw, freshRaw string) bool {
+ 	original, originalErr := url.Parse(originalRaw)
+ 	alias, aliasErr := url.Parse(freshRaw)
+ 	return originalErr == nil && aliasErr == nil && recordedReplayOrigin(original) && recordedReplayOrigin(alias) &&
+-		original.Scheme == alias.Scheme && original.Host == alias.Host && original.Path == alias.Path &&
++		original.Scheme == alias.Scheme && original.Path == alias.Path &&
+ 		original.EscapedPath() == alias.EscapedPath() && original.User == nil && original.Fragment == "" &&
+ 		alias.User == nil && alias.Fragment == ""
+ }

@@ -924,6 +924,7 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
         (
             "wechat_official_cli_missing_repair_resumes_remote_inbox_only or "
             "local_official_repair_preserves_capture_ownership or "
+            "local_official_repair_uses_exact_item or official_exact_reconcile or mailbox_response_invalid or "
             "mailbox_connector_send_envelope or "
             "official_account_parser_uses_exact_publishers_and_url_only_metadata or "
             "official_account_reader_calls_one_stateless_combined_window or "
@@ -944,6 +945,7 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
         "tests/test_kol_xiaocao_wechat.py",
         "tests/test_kol_writer_progress.py",
         "tests/test_kol_recorded_recovery.py",
+        "tests/test_kol_recorded_terminal_repair.py",
         "tests/test_kol_replay_catalog.py",
         "-q",
         "-k",
@@ -972,7 +974,7 @@ TARGETED_REPAIR_TESTS: dict[str, tuple[str, ...]] = {
             "compressed_capture_wait_has_durable_poll_deadline or "
             "advance_rechecks_historical_cleanup_without_stopping_shared_capture or "
             "pending_cloud_handoff_resumes_exact_job_after_stale_playback_state or "
-            "repair_closure_accepts_xiaocao_wechat_source_profile or recorded or catalog"
+            "repair_closure_accepts_xiaocao_wechat_source_profile or recorded or catalog or terminal or pending_preparation or reconciled_preparation"
         ),
     ),
 }
@@ -1088,6 +1090,7 @@ _TARGETED_REPAIR_IMPLEMENTATION_PATHS: dict[str, frozenset[str]] = {
             "src/xiaocao/kol/writer_progress.py",
             "src/xiaocao/kol/recorded_flow.py",
             "src/xiaocao/kol/recorded_recovery.py",
+            "src/xiaocao/kol/recorded_terminal_repair.py",
             "src/xiaocao/kol/replay_catalog.py",
         }
     ),
@@ -1205,6 +1208,7 @@ _TARGETED_REPAIR_TEST_PATHS: dict[str, frozenset[str]] = {
             "tests/test_kol_xiaocao_wechat.py",
             "tests/test_kol_writer_progress.py",
             "tests/test_kol_recorded_recovery.py",
+            "tests/test_kol_recorded_terminal_repair.py",
             "tests/test_kol_replay_catalog.py",
         }
     ),
@@ -1686,6 +1690,16 @@ def _canonical_wechat_official_source_repair_profile(
                 "source_error",
                 "source_temporarily_unavailable",
                 "source_run",
+            ),
+            (
+                "code_error",
+                "unhandled_source_exception",
+                "source_run",
+            ),
+            (
+                "contract_error",
+                "mailbox_response_invalid",
+                "mailbox_response",
             ),
             (
                 "configuration",

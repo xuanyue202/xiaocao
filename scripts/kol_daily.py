@@ -1340,7 +1340,13 @@ def _read_agent_json(request: dict[str, Any]) -> dict[str, Any]:
 
 def _read_mailbox_json(request: dict[str, Any]) -> dict[str, Any]:
     """Accept the connector's send envelope without rewriting its receipt."""
-    value = _read_agent_json(request)
+    try:
+        value = _read_agent_json(request)
+    except DailyError as exc:
+        raise EnrichmentDiagnosticError(
+            "mailbox response is invalid; reconcile the exact claim before retry",
+            category="contract_error", code="mailbox_response_invalid", stage="mailbox_response",
+        ) from exc
     receipt = value.get("receipt")
     if (
         request.get("operation") == "send_mailbox_message"
@@ -1968,6 +1974,11 @@ def _source_cli_narrow_runner(runtime: "DailyRuntime", adapter: str):
         return runtime.xiaocao_wechat_narrow_resume
     if adapter == "wechat_official_accounts":
         if getattr(getattr(runtime, "args", None), "local_capture", False):
+            identity = getattr(runtime.args, "source_identity", None)
+            if identity:
+                return lambda surface: _adapter_scope_resume(
+                    adapter, surface, lambda: runtime.wechat_official_reconcile_exact(identity),
+                )
             return lambda surface: _adapter_scope_resume(
                 adapter, surface, runtime.wechat_official_local,
             )
@@ -4690,6 +4701,78 @@ class DailyRuntime:
                 run_kwargs["backfill_since"] = backfill_since
         return subscription.run_once(**run_kwargs)
 
+    def xiaocao_recorded_terminal_repair(self, identity: str, *, replacement_binary: Path,
+                                         replacement_sha256: str) -> dict[str, Any]:
+        """Continue one proven terminal recording under the existing source slot."""
+        from xiaocao.kol.recorded_terminal_repair import (
+            _verify_terminal_original, observe_terminal_alias, prepare_terminal_revision,
+            reconcile_terminal_preparation, resume_terminal_revision, restart_terminal_backend,
+        )
+        from xiaocao.yangsheng.capture import lifecycle_lease
+        history = WechatCliHistoryReader(self.args.xiaocao_wechat_contact,
+            executable=self.args.wechat_cli, limit=self.args.wechat_history_limit)
+        capture = XiaocaoLiveCaptureDriver(self.args.xiaocao_wechat_output_dir,
+            decision_output=self.args.decision_output_dir)
+        if not hasattr(self, '_human_entry_session_id'):
+            self._human_entry_session_id = uuid4().hex
+        subscription = XiaocaoWechatLiveSubscription(self.args.xiaocao_wechat_output_dir,
+            history_reader=history, browser_exchange=_read_agent_json,
+            handoff_exchange=self.publish_mailbox_handoff, capture_driver=capture,
+            contact=self.args.xiaocao_wechat_contact, password=self.args.xiaocao_live_password,
+            human_entry_session_id=self._human_entry_session_id,
+            playback_route=XIAOCAO_PLAYBACK_ROUTE_WECHAT_MINI_PROGRAM)
+        item = subscription._load()['items'].get(identity)
+        if not isinstance(item, dict) or item.get('identity') != identity:
+            raise EnrichmentError('recorded terminal original is missing')
+        service = capture._service(identity)
+        current = service.capture_store.latest(item.get('capture_job_id')) or {}
+        opts = ((current.get('download_task') or {}).get('meta') or {}).get('opts') or {}
+        root = Path(str(opts.get('path') or ''))
+        if not root.is_absolute():
+            raise EnrichmentError('recorded terminal original output path is invalid')
+        repair = current.get('media_repair') or {}
+        if repair.get('state') == 'preparing':
+            _verify_terminal_original(subscription,item,current)
+            ready=service.start()
+            if ready.get('capture_job_id')!=item['capture_job_id']:
+                raise EnrichmentError('recorded terminal backend resumed another capture')
+            tasks=service.sniffer.complete_tasks_for_reconciliation()
+            exact=[task for task in tasks if task.get('id')==repair.get('task_id')]
+            if len(exact)!=1:
+                raise EnrichmentError('recorded terminal preparation provider state is ambiguous')
+            meta=exact[0].get('meta') or {}; labels=meta.get('labels') or (meta.get('req') or {}).get('labels') or {}
+            if not labels.get('media_repair_revision'):
+                # Restarting the singleton drains any in-flight old request;
+                # both sides of the restart must prove the same absent effect.
+                restart_terminal_backend(subscription,service,item,output_root=root,replacement_binary=replacement_binary,
+                                         replacement_sha256=replacement_sha256)
+                repair=service.capture_store.latest(item['capture_job_id']).get('media_repair') or {}
+        if repair.get('state') in {'preparing','prepared','resume_claimed','running'}:
+            expected_status = 'download_failed' if repair['state']=='preparing' else 'downloading'
+            if current.get('status')!=expected_status or item.get('status') in {'completed','handoff_ready'}:
+                raise EnrichmentError('recorded terminal continuation is not an active original')
+            _verify_terminal_original(subscription,item,current)
+            ready=service.start()
+            if ready.get('capture_job_id')!=item['capture_job_id']:
+                raise EnrichmentError('recorded terminal backend resumed another capture')
+            from xiaocao.kol.xiaocao_live import _sha256_file
+            if _sha256_file(service.sniffer_binary)!=replacement_sha256:
+                raise EnrichmentError('recorded terminal reconciler backend changed')
+            if repair['state'] in {'preparing','prepared'}:
+                with lifecycle_lease(closing=True):
+                    reconcile_terminal_preparation(service,item,output_root=root)
+                    resume_terminal_revision(service,item['capture_job_id'])
+            else:
+                resume_terminal_revision(service,item['capture_job_id'])
+            return self.xiaocao_wechat(only_identity=identity)
+        restart_terminal_backend(subscription,service,item,output_root=root,replacement_binary=replacement_binary,
+                                 replacement_sha256=replacement_sha256)
+        proof = observe_terminal_alias(subscription,item,service,output_root=root)
+        with lifecycle_lease(closing=True):
+            prepare_terminal_revision(service,item,proof,output_root=root)
+            resume_terminal_revision(service,item['capture_job_id'])
+        return self.xiaocao_wechat(only_identity=identity)
+
     def xiaocao_wechat_narrow_resume(
         self,
         surface: str,
@@ -4766,6 +4849,23 @@ class DailyRuntime:
             publishers=publishers,
         )
         return subscription.run_once()
+
+    def wechat_official_reconcile_exact(self, identity: str) -> dict[str, Any]:
+        """Read back one existing local article claim; never scan or send a new item."""
+        mailbox = self._mailbox()
+        original_exchange = mailbox.exchange
+        def read_only_exchange(request):
+            if request.get('operation') != 'get_mailbox_message':
+                raise EnrichmentError('official exact reconciliation cannot send')
+            return original_exchange(request)
+        mailbox.exchange = read_only_exchange
+        subscription = OfficialAccountSubscription(
+            self.args.wechat_official_output_dir,
+            reader=lambda: (_ for _ in ()).throw(DailyError("exact reconciliation cannot scan")),
+            handoff_exchange=mailbox.publish_handoff,
+            publishers=tuple(self.args.wechat_official_publishers),
+        )
+        return subscription.reconcile_exact_handoff(identity, mailbox=mailbox)
 
     def wechat_official(
         self,
@@ -5273,6 +5373,20 @@ def _resume_source_repair_outcome(
     )(surface)
 
 
+def _resume_source_wait(runtime: DailyRuntime, args: argparse.Namespace) -> dict[str, Any]:
+    """Keep the original network guardian around a resumed local capture."""
+    from contextlib import nullcontext
+    from xiaocao.kol.human_playback import human_capture_network_owner
+    owner = (human_capture_network_owner(args.xiaocao_wechat_output_dir.parent / 'native_share_bridge.json')
+             if args.source_adapter == 'xiaocao_wechat_live' else nullcontext())
+    with owner:
+        return DailyCoordinator(args.output_dir).resume_wait(
+            {'name': args.source_adapter,
+             'narrow_resume': lambda surface: _resume_source_repair_outcome(runtime,args.source_adapter,surface)},
+            item_identity=args.source_identity,
+        )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -5338,6 +5452,8 @@ def main() -> int:
         help="Resume a local official-account capture repair without remote processing",
     )
     parser.add_argument("--source-identity")
+    parser.add_argument("--recorded-terminal-binary", type=Path)
+    parser.add_argument("--recorded-terminal-sha256")
     parser.add_argument(
         "--xiaocao-backfill-since",
         help="Explicit one-item historical capture authorization (YYYY-MM-DD); never for scheduled sweeps",
@@ -5377,6 +5493,10 @@ def main() -> int:
         or args.source_adapter != "wechat_official_accounts"
     ):
         parser.error("--local-capture requires an official-account source repair")
+    if bool(args.recorded_terminal_binary) != bool(args.recorded_terminal_sha256):
+        parser.error("recorded terminal repair requires binary and SHA-256 together")
+    if args.recorded_terminal_binary and (args.command != "capture-xiaocao-item" or not args.source_identity):
+        parser.error("recorded terminal repair requires an exact capture-xiaocao-item")
     if args.xiaocao_backfill_since is not None and (
         args.command != "capture-xiaocao-item" or not args.source_identity
     ):
@@ -5437,17 +5557,7 @@ def main() -> int:
                 "resume-source-wait requires source adapter and identity"
             )
         runtime = DailyRuntime(args)
-        result = DailyCoordinator(args.output_dir).resume_wait(
-            {
-                "name": args.source_adapter,
-                "narrow_resume": lambda surface: _resume_source_repair_outcome(
-                    runtime,
-                    args.source_adapter,
-                    surface,
-                ),
-            },
-            item_identity=args.source_identity,
-        )
+        result = _resume_source_wait(runtime, args)
         _print({"source_wait_resume": result})
         return 0
     if args.command == "resume-source-user-action":
@@ -5833,9 +5943,13 @@ def main() -> int:
             runtime = DailyRuntime.__new__(DailyRuntime)
             runtime.args = args
             with service._source_locked("xiaocao_wechat_live"):
+                narrow = runtime.xiaocao_wechat_narrow_resume
+                if args.recorded_terminal_binary:
+                    narrow = lambda _surface: runtime.xiaocao_recorded_terminal_repair(
+                        args.source_identity, replacement_binary=args.recorded_terminal_binary,
+                        replacement_sha256=args.recorded_terminal_sha256)
                 result = _classified_narrow_source(
-                    "xiaocao_wechat_live",
-                    runtime.xiaocao_wechat_narrow_resume,
+                    "xiaocao_wechat_live", narrow,
                 )(f"xiaocao_wechat_live:{args.source_identity}")
                 progress = WriterProgress.from_dict(result["writer_progress"])
                 service.record_exact_capture_progress("xiaocao_wechat_live", result)
