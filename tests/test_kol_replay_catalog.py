@@ -130,6 +130,8 @@ def test_exact_preopen_source_session_and_recording_time_are_required():
         match_original([candidate,{**candidate,'resource_id':'v_'+'b'*24}],item_time,preopen_start_at=anchor)
     with pytest.raises(ReplayCatalogError, match='recorded_session_title_unverified'):
         match_original([candidate],item_time,preopen_start_at='2026-11-23T09:20:00')
+    with pytest.raises(ReplayCatalogError, match='recorded_session_title_unverified'):
+        match_original([candidate],'2026-11-23T16:17:00+08:00',preopen_start_at=anchor)
 
 
 def test_preopen_catalogue_uses_fresh_original_not_a_claimed_anchor():

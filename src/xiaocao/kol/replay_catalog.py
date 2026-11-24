@@ -183,6 +183,8 @@ def match_original(rows: list[dict], published_at: str, *, preopen_start_at: str
         raise ReplayCatalogError("recorded_course_multipart_requires_assembly")
     matches = [r for r in rows if _course_title_key(r['title']) in titles]
     preopen_matches = []
+    if preopen_start_at and published.hour >= 12:
+        raise ReplayCatalogError('recorded_session_title_unverified')
     if preopen_start_at and published.hour < 12:
         try:
             start = datetime.fromisoformat(preopen_start_at)
