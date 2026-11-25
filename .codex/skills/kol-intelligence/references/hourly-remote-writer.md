@@ -142,6 +142,9 @@ PYTHONPATH=src .venv/bin/python scripts/kol_daily.py resume-mailbox \
 ```
 
 `validate-repair` persists `RepairValidationReceipt` for tested pushed lineage;
+this also covers an exact mailbox `waiting_semantic_input` result after its
+bound bundle and parent review are repaired. Reuse that request, packet and
+analyst; validation is not permission to redo semantic or external effects.
 `resume-mailbox` calls one exact `get_mailbox_message`, never list. Targets
 fail closed on mismatch; provider waits honor their deadline and reconcile
 uncertain effects. Source repairs use `validate-source-repair` then

@@ -1962,6 +1962,11 @@ class RepairValidationService:
         ) or (
             str(context.get("category") or "") == "processor_error"
             and str(context.get("stage") or "") == "business_processing"
+        ) or (
+            context.get("adapter") in (None, "mailbox")
+            and context.get("category") == "processor_error"
+            and context.get("code") == "processor_result_incomplete"
+            and context.get("stage") == "waiting_semantic_input"
         ):
             return "kol_mailbox_exact_resume"
         raise ProgressContractError(

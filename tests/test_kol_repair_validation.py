@@ -168,11 +168,21 @@ def test_household_context_provider_recovery_rejects_unproven_recovery(tmp_path,
         ),
     ],
 )
+@pytest.mark.parametrize("semantic_input_wait", [False, True])
 def test_repair_validation_runs_repo_owned_profile_and_persists_matching_receipt(
     tmp_path,
     implementation_path: str,
     regression_path: str,
+    semantic_input_wait: bool,
 ) -> None:
+    context = _context()
+    if semantic_input_wait:
+        context.update(
+            category="processor_error",
+            code="processor_result_incomplete",
+            stage="waiting_semantic_input",
+        )
+        context.pop("targeted_test_profile")
     git_calls: list[tuple[str, ...]] = []
 
     def git(command: tuple[str, ...]) -> CompletedProcess[str]:
@@ -237,7 +247,7 @@ def test_repair_validation_runs_repo_owned_profile_and_persists_matching_receipt
         now=lambda: "2026-08-08T09:00:00+08:00",
     )
 
-    receipt = service.validate(_context(), repair_revision=REPAIR_REVISION)
+    receipt = service.validate(context, repair_revision=REPAIR_REVISION)
 
     assert receipt.message_id == "c" * 64
     assert receipt.failure_revision == FAILURE_REVISION
@@ -245,9 +255,31 @@ def test_repair_validation_runs_repo_owned_profile_and_persists_matching_receipt
     assert receipt.target_branch == "main"
     assert receipt.test_status == "passed"
     assert receipt.test_result_sha256
-    assert ledger.find_matching(_context(), repair_revision=REPAIR_REVISION) == receipt
+    assert ledger.find_matching(context, repair_revision=REPAIR_REVISION) == receipt
     assert ("branch", "--show-current") in git_calls
     assert ("merge-base", "--is-ancestor", FAILURE_REVISION, REPAIR_REVISION) in git_calls
+
+
+@pytest.mark.parametrize("changed", [
+    {"adapter": "subscription_video"},
+    {"category": "uncertain_state"},
+    {"code": "unknown_input_error"},
+    {"stage": "waiting_unknown_input"},
+])
+def test_semantic_input_repair_profile_rejects_other_failures(tmp_path, changed):
+    context = {
+        **_context(),
+        "category": "processor_error",
+        "code": "processor_result_incomplete",
+        "stage": "waiting_semantic_input",
+        **changed,
+    }
+    service = RepairValidationService(
+        tmp_path,
+        ledger=RepairValidationLedger(tmp_path / "repair-validation.jsonl"),
+    )
+    with pytest.raises(ProgressContractError, match="no repository-owned"):
+        service._expected_profile(context)
 
 
 def test_repair_validation_maps_wechat_source_failure_to_exact_mailbox_profile(
