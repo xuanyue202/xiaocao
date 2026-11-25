@@ -1,0 +1,254 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-23",
+  "kind": "微信公众号短评",
+  "summary": "刘少狙击营从融资保证金下调、普遍超跌与社交媒体情绪三个场景提炼出可复用的风险纪律：宽松交易条件不等于基本面改善，广泛超跌时不能把所有资产一起加仓，交易决策需要隔离群体情绪并保留独立复核。以下内容全部是authority=0候选，不构成已验证规则。",
+  "author": "刘少狙击营",
+  "source": "微信公众号",
+  "authority": 0,
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_wechat_official/evidence/a0b50ea213e1c730cdc05f5c4daa94a035b4539093d08caa8afd0bed23638269.md",
+      "sha256": "61ac4541c9b4080e2956023ec2a7f94b53ee8b5f1b9cfb628e172351d960385e",
+      "size": 3520
+    },
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/automation_audit/kol_hourly_20261125_06_01a20fac/market_evidence_false_good.json",
+      "sha256": "586cf6bbbd6e14c089f188c81ad856bc742716c0822a9957abd22de8355c18d9",
+      "size": 2822,
+      "role": "system_fact_qualification"
+    }
+  ],
+  "posture": {
+    "regime": "来源日市场整体一般、短线情绪由分歧快速转向高潮；融资保证金下调增加了可用杠杆，却没有证明市场质量或基本面改善。",
+    "dominant_style": "短线只在有明确持续条件的旧题材中观察，并把不使用融资杠杆、广泛超跌时择优而非全面加仓放在收益追逐之前。",
+    "risk": "情绪高潮、低门槛杠杆和同质化资讯可能相互放大错误；来源日题材窗口很短，不能在缺少新证据时续期。",
+    "style_ranking": [
+      "先守住不以A股融资加杠杆的风险边界",
+      "再验证短线高潮是否仍由机器人和AI短剧承接",
+      "对美股、黄金等超跌资产先排序而非同时加仓",
+      "隔离社交媒体同一情绪，独立复核交易理由"
+    ]
+  },
+  "regime_call": {
+    "call": "交易制度放宽、短线情绪高潮和资产普遍超跌可以同时出现，但它们都不能单独证明风险已经下降；决策应先约束杠杆，再验证题材持续性和资产相对价值。",
+    "horizon": "融资纪律和独立决策方法可长期复核；题材持续性仅对应来源所说的两至三个交易日窗口。",
+    "what_would_falsify": [
+      "研究显示保证金门槛下降在可比阶段没有提高账户回撤、强平或追涨风险",
+      "对广泛超跌资产同时加仓在风险调整后稳定优于先排序后选择",
+      "隔离碎片资讯和群体情绪不能改善事前计划遵守率或减少冲动交易",
+      "机器人和AI短剧在来源窗口内并未保持相对强势且新主线已经形成"
+    ]
+  },
+  "directions": [
+    {
+      "name": "A股融资交易",
+      "stance": "保证金门槛下降只能说明融资能力增加，不能据此把杠杆当作利好；来源明确主张散户不在A股使用融资杠杆。",
+      "conditions": [
+        "最低融资保证金比例按公告下调并由券商落地",
+        "投资者可能因可用融资额上升而放大风险暴露"
+      ],
+      "boundary": "是否提高实际损失、强平和波动仍需账户级与市场级研究，来源观点不是统计证明。"
+    },
+    {
+      "name": "广泛超跌资产",
+      "stance": "美股、黄金等同时超跌时不应无差别加仓，而应先比较驱动、期限、估值和失效条件。",
+      "conditions": [
+        "多个市场或资产同时出现显著回撤",
+        "新增资金不足以覆盖全部候选"
+      ],
+      "boundary": "来源没有给出择优模型、资产排名、价格或仓位比例。"
+    },
+    {
+      "name": "短线题材交易",
+      "stance": "情绪从分歧快速转向高潮且没有新主线时，旧题材可能短暂延续，但必须把两至三个交易日的来源窗口和新主线出现的取消条件保留下来。",
+      "conditions": [
+        "机器人和AI短剧继续保持相对强势",
+        "市场高潮后没有形成新的领涨主线"
+      ],
+      "boundary": "来源日之后需要逐日验证，不能把短窗口自动续期。"
+    }
+  ],
+  "stocks": [
+    {
+      "surface_form": "AMD",
+      "role": "作者上周亏损的交易实例",
+      "lesson": "个体亏损用来说明普遍回撤背景下不能见跌就加，并不是做空或买入AMD的建议。",
+      "resolution": "来源只写AMD且没有代码、成交、价格或独立核验，本草稿不补成证券指令。"
+    },
+    {
+      "surface_form": "黄金",
+      "role": "与美股等并列的超跌候选",
+      "lesson": "同为超跌不代表应与其他资产一起加仓，仍须择优。",
+      "resolution": "来源指商品类别，没有给出具体产品、交易所或价格。"
+    }
+  ],
+  "method_principles": [
+    "把交易条件放宽与基本面改善分开：可融资金额增加只改变风险容量，不自动提高胜率。",
+    "当多个资产同时超跌时先建立相对排序，比较驱动、期限、风险和失效条件，不把超跌本身当作全买理由。",
+    "短线题材判断必须带来源期限和取消条件；没有新主线是旧主线延续的条件，不是永久结论。",
+    "系统研究操作化：交易前隔离社交媒体的同质情绪和碎片资讯，用事前写下的论点、触发与失效条件复核。",
+    "把作者自述亏损、政策反讽和市场事实分开，个体经验只能提出候选纪律，不能证明普遍收益。"
+  ],
+  "exit_lessons": [
+    "情绪由长期冰点迅速冲到高潮时，不应把强势开盘当成低风险起点；一旦新主线出现或旧题材失去相对强势，应取消旧题材窗口。",
+    "融资门槛下降后仍要以无杠杆承受能力为基准，不能让可借资金替代风险预算。",
+    "社交媒体出现一拥而上的同一情绪时，先停止接收碎片信息并回到原始交易计划。"
+  ],
+  "hypotheses": [
+    {
+      "claim": "在弱市中降低融资保证金门槛会提高散户账户的杠杆暴露和尾部回撤，而不会同步改善标的基本面。",
+      "implied_rule": "将保证金政策变化与账户杠杆、追涨成交、强平、最大回撤和标的基本面分开跟踪。",
+      "falsifiable_test": "以政策生效前后和可比弱市阶段做账户级或券商级事件研究；若散户杠杆、强平和尾部回撤没有显著上升，或风险调整收益改善，则否决。",
+      "expected_effect": "减少把融资能力提升误判为可承担风险提升。",
+      "category": "margin_leverage_risk",
+      "authority": 0,
+      "provenance": "system_research_synthesis_from_attributed_source",
+      "source_basis": [
+        "作者明确反对A股融资上杠杆，并认为弱市增加可借资金会放大风险。",
+        "账户级强平和回撤效果是待验研究，不是来源已经证明的结果。"
+      ],
+      "related_existing_ids": [
+        "XH-047",
+        "XH-145"
+      ],
+      "dedup_boundary": "本条只检验保证金门槛变化对散户杠杆和尾部风险的影响，不讨论一般货币宽松或机构融资成本。 父级对照：研究政策保证金门槛变化的账户级杠杆/尾部风险，不重复杠杆ETF路径或主题清算。"
+    },
+    {
+      "claim": "当多个资产同时超跌而增量资金有限时，按驱动与风险排序后择优加仓的风险调整结果优于无差别平均加仓。",
+      "implied_rule": "对候选资产记录回撤原因、估值、流动性、相关性、触发、失效条件和资金占用，再决定是否加入。",
+      "falsifiable_test": "在多资产同步超跌样本中比较择优组合与等权同时加仓组合的未来收益、最大回撤和尾部损失；若择优无稳定优势则否决。",
+      "expected_effect": "降低相关性上升时的重复风险暴露。",
+      "category": "oversold_asset_selection",
+      "authority": 0,
+      "provenance": "system_research_synthesis_from_attributed_source",
+      "source_basis": [
+        "作者把美股与黄金并列为超跌候选，并明确说不可能每个都加、只能择优。",
+        "具体排序因子与收益效果由系统提出，来源没有给出。"
+      ],
+      "related_existing_ids": [
+        "XH-115",
+        "XH-390"
+      ],
+      "dedup_boundary": "本条研究同步超跌时的跨资产资金分配，不等同于单一资产的均值回归策略。 父级对照：研究跨资产同步超跌与有限预算，不重复主题轮动或同一短线模式排名前两名。"
+    },
+    {
+      "claim": "在交易前减少碎片资讯和社交媒体同质情绪暴露，有助于提高事前计划遵守率并减少冲动交易。",
+      "implied_rule": "交易计划先写明论点、触发、失效条件和最大风险；执行窗口内限制碎片资讯，只在固定复核点更新。",
+      "falsifiable_test": "用同一交易者的交叉周期记录比较信息隔离与正常社交媒体暴露时的计划偏离、追涨杀跌、换手和风险调整收益；若无改善则否决。",
+      "expected_effect": "减少被群体情绪和算法推送带偏的非计划交易。",
+      "category": "decision_hygiene",
+      "authority": 0,
+      "provenance": "system_research_synthesis_from_attributed_source",
+      "source_basis": [
+        "作者明确认为交易需要独立完成，并建议不刷碎片资讯、抵抗算法。",
+        "计划遵守率和收益改善仍需行为记录验证。",
+        "写明论点、触发、失效条件、最大风险以及固定复核点，是SYSTEM提出的可检验研究操作化；作者原话只支持独立思考、少刷碎片资讯和抵抗群体情绪。"
+      ],
+      "related_existing_ids": [
+        "XH-169"
+      ],
+      "dedup_boundary": "本条只检验交易信息摄入与计划执行，不主张隔绝所有协作、研究或事实核验。 父级对照：研究碎片资讯/群体情绪与计划遵守率，不等同对单一KOL历史业绩的有限信任核验。"
+    }
+  ],
+  "timing_notes": [
+    "来源发表于2026年11月23日18:26（北京时间）。",
+    "机器人和AI短剧的两至三个交易日窗口很短；截至11月25日处理时，原文措辞不足以证明仍然有效。",
+    "融资保证金比例下调由官方材料确认11月30日实施，来源关于后果的判断仍未获得账户级验证。",
+    "独立思考和信息隔离属于长期方法候选，不因短线窗口过期而自动失效。"
+  ],
+  "typo_corrections": [
+    {
+      "raw": "A上上杠杆",
+      "corrected": "在A股使用融资杠杆",
+      "basis": "上下文持续讨论A股融资保证金和散户杠杆。",
+      "uncertainty": "只做读者化转写，不扩展为期权、期货或其他融资工具。"
+    },
+    {
+      "raw": "du更大",
+      "corrected": "把押注放得更大",
+      "basis": "上下文批评借更多资金、加更多杠杆。",
+      "uncertainty": "保留批评语气，不把拼音片段当作正式术语。"
+    }
+  ],
+  "decision_trace": [
+    {
+      "observation": "市场偏弱时最低融资保证金比例被下调，作者认为散户可借资金和杠杆随之增加。",
+      "inference": "制度放宽先改变风险容量，不证明市场质量、基本面或胜率改善。",
+      "action": "把不使用A股融资杠杆作为风险约束，后续用账户级数据检验而不是直接推广为策略。",
+      "why": "杠杆会放大错误和尾部损失，来源又认为多空工具并不对等。",
+      "evidence_claim_ids": [
+        "c01-margin-leverage-risk"
+      ]
+    },
+    {
+      "observation": "美股与黄金等多个市场同时超跌，作者上周做AMD亏损。",
+      "inference": "普遍下跌会制造许多看似便宜的候选，但资金和风险预算不能覆盖全部。",
+      "action": "先按驱动、期限、相关性和失效条件择优，不做无差别加仓。",
+      "why": "同时加仓可能重复暴露同一宏观风险。",
+      "evidence_claim_ids": [
+        "c04-selective-oversold-allocation"
+      ]
+    },
+    {
+      "observation": "作者认为社交媒体会制造铺天盖地的同一情绪并把交易者带着走。",
+      "inference": "信息环境可能破坏独立判断和事前计划。",
+      "action": "系统研究操作化：把交易论点写下并限制碎片资讯，在固定时点按新证据复核。",
+      "why": "隔离群体情绪有机会减少非计划交易，但效果仍须记录验证。",
+      "evidence_claim_ids": [
+        "c07-independent-trading-discipline"
+      ]
+    }
+  ],
+  "judgment_heuristics": [
+    "先问政策改变的是风险容量还是基本面，再决定它是不是利好。",
+    "看到普遍超跌时先做相对排序，不用下跌幅度替代买入理由。",
+    "短线观点必须记录来源时点、持续条件和取消条件，过期后不自动续期。",
+    "情绪高度一致时回到原始证据和事前计划，避免用转发次数替代验证。"
+  ],
+  "strategy_hit_audit": {
+    "status": "not_applicable",
+    "reason": "来源不是小草短线复盘，也没有本地策略命中主张。"
+  },
+  "action_summary": {
+    "posture_update": "not_applied：作者不是小草，本篇不能改写小草A股全局姿态。",
+    "playbook_update": "proposal_only：不使用A股融资杠杆、同步超跌择优和独立决策纪律只作为authority=0方法候选。",
+    "hypothesis_update": "ingested_authority_0：XH-397、XH-398、XH-399已受控入库；均未实证或晋升，不改变策略或参数。",
+    "audit_evidence": "完整微信公众号Markdown及34个稳定segment已逐段核验，来源文件SHA-256为61ac4541c9b4080e2956023ec2a7f94b53ee8b5f1b9cfb628e172351d960385e。",
+    "instrumentation_todo": "研究时补充保证金政策前后账户杠杆与回撤、多资产超跌组合比较和信息隔离行为日志。",
+    "routing": [
+      "父级已按实际harness回执登记三个候选",
+      "未执行策略或全局姿态修改",
+      "所有候选保持authority=0",
+      "任何晋级需research_run和人工门"
+    ]
+  },
+  "parent_audit_amendment": {
+    "reviewed_at": "2026-11-25T01:40:09.733384+00:00",
+    "analyst_draft_path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_wechat_official/analysis_requests/.semantic_delegation/192f8dd945b90b9c56fbc1241c43703d0ab91736760ce5e33b23d93ff8a19b76/knowledge_draft.json",
+    "analyst_draft_sha256": "e92566f8093ad83c29d61504d45582afa922060e53c94899a572fee26dbef360",
+    "scope": "parent added accepted market-evidence/archive/dedup provenance and actual ingestion action metadata; original analyst source claims and research hypotheses unchanged",
+    "evidence_archive": {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/reference/experience/transcripts/2026-11/2026-11-23_liushao_jujiying_article_61ac4541.md",
+      "sha256": "61ac4541c9b4080e2956023ec2a7f94b53ee8b5f1b9cfb628e172351d960385e"
+    },
+    "feedback": "No flagged prior addressed; no posture/playbook/parameter promotion.",
+    "ingestion": {
+      "observed_at": "2026-11-25T01:40:29.046583+00:00",
+      "harness_result": "3 new candidates; 0 recurrence merges",
+      "candidate_ids": [
+        "XH-397",
+        "XH-398",
+        "XH-399"
+      ],
+      "authority": 0
+    },
+    "resolved_review_findings": [
+      {
+        "resolved_at": "2026-11-25T01:43:05.532918+00:00",
+        "finding": "P2 XH399 additional written-plan/fixed-review protocol was not attributed to SYSTEM",
+        "change": "Provenance/source_basis and operationalization labels now explicitly SYSTEM; source wording and hypothesis claim unchanged."
+      }
+    ]
+  }
+}
