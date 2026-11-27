@@ -1,0 +1,225 @@
+{
+  "schema_version": 1,
+  "knowledge_status": "reusable_knowledge",
+  "authority": 0,
+  "author": "吕晓彤",
+  "source": "百度网盘订阅视频《11月26日》",
+  "date": "2026-11-26",
+  "date_boundary": "发布日期只有日精度；文中公司名单、账户、收益、基金净值和回购个案均无独立凭证，不能据此补写具体时点或交易事实。",
+  "kind": "review",
+  "summary": "本场来源直接可复用的是三组回购偏好：作者把回购并注销放在首位，把仅用于股权激励的回购放在其后，把不回购放在末位；一至两年九成、约六成或过半、低于三成均是他的主观概率，没有样本、口径或回测。来源另把股息率阈值与回购注销列举为筛选器可分别维护的标准，并未要求两者必须同时满足。XH-388中的购买价格、库存股及完整状态迁移设计属于既有系统候选，不是本场来源完整复述；本场只构成部分细化而非复现。价格共识不必然零和与大模型不能代替投资判断可作为authority=0的方法提醒，不改变姿态、策略或参数。",
+  "posture": {
+    "regime": "not_applied_other_author",
+    "dominant_style": "来源用回购用途区分、极端情形推演和跨市场亏损叙事形成逆向持有判断；系统只保留方法与证伪条件，不采用其概率数字或永不止损姿态。",
+    "risk": "回购收益概率、具名公司名单、全球指数和基金收益均未核；绝对声称A股没有做空机制与交易所融资融券规则冲突；作者饮酒、玩笑和广告语境降低口述精度。",
+    "style_ranking": [
+      "来源直接观点：回购并注销优先于股权激励型回购，无回购排在其后",
+      "来源直接观点：股息率阈值和回购注销是筛选器中分别列举、持续更新的标准",
+      "来源直接方法：用极端情形区分价格共识变化与企业新增利润",
+      "来源直接边界：大模型提供基础常识，但不代替投资判断",
+      "系统拟议且未验证：如后续研究，另按购买价格和股份状态迁移构建事件链",
+      "任何候选进入策略前都需research_run和人工门槛"
+    ]
+  },
+  "regime_call": {
+    "horizon": "SYSTEM拟议的一至两年回购研究窗口",
+    "claim": "SYSTEM拟议、未验证：在保留作者“注销优于股权激励、股权激励优于无回购”的原始排序后，可另行记录实际购回价格、用途变化、注销、库存或再出售等公开状态；这部分是XH-388的既有研究设计，不归因于本场来源。",
+    "what_would_falsify": "SYSTEM拟议证伪：若公开事件样本中，用途、购回价格和状态迁移不能稳定解释一至两年风险调整后收益或每股价值变化，则该研究设计不应提升为策略信号。"
+  },
+  "directions": [
+    {
+      "name": "作者的回购用途排序",
+      "view": "来源直接把回购并注销放在首位，把用于股权激励的回购放在其后，把不回购放在末位；作者担心激励完成后可能再抛售，相关概率均未验证。",
+      "authority": 0,
+      "provenance_type": "source_derived"
+    },
+    {
+      "name": "回购事件状态研究",
+      "view": "SYSTEM拟议、未验证：可在作者用途排序之外，另行记录实际购回价格、注销、库存或再出售等状态；这是XH-388的既有系统研究设计，不是本场来源完整陈述。",
+      "authority": 0,
+      "provenance_type": "system_proposed_unvalidated"
+    },
+    {
+      "name": "价格共识与非零和框架",
+      "view": "来源用极端情形说明价格共识可以蒸发，而企业利润增长和分红可能让股东共同受益；这是推理框架，不是已验证定价模型。",
+      "authority": 0,
+      "provenance_type": "source_derived"
+    },
+    {
+      "name": "大模型投资边界",
+      "view": "来源认为大模型会产生幻觉和迎合，适合提供基础常识，不适合替人完成投资判断；保留为证据核对与人工复核提醒。",
+      "authority": 0,
+      "provenance_type": "source_derived"
+    }
+  ],
+  "stocks": [
+    {
+      "name": "回购并注销的A股公司集合",
+      "role": "作者首选的回购用途集合",
+      "boundary": "来源没有给可公开核对的完整公司名单或证券代码；购买价格与完整事件状态属于SYSTEM拟议研究项，不能写成作者条件。"
+    },
+    {
+      "name": "股权激励型回购公司集合",
+      "role": "作者置于注销型回购之后的对照集合",
+      "boundary": "作者给出的约六成或过半盈利概率没有样本证明；具体公司和后续抛售情况未知。"
+    },
+    {
+      "name": "中国A股市场",
+      "role": "价格共识、轮动和持有讨论的市场背景",
+      "boundary": "来源没有当前行情快照或可执行点位，且“没有做空机制”的绝对表述不成立。"
+    }
+  ],
+  "method_principles": [
+    "来源直接观点：回购用途排序为注销优先、股权激励其次、无回购最后；九成、约六成或过半、低于三成只作为待检验主观先验。",
+    "来源直接筛选思路：股息率阈值与回购注销是可分别列出的标准，不能擅自合并成必须同时满足。",
+    "SYSTEM拟议、未验证：若进入研究，可按公告、实际购回、用途变化、注销、库存或再出售等时点建立状态链，并记录购买价格；该设计来自既有XH-388，不能归给作者。",
+    "来源直接方法：价格共识蒸发与企业经营价值变化要分开思考；极端情形能暴露逻辑，但不能代替样本和现金流证据。",
+    "来源直接边界：大模型生成的投资计划需人工核对事实与一致性，不能因表达流畅而获得投资权威。"
+  ],
+  "exit_lessons": [
+    "SYSTEM风险提示：作者“永不止损、只等轮动”是被套和玩笑语境下的个人姿态；若未来转成退出规则，仍需另补标的级证伪、流动性和仓位条件，该修正不归因于来源。"
+  ],
+  "hypotheses": [],
+  "timing_notes": [
+    "来源发布日为2026年11月26日；回购收益判断明确给出一至两年，而概念轮动口述从明天延伸到三至五年，不能合并为同一交易期限。",
+    "补充交易所材料只核到回购用途分类和融资融券机制存在，不核作者的概率、指数收益、基金亏损或具体公司回购。",
+    "本场没有实时行情，所有当前市场强弱、转机和跨市场收益数字均保留为来源口述。"
+  ],
+  "deduplication_review": {
+    "ledger_read": "/Users/xuanyue202/Documents/project/xiaocao/reference/experience/xiaocao_hypotheses.jsonl",
+    "conclusion": "本场不新增候选，也不登记既有候选复现。XH-388已经完整覆盖回购从购回到注销、库存股、员工激励或再出售的状态演进及购买价格；本场来源只直接区分回购并注销、股权激励型回购和无回购，并给出一至两年的主观概率，没有样本，也没有完整复述购买价格和事件状态设计，因此只算部分细化而非精确复现。XH-165、XH-212、XH-214和XH-383仅为宽泛相邻关系。",
+    "adjacent_hypotheses": [
+      {
+        "id": "XH-388",
+        "relationship": "partial_refinement_not_recurrence",
+        "reason": "来源直接区分回购并注销、股权激励型回购与无回购，并给出主观概率；购买价格分层、库存股和完整状态迁移设计属于既有XH-388与SYSTEM研究框架，不能增加XH-388来源日期。"
+      },
+      {
+        "id": "XH-165",
+        "relationship": "adjacent_not_recurrence",
+        "reason": "既有候选涉及治理资金配置，本场聚焦回购用途与个人概率判断，没有完整覆盖治理资金框架。"
+      },
+      {
+        "id": "XH-212",
+        "relationship": "adjacent_not_recurrence",
+        "reason": "既有候选涉及折价定增，本场没有定增事件或相同因果链。"
+      },
+      {
+        "id": "XH-214",
+        "relationship": "adjacent_not_recurrence",
+        "reason": "既有候选涉及跨市场治理，本场跨市场内容主要是亏损举例，没有提出相同治理设计。"
+      },
+      {
+        "id": "XH-383",
+        "relationship": "adjacent_not_recurrence",
+        "reason": "既有候选比较现金回报与研发投入，本场只谈回购用途与股息率筛选，没有完整比较现金分配和研发。"
+      }
+    ],
+    "posture_update": "not_applied：吕晓彤为其他作者；当前小草姿态截至2026年7月3日且已陈旧，本场不修改posture_current或REGIME_TIMELINE。"
+  },
+  "typo_corrections": [
+    {
+      "raw": "cloud",
+      "normalized": "可能指Claude",
+      "reason": "上下文列举大模型，但原音不能单凭相似发音确定正式产品。"
+    },
+    {
+      "raw": "换方",
+      "normalized": "可能指幻方或梁文锋相关主体",
+      "reason": "上下文为基金亏损举例，缺正式名称与产品，不能强行归一。"
+    },
+    {
+      "raw": "梨子、鞑子、r3、老八、米子、雷布斯、中国台积电",
+      "normalized": "保持未解析或仅作绰号语境",
+      "reason": "口语、玩笑或代称无法稳定映射到唯一证券或产品，不用于交易判断。"
+    }
+  ],
+  "decision_trace": [
+    {
+      "observation": "作者提议持续更新筛选器，分别举例按股息率阈值列出公司，以及把回购注销公司列出。",
+      "inference": "来源提出两个可分别维护的筛选标准，没有说回购注销公司必须同时具备较高股息率，也没有给具名标的。",
+      "action": "保留两个独立筛选维度，不合并成强制交集，不生成证券级信号。",
+      "evidence": {
+        "segment_id": "349b07aea231ff496a09ae1baa88624b0d1b447be1fea409886b15f1a85481a9",
+        "quote": "专门把那个啊一些啊，就是回购注销的公司列出来"
+      }
+    },
+    {
+      "observation": "作者称回购注销公司拉长一至两年盈利概率超过九成，无回购不足三成，股权激励型回购约六成或超过一半。",
+      "inference": "用途排序和期限是来源直接观点；概率没有样本，购买价格与完整状态设计属于SYSTEM待研究项。",
+      "action": "不新增候选，不把概率写入参数；仅记为XH-388的部分细化而非精确复现。",
+      "evidence": {
+        "segment_id": "372dad3bd52987f055530c8d7ea736fdf2f44946fec3019c57b758eb831395a7",
+        "quote": "拉长到一两年看，然后你百分之比如说90以上都能赚到钱"
+      }
+    },
+    {
+      "observation": "作者认为价格由共识形成，共识波动不意味着必然零和，同时企业利润增长可扩大利益盘子。",
+      "inference": "这是可复用的逻辑检查框架，但没有形成可检验的资产级模型。",
+      "action": "保留为方法原则，不新建假设。",
+      "evidence": {
+        "segment_id": "c7f7763880e873fa2b98d86aeeef51877f09e2ebdb95d2af6ee9a9d022e1275c",
+        "quote": "商品的定价是由共识形成的，共识的波动并不代表中间一定产生零和"
+      }
+    },
+    {
+      "observation": "作者认为大模型会幻觉和迎合，只适合基础常识，不适合替人做投资。",
+      "inference": "可转化为研究流程的人工复核边界，但不是市场方向观点。",
+      "action": "保留为authority=0方法提醒，不修改交易或模型参数。",
+      "evidence": {
+        "segment_id": "5e3e67f698af79f09c90c6e49c28f49e59fa21376140c95da50e3e02a906b0fc",
+        "quote": "AI呢，其实更多的它是一个给你提供一些基础常识可以，但是你想你想让他做投资，我觉得太难了"
+      }
+    }
+  ],
+  "judgment_heuristics": [
+    "来源层只保留注销优先、股权激励其次、无回购最后的用途排序和一至两年主观概率。",
+    "股息率阈值与回购注销是作者分别列举的筛选标准，不擅自合并为交集。",
+    "SYSTEM拟议的购买价格、库存和状态迁移研究明确单列，不归因于作者，也不直接路由策略。",
+    "来源的极端情形与大模型边界可作方法提醒，但不形成证券级信号。",
+    "SYSTEM风险控制不把作者个人永不止损姿态外推为退出规则。"
+  ],
+  "evidence": [
+    {
+      "path": "/Users/xuanyue202/Documents/project/xiaocao/output/live/kol_subscription_videos/enrichment/4bb0118cd79338632e2c4fe61dac7ff4e26ac7f9ce84edb83f4e1eff54aee9a6/artifacts/kol-netdisk-cloud-b76b310e210d885a/11月26日.txt",
+      "sha256": "11acdd99b674f6a65966981ffc08a8fe7fc80bfd2aaad290e453cc499464367d",
+      "size": 79725
+    }
+  ],
+  "action_summary": {
+    "posture_update": "not_applied：其他作者；不修改已陈旧的小草全局姿态或时间线。",
+    "playbook_update": "no_deterministic_change：来源层只保留回购用途排序、独立筛选维度、极端情形与大模型边界；事件状态与价格设计标成SYSTEM拟议、未验证。",
+    "hypothesis_update": "no_new_hypothesis：XH-388仅为部分细化而非精确复现；XH-165、XH-212、XH-214、XH-383均为宽泛相邻，不增加任何来源日期；--feedback无标记，按not_addressed处理且不做校准。",
+    "audit_evidence": "bound_to_complete_transcript_sha256_11acdd99b674f6a65966981ffc08a8fe7fc80bfd2aaad290e453cc499464367d_and_209_stable_segments",
+    "instrumentation_todo": "SYSTEM拟议：若研究回购，另补公告、实际购回价格、用途变化、注销或再出售状态、对照组与一至两年风险调整后结果；不归因于本场来源。",
+    "routing": [
+      "authority=0来源方法",
+      "SYSTEM拟议研究项单列且未验证",
+      "无可摄入hypotheses",
+      "XH-388部分细化但非精确复现",
+      "XH-165、XH-212、XH-214、XH-383仅宽泛相邻",
+      "--feedback无标记为not_addressed，不做校准",
+      "不更新小草全局姿态",
+      "不修改确定性策略或参数"
+    ]
+  },
+  "analyst_synthesis_non_ingestible": [
+    {
+      "topic": "回购事件状态研究",
+      "relationship_to_prior": "XH-388 partial_refinement_not_recurrence",
+      "heuristic": "SYSTEM可按公告、购回、用途变化、注销、库存或再出售的时点追踪每股价值，并控制购买价格和市场基准。",
+      "boundary": "这是既有XH-388与SYSTEM操作化；本场来源只明确区分注销、股权激励和无回购并给主观概率，不能增加XH-388来源日期。"
+    },
+    {
+      "topic": "退出纪律",
+      "relationship_to_prior": "system_risk_control",
+      "heuristic": "SYSTEM如评估被套持有，可另补标的级证伪、流动性和风险预算，而不是无限期等待轮动。",
+      "boundary": "这是SYSTEM风险控制；来源主张不割肉，不把系统修正归给作者。"
+    }
+  ],
+  "feedback_review": {
+    "status": "not_addressed",
+    "calibration_applied": false,
+    "reason": "--feedback未返回任何标记；空反馈不是通过或校准证据，不改变知识、姿态或候选状态。"
+  }
+}
