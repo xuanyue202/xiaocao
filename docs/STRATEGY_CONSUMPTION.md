@@ -43,6 +43,7 @@ look-ahead or correctness. The detailed review records that limit explicitly.
 | T v1 | trend rules and original independent sleeve | Original control receipt/raw account/positions/trades |
 | T v2 | published snapshot→instrument universe→selection plan→shadow | Isolated research only until consumption/human gates;5/20 natural gates distinct |
 | Funded B control/challenges | registered app-b-forward-funded-v1, independent accounts/future windows | Model path/fees/marks/coverage, never APP fills or alpha proof |
+| Entry-clock research | Original Book B freeze, 09:31/09:45/09:46 minute points, next tradable close → independent funded shadow accounts | [Prospective reader](../scripts/research_entry_clock.py), authority 0. Weekly review uses natural coverage, net NAV and drawdown for cold vs cash and selected 09:46 vs 09:31. |
 | KOL source analyst | complete source→thesis/coverage→reader/longitudinal semantics | Draft/parent acceptance and publication separate; profile config owns model |
 | KOL current-applicability | every eligible published view plus current request/account/freeze | Reviewed exact policy publication and actual adoption; not source reauthoring |
 | EOD /Weekly | actual raw effects/coverage, journal, immutable feedback/research | Accounting finality, next-window readiness and strategy promotion separate |

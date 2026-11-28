@@ -1,0 +1,16 @@
+version = 1
+id = "xiaocao-entry-clock-shadow"
+kind = "cron"
+name = "xiaocao entry clock shadow"
+prompt = "Use the xiaocao-trading project skill. Launch `PYTHONPATH=src .venv/bin/python scripts/research_entry_clock.py --run` once with a short yield in a retained PTY in the registered local project, then poll that same process to terminal. The morning run waits for the original dated Book B freeze and the 09:31, 09:45 and 09:46 natural price observations. The afternoon run marks the independent research accounts and models eligible T+1 exits. Read the resulting shadow coverage, paired net PnL and drawdown. Preserve missed observations and deferred exits in the original ledger. On a gap identify the exact symbol, time or missing freeze from the state file. No orders, history replay or change to strategy parameters."
+model_prompt_sha256 = "3cd58c07e4ac0ce6d8d900a00b3ca3932fdf22aba83dc28b9155b05487cba83b"
+status = "ACTIVE"
+rrule = "RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=9,15;BYMINUTE=17"
+model = "gpt-6.1-sol"
+reasoning_effort = "low"
+notification_policy = "failed_runs_only"
+execution_environment = "local"
+target = { type = "project", project_id = "c5acdaa7-f8a7-42d4-96fe-bf979a6b7415" }
+cwds = ["/Users/xuanyue202/Documents/project/xiaocao"]
+created_at = 1795864410317
+updated_at = 1795864410317
