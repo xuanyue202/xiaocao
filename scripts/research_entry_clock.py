@@ -10,6 +10,7 @@ import math
 import os
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -17,6 +18,7 @@ from zoneinfo import ZoneInfo
 from live_monitor import _detail_observed_at, _detail_trade_date
 from xiaocao.api.client import XiaocaoClient
 from xiaocao.config import load_settings
+from xiaocao.research.pool_observation import observe_session
 from xiaocao.live.live_decision_support import calendar_provider
 from xiaocao.live.morning_bundle import inspect_bundle, snapshot_rows
 from xiaocao.research.entry_clock import (
@@ -496,6 +498,7 @@ def main():
             raise ValueError("registered protocol mismatch")
         stamp = now()
         day = stamp.date().isoformat()
+        pool_samples = {}
         if args.run and stamp.weekday() < 5:
             client = XiaocaoClient(
                 base_url=load_settings(None).base_url,
@@ -528,13 +531,36 @@ def main():
                     raise ValueError("current exchange calendar status unproved")
             else:
                 previous = max(d for d in sessions if d < day)
-                if stamp.hour < 15:
-                    morning(state, day, previous, client, lambda: save(path, state))
-                else:
-                    eod(state, day, client, lambda: save(path, state))
+                early = stamp.hour < 15
+                # The price-clock participant always runs on its original thread and HTTP client.
+                with ThreadPoolExecutor(max_workers=1) as pool:
+                    observation = pool.submit(
+                        observe_session,
+                        BOOK / "pool_observations",
+                        ROOT / "output/live",
+                        day,
+                        previous,
+                        early,
+                        client.base_url,
+                    )
+                    if early:
+                        morning(state, day, previous, client, lambda: save(path, state))
+                    else:
+                        eod(state, day, client, lambda: save(path, state))
+                    try:
+                        pool_samples = observation.result()
+                    except Exception as exc:
+                        pool_samples = {
+                            "sampler": {"complete": False, "error": type(exc).__name__}
+                        }
         result = report(state)
+        if pool_samples:
+            result["pool_observations"] = pool_samples
         print(json.dumps(result, ensure_ascii=False))
-        if args.run and day in result["coverage_gaps"]:
+        if args.run and (
+            day in result["coverage_gaps"]
+            or any(not x["complete"] for x in pool_samples.values())
+        ):
             raise SystemExit(1)
 
 

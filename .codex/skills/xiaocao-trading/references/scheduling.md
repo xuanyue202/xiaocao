@@ -66,3 +66,5 @@ When changing a schedule:
 Completion requires the active task to be re-read and its next run verified. A TOML diff or syntactically valid RRULE alone is not completion.
 
 The project automation `xiaocao-entry-clock-shadow` observes Book B entry timing with independent research cash at 09:17 and 15:17 China weekdays. Run `PYTHONPATH=src .venv/bin/python scripts/research_entry_clock.py --run` once per wake and retain that process. The morning reader waits for the original dated freeze and the 09:31, 09:45 and 09:46 points. The afternoon reader marks and settles its own T+1 shadow lots. Query `--status` for coverage and returns. Its registered protocol and funded accounts are in `output/research/entry_clock_forward/state.json`.
+
+The same entry-clock process records the three supplier pool memberships at 09:27, 09:32, 09:47 and during the 15:17–15:32 afternoon window with an independent reader. Dated receipts under `output/research/entry_clock_forward/pool_observations/` compare the original opening freeze with prior-date and same-date afternoon membership. These observations measure when a list changes and have no eligibility or account effects.
