@@ -764,3 +764,33 @@ def test_discovery_reports_bound_catalogue_navigation_as_pending(tmp_path):
     saved=sub._load()['items'][navigation['identity']]
     assert saved['recorded_inventory_reason']=='catalogue_navigation'
     assert saved['recorded_inventory_eligible'] is False
+
+
+def test_recovery_cli_checks_original_history_before_catalogue(recorded, monkeypatch):
+    import importlib.util
+    import sys
+    from contextlib import nullcontext
+
+    root, item, _, _, _, _, _ = recorded
+    spec = importlib.util.spec_from_file_location(
+        "recorded_recovery_cli", Path(__file__).parents[1] / "scripts/kol_recorded_recovery.py"
+    )
+    cli = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cli)
+    monkeypatch.setattr(cli, "human_capture_network_owner", lambda _: nullcontext())
+    monkeypatch.setattr(cli, "DailyCoordinator", lambda _: SimpleNamespace(
+        _source_locked=lambda _: nullcontext()))
+    monkeypatch.setattr(cli, "XiaocaoLiveCaptureDriver", lambda _: SimpleNamespace(
+        require_idle_human_entry=lambda identity, capture: None))
+    reader = object()
+    monkeypatch.setattr(cli, "WechatCliHistoryReader", lambda: reader)
+    monkeypatch.setattr(cli, "read_original_history", lambda r, when: (r, when))
+    monkeypatch.setattr(cli, "parse_xiaocao_live_messages",
+                        lambda value: [item] if value == (reader, item["published_at"]) else [])
+    observed = []
+    monkeypatch.setattr(cli, "inspect_original",
+        lambda config, candidate, *, originals: observed.append((candidate, originals)) or {"status": "no_recording"})
+    monkeypatch.setattr(sys, "argv", ["recovery", "--identity", IDENTITY, "--subscription-dir", str(root)])
+
+    assert cli.main() == 0
+    assert observed == [(item, [item])]

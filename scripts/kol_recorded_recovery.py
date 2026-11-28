@@ -14,7 +14,8 @@ from xiaocao.kol.daily import DailyCoordinator
 from xiaocao.kol.human_playback import human_capture_network_owner, enable_capture_listener_pac
 from xiaocao.kol.recorded_recovery import collect_recorded_proof, bind_recorded_recovery
 from xiaocao.kol.replay_catalog import ReplayCatalogConfig, inspect_original
-from xiaocao.kol.xiaocao_wechat import XiaocaoLiveCaptureDriver
+from xiaocao.kol.xiaocao_wechat import (XiaocaoLiveCaptureDriver,
+    WechatCliHistoryReader, parse_xiaocao_live_messages, read_original_history)
 
 
 def read_reply(stream, timeout=1200):
@@ -51,7 +52,9 @@ def main():
                 return 0
             driver.require_idle_human_entry(args.identity,capture_id)
             config=ReplayCatalogConfig.from_dict(json.loads((root.parent/'native_share_bridge.json').read_text())['replay_catalog'])
-            result=inspect_original(config,item)
+            originals=parse_xiaocao_live_messages(
+                read_original_history(WechatCliHistoryReader(),item['published_at']))
+            result=inspect_original(config,item,originals=originals)
             if not result.get('recording'):
                 print(json.dumps(result,ensure_ascii=False),flush=True)
                 return 0
