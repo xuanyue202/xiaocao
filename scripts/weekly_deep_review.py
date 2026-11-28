@@ -1259,6 +1259,7 @@ def build_plan(*, as_of: dt.date | None = None, output: Path | None = None) -> d
         "execution_repair_watch": build_execution_repair_watch(ROOT, as_of=as_of),
         "data_evidence_review": data_review,
         "eod_feedback_responses": [],
+        "entry_cycle_responses": {},
         "pre_existing_dirty": pre_dirty,
         "flywheel": fw,
         "sweep": sweep,
@@ -1518,11 +1519,33 @@ def _render_report(plan: dict, *, mode: str, validation: list[str], created_issu
             "kol_audit_snapshot_binding": review.get("inventory", {}).get("audit_feedback_snapshot_binding", {}),
             "kol_experiment_slots": review.get("experiment_slots", []),
             "data_evidence_review": plan.get("data_evidence_review", {}),
+            "entry_cycle_responses": plan.get("entry_cycle_responses", {}),
         }, ensure_ascii=False, indent=2),
         "```",
         "",
     ]
     return "\n".join(lines)
+
+
+def _entry_cycle_responses(plan: dict) -> dict:
+    forward = plan.get("data_evidence_review", {}).get("entry_cycle_review", {})
+    if forward.get("status") != "observed":
+        return {}
+    answers = plan.get("entry_cycle_responses", {})
+    for name, study in forward["studies"].items():
+        action = study["weekly_action"]
+        if action == "collecting" and not study.get("frequency_check_due") and name not in answers:
+            continue
+        item = answers.get(name, {})
+        if (item.get("disposition") not in {"continue_shadow", "revise_as_new_study", "retire",
+                                            "refer_bounded_pilot", "hold_pilot"}
+                or not all(isinstance(item.get(k), str) and item[k].strip()
+                           for k in ("reason", "owner", "next_review"))
+                or item.get("source_sha256") != forward["sha256"]):
+            raise SystemExit(f"weekly entry_cycle_responses.{name} needs disposition, reason, owner, next_review and frozen source_sha256")
+        if item["disposition"] == "refer_bounded_pilot" and action != "app_pilot_review_due":
+            raise SystemExit(f"weekly entry cycle pilot evidence is not current and passing for {name}")
+    return {name: answers[name] for name in forward["studies"] if name in answers}
 
 
 def _append_ledger(plan: dict, *, mode: str, report_path: str, validation: list[str],
@@ -1541,6 +1564,15 @@ def _append_ledger(plan: dict, *, mode: str, report_path: str, validation: list[
         "weekly_report": report_path,
         "proposal_issues": created_issues,
     }
+    forward = plan.get("data_evidence_review", {}).get("entry_cycle_review", {})
+    if forward.get("status") == "observed":
+        rec["entry_cycle_follow_up"] = {
+            "source_date": forward["as_of"], "source_sha256": forward["sha256"],
+            "responses": _entry_cycle_responses(plan),
+            "studies": {name: {"matured": study["matured"], "action_due": study["weekly_action"],
+                               "current_blockers": study["current_blockers"]}
+                        for name, study in forward["studies"].items()},
+        }
     kol_state = _kol_review_state(plan)
     if kol_state is not None:
         rec["kol_review_state"] = kol_state
@@ -1606,6 +1638,7 @@ def finalize_plan(*, plan_path: Path, mode: str | None, validation: list[str],
         snapshot_errors = weekly_evidence.verify_snapshots(plan["data_evidence_review"])
         if snapshot_errors:
             raise SystemExit("weekly frozen input snapshot validation failed: " + "; ".join(snapshot_errors))
+    _entry_cycle_responses(plan)
     _kol_review_state(plan)  # Validate rollback/slot limit before any report or ledger writes.
     eod_feedback.weekly_response_state(plan)
     extra_candidates = _load_auto_apply_candidates(auto_apply_candidate_paths)

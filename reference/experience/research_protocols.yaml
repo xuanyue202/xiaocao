@@ -185,3 +185,40 @@ protocols:
       auto_applied: "Never promotes the selector. A PASS only makes evidence consumable by the separate Research Consumption Gate; Issue 06 still requires a human-approved contract and rollback readback."
       proposal_only: "Required for any formal ledger, writer, allocator, safety, real-capital, or selector cutover change, and whenever sample/diversity/hash gates are incomplete."
     rollback: "Delete only the isolated output/research/book_t_v2_shadow/<run_id> artifact or revert the research-tool commit; the v1 control account and writer remain unchanged."
+
+  - id: relay-cycle-forward-v1
+    name: All-COLD low-board relay and intraday participation
+    scope: "Prospective local simulated sleeve; existing clock runner and weekly research owner."
+    strategy_kernel:
+      - "Freeze the natural 09:32 relay ranking and previous board heights. Verify the original Book B was all COLD."
+      - "Observe CSI300 and disjoint low/high peers at 09:43. Pair cash, unfiltered relay, index gate and relative low-board strength on the same candidate, capacity, price cap and T+1 exit."
+    allowed_change_surfaces:
+      - "Isolated research accounts, immutable natural-window observations, and paired weekly evaluation."
+    forbidden_change_surfaces:
+      - "Broker orders, live or APP allocation, production filters, automatic parameter promotion, and historical replay."
+    sample_policy:
+      unit: "one mutually reserved funded opportunity; total settled net PnL per opportunity divided by identical starting account capital, including confirmed zero fills"
+      requirements:
+        - "Initial 100000 yuan per arm in both predeclared cost scenarios; 1/6 ticket; no reselection."
+        - "Review at 20 and freeze the first 40 matured opportunities. Include zero fills. Positive train/test, best-day exclusion, absolute profit, stress drawdown and corrected research_run verdict."
+    required_manifest_fields: [protocol_id, run_id, parameters.n_tried, inputs.trades_sha256, verdict.status, git.commit, git.dirty, diagnostics.coverage]
+    required_artifacts: [manifest.json, verdict.json, trades.jsonl]
+    promotion_boundary:
+      auto_applied: "Research registration carries no order authority. Weekly reviews a passing bundle for a bounded APP simulation pilot against remaining capital, current account, confirmed fills, risk and rollback under section 10."
+    rollback: "Disable pilot entries; preserve open-lot exits, source receipts, account history and reconciliation."
+
+  - id: entry-clock-forward-v1
+    name: Matched funded opportunities for Book B entry clocks
+    scope: "Prospective all-COLD and selected-clock studies on the original frozen Book B universe."
+    strategy_kernel:
+      - "All-COLD 09:45 recheck at 09:46 vs cash, and selected 09:46 vs 09:31 using the same original candidate plan."
+    allowed_change_surfaces: ["Isolated research accounts and weekly comparisons"]
+    forbidden_change_surfaces: ["Orders, live allocation, frozen plans, historical replay and automatic strategy promotion"]
+    sample_policy:
+      unit: "One settled opportunity day; aggregate the original batch cash effects per arm on identical initial 100000 yuan. Include confirmed zero-fill pairs."
+      requirements: ["First 40 matched days, split chronologically; adverse costs, ex-best-day, drawdown and corrected research guard."]
+    required_manifest_fields: [protocol_id, run_id, parameters.n_tried, inputs.trades_sha256, verdict.status, git.commit, git.dirty, diagnostics.coverage]
+    required_artifacts: [manifest.json, verdict.json, trades.jsonl]
+    promotion_boundary:
+      auto_applied: "Fixed eligibility plus weekly section 10 review for a bounded APP simulation pilot."
+    rollback: "Stop new pilot entries; continue exits and reconcile existing lots."

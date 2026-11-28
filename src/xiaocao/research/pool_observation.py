@@ -146,6 +146,12 @@ def observe_relay_ranking(client, day, pool, deadline, clock):
                     valid = type(value) in (int, float) and math.isfinite(value)
                     stock[field] = value if valid else None
                     incomplete |= not valid
+                # Optional point-in-time inputs for the separate relay-cycle study.
+                # Older receipts and the original rank coverage retain their meaning.
+                for field in ("ylimitupdays", "isPreSt"):
+                    if field in row:
+                        value = row[field]
+                        stock[field] = value if type(value) in (int, float) and math.isfinite(value) else None
                 record["stocks"].append(stock)
         record["status"] = "missing_scores" if incomplete else "observed"
     except TimeoutError as exc:

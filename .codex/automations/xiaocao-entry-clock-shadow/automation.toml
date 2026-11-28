@@ -2,8 +2,8 @@ version = 1
 id = "xiaocao-entry-clock-shadow"
 kind = "cron"
 name = "xiaocao entry clock shadow"
-prompt = "Use the xiaocao-trading project skill. Launch `PYTHONPATH=src .venv/bin/python scripts/research_entry_clock.py --run` once with a short yield in a retained PTY in the registered local project, then poll that same process to terminal. The morning run waits for the original dated Book B freeze and the 09:31, 09:45 and 09:46 natural price observations. The afternoon run marks the independent research accounts and models eligible T+1 exits. Read the resulting shadow coverage, paired net PnL and drawdown. Preserve missed observations and deferred exits in the original ledger. On a gap identify the exact symbol, time or missing freeze from the state file. No orders, history replay or change to strategy parameters."
-model_prompt_sha256 = "3cd58c07e4ac0ce6d8d900a00b3ca3932fdf22aba83dc28b9155b05487cba83b"
+prompt = "Use xiaocao-trading. In the registered local project launch `PYTHONPATH=src .venv/bin/python scripts/research_entry_clock.py --run` once with a short yield in a retained PTY, then poll that process to terminal. This single owner captures the original Book B freeze, natural pool membership and relay ranking, the selected 09:31 vs 09:46 pair, the 09:45 all-COLD recheck and the 09:43 peer/index decision for the 09:46 relay study. Afternoon marks and reconciles isolated accounts with eligible T+1 exits. Read forward_review, exact source gaps, net same-capital differences under both cost scenarios, drawdown and opportunity counts. Keep zero fills, late/missing evidence and deferred exits visible. The weekly owner consumes the frozen daily evidence, checks interim 20, fixed 40 and ongoing deterioration, and reviews any bounded APP simulation pilot under section 10. This research wake has no order, history replay or parameter-change authority."
+model_prompt_sha256 = "f52908848039b597ae9a0075fee1378cf6d598b8e594491f2211d902b90381ec"
 status = "ACTIVE"
 rrule = "RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=9,15;BYMINUTE=17"
 model = "gpt-6.1-sol"
@@ -13,4 +13,4 @@ execution_environment = "local"
 target = { type = "project", project_id = "c5acdaa7-f8a7-42d4-96fe-bf979a6b7415" }
 cwds = ["/Users/xuanyue202/Documents/project/xiaocao"]
 created_at = 1795864410317
-updated_at = 1795864410317
+updated_at = 1795876942125

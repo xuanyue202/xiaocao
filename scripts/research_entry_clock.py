@@ -6,16 +6,22 @@ import argparse
 import fcntl
 import hashlib
 import json
-import math
-import os
-import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
-from live_monitor import _detail_observed_at, _detail_trade_date
+import research_relay_cycle as relay
+from research_forward_review import publish_review
+from research_forward_quotes import (
+    CHINA,
+    at,
+    close_guard,
+    collect,
+    now,
+    save,
+    wait_until,
+)
 from xiaocao.api.client import XiaocaoClient
 from xiaocao.config import load_settings
 from xiaocao.research.pool_observation import observe_session
@@ -34,34 +40,7 @@ from xiaocao.research.entry_clock import (
 
 ROOT = Path(__file__).resolve().parents[1]
 BOOK = ROOT / "output/research/entry_clock_forward"
-CHINA = ZoneInfo("Asia/Shanghai")
 PHASES = ("0931", "0945", "0946")
-
-
-def now():
-    return datetime.now(CHINA)
-
-
-def save(path, state):
-    tmp = path.with_suffix(".tmp")
-    with tmp.open("w") as stream:
-        json.dump(
-            state, stream, ensure_ascii=False, allow_nan=False, separators=(",", ":")
-        )
-        stream.flush()
-        os.fsync(stream.fileno())
-    tmp.replace(path)
-
-
-def at(day, hhmm):
-    return datetime.fromisoformat(f"{day}T{hhmm[:2]}:{hhmm[2:]}:00").replace(
-        tzinfo=CHINA
-    )
-
-
-def wait_until(target, clock, sleep):
-    while (seconds := (target - clock()).total_seconds()) > 0:
-        sleep(min(15, seconds))
 
 
 def frozen(day, observed):
@@ -81,77 +60,6 @@ def frozen(day, observed):
         "published_at": bundle["published_at"],
         "universe": make_universe(rows, published),
     }
-
-
-def bar(client, code, day, minute):
-    raw = client.minute_line(code, trade_date=day.replace("-", ""), count=241)
-    hits = [
-        r
-        for r in raw
-        if r.get("code") == code
-        and str(r.get("tradeDate")) == day.replace("-", "")
-        and str(r.get("tradeTime")).zfill(4) == minute
-    ]
-    if len(hits) != 1:
-        return None
-    row = hits[0]
-    price, volume = float(row["trade"]), float(row["vol"])
-    if math.isfinite(price) and price > 0 and math.isfinite(volume) and volume >= 0:
-        return {"trade": price, "vol": volume}
-    return None
-
-
-def collect(client, codes, day, minute, deadline, clock, sleep):
-    pending = list(dict.fromkeys(codes))
-    points, errors = {}, {}
-    while pending and clock() < deadline:
-        for code in list(pending):
-            if clock() >= deadline:
-                break
-            try:
-                q = bar(client, code, day, minute)
-            except Exception as exc:
-                q = None
-                errors[code] = type(exc).__name__
-            observed = clock()
-            if q and observed < deadline:
-                points[code] = {**q, "observed_at": observed.isoformat()}
-                pending.remove(code)
-        if pending and clock() < deadline:
-            sleep(min(2, (deadline - clock()).total_seconds()))
-    return points, {
-        code: errors.get(code, "exact_point_missing_or_late") for code in pending
-    }
-
-
-def close_guard(client, code, day):
-    payload = client.second_line_detail_info(code)
-    if isinstance(payload, dict) and code in payload:
-        payload = {**payload[code], "code": payload[code].get("code", code)}
-    rows = payload if isinstance(payload, list) else [payload]
-    for r in rows:
-        if not isinstance(r, dict) or r.get("code") != code:
-            continue
-        if _detail_trade_date(r) != day:
-            continue
-        timestamp = _detail_observed_at(r, day)
-        if not timestamp or timestamp.astimezone(CHINA).date().isoformat() != day:
-            continue
-        minute = timestamp.astimezone(CHINA).strftime("%H%M")
-        if not "1500" <= minute <= "1510":
-            continue
-        if not re.fullmatch(
-            r"T[0-9]*|NORMAL|TRADING", str(r.get("tradeStatus") or "").upper()
-        ):
-            continue
-        down, bid = float(r["downPrice"]), float(r["buyVol1"])
-        if math.isfinite(down) and down > 0 and math.isfinite(bid) and bid >= 0:
-            return {
-                "down": down,
-                "bid_shares": bid if minute == "1500" else None,
-                "quote_at": timestamp.isoformat(),
-            }
-    return None
 
 
 def morning(
@@ -283,10 +191,12 @@ def eod(state, day, client, persist, clock=now, sleep=time.sleep):
             guards[code] = guard
         else:
             gaps[code + "/depth"] = "close_guard_missing"
-    effects = {
-        n: settle(a, day, points, guards, COSTS[n.split("/")[1]])
-        for n, a in accounts.items()
-    }
+    effects = {}
+    for name, account in accounts.items():
+        entries = {lot["code"]: lot["entry"] for lot in account["lots"]}
+        effects[name] = settle(account, day, points, guards, COSTS[name.split("/")[1]])
+        for row in effects[name]:
+            row["entry_day"] = entries[row["code"]]
     phases["1500"] = dict(
         status="gap" if gaps else "observed",
         points=points,
@@ -498,7 +408,21 @@ def main():
             raise ValueError("registered protocol mismatch")
         stamp = now()
         day = stamp.date().isoformat()
+        cycle_error = None
+        cycle_path = BOOK / "relay_cycle" / "state.json"
+        if args.init:
+            _, registered_cycle = relay.state_at(BOOK, stamp, register=True)
+            registration = {
+                "activated_at": registered_cycle["activated_at"],
+                "protocol": registered_cycle["protocol"],
+                "authority": 0,
+                "owner": "xiaocao-weekly-deep-review",
+            }
+            relay.atomic_write(
+                BOOK / "registration.json", relay.encode(registration), immutable=True
+            )
         pool_samples = {}
+        closed_today = False
         if args.run and stamp.weekday() < 5:
             client = XiaocaoClient(
                 base_url=load_settings(None).base_url,
@@ -522,18 +446,34 @@ def main():
             save(path, state)
             if day not in sessions:
                 closed = client.get_trade_cal(day, day, "SSE", 0)
-                if not any(
-                    str(r.get("calDate") or r.get("tradeDate") or "").replace("-", "")
+                closed_rows = [
+                    r
+                    for r in closed
+                    if str(r.get("calDate") or r.get("tradeDate") or "").replace(
+                        "-", ""
+                    )
                     == day.replace("-", "")
                     and str(r.get("isOpen")).lower() in ("0", "false")
-                    for r in closed
-                ):
+                ]
+                if not closed_rows:
                     raise ValueError("current exchange calendar status unproved")
+                previous = max(d for d in sessions if d < day)
+                proof = {
+                    "day": day,
+                    "last_open": previous,
+                    "exchange": "SSE",
+                    "closed_rows": closed_rows,
+                }
+                relay.atomic_write(
+                    BOOK / "closed_sessions" / (day + ".json"),
+                    relay.encode(proof),
+                    immutable=True,
+                )
             else:
                 previous = max(d for d in sessions if d < day)
                 early = stamp.hour < 15
                 # The price-clock participant always runs on its original thread and HTTP client.
-                with ThreadPoolExecutor(max_workers=1) as pool:
+                with ThreadPoolExecutor(max_workers=2) as pool:
                     observation = pool.submit(
                         observe_session,
                         BOOK / "pool_observations",
@@ -543,10 +483,25 @@ def main():
                         early,
                         client.base_url,
                     )
+                    cycle = pool.submit(
+                        relay.run,
+                        BOOK,
+                        day,
+                        previous,
+                        sessions,
+                        early,
+                        client.base_url,
+                        frozen,
+                    )
                     if early:
                         morning(state, day, previous, client, lambda: save(path, state))
                     else:
                         eod(state, day, client, lambda: save(path, state))
+                    closed_today = not early
+                    try:
+                        cycle.result()
+                    except Exception as exc:
+                        cycle_error = type(exc).__name__ + ": " + str(exc)
                     try:
                         pool_samples = observation.result()
                     except Exception as exc:
@@ -554,11 +509,23 @@ def main():
                             "sampler": {"complete": False, "error": type(exc).__name__}
                         }
         result = report(state)
+        if cycle_path.exists() and not cycle_error:
+            cycle_state = json.loads(cycle_path.read_bytes())
+            result["forward_review"] = publish_review(
+                BOOK, day, state, result, cycle_state, publish=closed_today
+            )
+        else:
+            result["forward_review"] = {
+                "status": "gap",
+                "reason": cycle_error or "relay_cycle_registration_missing",
+            }
         if pool_samples:
             result["pool_observations"] = pool_samples
         print(json.dumps(result, ensure_ascii=False))
         if args.run and (
-            day in result["coverage_gaps"]
+            result["forward_review"].get("status") == "gap"
+            or day in result["forward_review"].get("cycle_gaps", [])
+            or day in result["coverage_gaps"]
             or any(not x["complete"] for x in pool_samples.values())
         ):
             raise SystemExit(1)
