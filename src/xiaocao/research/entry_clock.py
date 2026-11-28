@@ -134,6 +134,7 @@ def make_universe(rows, now):
         ),
         "cold": compact(cold),
         "frozen_count": len(original),
+        "frozen_state_counts": dict(Counter(r["mode_state"] for r in original)),
         "frozen_mode_counts": dict(Counter(row["mode"] for row in original)),
     }
 

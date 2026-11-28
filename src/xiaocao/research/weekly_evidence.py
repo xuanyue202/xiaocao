@@ -23,9 +23,12 @@ from xiaocao.research.weekly_production_adapter import (
     build_production_observations, render_production_observations,
 )
 
+FORWARD_REVIEWS = 'output/research/entry_clock_forward/reviews/*.json'
+
 OPTIONS = ('baseline_no_kol', 'current_bounded', 'kol_challenger')
 PATTERNS = (
-    eod_feedback.DAILY_PATTERN, eod_feedback.WEEKLY_LEDGER,
+    eod_feedback.DAILY_PATTERN, eod_feedback.WEEKLY_LEDGER, FORWARD_REVIEWS, 'output/research/entry_clock_forward/registration.json',
+    'output/research/entry_clock_forward/closed_sessions/*.json',
     'kronos_screen/HYPOTHESES.jsonl',
     'reference/experience/xiaocao_hypotheses.jsonl',
     'reference/experience/research_protocols.yaml',
@@ -92,17 +95,40 @@ def _rows(data: bytes, path: str) -> list[dict]:
     return rows
 
 
-def _capture(root: Path, snapshot_dir: Path | None) -> tuple[dict, dict[str, bytes]]:
+def _capture(root: Path, snapshot_dir: Path | None, as_of: dt.date) -> tuple[dict, dict[str, bytes]]:
     files, contents, missing = [], {}, []
     paths_to_capture = []
     for pattern in PATTERNS:
         paths = sorted(p for p in root.glob(pattern) if p.is_file())
+        if pattern == FORWARD_REVIEWS:
+            paths = [p for p in paths if _date(p.stem) == p.stem and p.stem <= as_of.isoformat()][-1:]
         if not paths:
             missing.append(pattern)
         paths_to_capture.extend(paths)
     # Saved comparison/run artifacts can name inputs beyond the conventional
     # filenames. Capture only local research originals, never another checkout.
     for path in list(paths_to_capture):
+        if path.match(FORWARD_REVIEWS):
+            try:
+                summary = json.loads(path.read_bytes())
+                for digest in summary["source_hashes"].values():
+                    if isinstance(digest, str) and len(digest) == 64 and all(c in "0123456789abcdef" for c in digest):
+                        evidence = path.parents[1] / "evidence" / (digest + ".json")
+                        if evidence.is_file():
+                            paths_to_capture.append(evidence)
+                for name, study in summary["studies"].items():
+                    fixed = study.get("fixed_decision", {})
+                    if fixed and name in {"relay", "selected", "cold"}:
+                        milestone = path.parents[1] / "milestones" / (name + "-40.json")
+                        if milestone.is_file():
+                            paths_to_capture.append(milestone)
+                    for digest in fixed.get("source_hashes", {}).values():
+                        if isinstance(digest, str) and len(digest) == 64 and all(c in "0123456789abcdef" for c in digest):
+                            evidence = path.parents[1] / "evidence" / (digest + ".json")
+                            if evidence.is_file():
+                                paths_to_capture.append(evidence)
+            except (ValueError, KeyError, TypeError, AttributeError):
+                pass
         if path.match(eod_feedback.DAILY_PATTERN):
             try:
                 for ref in eod_feedback.referenced_paths(path.read_bytes()):
@@ -578,7 +604,7 @@ def _research_runs(contents: dict[str, bytes], *, as_of: dt.date) -> list[dict]:
 
 def build_weekly_evidence(root: Path, *, as_of: dt.date, snapshot_dir: Path | None = None) -> dict:
     from xiaocao.research.shortline_comparison import observe_shortline_research
-    manifest, contents = _capture(root, snapshot_dir)
+    manifest, contents = _capture(root, snapshot_dir, as_of)
     manifest_path = None
     if snapshot_dir is not None:
         snapshot_dir.mkdir(parents=True, exist_ok=True)
@@ -657,6 +683,7 @@ def build_weekly_evidence(root: Path, *, as_of: dt.date, snapshot_dir: Path | No
         option_comparison=dict(options=empty_options if not comparisons else [], comparisons=comparisons),
         paper_fill_audit=_fill_audit(contents, as_of), accounting_observations=accounting,
         production_observations=build_production_observations(contents, as_of=as_of),
+        entry_cycle_review=observe_entry_cycle(contents, as_of),
         shortline_research=observe_shortline_research(contents, as_of=as_of),
         app_b_forward=observe_app_b_forward(contents, as_of=as_of),
         eod_feedback=eod_feedback.observe_feedback(contents, as_of=as_of),
@@ -707,6 +734,25 @@ def render_weekly_evidence(report: dict, *, include_exploration_proposals: bool 
         value = observation['valuation']
         lines.append(f"- 会计观测 {observation['observed_at']}：净投入 {value.get('net_contributed_capital', 'N/A')}，标记净值 {value.get('marked_nav', 'N/A')}，累计盈亏 {value.get('cumulative_pnl') if value.get('cumulative_pnl') is not None else 'N/A'}，已实现/浮动 {value.get('realized_pnl', 'N/A')}/{value.get('unrealized_pnl', 'N/A')}；费用 {value.get('fee_basis', 'unknown')}，状态 {value.get('status', 'unknown')}（已保存观测，未认证收益）。")
     lines += ['', *render_production_observations(report.get('production_observations') or {})]
+    cycle = report.get('entry_cycle_review') or {}
+    if cycle.get("status") == "observed":
+        lines += ["", "### 盘中买点与低位接力的同资金对照", "",
+                  f"冻结资料截至 {cycle['as_of']}，本周截止日覆盖 {cycle['through_review_date']}。"]
+        for name, study in cycle["studies"].items():
+            cumulative = {k: v["net_yuan"] for k, v in study["cumulative"].items()}
+            recent = {k: v["net_yuan"] for k, v in study["recent_20"].items() if k.startswith("stress/")}
+            lines.append(f"- {name} 成熟 {study['matured']} 日，累计各对照扣成本净差（元）{cumulative}，"
+                         f"最近最多 20 次压力成本净差 {recent}，压力回撤 {study['funded_stress_drawdown_pct']:.2f}%。")
+            lines.append(f"  本周处置 {study['weekly_action']}，当前风险项 {study['current_blockers']}。")
+            if study.get("frequency_check_due"):
+                lines.append("  请追查机会稀少的环节及行情覆盖，记录继续或终止的依据。")
+            if study.get("fixed_decision"):
+                lines.append(f"  首 40 次结论 {study['fixed_decision']['decision']}，"
+                             f"此后已结清 {study['subsequent_days']} 次。")
+    elif cycle.get("status") == "registered_no_natural_report":
+        lines.append(f"盘中资金对照登记于 {cycle['activated_at']}，尚无自然收盘报告，周复盘应核对首次窗口。")
+    elif cycle.get("status") == "invalid":
+        lines.append(f"盘中资金对照原件校验失败：{cycle['reason']}。")
     shortline = report.get('shortline_research') or {}
     if shortline.get('status') == 'observed':
         lines += ['', '### 短线统一流程的前向证据', '',
@@ -749,6 +795,86 @@ def render_weekly_evidence(report: dict, *, include_exploration_proposals: bool 
             lines.append("缺少 EOD 估值日：" + "、".join(missing_eod))
         lines.append("模型成交和盘后时序单独标注；缺证与完整日期分母保留，晋级仍需研究门和人工决策。")
     return lines
+
+
+def observe_entry_cycle(contents, as_of):
+    """Read the latest eligible frozen report and bind each account to its bytes."""
+    prefix = "output/research/entry_clock_forward/"
+    paths = sorted(p for p in contents if Path(p).match(FORWARD_REVIEWS)
+                   and Path(p).stem <= as_of.isoformat())
+    if not paths:
+        raw = contents.get(prefix + "registration.json")
+        if raw:
+            try:
+                reg = json.loads(raw)
+                if _proof_time(reg["activated_at"]).astimezone(ZoneInfo("Asia/Shanghai")).date() <= as_of and reg["protocol"]["id"]=="relay-cycle-forward-v1":
+                    return {"status":"registered_no_natural_report","activated_at":reg["activated_at"],"sha256":_hash(raw)}
+            except (ValueError, KeyError, TypeError):
+                return {"status":"invalid","reason":"invalid_registration"}
+        return {"status": "not_observed"}
+    path = paths[-1]
+    try:
+        report = json.loads(contents[path])
+        if report["as_of"] != Path(path).stem or set(report["studies"]) != {"selected","cold","relay"}:
+            raise ValueError("forward_review_identity")
+        registration = json.loads(contents[prefix + "registration.json"])
+        if _hash(_canonical(registration["protocol"])) != report["protocol_sha256"]:
+            raise ValueError("forward_registration_mismatch")
+        # A weekend has no scheduled exchange session. Each intervening weekday
+        # needs its own explicit exchange closure and the latest open-session date.
+        eligible = True
+        session = dt.date.fromisoformat(report["as_of"]) + dt.timedelta(days=1)
+        while session <= as_of:
+            if session.weekday() < 5:
+                day = session.isoformat()
+                raw = contents.get(prefix + "closed_sessions/" + day + ".json")
+                proof = json.loads(raw) if raw else {}
+                rows = proof.get("closed_rows") or []
+                if (proof.get("day") != day or proof.get("exchange") != "SSE"
+                        or proof.get("last_open") != report["as_of"] or not rows
+                        or not all(str(r.get("calDate") or r.get("tradeDate")).replace("-", "") == day.replace("-", "")
+                                   and str(r.get("isOpen")).lower() in ("0", "false") for r in rows)):
+                    eligible = False
+                    break
+            session += dt.timedelta(days=1)
+        for name, study in report["studies"].items():
+            fixed = study.get("fixed_decision")
+            if fixed:
+                if _canonical(fixed) != contents[prefix + "milestones/" + name + "-40.json"] or fixed["study"] != name:
+                    raise ValueError("forward_milestone_mismatch")
+            elif study["stage"] == "app_pilot_review_due":
+                raise ValueError("missing_forward_milestone")
+            study["weekly_action"] = study["stage"] if eligible else "reconcile_missing_current_session"
+        for src in [report, *(s["fixed_decision"] for s in report["studies"].values() if "fixed_decision" in s)]:
+            hashes = src["source_hashes"]
+            if set(hashes) != {"clock","cycle"}:
+                raise ValueError("forward_inputs_missing")
+            for key, digest in hashes.items():
+                raw = contents[prefix + "evidence/" + digest + ".json"]
+                if _hash(raw) != digest:
+                    raise ValueError("forward_inputs_mismatch")
+                obj = json.loads(raw)
+                if any(d > src["as_of"] for d in obj["days"]):
+                    raise ValueError("forward_future_inputs")
+                if key == "cycle" and (obj["protocol"] != registration["protocol"]
+                                        or obj["activated_at"] != registration["activated_at"]):
+                    raise ValueError("forward_account_registration")
+            for manifest in src.get("manifests", {}).values():
+                base = "output/research/runs/" + Path(manifest["path"]).parent.name + "/"
+                doc = json.loads(contents[base + "manifest.json"])
+                trades = contents[base + "trades.jsonl"]
+                verdict = json.loads(contents[base + "verdict.json"])
+                if (_hash(contents[base + "manifest.json"]) != manifest["sha256"]
+                        or _hash(trades) != doc["inputs"]["trades_sha256"]
+                        or doc["verdict"]["status"] != verdict["verdict"]
+                        or manifest["status"] != verdict["verdict"]
+                        or [json.loads(row)["day"] for row in trades.splitlines()] != src["dates"]):
+                    raise ValueError("forward_guard_manifest_mismatch")
+        return {"status":"observed","as_of":report["as_of"],"through_review_date":eligible,
+                "studies":report["studies"],"path":path,"sha256":_hash(contents[path]),
+                "cycle_dispositions":report["cycle_dispositions"], "cycle_gaps":report["cycle_gaps"]}
+    except (KeyError, ValueError, TypeError, AttributeError) as exc:
+        return {"status":"invalid","path":path,"reason":str(exc)}
 
 
 def observe_app_b_forward(contents: dict, *, as_of: dt.date | dt.datetime) -> dict:
