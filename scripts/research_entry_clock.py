@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import research_relay_cycle as relay
+import research_day_limit_pair as day_pair
 from research_forward_review import publish_review
 from research_forward_quotes import (
     CHINA,
@@ -411,6 +412,7 @@ def main():
         cycle_error = None
         cycle_path = BOOK / "relay_cycle" / "state.json"
         if args.init:
+            day_pair.register(BOOK, stamp)
             _, registered_cycle = relay.state_at(BOOK, stamp, register=True)
             registration = {
                 "activated_at": registered_cycle["activated_at"],
@@ -423,6 +425,7 @@ def main():
             )
         pool_samples = {}
         closed_today = False
+        paired_day = None
         if args.run and stamp.weekday() < 5:
             client = XiaocaoClient(
                 base_url=load_settings(None).base_url,
@@ -473,7 +476,16 @@ def main():
                 previous = max(d for d in sessions if d < day)
                 early = stamp.hour < 15
                 # The price-clock participant always runs on its original thread and HTTP client.
-                with ThreadPoolExecutor(max_workers=2) as pool:
+                with ThreadPoolExecutor(max_workers=3) as pool:
+                    day_job = pool.submit(
+                        day_pair.run_with_relay,
+                        BOOK,
+                        ROOT / "output/live",
+                        day,
+                        sessions,
+                        early,
+                        client.base_url,
+                    )
                     observation = pool.submit(
                         observe_session,
                         BOOK / "pool_observations",
@@ -499,6 +511,10 @@ def main():
                         eod(state, day, client, lambda: save(path, state))
                     closed_today = not early
                     try:
+                        paired_day = day_job.result()
+                    except Exception as exc:
+                        paired_day = day_pair.gap(exc)
+                    try:
                         cycle.result()
                     except Exception as exc:
                         cycle_error = type(exc).__name__ + ": " + str(exc)
@@ -519,12 +535,30 @@ def main():
                 "status": "gap",
                 "reason": cycle_error or "relay_cycle_registration_missing",
             }
+        if paired_day:
+            result["day_limit_pair"] = paired_day
+        elif args.status or args.init:
+            folder=BOOK / "day_limit_pair"
+            path=folder / "registration.json"
+            if path.is_file():
+                reg=json.loads(path.read_bytes())
+                if reg["protocol"]!=day_pair.PROTOCOL:raise ValueError("day_pair_registration_changed")
+                last,_=day_pair.prior_account(folder,day,reg)
+                state_dir=ROOT / "output/live/book_b_live_execution"
+                auth_path=day_pair.pilot.root(state_dir)/"authorization.json"
+                result["day_limit_pair"]={"registered_at":reg["registered_at"],
+                    "last_natural_close":last["day"] if last else None,
+                    "pilot_authorized":auth_path.is_file() and json.loads(auth_path.read_bytes())["scope"]==day_pair.pilot.AUTH,
+                    "assignments":len(list((day_pair.pilot.root(state_dir)/"assignments").glob("*.json"))),
+                    "actual_comparisons":(last or {}).get("split_trials",{}),
+                    "cash_comparison":(last or {}).get("relay_walkdown",{}).get("net_yuan")}
         if pool_samples:
             result["pool_observations"] = pool_samples
         print(json.dumps(result, ensure_ascii=False))
         if args.run and (
             result["forward_review"].get("status") == "gap"
             or day in result["forward_review"].get("cycle_gaps", [])
+            or (paired_day is not None and (paired_day["status"] == "gap" or day in paired_day.get("walkdown_gaps",[])))
             or day in result["coverage_gaps"]
             or any(not x["complete"] for x in pool_samples.values())
         ):

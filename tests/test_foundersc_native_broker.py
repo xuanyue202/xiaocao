@@ -3081,3 +3081,26 @@ def test_history_reconcile_refreshes_server_query_before_accepting_terminal():
         _plan(), {'broker_order_id': '6001324', 'requested_shares': 100})
     assert receipt.normalized_status() == BrokerStatus.CANCELLED
     assert receipt.locator_proof['historical_order_status'] == '已撤'
+
+
+@pytest.mark.app_simulation
+@pytest.mark.parametrize("other,expected", [(False, True), (True, False)])
+def test_split_equal_quantity_parent_retains_native_baseline(other, expected):
+    from xiaocao.live.entry_clock_pilot import active_child
+    native = FakeNative()
+    adapter = _adapter(native)
+    child = replace(_plan(), plan_id="book-b:2026-08-30:515120.XSHG:BUY:pilot0946",
+                    code="515120.XSHG", name="创新药", limit_price=.646, basket_price=.646)
+    native.orders[0].update({"委托日期": "20260830", "状态说明":"已成", "成交数量":"100", "成交价格":".646"})
+    if other:
+        native.orders.append({**native.orders[0], "委托编号":"7777777"})
+    token=active_child.set(dict(child_hash=child.plan_hash,order_id="6000002",status="filled",filled=100))
+    try:
+        receipt=adapter.prepare(child)
+    finally:
+        active_child.reset(token)
+    if expected:
+        assert receipt.normalized_status()==BrokerStatus.PREPARED, receipt.reason
+        assert "6000002" in receipt.locator_proof["baseline_order_ids"]
+    else:
+        assert receipt.reason=="NATIVE_PREEXISTING_EXACT_ORDER_BLOCKS_SUBMIT"

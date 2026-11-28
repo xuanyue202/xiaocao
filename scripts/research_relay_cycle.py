@@ -94,7 +94,7 @@ def relay_plan(book, day, previous, freeze):
     }
 
 
-def stock_guard(client, code, day, clock, minute="0943"):
+def stock_guard(client, code, day, clock, minute="0943", *, book_quotes=False):
     raw = client.second_line_detail_info(code)
     if isinstance(raw, dict) and code in raw and isinstance(raw[code], dict):
         raw = {**raw[code], "code": raw[code].get("code", code)}
@@ -122,7 +122,13 @@ def stock_guard(client, code, day, clock, minute="0943"):
     )
     if not ok and reason != "LIMIT_DOWN_BUY_BLOCKED":
         raise ValueError(reason or "candidate_status_unknown")
-    return dict(allowed=ok, reason=reason, evidence=evidence, up=up, down=down)
+    result=dict(allowed=ok, reason=reason, evidence=evidence, up=up, down=down)
+    if book_quotes:
+        book={k:float(r[k]) for k in ("buyPrice1","buyVol1","sellPrice1","sellVol1")}
+        if any(not math.isfinite(v) or v<0 for v in book.values()):
+            raise ValueError("relay_book_unproved")
+        result.update(book)
+    return result
 
 
 def points_for(client, code, day):

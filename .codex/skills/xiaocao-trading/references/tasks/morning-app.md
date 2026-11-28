@@ -164,3 +164,5 @@ failed or source-only program remains explicit; no task/peer wait, source worker
 or new synthesis is created by this consumer. The original freeze refresh and
 independent current policy review/publication remain required. Source preparation
 budgets do not extend this consumer's original120-second/09:27:30 bounds.
+
+A registered 100-share split under Contract §4a is an original-owner post-business phase. Retain the same PTY through the 09:46 disposition after the ordinary result has been published. An assigned remainder stays within the original holdings and limit. Read both order IDs and exact child status. A skipped or unresolved child has its own evidence and stays out of the ordinary result; future observations use the normal reconciliation and lot-exit paths.

@@ -1870,6 +1870,18 @@ class FounderscNativeAXBrokerAdapter(BrokerAdapter):
                 "comparison": "code+side+price+quantity+new_order_id",
             }
             matches = self._matching_orders(plan, orders["rows"], shares)
+            if matches and plan.side == "BUY" and plan.plan_id.endswith(":pilot0946"):
+                from .entry_clock_pilot import active_child, authorized_child
+                parent = active_child.get()
+                if authorized_child(plan) and len(matches) == 1:
+                    row = matches[0]
+                    if (str(row.get("委托编号") or "").strip() == parent["order_id"]
+                            and str(row.get("委托日期") or str(orders.get("observed_at") or "")[:10]).replace("-", "") == plan.trade_date.replace("-", "")
+                            and _status(row.get("状态说明")).value == parent["status"]
+                            and parent["status"] in {"filled","cancelled"}
+                            and _integer(row.get("成交数量"),field="PARENT_FILLED")==parent["filled"]):
+                        baseline_locator["split_parent_order_id"] = parent["order_id"]
+                        matches = []
             if matches:
                 return self._safe_rejection(
                     plan,

@@ -43,6 +43,7 @@ look-ahead or correctness. The detailed review records that limit explicitly.
 | T v1 | trend rules and original independent sleeve | Original control receipt/raw account/positions/trades |
 | T v2 | published snapshot→instrument universe→selection plan→shadow | Isolated research only until consumption/human gates;5/20 natural gates distinct |
 | Funded B control/challenges | registered app-b-forward-funded-v1, independent accounts/future windows | Model path/fees/marks/coverage, never APP fills or alpha proof |
+| APP DAY limit research | Original affordable APP BUY intent seen before 09:31, identical 100-share / 3,000-yuan research arms at 09:31 and 09:46, resting until close, guarded T+1 exits and weekly paired NAV | [Daily research owner](../scripts/research_day_limit_pair.py), research only. The original APP order is observed separately. |
 | Entry-clock research | Original Book B freeze, 09:31/09:45/09:46 minute points, next tradable close → independent funded shadow accounts | [Prospective reader](../scripts/research_entry_clock.py), authority 0. Weekly review uses natural coverage, net NAV and drawdown for cold vs cash and selected 09:46 vs 09:31. |
 | KOL source analyst | complete source→thesis/coverage→reader/longitudinal semantics | Draft/parent acceptance and publication separate; profile config owns model |
 | KOL current-applicability | every eligible published view plus current request/account/freeze | Reviewed exact policy publication and actual adoption; not source reauthoring |
@@ -92,3 +93,5 @@ research manifest/evidence/OOS/rollback gates and §10. An instruction refactor
 preserves values/protocols and legacy evidence. See CONTEXT_ENGINEERING.md for
 why placement, role/phase loading and closed-loop review. Runtime unresolved
 orders/fees are not rewritten to make either documentation or research look green.
+
+The original APP morning runner owns the bounded 09:46 split after the ordinary result (§4a). Its assignment binds the full approved order, reduced early leg, distinct child ID and co-funded 09:31 shadow. The existing 09:17/15:17 research owner seals the child comparison, tracks actual ownership and final fees across days, and independently observes the first available successor when the eligible 09:32 relay leader is sealed at 09:45. Weekly fixed-input evidence includes the individual split comparisons, risk stop and funded relay result against cash.

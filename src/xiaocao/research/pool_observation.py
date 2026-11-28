@@ -148,6 +148,8 @@ def observe_relay_ranking(client, day, pool, deadline, clock):
                     incomplete |= not valid
                 # Optional point-in-time inputs for the separate relay-cycle study.
                 # Older receipts and the original rank coverage retain their meaning.
+                if isinstance(row.get("codeName"),str):
+                    stock["codeName"]=row["codeName"]
                 for field in ("ylimitupdays", "isPreSt"):
                     if field in row:
                         value = row[field]

@@ -1776,6 +1776,17 @@ class TradingExecution:
 
     def _execute_locked(self, plan: TradePlan, broker: BrokerAdapter) -> ExecutionReceipt:
         existing = self.store.current(plan.plan_id)
+        if plan.side == "BUY" and plan.plan_id.endswith(":pilot0946"):
+            from .entry_clock_pilot import authorized_child
+            if existing and existing.plan_hash == plan.plan_hash and existing.submit_claim_id:
+                if existing.state in TERMINAL_STATES:
+                    return self._repair_terminal_ownership(plan, existing)
+                return self._reconcile(plan, broker, existing, observation_only=True)
+            if not authorized_child(plan):
+                if existing and existing.state in TERMINAL_STATES:
+                    return existing
+                raise ValueError("PILOT_ORIGINAL_OWNER_REQUIRED")
+
         if existing is not None and existing.plan_hash != plan.plan_hash:
             return self._record(
                 plan,
@@ -2187,6 +2198,12 @@ class TradingExecution:
                 return "OWNED_POSITION_BOUND"
         return None
 
+    def _check_split_broker_id(self, plan, receipt):
+        if plan.side == "BUY" and plan.plan_id.endswith(":pilot0946") and receipt.order_id:
+            parent = self.store.current(plan.plan_id.removesuffix(":pilot0946"))
+            if not parent or not parent.broker_order_id or receipt.order_id == parent.broker_order_id:
+                raise ValueError("PILOT_CHILD_BROKER_ID_NOT_DISTINCT")
+
     def _submit_claimed(
         self,
         plan: TradePlan,
@@ -2196,6 +2213,13 @@ class TradingExecution:
         requested_shares: int,
         already_filled: int = 0,
     ) -> ExecutionReceipt:
+        if plan.side == "BUY" and plan.plan_id.endswith(":pilot0946"):
+            from .entry_clock_pilot import authorized_child, windows
+            start, end = windows(plan.trade_date)
+            if (not authorized_child(plan) or previous.attempt or
+                    not start <= self.now() < end):
+                return self._record(plan, replace(previous, state=ExecutionState.SKIPPED,
+                    reason="PILOT_SUBMISSION_CLOSED", next_action="stop"))
         if previous.attempt >= 2:
             blocked = self._record(
                 plan,
@@ -2235,6 +2259,7 @@ class TradingExecution:
         )
         try:
             broker_receipt = broker.submit(plan, claim_id, requested_shares=requested_shares)
+            self._check_split_broker_id(plan, broker_receipt)
         except Exception as exc:
             unknown = self._record(
                 plan,
@@ -2324,6 +2349,7 @@ class TradingExecution:
                 )
                 else broker.reconcile(plan, reconciling.as_dict())
             )
+            self._check_split_broker_id(plan, broker_receipt)
         except Exception as exc:
             unknown = self._record(
                 plan,
@@ -2385,7 +2411,7 @@ class TradingExecution:
             self._receipt_from_broker(plan, reconciling, broker_receipt, state, plan.shares),
             kind="reconcile_receipt",
         )
-        if observation_only or state != ExecutionState.PARTIAL or reconciled.remaining_shares <= 0:
+        if observation_only or plan.plan_id.endswith(":pilot0946") or state != ExecutionState.PARTIAL or reconciled.remaining_shares <= 0:
             return reconciled
         if reconciled.submit_chain_uncertain:
             return self._record(

@@ -23,10 +23,14 @@ from xiaocao.research.weekly_production_adapter import (
     build_production_observations, render_production_observations,
 )
 
+DAY_PAIR = 'output/research/entry_clock_forward/day_limit_pair/'
 FORWARD_REVIEWS = 'output/research/entry_clock_forward/reviews/*.json'
 
 OPTIONS = ('baseline_no_kol', 'current_bounded', 'kol_challenger')
 PATTERNS = (
+    DAY_PAIR + "registration.json", DAY_PAIR + "*.close.json", DAY_PAIR + "*.morning.json",
+    DAY_PAIR + "split_evidence/*.json", DAY_PAIR + "*.relay-decision.json", DAY_PAIR + "*.relay-entry.json",
+    "output/research/entry_clock_forward/pool_observations/*/0932.json",
     eod_feedback.DAILY_PATTERN, eod_feedback.WEEKLY_LEDGER, FORWARD_REVIEWS, 'output/research/entry_clock_forward/registration.json',
     'output/research/entry_clock_forward/closed_sessions/*.json',
     'kronos_screen/HYPOTHESES.jsonl',
@@ -684,6 +688,7 @@ def build_weekly_evidence(root: Path, *, as_of: dt.date, snapshot_dir: Path | No
         paper_fill_audit=_fill_audit(contents, as_of), accounting_observations=accounting,
         production_observations=build_production_observations(contents, as_of=as_of),
         entry_cycle_review=observe_entry_cycle(contents, as_of),
+        day_limit_pair=observe_day_pair(contents, as_of),
         shortline_research=observe_shortline_research(contents, as_of=as_of),
         app_b_forward=observe_app_b_forward(contents, as_of=as_of),
         eod_feedback=eod_feedback.observe_feedback(contents, as_of=as_of),
@@ -734,6 +739,22 @@ def render_weekly_evidence(report: dict, *, include_exploration_proposals: bool 
         value = observation['valuation']
         lines.append(f"- 会计观测 {observation['observed_at']}：净投入 {value.get('net_contributed_capital', 'N/A')}，标记净值 {value.get('marked_nav', 'N/A')}，累计盈亏 {value.get('cumulative_pnl') if value.get('cumulative_pnl') is not None else 'N/A'}，已实现/浮动 {value.get('realized_pnl', 'N/A')}/{value.get('unrealized_pnl', 'N/A')}；费用 {value.get('fee_basis', 'unknown')}，状态 {value.get('status', 'unknown')}（已保存观测，未认证收益）。")
     lines += ['', *render_production_observations(report.get('production_observations') or {})]
+    day_pair = report.get("day_limit_pair") or {}
+    if day_pair.get("status") == "observed":
+        lines.append(f"APP 同限价 DAY 影子截至 {day_pair['day']}，已观察 {day_pair['opportunities']} 次，"
+                     f"截至周末覆盖 {day_pair['current']}，09:46 减 09:31 的净值差（元）{day_pair['difference_yuan']}，"
+                     f"两组尚未平仓 {day_pair['open_lots']}，缺失交易日 {day_pair['historical_gaps']}。")
+        walk = day_pair.get("relay_walkdown") or {}
+        lines.append(f"09:45 榜首封板顺延，相对等额现金的参考净值差 {walk.get('net_yuan')} 元，"
+                     f"自然观测缺口 {walk.get('gaps')}；APP 小仓回撤观测 {day_pair.get('split_risk')}。")
+        for session, trial in day_pair.get("split_trials", {}).items():
+            actual = trial["actual"]
+            lines.append(f"- {session} APP 09:46 子单 {trial['child_id']}，状态 {actual['status']}，"
+                         f"买入/卖出 {actual.get('bought')}/{actual.get('sold')} 股，同量入场节省（估费/实费）"
+                         f"{trial['estimated_entry_saving_yuan']} / {trial['entry_saving_yuan']} 元，"
+                         f"实际退出相对 09:31 影子的已结净差 {trial['net_difference_yuan']} 元。")
+    elif day_pair.get("status") in ("invalid", "registered"):
+        lines.append(f"APP 同限价 DAY 影子状态 {day_pair['status']}，{day_pair.get('reason', '等待首次自然收盘')}。")
     cycle = report.get('entry_cycle_review') or {}
     if cycle.get("status") == "observed":
         lines += ["", "### 盘中买点与低位接力的同资金对照", "",
@@ -797,6 +818,106 @@ def render_weekly_evidence(report: dict, *, include_exploration_proposals: bool 
     return lines
 
 
+def _forward_current(contents, last_day, as_of):
+    prefix = "output/research/entry_clock_forward/"
+    eligible = True
+    session = dt.date.fromisoformat(last_day) + dt.timedelta(days=1)
+    while session <= as_of:
+        if session.weekday() < 5:
+            day = session.isoformat()
+            raw = contents.get(prefix + "closed_sessions/" + day + ".json")
+            proof = json.loads(raw) if raw else {}
+            rows = proof.get("closed_rows") or []
+            if (proof.get("day") != day or proof.get("exchange") != "SSE"
+                    or proof.get("last_open") != last_day or not rows
+                    or not all(str(r.get("calDate") or r.get("tradeDate")).replace("-", "") == day.replace("-", "")
+                               and str(r.get("isOpen")).lower() in ("0", "false") for r in rows)):
+                eligible = False
+                break
+        session += dt.timedelta(days=1)
+    return eligible
+
+
+def observe_day_pair(contents, as_of):
+    reg = contents.get(DAY_PAIR + "registration.json")
+    if not reg:
+        return {"status": "not_observed"}
+    try:
+        registration = json.loads(reg)
+        start = _proof_time(registration["registered_at"]).astimezone(ZoneInfo("Asia/Shanghai")).date().isoformat()
+        if start > as_of.isoformat():
+            return {"status": "not_observed"}
+        if registration["protocol"]["id"] != "app-day-limit-pair-v1":
+            raise ValueError("day_pair_protocol")
+        previous = None
+        count = 0
+        last = None
+        for path in sorted(p for p in contents if p.startswith(DAY_PAIR) and p.endswith(".close.json")):
+            day = Path(path).name.removesuffix(".close.json")
+            if not start <= day <= as_of.isoformat():
+                continue
+            last = json.loads(contents[path])
+            if last["day"] != day or last["protocol"] != "app-day-limit-pair-v1" or last["prior_sha256"] != previous or last["registration_sha256"] != _hash(reg) or last["receipt_sha256"] != _hash(_canonical({k:v for k,v in last.items() if k!="receipt_sha256"})):
+                raise ValueError("day_pair_chain")
+            morning = last.get("morning") or {}
+            if morning.get("status")!="gap" or morning.get("receipt_sha256"):
+                stamp=_proof_time(morning["observed_at"]).astimezone(ZoneInfo("Asia/Shanghai"))
+                if (contents.get(DAY_PAIR+day+".morning.json") != _canonical(morning)
+                        or morning["receipt_sha256"]!=_hash(_canonical({k:v for k,v in morning.items() if k!="receipt_sha256"}))
+                        or morning["day"]!=day or morning["registration_sha256"]!=_hash(reg)
+                        or morning["status"]!="gap" and (stamp.date().isoformat()!=day or stamp.strftime("%H%M")!="0930")):
+                    raise ValueError("missing_original_day_pair_seal")
+            entry = (last.get("relay_walkdown") or {}).get("entry_receipt") or {}
+            if entry.get("status")!="gap" and "relay_walkdown" in last:
+                decision = entry["decision"]
+                raw_rank = contents["output/research/entry_clock_forward/pool_observations/"+day+"/0932.json"]
+                if (contents.get(DAY_PAIR+day+".relay-entry.json")!=_canonical(entry)
+                        or contents.get(DAY_PAIR+day+".relay-decision.json")!=_canonical(decision)
+                        or _hash(raw_rank)!=decision["rank_sha256"]):
+                    raise ValueError("relay_forward_sources_mismatch")
+            previous = _hash(contents[path])
+            count += last["effects"]["0931/normal"]["entry"]["status"] in ("model_buy", "expired_unfilled", "insufficient_cash")
+        if not last:
+            return {"status":"registered" if _forward_current(contents,start,as_of) else "invalid",
+                    "registered_at":registration["registered_at"],"reason":"no_natural_close_through_review_date"}
+        current = _forward_current(contents, last["day"], as_of)
+        diff = {}
+        for cost in ("normal","stress"):
+            a,b = (last["net_yuan"][t + "/" + cost] for t in ("0946","0931"))
+            diff[cost] = round(a-b,2) if a is not None and b is not None and current and not last["historical_gaps"] else None
+        from .split_evidence import verify
+        trials={}
+        for day,v in last.get("split_trials",{}).items():
+            try:
+                source=v["source_sha256"]
+                raw=contents[DAY_PAIR+"split_evidence/"+source+".json"]
+                if _hash(raw)!=source:raise ValueError("split_source_changed")
+                verify(json.loads(raw),v["actual"],day)
+                trials[day]={k:v[k] for k in ("child_id","actual","entry_saving_yuan","estimated_entry_saving_yuan","net_difference_yuan")}
+                for cost,entry in v["entries"].items():
+                    actual=v["actual"]
+                    fee=actual.get("buy_actual_fee")
+                    saving=round(entry["basis"]/100-actual["buy_gross"]-fee,2) if (entry["status"]=="model_buy"
+                        and actual.get("bought")==entry["shares"] and fee is not None) else None
+                    pnl=0 if actual["status"]=="no_submit" else actual.get("actual_realized_net")
+                    account=v["arms"][cost]
+                    diff_net=round(pnl-account["realized"]/100,2) if pnl is not None and not account["lots"] and entry["status"]!="gap" else None
+                    if saving!=v["entry_saving_yuan"][cost] or diff_net!=v["net_difference_yuan"][cost]:raise ValueError("split_difference_mismatch")
+            except (KeyError,ValueError,TypeError) as exc:
+                trials[day]=dict(child_id=v.get("child_id"),actual={"status":"gap","reason":str(exc)},
+                                 entry_saving_yuan=None,estimated_entry_saving_yuan=None,net_difference_yuan=None)
+        walk=last.get("relay_walkdown") or {}
+        return {"status":"observed", "day":last["day"], "source_sha256":previous,
+                "opportunities":count,"current":current,"historical_gaps":last["historical_gaps"],"difference_yuan":diff,
+                "open_lots":{k:len(v["lots"]) for k,v in last["accounts"].items()},
+                "relay_walkdown":{"dated_partial_net":walk.get("net_yuan"),"gaps":walk.get("gaps"),
+                                 "net_yuan":walk.get("net_yuan") if current and not walk.get("gaps") else None},
+                "split_risk":last.get("split_risk"),
+                "split_trials":trials}
+    except (TypeError, ValueError, KeyError) as exc:
+        return {"status":"invalid","reason":str(exc)}
+
+
 def observe_entry_cycle(contents, as_of):
     """Read the latest eligible frozen report and bind each account to its bytes."""
     prefix = "output/research/entry_clock_forward/"
@@ -822,21 +943,7 @@ def observe_entry_cycle(contents, as_of):
             raise ValueError("forward_registration_mismatch")
         # A weekend has no scheduled exchange session. Each intervening weekday
         # needs its own explicit exchange closure and the latest open-session date.
-        eligible = True
-        session = dt.date.fromisoformat(report["as_of"]) + dt.timedelta(days=1)
-        while session <= as_of:
-            if session.weekday() < 5:
-                day = session.isoformat()
-                raw = contents.get(prefix + "closed_sessions/" + day + ".json")
-                proof = json.loads(raw) if raw else {}
-                rows = proof.get("closed_rows") or []
-                if (proof.get("day") != day or proof.get("exchange") != "SSE"
-                        or proof.get("last_open") != report["as_of"] or not rows
-                        or not all(str(r.get("calDate") or r.get("tradeDate")).replace("-", "") == day.replace("-", "")
-                                   and str(r.get("isOpen")).lower() in ("0", "false") for r in rows)):
-                    eligible = False
-                    break
-            session += dt.timedelta(days=1)
+        eligible = _forward_current(contents, report["as_of"], as_of)
         for name, study in report["studies"].items():
             fixed = study.get("fixed_decision")
             if fixed:

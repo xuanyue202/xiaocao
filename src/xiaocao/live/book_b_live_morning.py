@@ -92,6 +92,8 @@ class BookBLiveMorningConfig:
     logical_account_id: str = "primary"
     policy_root: Path | None = None
     resume_plan_id: str | None = None
+    entry_clock_pilot: bool = False
+    pilot_cash_budget: Callable[[], float] | None = None
 
 
 @dataclass(frozen=True)
@@ -1034,6 +1036,10 @@ def _materialize_or_restore_plans(
                 policy_evidence["by_code"][plan.code] if policy_evidence is not None else {},
             )
         ]
+    saved_split = config.state_dir / "entry_clock_pilot" / "assignments" / (config.trade_date+".json")
+    if new_plans and (saved_split.is_file() or (config.entry_clock_pilot and policy_evidence is not None)):
+        from .entry_clock_pilot import split_before_binding
+        new_plans = split_before_binding(config.state_dir, config.trade_date, new_plans, now, cash_budget=config.pilot_cash_budget)
     new_by_id = {
         plan.plan_id: plan
         for plan in _bind_durable_plan_intents(config, new_plans)

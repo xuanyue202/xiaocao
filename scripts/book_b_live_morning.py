@@ -777,6 +777,7 @@ def _run(args, notices):
                          valid_until=clock + timedelta(seconds=60))
         return evidence
 
+    from research_day_limit_pair import split_cash_budget
     config = BookBLiveMorningConfig(
         trade_date=trade_date,
         freeze_path=freeze_path,
@@ -785,6 +786,9 @@ def _run(args, notices):
         logical_account_id="primary",
         policy_root=Path(args.policy_root),
         resume_plan_id=args.resume_plan_id,
+        pilot_cash_budget=lambda: split_cash_budget(ROOT / "output/research/entry_clock_forward", Path(args.state_dir), trade_date),
+        entry_clock_pilot=(args.automation_id == "xiaocao-book-b-live-morning" and
+                           not args.resume_plan_id and not args.resume_preflight_receipt),
     )
     runner = run_book_b_live_recovery if args.resume_plan_id else run_book_b_live_morning
     recovery_args = {"plan_id": args.resume_plan_id, "action": args.recovery_action} if args.resume_plan_id else {}
@@ -982,6 +986,22 @@ def _run(args, notices):
         except Exception as exc:
             acceptance = {'status': 'degraded', 'reason': type(exc).__name__, 'admission_authority': 'none'}
         _emit_json({'event': 'book_b_repair_acceptance', **acceptance})
+    if config.entry_clock_pilot:
+        from xiaocao.live.entry_clock_pilot import run_assigned
+        from research_day_limit_pair import read_assigned_shadow
+        try:
+            pilot = run_assigned(config, receipt,
+                clock=lambda: datetime.now(ZoneInfo("Asia/Shanghai")),
+                wait=lambda target: time.sleep(max(0.0, (target - datetime.now(target.tzinfo)).total_seconds())),
+                shadow=lambda assignment: read_assigned_shadow(
+                    ROOT / "output/research/entry_clock_forward", trade_date, assignment),
+                allocation_facts=read_allocation_facts, risk=current_buy_risk,
+                guard=lambda row: _fresh_market_guard(market_client, row, trade_date),
+                submission_scope=broker.submission_batch, execute=lambda plan: execution.execute(plan, broker))
+            if pilot:
+                _emit_json({"event":"entry_clock_pilot", **pilot})
+        except Exception as exc:
+            _emit_json({"event":"entry_clock_pilot_incomplete","reason":str(exc)})
     return 0 if receipt.status in {"completed", "no_action", "skipped"} else 2
 
 
