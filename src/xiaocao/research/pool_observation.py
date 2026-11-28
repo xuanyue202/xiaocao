@@ -124,9 +124,25 @@ def observe_relay_ranking(client, day, pool, deadline, clock):
             if len(rows) != len(batch) or set(by_code) != set(batch):
                 return {**record, "status": "score_identity_mismatch"}
             for code in batch:
-                stock = {"code": code}
+                row = by_code[code]
+                declared = [
+                    row[k] for k in ("tradeDate", "trade_date") if row.get(k) is not None
+                ]
+                try:
+                    dates = {
+                        datetime.fromisoformat(str(v)).date().isoformat()
+                        for v in declared
+                    }
+                except ValueError:
+                    return {**record, "status": "invalid_score_date", "code": code}
+                if dates and dates != {day}:
+                    return {
+                        **record, "status": "score_date_mismatch",
+                        "code": code, "reported_days": sorted(dates),
+                    }
+                stock = {"code": code, "provider_trade_day": day if dates else None}
                 for field in ("jsjl", "xcjw"):
-                    value = by_code[code].get(field)
+                    value = row.get(field)
                     valid = type(value) in (int, float) and math.isfinite(value)
                     stock[field] = value if valid else None
                     incomplete |= not valid

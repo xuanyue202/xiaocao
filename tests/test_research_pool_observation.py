@@ -44,7 +44,7 @@ class Quotes:
     def get_xiao_cao_index_v2(self, day, codes):
         assert day == DAY and len(codes) <= 80
         return [
-            {"code": c, "jsjl": -12.5, "xcjw": int(c[:6])}
+            {"code": c, "jsjl": -12.5, "xcjw": int(c[:6]), "tradeDate": int(day.replace("-", ""))}
             for c in reversed(codes)
         ]
 
@@ -191,7 +191,8 @@ def test_large_relay_pool_uses_supplier_order_and_links_each_score_to_its_code()
     )
     assert rank["status"] == "observed" and rank["ordered_codes"] == codes[::-1]
     assert rank["stocks"] == [
-        {"code": c, "jsjl": -12.5, "xcjw": int(c[:6])} for c in codes[::-1]
+        {"code": c, "jsjl": -12.5, "xcjw": int(c[:6]), "provider_trade_day": DAY}
+        for c in codes[::-1]
     ]
     assert [s["kind"] for s in rank["reads"]] == ["sort:37", "stock_index", "stock_index"]
 
@@ -202,6 +203,9 @@ def test_large_relay_pool_uses_supplier_order_and_links_each_score_to_its_code()
         ("duplicate", "incomplete_ranking"),
         ("wrong_stock", "score_identity_mismatch"),
         ("missing", "missing_scores"),
+        ("stale", "score_date_mismatch"),
+        ("conflict", "score_date_mismatch"),
+        ("invalid_date", "invalid_score_date"),
         ("late", "late_response"),
         ("unavailable", "pool_unavailable"),
     ],
@@ -219,7 +223,14 @@ def test_incomplete_relay_observations_remain_gaps(issue, expected):
             if issue == "late":
                 clock.sleep(60)
             code = OLD[0] if issue == "wrong_stock" else codes[0]
-            return [{"code": code, "jsjl": 0, "xcjw": None}]
+            row = {"code": code, "jsjl": 0, "xcjw": None}
+            if issue in ("stale", "conflict"):
+                row["trade_date"] = PREV
+            if issue == "conflict":
+                row["tradeDate"] = DAY
+            if issue == "invalid_date":
+                row["tradeDate"] = "2026-14-31"
+            return [row]
 
     pool = {"status": "read_error" if issue == "unavailable" else "observed", "codes": NEW}
     rank = obs.observe_relay_ranking(
@@ -227,6 +238,8 @@ def test_incomplete_relay_observations_remain_gaps(issue, expected):
     )
     assert rank["status"] == expected
     if issue == "missing":
-        assert rank["stocks"][0] == {"code": NEW[0], "jsjl": 0, "xcjw": None}
+        assert rank["stocks"][0] == {
+            "code": NEW[0], "jsjl": 0, "xcjw": None, "provider_trade_day": None,
+        }
     else:
         assert rank["stocks"] == []
