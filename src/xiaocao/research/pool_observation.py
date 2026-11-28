@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 import time
 from datetime import datetime, timedelta
@@ -79,6 +80,66 @@ def fetch_pools(client, day, deadline, clock):
                 completed_at=clock().isoformat(),
             )
     return records
+
+
+def observe_relay_ranking(client, day, pool, deadline, clock):
+    """Sample the supplier's relay order and the two scores for that same membership."""
+    record = {"sort_id": 37, "requested_day": day, "reads": [], "stocks": []}
+    if pool["status"] != "observed":
+        return {**record, "status": "pool_unavailable"}
+    codes = pool["codes"]
+    members = set(codes)
+    if len(members) != len(codes):
+        return {**record, "status": "duplicate_pool_member"}
+
+    def read(kind, fetch):
+        start = clock()
+        if start >= deadline:
+            raise TimeoutError("window_missed")
+        stamp = {"kind": kind, "started_at": start.isoformat()}
+        record["reads"].append(stamp)
+        try:
+            rows = fetch()
+        finally:
+            end = clock()
+            stamp["completed_at"] = end.isoformat()
+        if end >= deadline:
+            raise TimeoutError("late_response")
+        return rows
+
+    try:
+        ranking = read("sort:37", lambda: client.sort_v2(codes, 37, date=day))
+        # The provider can return the whole market. Keep its relative order within the pool.
+        if not isinstance(ranking, list):
+            return {**record, "status": "invalid_ranking"}
+        ordered = [c for c in ranking if c in members]
+        if len(ordered) != len(codes) or set(ordered) != members:
+            return {**record, "status": "incomplete_ranking"}
+        record["ordered_codes"] = ordered
+        incomplete = False
+        for offset in range(0, len(ordered), 80):
+            batch = ordered[offset : offset + 80]
+            rows = read("stock_index", lambda: client.get_xiao_cao_index_v2(day, batch))
+            by_code = {row["code"]: row for row in rows}
+            if len(rows) != len(batch) or set(by_code) != set(batch):
+                return {**record, "status": "score_identity_mismatch"}
+            for code in batch:
+                stock = {"code": code}
+                for field in ("jsjl", "xcjw"):
+                    value = by_code[code].get(field)
+                    valid = type(value) in (int, float) and math.isfinite(value)
+                    stock[field] = value if valid else None
+                    incomplete |= not valid
+                record["stocks"].append(stock)
+        record["status"] = "missing_scores" if incomplete else "observed"
+    except TimeoutError as exc:
+        reason = str(exc)
+        record["status"] = (
+            reason if reason in {"window_missed", "late_response"} else "read_error"
+        )
+    except Exception as exc:
+        record.update(status="read_error", reason=type(exc).__name__)
+    return record
 
 
 def membership_match(a, b):
@@ -201,6 +262,9 @@ def observe_session(
                         for m, codes in samples.items()
                     }
                 receipt["comparisons"] = comparisons
+            receipt["relay_ranking"] = observe_relay_ranking(
+                client, day, current["jieli"], deadline, clock
+            )
             receipt["receipt_sha256"] = hashlib.sha256(encoded(receipt)).hexdigest()
             atomic_write(path, encoded(receipt) + b"\n", immutable=True)
         data, error = read_receipt(path, day, minute, previous)
@@ -219,5 +283,11 @@ def observe_session(
                 for stages in data["comparisons"].values()
                 for row in stages.values()
             )
-        summary[minute] = {"path": str(path), "complete": complete}
+        summary[minute] = {
+            "path": str(path),
+            "complete": complete,
+            "relay_rank_status": data.get("relay_ranking", {}).get(
+                "status", "legacy_unobserved"
+            ),
+        }
     return summary

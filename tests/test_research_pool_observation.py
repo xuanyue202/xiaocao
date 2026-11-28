@@ -1,6 +1,10 @@
+import hashlib
 import json
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
+
+import pytest
+
 from xiaocao.research import pool_observation as obs
 
 DAY = "2026-12-01"
@@ -33,6 +37,17 @@ class Quotes:
             OLD if (day == PREV or self.clock.now().strftime("%H%M") == "0927") else NEW
         )
 
+    def sort_v2(self, codes, sort_id, date):
+        assert sort_id == 37 and date == DAY
+        return ["600519.XSHG", *reversed(codes)]
+
+    def get_xiao_cao_index_v2(self, day, codes):
+        assert day == DAY and len(codes) <= 80
+        return [
+            {"code": c, "jsjl": -12.5, "xcjw": int(c[:6])}
+            for c in reversed(codes)
+        ]
+
 
 def test_natural_memberships_and_exact_comparisons(tmp_path, monkeypatch):
     clock = Clock("09:26:00")
@@ -63,6 +78,8 @@ def test_natural_memberships_and_exact_comparisons(tmp_path, monkeypatch):
     assert observe(False)["1517"]["complete"]
     assert len(q.reads) == 15
     r = json.loads((tmp_path / DAY / "1517.json").read_text())
+    assert r["relay_ranking"]["ordered_codes"] == NEW
+    assert r["relay_ranking"]["status"] == "observed"
     by = r["comparisons"]["jieli"]
     assert (
         by["opening"]["prior_date"]["equal"]
@@ -73,6 +90,17 @@ def test_natural_memberships_and_exact_comparisons(tmp_path, monkeypatch):
     )
     observe(False)
     assert len(q.reads) == 15
+
+    # Original membership-only receipts keep their evidence and never trigger late reads.
+    path = tmp_path / DAY / "1517.json"
+    r.pop("relay_ranking")
+    r.pop("receipt_sha256")
+    r["receipt_sha256"] = hashlib.sha256(obs.encoded(r)).hexdigest()
+    legacy = obs.encoded(r)
+    path.write_bytes(legacy)
+    summary = observe(False)["1517"]
+    assert summary["complete"] and summary["relay_rank_status"] == "legacy_unobserved"
+    assert path.read_bytes() == legacy and len(q.reads) == 15
 
 
 def test_missed_windows_and_empty_never_match(tmp_path, monkeypatch):
@@ -152,3 +180,53 @@ def test_misplaced_intact_receipt_cannot_supply_a_different_slot(tmp_path, monke
     close = json.loads((d / "1517.json").read_bytes())
     assert close["morning_receipt_errors"]["0932"] == "receipt_identity_mismatch"
     assert close["comparisons"]["jieli"]["0932"]["prior_date"] is None
+
+
+def test_large_relay_pool_uses_supplier_order_and_links_each_score_to_its_code():
+    clock = Clock("09:32:01")
+    codes = [f"{i:06}.XSHE" for i in range(1, 90)]
+    pool = {"status": "observed", "codes": codes}
+    rank = obs.observe_relay_ranking(
+        Quotes(clock), DAY, pool, clock.now() + timedelta(seconds=59), clock.now
+    )
+    assert rank["status"] == "observed" and rank["ordered_codes"] == codes[::-1]
+    assert rank["stocks"] == [
+        {"code": c, "jsjl": -12.5, "xcjw": int(c[:6])} for c in codes[::-1]
+    ]
+    assert [s["kind"] for s in rank["reads"]] == ["sort:37", "stock_index", "stock_index"]
+
+
+@pytest.mark.parametrize(
+    "issue,expected",
+    [
+        ("duplicate", "incomplete_ranking"),
+        ("wrong_stock", "score_identity_mismatch"),
+        ("missing", "missing_scores"),
+        ("late", "late_response"),
+        ("unavailable", "pool_unavailable"),
+    ],
+)
+def test_incomplete_relay_observations_remain_gaps(issue, expected):
+    clock = Clock("09:32:01")
+
+    class Incomplete(Quotes):
+        def sort_v2(self, codes, sort_id, date):
+            if issue == "duplicate":
+                return codes * 2
+            return super().sort_v2(codes, sort_id, date)
+
+        def get_xiao_cao_index_v2(self, day, codes):
+            if issue == "late":
+                clock.sleep(60)
+            code = OLD[0] if issue == "wrong_stock" else codes[0]
+            return [{"code": code, "jsjl": 0, "xcjw": None}]
+
+    pool = {"status": "read_error" if issue == "unavailable" else "observed", "codes": NEW}
+    rank = obs.observe_relay_ranking(
+        Incomplete(clock), DAY, pool, clock.now() + timedelta(seconds=59), clock.now
+    )
+    assert rank["status"] == expected
+    if issue == "missing":
+        assert rank["stocks"][0] == {"code": NEW[0], "jsjl": 0, "xcjw": None}
+    else:
+        assert rank["stocks"] == []
