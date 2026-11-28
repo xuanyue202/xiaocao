@@ -51,8 +51,17 @@ Use `recording_url` to verify the resulting `v_...` target. The human's Nov12
 readback established that direct video entry can lead to an access warning
 while the learning-list route reaches the playable recording. After login or
 that warning, return to this exact list and select the same course; the warning
-alone does not prove account entitlement was revoked. Actual login, agreements
-and authorization gates remain human-owned. Reading only public catalogue
+alone does not prove account entitlement was revoked. On this previously entitled
+course, if its preview shows `加入学习` and selecting a lesson asks for it, click that visible control
+once and inspect the resulting page. If it opens the Xiaoetong/eLink account-login
+page, return `account_login_required` immediately and leave that course-specific
+login page available to the human. After the human logs in, return to the same
+learning list and re-identify the dated lesson; do not ask them to navigate or
+play it. For moved or renamed controls, inspect the current visible page and
+follow its normal course navigation, retaining the exact original and resource.
+Actual login, agreements, payment, enrollment decisions and authorization gates
+remain human-owned. A navigation click is not proof of enrollment or entitlement.
+Reading only public catalogue
 metadata or CLI connectivity cannot satisfy the entitled source/media contract.
 
 Use `browser ... eval` only for safe DOM facts: `document.title`,

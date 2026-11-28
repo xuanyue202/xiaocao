@@ -15,6 +15,15 @@ from .replay_catalog import (
     inspect_original, verify_original,
 )
 
+RECORDED_BROWSER_INSTRUCTIONS = (
+    '先打开course_url课程列表；如既有授权课程的预览提示先加入学习，点击当前页面可见的“加入学习”一次并读回结果。'
+    '若进入小鹅通/eLink账号登录页，立即返回account_login_required，让用户本人登录；'
+    '登录后返回同一课程列表。按钮或布局变化时检查当前页面并按正常课程导航，'
+    '只选择recording.title对应的精确日期录像；核对v_资源和有限时长，捕获实际HTTP后离开播放器。'
+    'recording_url只用于校验目标；登录、协议、付款及实际报名决定由用户处理。'
+    '不要操作微信或打开直播间，不导出票据。'
+)
+
 
 def recorded_mode(config_path):
     if not config_path.exists():
@@ -134,7 +143,7 @@ def check_recorded_playback(sub,manifest,item,*,reason):
         course_url=config.learning_url,
         recording_entry='catalogue_row',
         recording_url=f"{config.origin}/p/course/video/{recording['resource_id']}?"+urlencode(dict(product_id=config.course_id,course_id=config.course_id)),
-        instructions='先用已登录Browser打开course_url课程列表，从列表点击recording.title对应录像；核对精确v_资源、日期标题和有限时长，捕获实际HTTP后离开播放器。recording_url只用于校验目标，不作为首次入口。不要操作微信或打开直播间，不导出票据。',
+        instructions=RECORDED_BROWSER_INSTRUCTIONS,
         required_response=dict(action='observe_authorized_recorded_course',subscription_id=identity,
             one_of=[
                 dict(status='observed',candidate_id='non-empty string',

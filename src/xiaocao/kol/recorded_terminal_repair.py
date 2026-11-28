@@ -380,7 +380,7 @@ def observe_terminal_alias(sub: Any, item: dict[str, Any], service: Any, *, outp
     from urllib.parse import urlencode
     from zoneinfo import ZoneInfo
     from .human_playback import enable_capture_listener_pac
-    from .recorded_flow import _validate_recorded_browser_response
+    from .recorded_flow import RECORDED_BROWSER_INSTRUCTIONS, _validate_recorded_browser_response
     from .recorded_recovery import collect_recorded_proof
     from .replay_catalog import ReplayCatalogReader, match_original
 
@@ -430,7 +430,7 @@ def observe_terminal_alias(sub: Any, item: dict[str, Any], service: Any, *, outp
         recording=selected,observation_receipt_path=str(claim_path),course_url=config.learning_url,
         recording_entry='catalogue_row',
         recording_url=f"{config.origin}/p/course/video/{selected['resource_id']}?"+urlencode(dict(product_id=config.course_id,course_id=config.course_id)),
-        instructions='在已有授权的历史课程列表中打开精确日期和标题的录像，核对资源和有限时长并离开播放器；不要操作微信或导出票据。',
+        instructions=RECORDED_BROWSER_INSTRUCTIONS,
         required_response=dict(action='observe_authorized_recorded_course',subscription_id=identity,
             one_of=[dict(status='observed',candidate_id='non-empty string',player_duration_seconds='positive finite number',player_left=True),
                     dict(status='account_login_required')]))
