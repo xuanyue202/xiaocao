@@ -53,6 +53,69 @@ def page(rows, total=None):
                                  list=rows, has_chapter=False))
 
 
+def test_mixed_live_catalogue_keeps_unrelated_recording_but_blocks_same_day():
+    from xiaocao.kol.replay_catalog import match_original
+    live_id = 'l_' + 'a' * 24
+    live = dict(course_id=CONFIG.course_id, chapter_id=live_id,
+                chapter_title='11月27日复盘大师班直播YJ', resource_type=4,
+                video_length=None, jump_url='/v4/course/alive/' + live_id + '?type=2')
+    rows = ReplayCatalogReader(CONFIG, session=Session([page([row(), live])])).read()
+    assert match_original(rows, ITEM['published_at'])['resource_id'] == row()['chapter_id']
+    with pytest.raises(ReplayCatalogError, match='recorded_session_live_entry_requires_inspection'):
+        match_original(rows, '2026-11-27T17:00:00+08:00')
+    live['jump_url'] = 'https://foreign.example/v4/course/alive/' + live_id
+    with pytest.raises(ReplayCatalogError, match='catalog_resource_binding_invalid'):
+        ReplayCatalogReader(CONFIG, session=Session([page([row(), live])])).read()
+    live['jump_url'] = 'https://[malformed'
+    with pytest.raises(ReplayCatalogError, match='catalog_resource_binding_invalid'):
+        ReplayCatalogReader(CONFIG, session=Session([page([row(), live])])).read()
+
+
+def test_dated_recap_title_without_expected_wording_needs_review():
+    from xiaocao.kol.replay_catalog import match_original
+    candidate = {'resource_id': 'v_' + 'b' * 24, 'title': '11月25日复盘直播',
+                 'duration_seconds': 2611}
+    with pytest.raises(ReplayCatalogError, match='recorded_session_title_unverified'):
+        match_original([candidate], '2026-11-25T17:22:00+08:00')
+
+
+def test_manual_recording_authorization_binds_only_exact_original_and_resource():
+    from xiaocao.kol.replay_catalog import select_original_recordings, verify_catalogue_binding
+    item = {**ITEM, 'published_at':'2026-11-25T17:22:00+08:00',
+            'manual_backfill_since':'2026-11-25', 'mini_program_token':'rotated'}
+    original = {**item, 'mini_program_name':'见势擒龙团', 'contact':'contact', 'contact_username':'user'}
+    item.update(mini_program_name='见势擒龙团', contact='contact', contact_username='user')
+    auth = {k:item[k] for k in ('identity','capture_job_id','message_sha256','published_at')}
+    auth.update(scope='one_original_recording',user_authorized=True,approval_reference='call_test123',
+                authorized_at='2026-11-28T22:15:00+08:00',app_id=CONFIG.app_id,
+                course_id=CONFIG.course_id,resource_id='v_'+'b'*24,
+                title='11月25日复盘直播',file_name='11月25日复盘剪辑',duration_seconds=2611)
+    item['manual_recorded_catalogue_authorization'] = auth
+    selected = {'resource_id':auth['resource_id'],'title':auth['title'],
+                'duration_seconds':2611,'course_id':CONFIG.course_id}
+    verify_catalogue_binding(CONFIG,item,[original])
+    assert select_original_recordings([selected],item) == [selected]
+    saved_row = {**row(2, auth['title']), 'chapter_id':auth['resource_id'],
+                 'video_length':2611, 'jump_url':'/p/course/video/'+auth['resource_id']}
+    result = inspect_original(CONFIG,item,originals=[original],session=Session([page([saved_row])]),
+                              now=datetime(2026,11,29,8,tzinfo=ZoneInfo('Asia/Shanghai')))
+    assert result['recording']['resource_id'] == auth['resource_id']
+    for changed in ({**auth,'user_authorized':False}, {**auth,'message_sha256':'c'*64},
+                    {**auth,'capture_job_id':'kol-other'}, {**auth,'app_id':'appOther'}):
+        with pytest.raises(ReplayCatalogError, match='manual_recorded_authorization_invalid'):
+            verify_catalogue_binding(CONFIG,{**item,'manual_recorded_catalogue_authorization':changed},[original])
+    with pytest.raises(ReplayCatalogError, match='manual_recorded_resource_changed'):
+        select_original_recordings([{**selected,'duration_seconds':2612}],item)
+    with pytest.raises(ReplayCatalogError, match='manual_recorded_resource_changed'):
+        select_original_recordings([selected,selected],item)
+    with pytest.raises(ReplayCatalogError, match='manual_recorded_session_ambiguous'):
+        select_original_recordings([selected,{**selected,'resource_id':'v_'+'c'*24,
+                                    'title':'11月25日复盘直播片段2'}],item)
+    with pytest.raises(ReplayCatalogError, match='original_outside_current_recovery_window'):
+        inspect_original(CONFIG,{**ITEM,'published_at':'2026-11-25T17:22:00+08:00'},
+                         now=datetime(2026,11,29,8,tzinfo=ZoneInfo('Asia/Shanghai')))
+
+
 def test_exact_recording_found_without_new_capture_or_ticket_export():
     detail = dict(code=0, data=dict(is_available=1, is_free=0, is_subscribe=0,
         is_try=0, is_unlock=0, video_urls='SECRET_SIGNED_TICKET', user_id='private',

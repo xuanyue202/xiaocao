@@ -26,6 +26,14 @@ class ReplayCatalogError(EnrichmentDiagnosticError):
                          code=code, stage="recorded_catalog")
 
 
+def _is_live_catalogue_path(value: object, resource_id: str) -> bool:
+    try:
+        url = urlsplit(value if isinstance(value, str) else "")
+    except ValueError:
+        return False
+    return not url.scheme and not url.netloc and url.path == f"/v4/course/alive/{resource_id}"
+
+
 @dataclass(frozen=True)
 class ReplayCatalogConfig:
     app_id: str
@@ -130,6 +138,15 @@ class ReplayCatalogReader:
                 raise ReplayCatalogError("catalog_scan_incomplete")
             expected_total = total
             for row in batch:
+                if (isinstance(row, dict) and row.get("resource_type") == 4
+                    and row.get("course_id") == self.config.course_id
+                    and re.fullmatch(r"l_[0-9a-f]{24}", str(row.get("chapter_id", "")))
+                    and isinstance(row.get("chapter_title"), str)
+                    and row.get("video_length") is None
+                    and _is_live_catalogue_path(row.get("jump_url"), row["chapter_id"])):
+                    rows.append({"resource_id": row["chapter_id"], "title": row["chapter_title"],
+                                 "course_id": self.config.course_id, "resource_type": 4})
+                    continue
                 if (not isinstance(row, dict) or row.get("course_id") != self.config.course_id
                     or not re.fullmatch(r"v_[0-9a-f]{24}", str(row.get("chapter_id", "")))
                     or row.get("resource_type") != 3
@@ -174,6 +191,10 @@ def match_original(rows: list[dict], published_at: str, *, preopen_start_at: str
     published = published.astimezone(ZoneInfo("Asia/Shanghai"))
     session = "早盘" if published.hour < 12 else "复盘"
     date = f"{published.month}月{published.day}日"
+    dated = r"(?<!\d)" + re.escape(date)
+    if any(r.get("resource_type") == 4 and re.search(dated, _course_title_key(r['title'])) for r in rows):
+        raise ReplayCatalogError("recorded_session_live_entry_requires_inspection")
+    rows = [r for r in rows if r.get("resource_type") != 4]
     titles = {f"大师班{session}直播{date}", f"大师班{session}直播{date}YJ",
               f"{date}大师班{session}直播", f"{date}{session}大师班直播"}
     segments = [r for r in rows if any(re.fullmatch(
@@ -210,6 +231,10 @@ def match_original(rows: list[dict], published_at: str, *, preopen_start_at: str
     matches.extend(preopen_matches)
     if len(matches) > 1:
         raise ReplayCatalogError("recorded_session_ambiguous")
+    if any(r not in preopen_matches and _course_title_key(r['title']) not in titles
+           and re.search(dated, _course_title_key(r['title']))
+           and session in _course_title_key(r['title']) for r in rows):
+        raise ReplayCatalogError("recorded_session_title_unverified")
     # A same-date unfamiliar title remains ambiguous even if another row
     # matches; selecting the familiar row would silently discard a candidate.
     if any(r not in preopen_matches and _course_title_key(r['title']) not in titles and re.fullmatch(
@@ -265,6 +290,58 @@ def catalogue_navigation_peer(config: ReplayCatalogConfig, item: dict,
     return urls[0]
 
 
+def _manual_recording_authorization(item: dict, config: ReplayCatalogConfig | None = None) -> dict | None:
+    """A direct human exception applies only to its exact original and resource."""
+    auth = item.get('manual_recorded_catalogue_authorization')
+    if auth is None:
+        return None
+    if (not isinstance(auth, dict) or auth.get('scope') != 'one_original_recording'
+        or auth.get('user_authorized') is not True
+        or not re.fullmatch(r'call_[A-Za-z0-9]+', str(auth.get('approval_reference', '')))
+        or not isinstance(item.get('capture_job_id'), str) or not item['capture_job_id']
+        or any(auth.get(k) != item.get(k) for k in
+               ('identity', 'capture_job_id', 'message_sha256', 'published_at'))
+        or not re.fullmatch(r'app[A-Za-z0-9]+', str(auth.get('app_id', '')))
+        or not re.fullmatch(r'course_[A-Za-z0-9]+', str(auth.get('course_id', '')))
+        or not re.fullmatch(r'v_[0-9a-f]{24}', str(auth.get('resource_id', '')))
+        or not isinstance(auth.get('title'), str) or not auth['title']
+        or not isinstance(auth.get('file_name'), str) or not auth['file_name']
+        or type(auth.get('duration_seconds')) is not int or auth['duration_seconds'] <= 0
+        or item.get('manual_backfill_since') != str(item.get('published_at', ''))[:10]):
+        raise ReplayCatalogError('manual_recorded_authorization_invalid')
+    try:
+        published = datetime.fromisoformat(item['published_at'])
+        authorized = datetime.fromisoformat(auth['authorized_at'])
+    except (TypeError, ValueError, KeyError):
+        raise ReplayCatalogError('manual_recorded_authorization_invalid') from None
+    date = f'{published.month}月{published.day}日'
+    if (published.tzinfo is None or authorized.tzinfo is None or authorized < published
+        or not re.search(r'(?<!\d)' + re.escape(date), _course_title_key(auth['title']))
+        or ('复盘' if published.hour >= 12 else '盘') not in _course_title_key(auth['title'])
+        or (config and (auth['app_id'] != config.app_id or auth['course_id'] != config.course_id))):
+        raise ReplayCatalogError('manual_recorded_authorization_invalid')
+    return auth
+
+
+def select_original_recordings(rows: list[dict], item: dict, *, preopen_start_at: str = '') -> list[dict]:
+    auth = _manual_recording_authorization(item)
+    if auth is None:
+        selected = match_original(rows, item['published_at'], preopen_start_at=preopen_start_at)
+        return [selected] if selected else []
+    keys = ('resource_id', 'title', 'duration_seconds', 'course_id')
+    matches = [row for row in rows if all(row.get(k) == auth.get(k) for k in keys)]
+    if len(matches) != 1 or sum(row.get('resource_id') == auth['resource_id'] for row in rows) != 1:
+        raise ReplayCatalogError('manual_recorded_resource_changed')
+    published = datetime.fromisoformat(item['published_at']).astimezone(ZoneInfo('Asia/Shanghai'))
+    date = f'{published.month}月{published.day}日'
+    session = '复盘' if published.hour >= 12 else '盘'
+    if any(row is not matches[0] and re.search(r'(?<!\d)' + re.escape(date),
+           _course_title_key(str(row.get('title') or '')))
+           and session in _course_title_key(str(row.get('title') or '')) for row in rows):
+        raise ReplayCatalogError('manual_recorded_session_ambiguous')
+    return matches
+
+
 def verify_catalogue_binding(config: ReplayCatalogConfig, item: dict,
                              originals: list[dict] | None = None) -> None:
     if (not re.fullmatch(r"kol-wechat-[0-9a-f]{24}", str(item.get("identity", "")))
@@ -273,6 +350,8 @@ def verify_catalogue_binding(config: ReplayCatalogConfig, item: dict,
     if originals is not None:
         verify_original(item, item["identity"], originals)
     if item.get("mini_program_token") == config.mini_program_token:
+        return
+    if originals is not None and _manual_recording_authorization(item, config) is not None:
         return
     if originals is None or catalogue_navigation_peer(config, item, originals) is None:
         raise ReplayCatalogError("original_catalog_binding_invalid")
@@ -284,14 +363,17 @@ def inspect_original(config: ReplayCatalogConfig, item: dict, *, inspect_access=
     verify_catalogue_binding(config, item, originals)
     published = datetime.fromisoformat(item['published_at'])
     now = now or datetime.now(ZoneInfo('Asia/Shanghai'))
-    if (published.tzinfo is None or now.tzinfo is None
-        or not timedelta(0) <= now - published <= timedelta(hours=72)):
+    manual = _manual_recording_authorization(item, config)
+    if (published.tzinfo is None or now.tzinfo is None or now < published
+        or (manual is not None and datetime.fromisoformat(manual['authorized_at']) > now)
+        or (manual is None and now - published > timedelta(hours=72))):
         raise ReplayCatalogError("original_outside_current_recovery_window")
     reader = ReplayCatalogReader(config, session=session)
     try:
         rows = reader.read()
-        selected = match_original(rows, item['published_at'],
+        recordings = select_original_recordings(rows, item,
                                   preopen_start_at=verified_preopen_anchor(item, originals))
+        selected = recordings[0] if recordings else None
         result = {"status": "recorded_replay_candidate_found" if selected else "recorded_replay_not_listed",
             "identity": item['identity'], "capture_job_id": item.get('capture_job_id'),
             "source_message_sha256": item['message_sha256'], "published_at": item['published_at'],

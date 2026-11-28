@@ -1,4 +1,5 @@
 import copy
+import hashlib
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -77,6 +78,61 @@ def test_recorded_proof_binds_merchant_course_media_and_finite_playlist_without_
     assert proof['media_file_id']=='5001834826931137742'
     assert proof['finite_playlist']['ended'] is True
     assert 'sign=private' not in json.dumps(proof)
+
+
+def test_manual_recording_proof_preserves_approved_file_label(recorded):
+    _,item,_,_,_,proof,_ = recorded
+    item = {**item,'published_at':'2026-11-25T17:22:00+08:00',
+            'manual_backfill_since':'2026-11-25'}
+    auth = {k:item[k] for k in ('identity','capture_job_id','message_sha256','published_at')}
+    auth.update(scope='one_original_recording',user_authorized=True,approval_reference='call_test123',
+                authorized_at='2026-11-28T22:15:00+08:00',app_id=APP,course_id=COURSE,
+                resource_id=RESOURCE,title='11月25日复盘直播',file_name='11月25日复盘剪辑',
+                duration_seconds=2311)
+    item['manual_recorded_catalogue_authorization'] = auth
+    proof = {**proof,'published_at':item['published_at'],
+             'recording':{**proof['recording'],'title':auth['title']},
+             'manual_recorded_file_name':auth['file_name'],
+             'manual_authorization_sha256':hashlib.sha256(json.dumps(
+                 auth,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode()).hexdigest()}
+    validate_recorded_proof(proof,item,CAPTURE)
+    with pytest.raises(EnrichmentError,match='recorded proof differs'):
+        validate_recorded_proof({**proof,'manual_recorded_file_name':'不同资源'},item,CAPTURE)
+
+
+def test_manual_recording_collect_rejects_changed_merchant_file_name(recorded, monkeypatch):
+    root,item,driver,service,candidate,_,folder = recorded
+    item = {**item,'published_at':'2026-11-25T17:22:00+08:00',
+            'manual_backfill_since':'2026-11-25'}
+    auth = {k:item[k] for k in ('identity','capture_job_id','message_sha256','published_at')}
+    auth.update(scope='one_original_recording',user_authorized=True,approval_reference='call_test123',
+                authorized_at='2026-11-28T22:15:00+08:00',app_id=APP,course_id=COURSE,
+                resource_id=RESOURCE,title='11月25日复盘直播',file_name='11月25日复盘剪辑',
+                duration_seconds=2311)
+    item['manual_recorded_catalogue_authorization'] = auth
+    (root/'manifest.json').write_text(json.dumps({'items':{IDENTITY:item}}))
+    import xiaocao.kol.xiaocao_wechat as wechat
+    monkeypatch.setattr(wechat,'parse_xiaocao_live_messages',lambda _: [item])
+    candidate['captured'] = '2026-11-28 22:20:26'
+    claim=folder/'observation.json'
+    claim.write_text(json.dumps(dict(identity=IDENTITY,capture_job_id=CAPTURE,
+        resource_id=RESOURCE,observed_after='2026-11-28T22:19:59+08:00')))
+    debug=service.sniffer_binary.parent/'elive_live_debug'
+    events=[json.loads(line) for line in (debug/'events.jsonl').read_text().splitlines()]
+    for event in events: event['at']='2026-11-28T22:20:28+08:00'
+    (debug/'events.jsonl').write_text(''.join(json.dumps(event)+'\n' for event in events))
+    catalog=debug/'json'/'0.json'; data=json.loads(catalog.read_text())
+    data['data']['list'][0]['chapter_title']=auth['title']; catalog.write_text(json.dumps(data))
+    detail=debug/'json'/'1.json'; data=json.loads(detail.read_text())
+    data['data']['video_info']['file_name']=auth['file_name']; detail.write_text(json.dumps(data))
+    proof=collect_recorded_proof(root,IDENTITY,CAPTURE,'exact',player_duration=2310.761,
+        player_left=True,driver=driver,observation_path=claim)
+    validate_recorded_proof(proof,item,CAPTURE)
+    data['data']['video_info']['file_name']='11月25日另一段'
+    detail.write_text(json.dumps(data))
+    with pytest.raises(EnrichmentError,match='browser/course binding invalid'):
+        collect_recorded_proof(root,IDENTITY,CAPTURE,'exact',player_duration=2310.761,
+            player_left=True,driver=driver,observation_path=claim)
 
 
 def test_preopen_proof_requires_fresh_original_session_evidence(recorded, monkeypatch):

@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 
 from .capture import canonical_xiaoetong_source
 from .enrichment_types import EnrichmentError
-from .replay_catalog import ReplayCatalogConfig, match_original, verify_original, verified_preopen_anchor
+from .replay_catalog import ReplayCatalogConfig, select_original_recordings, verify_original, verified_preopen_anchor
 from .human_playback import _course_title_key
 
 
@@ -94,12 +94,15 @@ def collect_recorded_proof(subscription_dir, identity, capture_id, candidate_id,
     rows = [dict(title=r.get('chapter_title'),resource_id=r.get('chapter_id'),
             duration_seconds=r.get('video_length'),course_id=r.get('course_id')) for r in catalog.get('list',[])]
     preopen_start = verified_preopen_anchor(item, originals)
-    selected = match_original(rows,item['published_at'],preopen_start_at=preopen_start)
+    recordings = select_original_recordings(rows,item,preopen_start_at=preopen_start)
+    selected = recordings[0] if len(recordings) == 1 else None
+    manual = item.get('manual_recorded_catalogue_authorization')
     is_preopen = bool(selected and preopen_start and '盘前大师班直播YJ' in _course_title_key(selected['title']))
     if (not selected or selected['resource_id'] != claim['resource_id']
         or selected['course_id'] != config.course_id or info.get('app_id') != config.app_id
         or info.get('resource_id') != selected['resource_id']
         or info.get('video_length') != selected['duration_seconds']
+        or (manual and _course_title_key(str(info.get('file_name') or '')) != _course_title_key(manual['file_name']))
         or (is_preopen and _course_title_key(str(info.get('file_name') or '')) != _course_title_key(selected['title']))
         or not math.isfinite(player_duration) or abs(player_duration-selected['duration_seconds']) > 1
         or player_left is not True):
@@ -148,6 +151,10 @@ def collect_recorded_proof(subscription_dir, identity, capture_id, candidate_id,
         play_evidence=play_file,finite_playlist=finite,method='authorized_recorded_course_web')
     if is_preopen:
         proof['recorded_preopen_start_at'] = preopen_start
+    if manual:
+        proof['manual_recorded_file_name'] = manual['file_name']
+        proof['manual_authorization_sha256'] = hashlib.sha256(json.dumps(
+            manual,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode()).hexdigest()
     return proof
 
 
@@ -159,11 +166,18 @@ def validate_recorded_proof(proof, item, capture_id):
         originals = parse_xiaocao_live_messages(read_original_history(WechatCliHistoryReader(),item['published_at']))
         if verified_preopen_anchor(item, originals) != anchor:
             raise EnrichmentError('recorded source session evidence changed')
+    selected = select_original_recordings([recording],item,preopen_start_at=anchor)
     if (proof.get('identity')!=item['identity'] or proof.get('capture_job_id')!=capture_id
         or proof.get('source_message_sha256')!=item['message_sha256']
         or proof.get('published_at')!=item['published_at'] or proof.get('entitled_course') is not True
         or proof.get('player_left') is not True or proof.get('method')!='authorized_recorded_course_web'
-        or match_original([recording],item['published_at'],preopen_start_at=anchor)!=recording
+        or selected != [recording]
+        or (item.get('manual_recorded_catalogue_authorization') and
+            proof.get('manual_recorded_file_name') != item['manual_recorded_catalogue_authorization']['file_name'])
+        or (item.get('manual_recorded_catalogue_authorization') and
+            proof.get('manual_authorization_sha256') != hashlib.sha256(json.dumps(
+                item['manual_recorded_catalogue_authorization'],ensure_ascii=False,
+                sort_keys=True,separators=(',',':')).encode()).hexdigest())
         or not re.fullmatch(r'v_[0-9a-f]{24}',str(recording.get('resource_id','')))
         or not re.fullmatch(r'[0-9]{8,}',str(proof.get('media_file_id','')))
         or not re.fullmatch(r'[0-9a-f]{64}',str(proof.get('media_resource_sha256','')))

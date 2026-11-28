@@ -124,6 +124,12 @@ Preserve both the configured historical token and original current token; never
 rewrite the original or accept a changed token from its name/date alone.
 Inspection and media-proof collection revalidate the same-message anchor.
 Generic or differently sourced URLs remain independent.
+The human explicitly authorized a one-original exception for the 2026-11-25
+evening recording. Its persisted authorization binds that original's identity,
+message hash, capture, date, course, resource, title, duration and merchant
+file name; its approval reference identifies the human response. Recheck the
+original, current catalogue, entitlement and finite media as usual. This does
+not authorize the exception for another date or a different recording.
 The role may have a circled or decimal list prefix, such as
 `②历史直播回放点击链接学习：...`; the prefix changes presentation only. It does not
 relax the exact URL, same-message identity or merchant/course checks. A saved

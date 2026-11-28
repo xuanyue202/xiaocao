@@ -2395,6 +2395,9 @@ class XiaocaoLiveService:
             handoff.update(recorded_resource_id=recorded_binding['recording']['resource_id'],
                 recorded_media_file_id=recorded_binding['media_file_id'],
                 acquisition_method='authorized_recorded_course_web')
+            if recorded_binding.get('manual_authorization_sha256'):
+                handoff.update(recorded_source_file_name=recorded_binding['manual_recorded_file_name'],
+                               recorded_authorization_sha256=recorded_binding['manual_authorization_sha256'])
         if capture.get("source_published_at"):
             dated_media = re.match(r"^(\d{8})\s", media_basename)
             if dated_media:
